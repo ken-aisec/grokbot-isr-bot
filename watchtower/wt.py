@@ -17,6 +17,10 @@ Commands
 
 State lives in $WATCHTOWER_HOME (default /workspace/watchtower).
 """
+import sys
+if sys.version_info < (3, 8):   # degrade with one plain line, not a traceback (v0.6.9 old-Python profile)
+    print("Watchtower needs Python 3.8 or newer; this computer has " + ".".join(map(str, sys.version_info[:3])) + ". Nothing was run.")
+    sys.exit(3)
 import argparse, concurrent.futures, datetime as dt, difflib, gzip, hashlib, html, json, math, os, platform, re, shutil, stat, subprocess, sys, tempfile, time, traceback
 
 VERSION = "0.6.8"
@@ -3422,7 +3426,7 @@ def _rollcall(args, rdir):
     rooms_file = write_rooms(roster_rooms(roster)) if roster is not None else "no roster saved: rooms.txt left as it was"
     fs, bots = rollcall_findings(rdir)
     removed = sum(1 for fn in os.listdir(rdir) if os.path.isfile(os.path.join(rdir, fn)) or os.path.islink(os.path.join(rdir, fn))) if os.path.isdir(rdir) and not os.path.islink(rdir) else 0
-    print(fit({"bots": bots, "findings": [dict(compact(f), key=f["key"]) for f in sort_findings(fs)][:30], "by_severity": by_sev(fs), "rooms_file": rooms_file,
+    print(fit({"bots_checked": len(bots), "bots": bots, "findings": [dict(compact(f), key=f["key"]) for f in sort_findings(fs)][:30], "by_severity": by_sev(fs), "rooms_file": rooms_file,
                "raw_replies_deleted": removed, "counted_in_score": False,
                "recommend_each_bot_adds": ROLLCALL_RULE}))
     ledger({"event": "rollcall", "bots": len(bots), "findings": len(fs)})
