@@ -5644,6 +5644,13 @@ def self_check():
             problems.append(f"{rel} is missing or not a plain file")
         elif sha256_file(p) != want:
             problems.append(f"{rel} changed since install")
+    listed = {l.split(None, 1)[1].lstrip("*").strip() for l in man.splitlines() if len(l.split(None, 1)) == 2} | {"MANIFEST.sha256"}
+    for dp, dns, fns in os.walk(root):                  # a file added to the release folder (red-team, v0.6.9): a skill there passes
+        dns[:] = [d for d in dns if not (dp == root and d == ".git") and d != "__pycache__"]   # as Watchtower's own
+        for fn in fns:
+            rel = os.path.relpath(os.path.join(dp, fn), root)
+            if rel not in listed:
+                problems.append(f"{rel} is not in the release")
     head = git_head(root)
     rec_path = state_path(COMMIT_FILE)
     rec = (read_text(rec_path) or "").strip()

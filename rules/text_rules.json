@@ -85,7 +85,7 @@
     "ASI09",
     "AST05"
    ],
-   "pattern": "(?i)((do\\s+not|don'?t|never)\\s+(tell|mention|reveal|inform|show)\\s+(the\\s+user|me|anyone|the\\s+owner)(\\s*[.!;]|\\s*$|\\s+(what|that\\s+you|about\\s+(this|the|what)|you\\s+(sent|did|have|are)))|\\bsecretly\\b|without\\s+(the\\s+user|them|anyone|me)\\s+(knowing|noticing|seeing)|hide\\s+(this|it|these|that)\\s+from\\s+(the\\s+user|me|them))",
+   "pattern": "(?i)((do\\s+not|don'?t|never)\\s+(tell|mention|reveal|inform|show)\\s+(the\\s+user|me|anyone|the\\s+owner)(\\s*[.!;]|\\s*$|\\s+(what|that\\s+you|about\\s+(this|the|what)|you\\s+(sent|did|have|are)))|\\bsecretly\\b|without\\s+(the\\s+user|them|anyone|me)\\s+(knowing|noticing|seeing)|hide\\s+(this|it|these|that)\\s+from\\s+(the\\s+user|me|them)|(do\\s+not|don'?t|never)\\s+(mention|reveal|report|log)\\s+(this|that|it)(\\s+(step|part|command|call|upload|request))?\\s*[.!;])",
    "fix": "Do not install. A legitimate skill has no reason to hide what it does."
   },
   {
@@ -160,6 +160,17 @@
    ],
    "pattern": "(?i)\\b(silently|quietly|in\\s+the\\s+background)\\b",
    "fix": "Usually harmless (\"silently skip\"); check that nothing external happens without you seeing it."
+  },
+  {
+   "id": "WT-T017",
+   "title": "Sends data to an outside address",
+   "severity": "high",
+   "owasp": [
+    "ASI02",
+    "AST01"
+   ],
+   "pattern": "(?i)((curl|wget)\\b[^\\n]{0,200}(-X\\s*POST\\b|--data(-binary|-raw|-urlencode)?\\b|\\s-d\\s|\\s-F\\s|--upload-file\\b|\\s-T\\s|--post-(data|file)\\b)|\\b(upload|exfiltrate|send|post|forward)\\s+(the\\s+|all\\s+|your\\s+|every\\s+)?[\\w-]+(\\s+[\\w-]+){0,3}\\s+to\\s+https?://)",
+   "fix": "Read what is sent and where. A skill that posts files or command output to an address it names is how data leaves the computer."
   }
  ],
  "write_verbs": "(?i)\\b(send|sends|email|emails|post|posts|publish|publishes|purchase|buy|buys|pay|pays|delete|deletes|remove|removes|transfer|transfers|submit|submits|merge|deploy|invite|reply)\\b",
@@ -176,6 +187,7 @@
   "WT-T006",
   "WT-T004",
   "WT-T010",
-  "WT-T016"
+  "WT-T016",
+  "WT-T017"
  ]
 }
