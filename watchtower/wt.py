@@ -452,6 +452,9 @@ def _skill_of(f):
     return (skill_root(p) if p.startswith("/") and os.path.exists(p) else None) or p
 
 
+NO_OPINION = frozenset(("WT-X004", "WT-R010"))   # "couldn't finish" / "didn't parse": facts about the run, not the content
+
+
 def corroborated(f, findings):
     """A pattern finding is backed up when, at the same file or skill folder (one inside the other), there is
     - an evidence finding, or
@@ -461,8 +464,8 @@ def corroborated(f, findings):
     here, src, skill = _place(f), f.get("source", "watchtower"), _skill_of(f)
     loud = lambda g: (g.get("severity_was") or g["severity"]) in ("critical", "high")
     for g in findings:
-        if g is f:
-            continue
+        if g is f or g["rule"] in NO_OPINION:
+            continue                            # a scanner that didn't finish says nothing about the content (DQ-014)
         if _covers(here, _place(g)) and (is_evidence(g) or g.get("source", "watchtower") != src):
             return True
         if loud(f) and loud(g) and g["rule"] != f["rule"] and not is_evidence(g) and _covers(skill, _skill_of(g)):
@@ -3416,8 +3419,54 @@ PREPUB_RULES = [
 ]
 
 
+NAMES_FILE = ("exports", "names.txt")
+
+
+def known_names(shared):
+    """Personal names that must not ship: the owner's name and other names in exports/names.txt (one per line, written at
+    setup), plus every Bot or person on the saved roll-call roster. The Bot being shared may name itself."""
+    names = [l.strip() for l in (read_text(os.path.join(home(), *NAMES_FILE)) or "").splitlines() if l.strip() and not l.startswith("#")]
+    roster = load_json(os.path.join(home(), *ROSTER_FILE), None)
+    items = roster.get("entries", roster.get("roster", [])) if isinstance(roster, dict) else roster
+    for e in items if isinstance(items, list) else []:
+        if isinstance(e, dict) and isinstance(e.get("name"), str) and str(e.get("kind", "")).lower() in BOT_KINDS:
+            names.append(e["name"].strip())
+    skip = {"watchtower", (shared or "").lower()}
+    return sorted({n for n in names if len(n) >= 3 and n.lower() not in skip})
+
+
+def _body(t):
+    t = t or ""
+    if t.startswith("---"):
+        end = t.find("\n---", 3)
+        t = t[end + 4:] if end != -1 else t
+    return re.sub(r"\s+", " ", t.replace("\u2019", "'")).strip()
+
+
+def prepublish_extra(where, t, names):
+    out = []
+    for n in names:   # DQ-015
+        for m in re.finditer(r"(?<![\w-])" + re.escape(n) + r"(?![\w-])", t):
+            out.append(finding("WT-PP08", "Owner or Bot name", "high", ["AST04", "LLM02"], f"{where}:{line_of(t, m.start())}", n,
+                               "Replace the name with 'the owner' or 'another Bot': a template ships to strangers."))
+    old = {os.path.basename(x) for x in OLD_CANARY_PATHS + PUBLISHED_CANARY_PATHS} | set(OLD_CANARY_PATHS + PUBLISHED_CANARY_PATHS)
+    for x in sorted(old):   # DQ-016: never print the location itself
+        i = t.find(x)
+        if i != -1:
+            out.append(finding("WT-PP10", "Names a decoy location from an older release", "high", ["AST04"], f"{where}:{line_of(t, i)}",
+                               "an old fixed decoy location (not shown)", "Refresh this text from the current release; decoys now have random names."))
+            break
+    if "getting-started" in os.path.basename(where):
+        cur = read_text(os.path.join(SELF_ROOT, "bot", "getting-started.md"))
+        if cur is not None and _body(t) != _body(cur):
+            out.append(finding("WT-PP09", "Getting-started is older than this Watchtower", "high", ["AST04"], where, "differs from app/bot/getting-started.md",
+                               "Replace the saved getting-started skill's body with /workspace/watchtower/app/bot/getting-started.md, then run prepublish again."))
+    return out
+
+
 def cmd_prepublish(args):
     rules = load_rules()
+    names = known_names(os.path.basename(os.path.normpath(args.path)) if args.path != "-" else "")
     paths = []
     if args.path == "-":
         texts = [("stdin", sys.stdin.read())]
@@ -3442,6 +3491,7 @@ def cmd_prepublish(args):
                         continue
                 fs.append(finding(rid, title, sev, ["AST04", "LLM02"], f"{where}:{line_of(t, m.start())}", mask(ev) if rid in ("WT-PP01", "WT-PP02") else ev[:120],
                                   "Remove or generalize it before you create the template: anything in a description, skill or routine ships to every installer."))
+        fs += prepublish_extra(where, t, names)
         if not has_approval(t, rules) and rules["write_verbs"].search(t):
             fs.append(finding("WT-PP07", "No approval boundary", "high", ["ASI02"], where, "no approval line",
                               "Add: never send, post, buy, publish, delete, or change settings without my approval."))
