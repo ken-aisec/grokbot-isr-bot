@@ -17,7 +17,7 @@ Commands
 
 State lives in $WATCHTOWER_HOME (default /workspace/watchtower).
 """
-import argparse, datetime as dt, difflib, gzip, hashlib, html, json, math, os, platform, re, shutil, stat, subprocess, sys, tempfile, time, traceback
+import argparse, concurrent.futures, datetime as dt, difflib, gzip, hashlib, html, json, math, os, platform, re, shutil, stat, subprocess, sys, tempfile, time, traceback
 
 VERSION = "0.6.8"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1430,13 +1430,18 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
     weight = {d: skill_weight(d) for d in run}
     # Big skills, and skills carrying files that aren't text (slide decks, images, archives), are the ones that hang a scanner.
     # Each runs on its own, after the quick ones, so a hang costs one short launch instead of a whole batch.
-    heavy = [d for d in run if weight[d][0] > ENGINE_HEAVY_BYTES or weight[d][1] > ENGINE_HEAVY_FILES or has_binary(d)]
-    light = [d for d in run if d not in heavy]
+    # DQ-013: skills a scanner already gave up on are retried last, alone, and only with time to spare, so new or changed skills
+    # are never stuck behind them. v0.6.8 retried them first-come, inside the normal batches, and each one jammed a batch.
+    retry = [d for d in run if (cache.get(d) or {}).get("stuck") and (cache[d].get("hash") == hashes[d])]
+    fresh = [d for d in run if d not in retry]
+    heavy = [d for d in fresh if weight[d][0] > ENGINE_HEAVY_BYTES or weight[d][1] > ENGINE_HEAVY_FILES or has_binary(d)]
+    light = [d for d in fresh if d not in heavy]
     queue = [light[i:i + size] for i in range(0, len(light), size)] + [[d] for d in heavy]   # big skills alone, after the quick ones
-    while queue:
+    retry_q = [[d] for d in retry]
+    while queue or retry_q:
         if left_s() <= 0:
             break
-        chunk = queue.pop(0)
+        chunk = queue.pop(0) if queue else retry_q.pop(0)
         cap = ENGINE_LAUNCH_BASE + ENGINE_LAUNCH_PER_SKILL * len(chunk)   # a launch that takes longer than this is stuck, not busy
         if len(chunk) == 1:
             cap = max(cap, ENGINE_SOLO_LIMIT)                            # alone, a slow skill only costs its own time
@@ -1446,10 +1451,17 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
             mapping = stage_skills(chunk, stage)
             set_progress("SkillSpector and husk", scanned, len(todo), started)
             # the budget is checked inside the batch too: each engine only gets the time that is left
-            if ss_exe:
-                ss, ss_err = (skillspector_batch(ss_exe, stage, mapping, min(cap, left_s())) if left_s() > 0 else ({}, TIMED_OUT))
-            if hk_exe and (not ss_err or (ss_err == TIMED_OUT and len(chunk) == 1)):   # a lone skill SkillSpector can't finish still gets husk
-                hk, hk_err = (husk_batch(hk_exe, stage, mapping, min(cap, left_s())) if left_s() > 0 else ({}, TIMED_OUT))
+            # both engines at once (DQ-013): a batch costs the slower engine's time, not the sum
+            lim = min(cap, left_s())
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                f_ss = pool.submit(skillspector_batch, ss_exe, stage, mapping, lim) if ss_exe and lim > 0 else None
+                f_hk = pool.submit(husk_batch, hk_exe, stage, mapping, lim) if hk_exe and lim > 0 else None
+                if ss_exe:
+                    ss, ss_err = f_ss.result() if f_ss else ({}, TIMED_OUT)
+                if hk_exe:
+                    hk, hk_err = f_hk.result() if f_hk else ({}, TIMED_OUT)
+            if ss_err and not (ss_err == TIMED_OUT and len(chunk) == 1):   # a lone skill SkillSpector can't finish still gets husk
+                hk, hk_err = {}, hk_err
         finally:
             shutil.rmtree(stage, ignore_errors=True)
         if TIMED_OUT in (ss_err, hk_err):
@@ -1458,8 +1470,8 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
                     save_json(state_path("engine_tune.json"), {"chunk": max(1, len(chunk) // 2), "at": now()})
                 break
             who = "SkillSpector" if ss_err == TIMED_OUT else "husk"
-            if len(chunk) > 1:                 # one skill in here is jamming the scanner: run them one at a time, biggest first
-                queue[:0] = [[d] for d in sorted(chunk, key=lambda d: weight[d], reverse=True)]
+            if len(chunk) > 1:                 # one skill in here is jamming the scanner: run them one at a time, smallest first,
+                queue += [[d] for d in sorted(chunk, key=lambda d: weight[d])]   # after the batches still waiting (DQ-013)
                 continue
             d = chunk[0]                       # found it: remember, report it, and stop spending every run on it
             entry = {"hash": hashes[d], "stuck": who, "at": now(), "limit": cap}

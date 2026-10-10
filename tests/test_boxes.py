@@ -652,6 +652,30 @@ class MainBoxLessons(Box):
         stuck = [f for f in self.snap()["findings"] if f["rule"] == "WT-X004"]
         self.assertEqual([f["where"] for f in stuck], [jam])                    # the one that hung is named, the rest are done
 
+    def test_dq013_changed_skills_are_scanned_before_old_stuck_ones_are_retried(self):
+        """Main box, v0.6.8 (DQ-013): 4 of 34 new or changed skills in ten minutes. Six skills SkillSpector had given up on were
+        retried first-come (v0.6.7 raised the solo limit, so every old 'stuck' entry looked due), each jamming a batch and then
+        a solo launch, and the changed skills behind them waited."""
+        ds = self.skills(34)
+        jams = ds[3::6][:6]
+        for d in jams:
+            open(os.path.join(d, "notes.md"), "w").write("JAMMER\n")
+        self.scanners(skillspector=JAM_SS)
+        wt.ENGINE_BUDGET, wt.ENGINE_LAUNCH_BASE, wt.ENGINE_LAUNCH_PER_SKILL, wt.ENGINE_SOLO_LIMIT = 120, 2, 0, 2
+        self.audit()
+        cache = wt.load_json(wt.state_path("engine_cache.json"), {})
+        self.assertEqual(sorted(d for d in cache if cache[d].get("stuck")), sorted(jams))
+        for d in ds:                                                              # every other skill changes
+            if d not in jams:
+                open(os.path.join(d, "SKILL.md"), "a").write("Changed.\n")
+        wt.ENGINE_BUDGET, wt.ENGINE_LAUNCH_BASE, wt.ENGINE_LAUNCH_PER_SKILL, wt.ENGINE_SOLO_LIMIT = 14, 3, 0.4, 6
+        t0 = time.monotonic()
+        self.audit()
+        self.assertLess(time.monotonic() - t0, 40)
+        cache = wt.load_json(wt.state_path("engine_cache.json"), {})
+        fresh = [d for d in ds if d not in jams]
+        self.assertEqual([d for d in fresh if not cache[d].get("engines") or cache[d]["hash"] != wt.skill_dir_hash(d)], [])   # all 28 scanned
+
     def test_copies_of_one_skill_are_scanned_once(self):
         """Main box, v0.6.7 (DQ-010): the audit checked 7 of 41 new or changed skills in its seven minutes. Most of the 41 were
         the same three assessment skills, byte for byte, in eight clones of one repo (a 1.4 MB slide deck makes each one a solo
