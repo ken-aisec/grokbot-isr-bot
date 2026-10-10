@@ -754,7 +754,17 @@ class Features(unittest.TestCase):
         return dirs
 
     def _launches(self):
-        return [l.split() for l in open(self.log).read().splitlines()]
+        """Launch log. Since v0.6.9 (DQ-013) the two engines of one batch run at the same time, so which of the pair writes
+        first is a race; a batch's pair is put back in ss, hk order. Batches still run one after another."""
+        ls = [l.split() for l in open(self.log).read().splitlines()]
+        i = 0
+        while i + 1 < len(ls):
+            if ls[i][0] == "hk" and ls[i + 1][0] == "ss" and ls[i][1:] == ls[i + 1][1:]:
+                ls[i], ls[i + 1] = ls[i + 1], ls[i]
+                i += 2
+                continue
+            i += 1 if ls[i][0] != "ss" or i + 1 >= len(ls) or ls[i + 1][0] != "hk" else 2
+        return ls
 
     def test_engines_launch_once_per_batch_not_once_per_skill(self):
         dirs = self._fake_engines(95)
