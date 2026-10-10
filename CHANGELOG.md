@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased (v0.6.9 scope)
+### Red-team fixes (first)
+- A skill that reads credential files and posts them out was one lone pattern match ("Worth a look", no severity). New rule WT-T017 (sends data to an outside address: curl/wget POST or upload, "upload ... to https://"), and WT-T008 now catches "don't mention this step", so the attack is corroborated and Confirmed critical.
+- The self-check flags any file added to the installed release folder ("not in the release"). A skill dropped into app/skills was treated as Watchtower's own.
+
+### DQ fixes
+- DQ-013: new or changed skills are scanned before skills a scanner already gave up on; those are retried last, alone, with time to spare. SkillSpector and husk run at the same time on each batch. A jammed batch's skills are retried one by one behind the batches still waiting.
+- DQ-014: a scanner that didn't finish (WT-X004) or a reply that didn't parse (WT-R010) never corroborates a pattern finding.
+- DQ-015: prepublish flags the owner's and other Bots' names (WT-PP08) from exports/names.txt and the saved roster.
+- DQ-016: prepublish flags a getting-started that differs from the release (WT-PP09) and any old fixed decoy location (WT-PP10, location never printed).
+
+### Other
+- The daily-watch routine lists every finding it dismissed (`wt.py dismiss --list`: rule, where, reason), even on NO_CHANGES.
+- Environment profiles under tests/profiles: empty account, power user (24 Bots, 120 skills), no git or scanners, old Python, network blocked, odd permissions and layouts, strict Auto-review, emoji and non-English names. Python older than 3.8 stops with one plain line. Roll-call output keeps `bots_checked` when its list is trimmed.
+
 ## v0.6.8 — 2026-10-10
 ### Adversarial-review fixes (first in v0.6.8)
 - Roll-call replies are deleted on every path: NOT RUN without the owner's yes, a run that stops partway, and a finished run. The daily check removes any reply file older than an hour and logs it.
