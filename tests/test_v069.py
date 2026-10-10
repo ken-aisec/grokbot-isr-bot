@@ -95,3 +95,23 @@ class Prepublish(Base):
         cur = open(os.path.join(ROOT, "bot", "getting-started.md")).read()
         code, r = self.stage({"skill-getting-started.md": "---\nname: getting-started\ndescription: First run.\n---\n\n" + cur})
         self.assertFalse({"WT-PP09", "WT-PP10"} & {f["rule"] for f in r["findings"]}, r)
+
+
+class DailyListsDismissals(Base):
+    def test_the_routine_lists_what_it_dismissed(self):
+        md = os.path.join(self.tmp, "s", "SKILL.md"); os.makedirs(os.path.dirname(md))
+        open(md, "w").write("# x\nNever send anything.\n")
+        f = wt.label_findings([wt.finding("WT-T013", "t", "high", ["X"], md + ":2", "send", "fix")])[0]
+        wt.save_json(wt.state_path("last_findings.json"), {"findings": [f]})
+        code, out, _ = self.run_wt("dismiss", "--list")
+        self.assertEqual(out.strip(), "NONE_DISMISSED")
+        self.assertEqual(self.run_wt("dismiss", f["key"], "--reason", "the line says never send")[0], 0)
+        code, out, _ = self.run_wt("dismiss", "--list")
+        rows = json.loads(out)["dismissed"]
+        self.assertEqual([(r["rule"], r["reason"]) for r in rows], [("WT-T013", "the line says never send")])
+        self.assertTrue(rows[0]["where"].endswith("SKILL.md:2"))
+        code, out, _ = self.run_wt("dismiss", "--list", "--since", "2999-01-01")
+        self.assertEqual(out.strip(), "NONE_DISMISSED")
+        t = open(os.path.join(ROOT, "routines", "daily-watch.md")).read()
+        self.assertIn("wt.py dismiss --list", t); self.assertIn("Dismissed: <rule> at <where>: <reason>", t)
+        self.assertIn("even when the daily check printed NO_CHANGES", t)

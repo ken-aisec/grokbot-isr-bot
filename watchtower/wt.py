@@ -2473,7 +2473,25 @@ def dismiss(key, reason):
     return ok, why
 
 
+def dismissed_since(since):
+    out = []
+    for l in (read_text(state_path(DISMISS_LOG)) or "").splitlines():
+        try:
+            e_ = json.loads(l)
+        except ValueError:
+            continue
+        if e_.get("action") == "dismissed" and e_.get("at", "") >= since:
+            out.append({"rule": e_.get("rule"), "where": short_path(str(e_.get("where", "")).split(":")[0]) + (":" + e_["where"].rsplit(":", 1)[1] if re.search(r":\d+$", str(e_.get("where", ""))) else ""),
+                        "reason": e_.get("reason", "")})
+    return out
+
+
 def cmd_dismiss(args):
+    if args.list or not args.key:
+        since = args.since or (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=24)).isoformat()
+        rows = dismissed_since(since)
+        print(fit({"dismissed": rows}) if rows else "NONE_DISMISSED")
+        return 0
     ok, why = dismiss(args.key, args.reason)
     print(("DISMISSED " if ok else "KEPT ") + why)
     return 0 if ok else 1
@@ -5682,7 +5700,8 @@ def main_inner(argv=None):
     sub.add_parser("status")
     sub.add_parser("report")
     sub.add_parser("breakdown")
-    dm = sub.add_parser("dismiss", help="drop a Worth-a-look finding shown to be a false alarm (logged)"); dm.add_argument("key"); dm.add_argument("--reason", default="")
+    dm = sub.add_parser("dismiss", help="drop a Worth-a-look finding shown to be a false alarm (logged)"); dm.add_argument("key", nargs="?"); dm.add_argument("--reason", default="")
+    dm.add_argument("--list", action="store_true", help="what was dismissed (rule, where, reason); last 24 hours unless --since"); dm.add_argument("--since")
     sh = sub.add_parser("show"); sh.add_argument("rule"); sh.add_argument("--limit", type=int, default=15)
     c = sub.add_parser("canary"); c.add_argument("action", choices=["plant", "status", "remove"]); c.add_argument("--token-file")
     fx = sub.add_parser("fix"); fx.add_argument("--apply", action="store_true"); fx.add_argument("--roots", nargs="*")
