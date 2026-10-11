@@ -11,7 +11,7 @@
 - DQ-015: prepublish flags the owner's and other Bots' names (WT-PP08) from exports/names.txt and the saved roster.
 - DQ-016: prepublish flags a getting-started that differs from the release (WT-PP09) and any old fixed decoy location (WT-PP10, location never printed).
 
-### Adversarial review R01-R18 (Codex review, reproduced by Claude Oct 11)
+### Adversarial review R01-R18 (found in Codex's adversarial review; replay tests by Forge)
 - R01: roll-call never deletes without the owner's yes (Ken's decision); an approved run deletes only in Watchtower's own roll-call folder, never through a link and never in a `--dir` folder. The daily check sweeps replies older than an hour.
 - R02: the cleanup and revet approvals hold exactly the rows shown after trimming; a target that grew since the preview needs a new one.
 - R03: a scanner run counts only with exit 0/1, a valid result and every skill back; an error with `{}` is never cached as clean.
