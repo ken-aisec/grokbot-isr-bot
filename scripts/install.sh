@@ -11,7 +11,9 @@ if [[ "${1:-}" != "--scanners" ]]; then
   TAG="${1:?usage: install.sh <tag> [commit]  (for example v0.6.8)}"; WANT="${2:-}"
   mkdir -p "$WT_HOME"/{state,reports,exports,vet}
   # Private staging (0700, unpredictable name, removed on any exit): nothing else can plant a link in it.
-  STAGE="$(mktemp -d "$WT_HOME/.stage.XXXXXXXX")"; chmod 700 "$STAGE"; trap 'rm -rf "$STAGE"' EXIT
+  STAGE="$(mktemp -d "$WT_HOME/.stage.XXXXXXXX")"; chmod 700 "$STAGE"; OLD="$STAGE/old"
+  # Interrupted between the two moves: put the old working copy back before the stage is removed.
+  trap '[[ ! -e "$WT_HOME/app" && -e "$OLD" ]] && /bin/mv "$OLD" "$WT_HOME/app"; rm -rf "$STAGE"' EXIT; trap 'exit 130' INT TERM HUP
   NEW="$STAGE/app"
   git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$TAG" "$REPO" "$NEW"
   GOT="$(git -C "$NEW" rev-parse HEAD)"
@@ -22,7 +24,6 @@ if [[ "${1:-}" != "--scanners" ]]; then
   (cd "$NEW" && sha256sum --quiet -c MANIFEST.sha256) || { echo "MANIFEST CHECK FAILED - not installing"; exit 1; }
   # Try the new copy before it replaces anything; the working copy and its commit record are only swapped after it runs.
   python3 "$NEW/watchtower/wt.py" --version >/dev/null 2>&1 || { echo "ACTIVATION CHECK FAILED - the new version doesn't start here; the installed copy is unchanged"; exit 1; }
-  OLD="$STAGE/old"
   [[ -e "$WT_HOME/app" ]] && mv "$WT_HOME/app" "$OLD"
   PREV="$(cat "$WT_HOME/state/installed_commit" 2>/dev/null || true)"
   mv "$NEW" "$WT_HOME/app"
