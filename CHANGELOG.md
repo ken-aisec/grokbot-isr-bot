@@ -11,6 +11,16 @@
 - DQ-015: prepublish flags the owner's and other Bots' names (WT-PP08) from exports/names.txt and the saved roster.
 - DQ-016: prepublish flags a getting-started that differs from the release (WT-PP09) and any old fixed decoy location (WT-PP10, location never printed).
 
+### Oct 11 batch
+- WT-S004: password-vault and hosting consoles (Bitwarden, 1Password, Vercel, Cloudflare, Okta...) count as sensitive sites. Severity unchanged: the sessions are real and every Bot can use them.
+- New WT-S005 "New sign-in in the shared browser" (high, Confirmed): a sensitive site that gets its first session since the last audit. Reads only host and creation time from the browser's cookie database, never names or values. First run is a baseline.
+- DQ-017: plugins that arrive together from the platform catalog (same marketplace and commit, within 10 minutes, no hooks, scripts or local MCP programs) are one WT-I005 info note, not a new-install finding each.
+- DQ-018: roll-call findings for Bots no longer on the saved roster are dropped at audit time (from the state file too); the audit skill saves the roster first.
+- DQ-019: `fix --revet` touches only the skills the preview listed (saved in state/revet_plan.json); the preview shows the untrimmed count.
+- DQ-020: Rust lockfiles: vulnerable crates get `cargo update -p <crate>@<have> --precise <fixed>` behind the same `--upgrade-projects` yes; a crate cargo refuses is put back; no cargo means a clear "install Rust with rustup" message, nothing installed.
+- DQ-021: quarantine takes a skill copy in the workspace that two engines flag (WT-X003), and restores it; platform and Watchtower folders still refused.
+- Tests no longer read this computer's real Grok Bot settings.
+
 ### Other
 - The daily-watch routine lists every finding it dismissed (`wt.py dismiss --list`: rule, where, reason), even on NO_CHANGES.
 - Environment profiles under tests/profiles: empty account, power user (24 Bots, 120 skills), no git or scanners, old Python, network blocked, odd permissions and layouts, strict Auto-review, emoji and non-English names. Python older than 3.8 stops with one plain line. Roll-call output keeps `bots_checked` when its list is trimmed.

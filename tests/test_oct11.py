@@ -201,3 +201,88 @@ class DQ018SkillSavesRoster(unittest.TestCase):
     def test_the_audit_skill_saves_the_current_roster_first(self):
         t = open(os.path.join(ROOT, "skills", "watchtower-audit", "SKILL.md")).read()
         self.assertLess(t.index("exports/roster.json"), t.index("wt.py audit"))
+
+
+FAKE_CARGO = r'''#!/usr/bin/env python3
+import re, sys
+a = sys.argv[1:]
+if a[:1] == ["--version"]:
+    print("cargo 1.90.0"); sys.exit(0)
+if a[:1] == ["update"]:
+    spec, want = a[a.index("-p") + 1], a[a.index("--precise") + 1]
+    name, have = spec.split("@")
+    if want.startswith("9."):
+        print("error: failed to select a version for the requirement", file=sys.stderr); sys.exit(101)
+    t = open("Cargo.lock").read()
+    t2 = re.sub(r'(name = "%s"\nversion = )"%s"' % (re.escape(name), re.escape(have)), r'\1"%s"' % want, t)
+    open("Cargo.lock", "w").write(t2); sys.exit(0)
+sys.exit(2)
+'''
+
+
+class DQ020CargoUpgrade(Box):
+    """Main box, Oct 11: two WT-D002 highs (pyo3 0.26.0, quick-xml 0.39.4) in a Rust repo cloned into a research-run folder;
+    fix --upgrade and --upgrade-projects skipped crates.io. Fixed versions here are made up for the fixture."""
+
+    def repo(self):
+        d = os.path.join(self.ws, "research-runs", "x-run", "repo-x", "phoenix"); os.makedirs(d)
+        lock = ('version = 4\n\n[[package]]\nname = "pyo3"\nversion = "0.26.0"\n\n[[package]]\nname = "quick-xml"\nversion = "0.39.4"\n\n'
+                '[[package]]\nname = "serde"\nversion = "1.0.200"\n')
+        open(os.path.join(d, "Cargo.lock"), "w").write(lock)
+        open(os.path.join(d, "Cargo.toml"), "w").write('[package]\nname = "phoenix"\nversion = "0.1.0"\n')
+        rng = lambda fixed: [{"ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": fixed}]}]}]
+        osv = {"results": [{"source": {"path": os.path.join(d, "Cargo.lock")}, "packages": [
+            {"package": {"name": "pyo3", "version": "0.26.0", "ecosystem": "crates.io"},
+             "vulnerabilities": [{"id": "GHSA-aaaa-0001", "affected": [dict(package={"name": "pyo3", "ecosystem": "crates.io"}, **r) for r in rng("0.26.1")]},
+                                 {"id": "RUSTSEC-2026-0001", "affected": [dict(package={"name": "pyo3", "ecosystem": "crates.io"}, **r) for r in rng("0.26.2")]}],
+             "groups": [{"max_severity": "7.5"}]},
+            {"package": {"name": "quick-xml", "version": "0.39.4", "ecosystem": "crates.io"},
+             "vulnerabilities": [{"id": "RUSTSEC-2026-0002", "affected": [dict(package={"name": "quick-xml", "ecosystem": "crates.io"}, **r) for r in rng("0.39.5")]}],
+             "groups": [{"max_severity": "7.5"}]}]}]}
+        self.scanners(osv_scanner="#!/bin/sh\ncat <<'EOF'\n" + json.dumps(osv) + "\nEOF\n")
+        return d
+
+    def fake_cargo(self):
+        p = os.path.join(self.tmp, "fake-cargo"); open(p, "w").write(FAKE_CARGO); os.chmod(p, 0o755)
+        return p
+
+    def test_vulnerable_crates_are_offered_and_fixed_only_on_the_separate_yes(self):
+        self.skills(1); d = self.repo(); self.audit()
+        self.assertEqual(len([f for f in self.snap()["findings"] if f["rule"] == "WT-D002"]), 2)
+        lock = open(os.path.join(d, "Cargo.lock")).read()
+        with mock.patch.object(wt, "cargo_exe", return_value=self.fake_cargo()):
+            prev = json.loads(self.run_cmd("fix", "--roots", *self.roots)[1])
+            cargo = prev["project_upgrades"]["cargo"]
+            self.assertIn("phoenix: pyo3 0.26.0 → 0.26.2", cargo)
+            self.assertIn("phoenix: quick-xml 0.39.4 → 0.39.5", cargo)
+            self.assertIn("--upgrade-projects", prev["project_upgrades"]["ask"])
+            self.run_cmd("fix", "--upgrade", "--roots", *self.roots)                     # the general yes never touches projects
+            self.assertEqual(open(os.path.join(d, "Cargo.lock")).read(), lock)
+            done = json.loads(self.run_cmd("fix", "--upgrade-projects", "--roots", *self.roots)[1])["done"]
+        new = open(os.path.join(d, "Cargo.lock")).read()
+        self.assertIn('name = "pyo3"\nversion = "0.26.2"', new)
+        self.assertIn('name = "quick-xml"\nversion = "0.39.5"', new)
+        self.assertIn('name = "serde"\nversion = "1.0.200"', new)
+        self.assertTrue(any("pyo3 0.26.0 → 0.26.2" in x for x in done), done)
+        self.assertTrue(any("undo copy" in x for x in done), done)
+
+    def test_cargo_missing_fails_cleanly_and_says_how_to_install(self):
+        self.skills(1); d = self.repo(); self.audit()
+        lock = open(os.path.join(d, "Cargo.lock")).read()
+        with mock.patch.object(wt, "cargo_exe", return_value=None):
+            done = json.loads(self.run_cmd("fix", "--upgrade-projects", "--roots", *self.roots)[1])["done"]
+        self.assertTrue(any("cargo isn't installed" in x and "rustup" in x for x in done), done)
+        self.assertEqual(open(os.path.join(d, "Cargo.lock")).read(), lock)
+
+    def test_a_fix_cargo_refuses_puts_the_lockfile_back(self):
+        self.skills(1); d = self.repo()
+        self.audit()
+        st = wt.load_json(wt.state_path("osv_projects.json"), {})
+        st["cargo"][d][0]["want"] = "9.0.0"                                               # needs a Cargo.toml change
+        wt.save_json(wt.state_path("osv_projects.json"), st)
+        lock = open(os.path.join(d, "Cargo.lock")).read()
+        with mock.patch.object(wt, "cargo_exe", return_value=self.fake_cargo()):
+            done = json.loads(self.run_cmd("fix", "--upgrade-projects", "--roots", *self.roots)[1])["done"]
+        self.assertTrue(any("pyo3" in x and "left" in x for x in done), done)
+        self.assertIn('name = "pyo3"\nversion = "0.26.0"', open(os.path.join(d, "Cargo.lock")).read())
+        self.assertIn('version = "0.39.5"', open(os.path.join(d, "Cargo.lock")).read())   # the other crate still got its fix

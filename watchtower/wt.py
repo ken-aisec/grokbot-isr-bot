@@ -4848,7 +4848,7 @@ def osv_findings(roots, notes):
     if not exe:
         notes.append("OSV-Scanner not installed: Node, Go and other project dependencies not checked (install.sh --scanners).")
         return []
-    pkgs = {}
+    pkgs, crates = {}, {}
     for r in roots:
         r = os.path.expanduser(r)
         if not os.path.isdir(r) or r.rstrip("/") == os.path.expanduser("~"):
@@ -4878,12 +4878,17 @@ def osv_findings(roots, notes):
                         worst = max(worst, float(g.get("max_severity") or 0))
                     except ValueError:
                         pass
+                if p.get("ecosystem") == "crates.io" and os.path.basename(src) == "Cargo.lock":
+                    want = crate_fix_version(p.get("name"), p.get("version"), pk.get("vulnerabilities", []))
+                    if want:
+                        crates.setdefault(os.path.dirname(src), {})[p.get("name")] = {"name": p.get("name"), "have": p.get("version"), "want": want, "ids": sorted(ids)[:5]}
                 d = pkgs.setdefault((p.get("ecosystem"), p.get("name"), p.get("version")), {"ids": set(), "sev": 0.0, "dirs": set()})
                 d["ids"].update(ids)
                 d["sev"] = max(d["sev"], worst)
                 d["dirs"].add(os.path.dirname(src))
     save_json(state_path("osv_projects.json"), {"at": now(), "projects": sorted({x for d in pkgs.values() for x in d["dirs"]}),
-                                                "packages": {f"{n} {v}": sorted(d["dirs"]) for (e_, n, v), d in pkgs.items()}})
+                                                "packages": {f"{n} {v}": sorted(d["dirs"]) for (e_, n, v), d in pkgs.items()},
+                                                "cargo": {d: sorted(v.values(), key=lambda x: x["name"]) for d, v in sorted(crates.items())}})
     out = []
     for (eco, name, ver), d in sorted(pkgs.items(), key=lambda kv: str(kv[0])):
         dirs = sorted(d["dirs"])
@@ -5394,6 +5399,70 @@ def npm_projects():
     return out
 
 
+def _ver(v):
+    return tuple(int(x) if x.isdigit() else -1 for x in re.split(r"[.+-]", str(v))[:3])
+
+
+def crate_fix_version(name, have, vulns):
+    """DQ-020: the lowest version that fixes every advisory OSV lists for this crate (the largest of each advisory's first fix
+    above the version in use), or None when an advisory has no fixed version."""
+    want = None
+    for v in vulns:
+        fixes = [e["fixed"] for a in v.get("affected", []) if (a.get("package") or {}).get("name") == name
+                 for r in a.get("ranges", []) for e in r.get("events", []) if e.get("fixed") and _ver(e["fixed"]) > _ver(have)]
+        if not fixes:
+            return None
+        first = min(fixes, key=_ver)
+        want = first if want is None or _ver(first) > _ver(want) else want
+    return want
+
+
+def cargo_exe():
+    return shutil.which("cargo") or next((p for p in (os.path.expanduser("~/.cargo/bin/cargo"),) if os.access(p, os.X_OK)), None)
+
+
+def cargo_projects():
+    """Rust projects with a fixable vulnerable crate, from the last audit. A state file, so each must be in the home or workspace."""
+    data = load_json(state_path("osv_projects.json"), {}) or {}
+    cargo = data.get("cargo") if isinstance(data.get("cargo"), dict) else {}
+    out = {}
+    for d, items in cargo.items():
+        if not os.path.isfile(os.path.join(str(d), "Cargo.lock")) or not isinstance(items, list):
+            continue
+        if owned_path(d, "project", log=False):
+            out[d] = [x for x in items if isinstance(x, dict) and all(isinstance(x.get(k), str) for k in ("name", "have", "want"))
+                      and re.fullmatch(r"[\w.+-]{1,80}", x["name"] + x["have"] + x["want"])]
+        else:
+            NPM_REFUSED.append(d)
+    return {d: v for d, v in out.items() if v}
+
+
+def upgrade_cargo(projects):
+    """`cargo update -p <crate>@<have> --precise <fixed>` per crate, lockfile only; a crate cargo refuses is put back and left."""
+    cargo = cargo_exe()
+    if not cargo:
+        return ["cargo isn't installed on this computer, so the Rust lockfiles were left alone. To fix them, install Rust with rustup "
+                "(https://rustup.rs), then ask again. Nothing was installed for you"]
+    done, stamp = [], dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    for d, crates in sorted(projects.items()):
+        name = os.path.basename(d.rstrip("/")) or d
+        lock = os.path.join(d, "Cargo.lock")
+        bdir = os.path.join(home(), "backups", stamp, re.sub(r"\W+", "_", d)[-80:])
+        os.makedirs(bdir, exist_ok=True)
+        shutil.copy2(lock, os.path.join(bdir, "Cargo.lock"))
+        for c in crates:
+            before = open(lock, "rb").read()
+            code, _, err = run([cargo, "update", "-p", f"{c['name']}@{c['have']}", "--precise", c["want"]], 600, cwd=d)
+            if code != 0:
+                open(lock, "wb").write(before)
+                done.append(f"{name}: {c['name']} {c['have']} left as it was. cargo couldn't move it to {c['want']} "
+                            f"({(err.strip().splitlines() or ['error'])[-1][:100]}); that usually needs a Cargo.toml change")
+                continue
+            done.append(f"{name}: {c['name']} {c['have']} → {c['want']} in Cargo.lock ({', '.join(c.get('ids', [])[:3])}). "
+                        f"Your next build picks it up (undo copy: {bdir})")
+    return done
+
+
 def npm_issue_count(npm, d):
     _, out_s, _ = run([npm, "audit", "--json", "--package-lock-only"], 120, cwd=d)
     try:
@@ -5447,6 +5516,7 @@ def cmd_fix(args):
     snap = load_json(state_path("last_findings.json"), {"findings": []})
     fs = snap.get("findings", [])
     ups, projs = python_upgrades(), npm_projects()
+    crates = cargo_projects()
     q_names = {q["name"] for q in quarantine_candidates(fs)}
     in_q = lambda f: bool(q_names) and skill_name(skill_root(f["where"].split(":")[0]) or "") in q_names and skill_tier(f["where"]) == "user"
     only_you = [{"what": g["title"], "how": g["how"], "links": [u for _, u in g.get("links", [])]}
@@ -5466,7 +5536,8 @@ def cmd_fix(args):
                    "old_transcripts_total": {"folders": len(extra["transcripts"]), "files": sum(t["files"] for t in extra["transcripts"])},
                    "upgrades": {"python": [f"{u['name']} {u['have']} → {u['want']}+" for u in ups]},
                    "project_upgrades": {"projects": [os.path.basename(d) or d for d in projs],
-                                        "ask": "Separate question: these are the owner's own projects. Only on a yes to this list, run wt.py fix --upgrade-projects."} if projs else None,
+                                        "cargo": [f"{os.path.basename(d.rstrip('/')) or d}: {c['name']} {c['have']} → {c['want']}" for d, cs in sorted(crates.items()) for c in cs],
+                                        "ask": "Separate question: these are the owner's own projects. Only on a yes to this list, run wt.py fix --upgrade-projects."} if projs or crates else None,
                    "decisions": fix_decisions([f for f in fs if not in_q(f)]), "quarantine_possible": quarantine_candidates(fs),
                    "ask_first_rules_missing": bool(rules_needed), "only_you": only_you,
                    "next": "Ask the user one question. On yes run: wt.py fix --apply --owner-said-yes [--skip <cleanup ids or paths they named>] --upgrade --revet --accept <rules they agreed to> "
@@ -5480,6 +5551,7 @@ def cmd_fix(args):
         npm_done = []
         if args.upgrade_projects:                 # the owner's own projects: only with their own yes, never under --upgrade
             npm_done = upgrade_npm(projs) if projs else []
+            npm_done += upgrade_cargo(crates) if crates else []
             for d in NPM_REFUSED:
                 owned_path(d, "project")          # writes the refusal to the ledger
                 npm_done.append(f"{d}: not touched. The project list points outside your home and workspace folders")
