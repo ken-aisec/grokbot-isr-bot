@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (v0.6.9 scope)
+## v0.6.9 — 2026-10-11
 ### Red-team fixes (first)
 - A skill that reads credential files and posts them out was one lone pattern match ("Worth a look", no severity). New rule WT-T017 (sends data to an outside address: curl/wget POST or upload, "upload ... to https://"), and WT-T008 now catches "don't mention this step", so the attack is corroborated and Confirmed critical.
 - The self-check flags any file added to the installed release folder ("not in the release"). A skill dropped into app/skills was treated as Watchtower's own.
