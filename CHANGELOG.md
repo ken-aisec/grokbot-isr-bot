@@ -1,7 +1,8 @@
 # Changelog
 
 ## v0.6.9 — 2026-10-11
-### Unreleased (DQ-022–025, local dev)
+### Unreleased (DQ-022–026, local dev)
+- DQ-026: WT-S004 treats a sensitive domain as signed-in only when a session/auth cookie is present (same `is_session_cookie` test as WT-S005). Visit/analytics cookies (including Mixpanel `_mpxl_sid` and `_gd_session`) no longer put Bitwarden in the sensitive headline or raise high. Regressions in `tests/test_dq026.py`.
 - DQ-022: `SKILL.md` under sample/test folders (`tests`, `fixtures`, `testdata`, `examples`, `docs`, `references`, …) is not an installed skill. One WT-I007 info note lists them; they never move the score. No hard-coded checkout path.
 - DQ-023: quarantine (Watchtower-home quarantine, a workspace `quarantine/` holding folder, or `quarantine.json`) does not count toward the score.
 - DQ-024: fiction in built-in skill templates (e.g. "secretly" in a bundled pptx deck template) is demoted to info and excluded from the score (`not_counted_builtin`). Two scanners agreeing on a marketplace plugin still counts.

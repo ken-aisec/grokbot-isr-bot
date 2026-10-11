@@ -102,6 +102,8 @@ class S005SessionNamePatterns(Box):
             self.assertTrue(wt.is_session_cookie(name), name)
         self.assertFalse(wt.is_session_cookie("logged_in"))
         self.assertFalse(wt.is_session_cookie("notion_browser_id"))
+        self.assertFalse(wt.is_session_cookie("_mpxl_sid"))   # Mixpanel (DQ-026)
+        self.assertFalse(wt.is_session_cookie("_gd_session"))  # analytics (DQ-026)
         self.jar([("ads.example", "id", time.time() - 9000)]); self.skills(1); self.scanners(); self.audit()
         now = time.time()
         self.jar([("chatgpt.com", "__Secure-next-auth.session-token", now - 40),

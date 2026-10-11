@@ -958,10 +958,16 @@ SENSITIVE_DOMAINS = ("anthropic.com", "claude.ai", "openai.com", "chatgpt.com", 
 # Dots/hyphens allowed (chatgpt __Secure-next-auth.session-token). logged_in dropped: GitHub sets logged_in=no for anonymous visits.
 SESSION_COOKIE = re.compile(r"(?i)^([\w.-]*(session|sess)[\w.-]*|sid|ssid|hsid|apisid|sapisid|[\w.-]*_sid|"
                             r"[\w.-]*auth[\w.-]*|[\w.-]*token[\w.-]*|sessionkey)$")
+# Mixpanel (_mpxl_*), GetDisplay (_gd_session): look like session names but are analytics only (DQ-026).
+NOT_SESSION_COOKIE = re.compile(r"(?i)^(_mpxl_[\w.-]+|_gd_session)$")
+
+
 def is_session_cookie(name):
-    """True for real login cookies. Visit/tracking names that fit the pattern (csrf_*) stay out."""
+    """True for real login cookies. Visit/tracking names that fit the pattern (csrf_*, Mixpanel sid, _gd_session) stay out."""
     n = str(name or "")
     if re.match(r"(?i)^csrf", n):
+        return False
+    if NOT_SESSION_COOKIE.match(n):
         return False
     return bool(SESSION_COOKIE.match(n))
 
@@ -1048,7 +1054,8 @@ def new_sign_ins():
 
 
 def browser_sessions(roots):
-    """Grok Bot seeds the shared browser with login cookies. Report which domains, never values."""
+    """Grok Bot seeds the shared browser with login cookies. Report which domains, never values.
+    A sensitive domain is signed-in only when at least one of its cookies is a session/auth cookie (same test as WT-S005)."""
     out, seen = [], set()
     for r in [os.path.expanduser("~/sand-data"), os.path.expanduser("~/agent-data")] + list(roots):
         if not os.path.isdir(r) or os.path.realpath(r) in seen:
@@ -1060,13 +1067,27 @@ def browser_sessions(roots):
             if data is None:
                 continue
             items = data if isinstance(data, list) else data.get("cookies", []) if isinstance(data, dict) else []
-            domains = sorted({str(c.get("domain", "")).lstrip(".") for c in items if isinstance(c, dict) and c.get("domain")})
-            sensitive = [d for d in domains if SENSITIVE_SITE.search(d)]
-            out.append(finding("WT-S004", "Logged-in browser sessions shared by every Bot", "high" if sensitive else "medium",
-                               ["ASI03", "AST06"], p, f"{len(domains)} domains; sensitive: {', '.join(sensitive[:8]) or 'none'}",
-                               "Every Bot can reuse these logins. In the Grok Bot browser, sign out of sites no Bot needs; "
-                               "for AI consoles and admin sites, also log out all sessions from that site's security settings.",
-                               ident="sensitive" if sensitive else "plain"))
+            by_dom = {}
+            for c in items:
+                if not isinstance(c, dict) or not c.get("domain"):
+                    continue
+                d = str(c.get("domain", "")).lstrip(".")
+                by_dom.setdefault(d, []).append(str(c.get("name") or ""))
+            domains = sorted(by_dom)
+            # DQ-026: visit/analytics cookies on a sensitive domain are not a sign-in
+            signed_in = [d for d in domains
+                         if SENSITIVE_SITE.search(d) and any(is_session_cookie(n) for n in by_dom[d])]
+            if signed_in:
+                title, sev, ident = "Logged-in browser sessions shared by every Bot", "high", "sensitive"
+                fix = ("Every Bot can reuse these logins. In the Grok Bot browser, sign out of sites no Bot needs; "
+                       "for AI consoles and admin sites, also log out all sessions from that site's security settings.")
+            else:
+                title, sev, ident = "Shared browser cookies visible to every Bot", "medium", "plain"
+                fix = ("These are cookies every Bot can see. Visit/analytics cookies on sensitive domains are not treated as a "
+                       "sign-in. Clear cookies for sites no Bot needs.")
+            out.append(finding("WT-S004", title, sev, ["ASI03", "AST06"], p,
+                               f"{len(domains)} domains; sensitive: {', '.join(signed_in[:8]) or 'none'}",
+                               fix, ident=ident))
             break
     return out
 
@@ -4738,6 +4759,14 @@ PLAIN_BY_TITLE = {
     KEY_DEAD: ("Old key copies (they no longer work)", "Nothing to revoke; they're just clutter.", "Tell Watchtower \"fix it\" to clear them.", "auto"),
     KEY_UNSURE: ("Keys we couldn't check", "The provider didn't answer, so we can't say if they work.", "If you recognize one, turn it off; otherwise ignore.", "you"),
     KEY_MAYBE: ("Strings that look like keys", "A pattern matched, but no provider confirmed a working key. Usually test data or docs.", "Skim the list; only act if one is a real key.", "you"),
+    # DQ-026: visit-only sensitive domains use the cookies title; signed-in sensitive keep the login headline
+    "Logged-in browser sessions shared by every Bot": (
+        "The shared browser is logged in to sensitive sites", "Every Bot uses the same logins.",
+        "In the Bot browser, sign out of sites no Bot needs.", "you"),
+    "Shared browser cookies visible to every Bot": (
+        "Shared browser cookies (no sensitive sign-in seen)",
+        "Every Bot can see these cookies; visit/analytics cookies are not a login.",
+        "Clear cookies for sites no Bot needs.", "you"),
 }
 
 
