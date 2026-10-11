@@ -1419,12 +1419,18 @@ def ask_first_gaps(text):
 RULE_OBJECTS = re.compile(r"""(https?://\S+|~/\S+|\./\S+|/(?:\S+)|\b[\w.-]+\.(md|txt|json|csv|html?|py|sh|js|ts|ya?ml|pdf|docx?|xlsx?)\b)""", re.I)
 
 
+ASK_FIRST_CLAUSE = re.compile(r"(?i)\b(?:ask\s+(?:me\s+)?first|otherwise\s+ask)\b[^.;\n]*")
+
+
 def lint_auto_review(text, where, check_missing=True):
     out = []
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     for i, raw in enumerate(lines, 1):
         l = RULE_OBJECTS.sub(" ", raw)   # R18: a file name, path or link names a thing (a quoted action is still the action); it isn't the action being allowed
-        if re.search(r"(?i)allow\s+automatically", l) and re.search(r"(?i)\b(everything|anything|all|any)\b|\*|browser|all\s+commands", l):
+        # DQ-027: an "Ask first for any other ..." clause narrows the rule; its "any" isn't breadth. A wildcard inside a link still is.
+        broad_l = ASK_FIRST_CLAUSE.sub(" ", l)
+        wild_obj = any("*" in m.group(0) for m in RULE_OBJECTS.finditer(ASK_FIRST_CLAUSE.sub(" ", raw)))
+        if re.search(r"(?i)allow\s+automatically", l) and (wild_obj or re.search(r"(?i)\b(everything|anything|all|any)\b|\*|browser|all\s+commands", broad_l)):
             out.append(finding("WT-A001", "Broad Allow-automatically rule", "critical", ["ASI03", "ASI09"], f"{where}:{i}", raw,
                                "Delete it. xAI's docs: avoid rules like 'allow everything in the browser'; keep allow rules to one command in one folder."))
         if re.search(r"(?i)allow\s+automatically", l) and re.search(r"(?i)\b(send|sending|sends|email|emails|post|posts|posting|publish\w*|purchase\w*|pay|pays|paying|payments?|delete\w*|transfer\w*|permissions?)\b", l):
