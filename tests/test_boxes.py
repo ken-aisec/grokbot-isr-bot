@@ -10,6 +10,8 @@ from contextlib import redirect_stderr, redirect_stdout
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "watchtower"))
 import wt  # noqa: E402
+# Tests never read this computer's real Grok Bot settings (Oct 11: the owner's live Auto-review rules leaked into the suite).
+wt.NATIVE_SETTINGS[:] = [p for p in wt.NATIVE_SETTINGS if p.startswith("~")]
 
 warnings.simplefilter("ignore", ResourceWarning)
 

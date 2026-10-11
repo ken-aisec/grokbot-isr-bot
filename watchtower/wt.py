@@ -420,7 +420,7 @@ EVIDENCE_RULES = frozenset((
     # Shell history: commands that actually ran on this computer, not wording (Ken, 2026-10-10). H007 is a file-mode fact.
     "WT-H001", "WT-H002", "WT-H003", "WT-H004", "WT-H005", "WT-H006", "WT-H007", "WT-H008", "WT-H009",
     "WT-K001", "WT-K002", "WT-K003", "WT-K004", "WT-K005", "WT-K006", "WT-M001", "WT-P001", "WT-R010",
-    "WT-S003", "WT-S004", "WT-W001", "WT-W002", "WT-X003", "WT-X004"))
+    "WT-S003", "WT-S004", "WT-S005", "WT-W001", "WT-W002", "WT-X003", "WT-X004"))
 HISTORY_SHRANK = "Shell history shrank since last check"
 CONFIRMED, MAYBE_FINE = "Confirmed", "Worth a look (might be fine)"
 # v0.6.8 (Ken, Oct 10, after Cloudflare's MIT-licensed security-audit skill): a "Worth a look" finding carries no severity and
@@ -835,6 +835,52 @@ def owned_path(p, kind, log=True):
 SESSION_FILES = ("chrome-cookie-seed.json", "cookie-seed.json", "cookies.json")
 
 
+SENSITIVE_SITE = re.compile(r"(anthropic|claude|openai|x\.ai|github|google|microsoft|aws|stripe|bank|paypal|slack|notion|"
+                            r"bitwarden|1password|lastpass|dashlane|keeper|vercel|cloudflare|okta)")
+BROWSER_JARS = ("~/chrome-profile/Default/Cookies", "~/.config/google-chrome/Default/Cookies")
+CHROME_EPOCH = 11644473600
+
+
+def browser_jar_hosts():
+    """Sites with a cookie in the shared browser and when the first one was created. Reads only host and creation time from the
+    browser's cookie database (opened read-only); never a cookie's name or value."""
+    import sqlite3
+    for j in BROWSER_JARS:
+        p = os.path.expanduser(j)
+        if not os.path.isfile(p):
+            continue
+        try:
+            c = sqlite3.connect(f"file:{p}?immutable=1", uri=True)
+            rows = c.execute("select host_key, min(creation_utc) from cookies group by host_key").fetchall()
+            c.close()
+        except sqlite3.Error:
+            continue
+        return {str(h).lstrip("."): t / 1_000_000 - CHROME_EPOCH for h, t in rows if h and t}
+    return None
+
+
+def new_sign_ins():
+    """WT-S005: a sensitive site that got its first session in the shared browser since the last look. The first look is a baseline.
+    The sessions WT-S004 lists are carried across box resets by the platform's cookie seed; a new one is something that happened."""
+    hosts = browser_jar_hosts()
+    if hosts is None:
+        return []
+    path = state_path("browser_hosts.json")
+    prev = load_json(path, None)
+    save_json(path, {"at": now(), "hosts": sorted(hosts)})
+    if not isinstance(prev, dict):
+        return []
+    known = set(prev.get("hosts", []))
+    fresh = sorted(h for h in hosts if h not in known and SENSITIVE_SITE.search(h))
+    if not fresh:
+        return []
+    when = lambda h: dt.datetime.fromtimestamp(hosts[h]).strftime("%Y-%m-%d %H:%M")
+    return [finding("WT-S005", "New sign-in in the shared browser", "high", ["ASI03", "AST06"], "shared browser",
+                    "; ".join(f"{h} first session {when(h)}" for h in fresh)[:200],
+                    "Every Bot can now use this login. If neither you nor a Bot you asked signed in there, sign out of that site from its "
+                    "security settings (all sessions) and change its password.", ident=",".join(fresh))]
+
+
 def browser_sessions(roots):
     """Grok Bot seeds the shared browser with login cookies. Report which domains, never values."""
     out, seen = [], set()
@@ -849,7 +895,7 @@ def browser_sessions(roots):
                 continue
             items = data if isinstance(data, list) else data.get("cookies", []) if isinstance(data, dict) else []
             domains = sorted({str(c.get("domain", "")).lstrip(".") for c in items if isinstance(c, dict) and c.get("domain")})
-            sensitive = [d for d in domains if re.search(r"(anthropic|claude|openai|x\.ai|github|google|microsoft|aws|stripe|bank|paypal|slack|notion)", d)]
+            sensitive = [d for d in domains if SENSITIVE_SITE.search(d)]
             out.append(finding("WT-S004", "Logged-in browser sessions shared by every Bot", "high" if sensitive else "medium",
                                ["ASI03", "AST06"], p, f"{len(domains)} domains; sensitive: {', '.join(sensitive[:8]) or 'none'}",
                                "Every Bot can reuse these logins. In the Grok Bot browser, sign out of sites no Bot needs; "
@@ -941,6 +987,7 @@ def audit(roots, exports, quick=False):
     fs += cli_credentials()
     known = {os.path.join(os.path.expanduser("~"), k) for k in KNOWN_CRED_FILES}
     fs += browser_sessions(roots)
+    sign_ins = new_sign_ins()   # kept open EVENT_DAYS with the other one-time events below
     decoys = canary_paths()
     for p in walk(roots, max_depth=6):
         if p in known or p in decoys or os.path.basename(p) in SESSION_FILES:
@@ -1005,7 +1052,7 @@ def audit(roots, exports, quick=False):
     fs += soft("hooks", ("WT-C005",), notes, [], hook_findings, roots, inv)
     soft("decoys", (), notes, None, tend_canaries, notes)
     soft("saved first-run skill", (), notes, None, saved_skill_notes, notes)
-    fs += remember_events(canary_findings() + history_findings(rules))
+    fs += remember_events(canary_findings() + history_findings(rules) + sign_ins)
     if not load_json(state_path("canaries.json"), {}):
         notes.append("No canaries planted: run `wt.py canary plant` for zero-cost tripwires.")
     rc = load_json(state_path("rollcall_findings.json"), None)
