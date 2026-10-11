@@ -723,11 +723,14 @@ MCP_CONFIG = re.compile(r"(?i)^(\.?mcp|mcp[_-]?(config|servers|settings)|[\w-]*[
 
 
 def collect_inventory(roots):
-    inv = {"skills": [], "plugin_files": [], "mcp_configs": []}
+    inv = {"skills": [], "plugin_files": [], "mcp_configs": [], "non_live_skills": []}
     for p in walk(roots):
         fn = os.path.basename(p)
         if fn == "SKILL.md":
-            inv["skills"].append(p)
+            if is_live_skill_path(p):
+                inv["skills"].append(p)
+            else:
+                inv["non_live_skills"].append(p)
         elif MCP_CONFIG.search(fn):
             inv["mcp_configs"].append(p)
         elif fn in ("plugin.json", "marketplace.json") or "/.grok-plugin/" in p or "/.cursor-plugin/" in p:
@@ -849,6 +852,59 @@ def skill_tier(path):
     return "vendor"
 
 
+# DQ-022/023: sample and quarantine folders are not loadable skills (never hard-code a checkout path).
+SAMPLE_SKILL_PATH = re.compile(
+    r"(?i)(^|/)(tests?|__tests__|fixtures?|testdata|examples?|docs|references)(/|$)")
+VENDOR_TEMPLATE_PATH = re.compile(r"(?i)/(templates|examples)/")
+
+
+def is_sample_skill_path(path):
+    """True when the path sits under a test/sample/docs folder segment (FIXTURE_PATH spirit for skills)."""
+    p = os.path.normpath(os.path.abspath(str(path).split(":")[0])).replace(os.sep, "/")
+    return bool(SAMPLE_SKILL_PATH.search(p))
+
+
+def is_quarantined_path(path):
+    """Watchtower-home quarantine, a workspace quarantine/ holding folder, or a path in quarantine.json."""
+    p = os.path.normpath(os.path.abspath(str(path).split(":")[0]))
+    qhome = os.path.normpath(os.path.join(home(), "quarantine"))
+    if p == qhome or _under(p, {qhome}):
+        return True
+    if "quarantine" in p.replace(os.sep, "/").split("/"):
+        return True
+    for e in load_json(state_path("quarantine.json"), []) or []:
+        for k in ("to", "from"):
+            t = e.get(k)
+            if not t:
+                continue
+            tn = os.path.normpath(t)
+            if p == tn or _under(p, {tn}):
+                return True
+    return False
+
+
+def is_vendor_template_file(path):
+    """Example/story files inside a shipped skill (e.g. .grok/bundled/.../templates/*.js). DQ-024."""
+    p = os.path.normpath(str(path).split(":")[0]).replace(os.sep, "/")
+    return any(x in p for x in VENDOR_CODE) and bool(VENDOR_TEMPLATE_PATH.search(p))
+
+
+def is_live_skill_path(path):
+    """A SKILL.md counts as an installed skill unless it sits under quarantine or a sample/test/docs
+    folder (DQ-022/023). User workflow roots are always live (even a skill named docs). Everything else
+    that is not sample/quarantine stays live so unrecognized places still get the full rules and count
+    (R15); sample trees are reported once as info, never scored."""
+    p = os.path.normpath(os.path.abspath(str(path).split(":")[0]))
+    if is_quarantined_path(p):
+        return False
+    roots = user_skill_roots()
+    if _under(p, roots) or _under(os.path.realpath(p), {os.path.realpath(r) for r in roots}):
+        return True
+    if is_sample_skill_path(p):
+        return False
+    return True
+
+
 def owned_path(p, kind, log=True):
     """Every path Watchtower moves or deletes comes from one of its own state files, and anything that can write there
     could aim it anywhere. Before acting, the path is resolved (links followed) and must be inside the place that kind of
@@ -902,8 +958,6 @@ SENSITIVE_DOMAINS = ("anthropic.com", "claude.ai", "openai.com", "chatgpt.com", 
 # Dots/hyphens allowed (chatgpt __Secure-next-auth.session-token). logged_in dropped: GitHub sets logged_in=no for anonymous visits.
 SESSION_COOKIE = re.compile(r"(?i)^([\w.-]*(session|sess)[\w.-]*|sid|ssid|hsid|apisid|sapisid|[\w.-]*_sid|"
                             r"[\w.-]*auth[\w.-]*|[\w.-]*token[\w.-]*|sessionkey)$")
-
-
 def is_session_cookie(name):
     """True for real login cookies. Visit/tracking names that fit the pattern (csrf_*) stay out."""
     n = str(name or "")
@@ -1031,6 +1085,13 @@ def audit(roots, exports, quick=False):
     INCOMPLETE_SKILLS.clear()
     inv = collect_inventory(roots)
     manifest = {}
+    # DQ-022/023: SKILL.md outside loadable locations — one aggregate info note, never scored as installed
+    if inv.get("non_live_skills"):
+        folders = sorted({os.path.dirname(p) for p in inv["non_live_skills"]})
+        fs.append(finding("WT-I007", "SKILL.md outside a loadable skill folder", "info", ["AST09"],
+                          folders[0] if len(folders) == 1 else "sample/test/quarantine",
+                          f"{len(inv['non_live_skills'])} file(s) in {len(folders)} folder(s) (tests, fixtures, examples, docs, or quarantine)",
+                          "No action. Only skills the platform loads are scored; these are listed once for information."))
 
     # 1. skills, plugins, MCP configs on disk
     for skill in inv["skills"]:
@@ -1039,7 +1100,13 @@ def audit(roots, exports, quick=False):
                 t = read_text(p)
                 if t is not None:
                     kind = "vendor" if is_vendor(p) else ("skill" if os.path.basename(p) == "SKILL.md" else "reference")
-                    fs += scan_text(t, p, rules, kind=kind)
+                    batch = scan_text(t, p, rules, kind=kind)
+                    if is_vendor_template_file(p):   # DQ-024: story text in a built-in deck template is not a hidden-action hit
+                        for f in batch:
+                            if f["rule"] in REF_RULES or f["rule"] == "WT-T008":
+                                f["severity"] = "info"
+                                f["title"] = f["title"] + " (example text in a built-in template)"
+                    fs += batch
             manifest[p] = sha256_file(p)
     for p in inv["plugin_files"] + inv["mcp_configs"]:
         t = read_text(p)
@@ -1119,6 +1186,8 @@ def audit(roots, exports, quick=False):
     decoys = canary_paths()
     for p in walk(roots, max_depth=6):
         if p in known or p in decoys or os.path.basename(p) in SESSION_FILES:
+            continue
+        if is_sample_skill_path(p) or is_quarantined_path(p):
             continue
         if os.path.splitext(p)[1].lower() not in TEXT_EXT:
             continue
@@ -1234,7 +1303,7 @@ def audit(roots, exports, quick=False):
                         "is not comparable with the last one. Run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, then audit again.")
         save_json(state_path("engines_used.json"), {"at": now(), "engines": load_json(state_path("engines_used.json"), {})["engines"], "expected": before})
     fs = sort_findings(dedupe(fs))
-    meta = {"inventory": {k: len(v) for k, v in inv.items()}, "notes": notes, "manifest": manifest, "persistence": snap, "scanners_missing": gone,
+    meta = {"inventory": {k: len(v) for k, v in inv.items() if k != "non_live_skills"}, "notes": notes, "manifest": manifest, "persistence": snap, "scanners_missing": gone,
             "skill_dirs": [os.path.dirname(x) for x in inv["skills"]]}
     return fs, meta
 
@@ -2271,7 +2340,13 @@ def builtin(f):
 
 def counts(f):
     """Only what the user owns moves the score. Built-in findings count when they are critical or high (two scanners
-    agreeing a plugin is dangerous still matters); the rest are listed for information."""
+    agreeing a plugin is dangerous still matters); the rest are listed for information.
+    DQ-022/023/024: sample/test folders, quarantine, and fiction inside built-in templates never move the score."""
+    w = f.get("where", "")
+    path = w.split(":")[0]
+    if path and not w.startswith(("rollcall:", "system python package ")):
+        if is_quarantined_path(path) or is_sample_skill_path(path) or is_vendor_template_file(path):
+            return False
     return not builtin(f) or f["severity"] in ("critical", "high")
 
 
@@ -2558,6 +2633,7 @@ def cmd_audit(args):
         out["scanners_missing"] = snap["scanners_missing"]
     if snap.get("stages_skipped"):
         out["stages_skipped"] = snap["stages_skipped"]
+        out["not_checked_this_run"] = list(snap["stages_skipped"])   # DQ-025: same meaning as daily
     out["not_counted_builtin"] = sum(1 for f in snap["findings"] if not counts(f))
     look = [f for f in snap["findings"] if f.get("class") == "pattern"]
     if look:   # no severity, not scored: read each in full and try to show it's a false alarm before showing it (wt.py dismiss)
@@ -2659,9 +2735,18 @@ def cmd_breakdown(args):
         elif f["rule"] in ("WT-X001", "WT-X002", "WT-X003", "WT-X004", "WT-I004"):
             top = "/".join(d.split("/")[:5]) + "/…/" + os.path.basename(w) if d.count("/") > 5 else w
         r["dirs"][top] = r["dirs"].get(top, 0) + 1
+    # DQ-025: full list of open findings by severity (audit JSON may truncate `new`; this does not).
     for (sev, rule, title), r in sorted(rows.items(), key=lambda x: (SEV_ORDER.index(x[0][0]), -x[1]["n"])):
         dirs = ", ".join(f"{k} ×{v}" for k, v in sorted(r["dirs"].items(), key=lambda x: -x[1])[:3])
         print(f"{sev:8} {rule:8} ×{r['n']:<5} {title[:48]:48} {dirs}")
+    confirmed = [f for f in snap["findings"] if f.get("label") == CONFIRMED and f.get("severity") in ("critical", "high", "medium")]
+    if confirmed:
+        print("")
+        print(f"Confirmed (critical/high/medium): {len(confirmed)}")
+        for f in sorted(confirmed, key=lambda x: (SEV_ORDER.index(x["severity"]), x["rule"], x["where"]))[:200]:
+            print(f"  {f['severity']:8} {f['rule']:8} {f['where'][:80]}  {f['title'][:60]}")
+        if len(confirmed) > 200:
+            print(f"  … and {len(confirmed) - 200} more")
     return 0
 
 
@@ -4098,11 +4183,18 @@ def account_context():
     inv = snap.get("inventory", {})
     fs = snap.get("findings", [])
     sess = next((f for f in fs if f["rule"] == "WT-S004"), None)
-    m = re.match(r"(\d+) domains", sess["evidence"]) if sess else None
+    sites = None
+    if sess:
+        ev = sess.get("evidence") or ""
+        m = re.search(r"sensitive:\s*(.+)$", ev)
+        if m:
+            sens = m.group(1).strip()
+            if sens and sens != "none":
+                sites = len([x.strip() for x in sens.split(",") if x.strip()])
     pkg = load_json(state_path("package_vulns.json"), {}) or {}
     rc = load_json(state_path("rollcall_findings.json"), {}) or {}
     return {"mcp": inv.get("mcp_configs", 0), "skills": inv.get("skills", 0), "plugins": inv.get("plugin_files", 0),
-            "sites": int(m.group(1)) if m else None, "packages": pkg.get("packages"), "bots": len(rc.get("bots", [])) or None,
+            "sites": sites, "packages": pkg.get("packages"), "bots": len(rc.get("bots", [])) or None,
             "cli": sum(1 for f in fs if f["rule"] == "WT-S003"), "secrets": sum(1 for f in fs if f["rule"] in ("WT-S001", "WT-S002") and f["severity"] == "critical")}
 
 

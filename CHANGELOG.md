@@ -1,6 +1,13 @@
 # Changelog
 
 ## v0.6.9 — 2026-10-11
+### Unreleased (DQ-022–025, local dev)
+- DQ-022: `SKILL.md` under sample/test folders (`tests`, `fixtures`, `testdata`, `examples`, `docs`, `references`, …) is not an installed skill. One WT-I007 info note lists them; they never move the score. No hard-coded checkout path.
+- DQ-023: quarantine (Watchtower-home quarantine, a workspace `quarantine/` holding folder, or `quarantine.json`) does not count toward the score.
+- DQ-024: fiction in built-in skill templates (e.g. "secretly" in a bundled pptx deck template) is demoted to info and excluded from the score (`not_counted_builtin`). Two scanners agreeing on a marketplace plugin still counts.
+- DQ-025: full audit JSON sets `not_checked_this_run` from `stages_skipped` (same meaning as daily). `wt.py breakdown` lists Confirmed critical/high/medium findings in full when audit `new` was truncated.
+- Regressions in `tests/test_dq022_025.py`, plus a positive control that a bad skill under a live user skill root is still Confirmed.
+
 ### Red-team fixes (first)
 - A skill that reads credential files and posts them out was one lone pattern match ("Worth a look", no severity). New rule WT-T017 (sends data to an outside address: curl/wget POST or upload, "upload ... to https://"), and WT-T008 now catches "don't mention this step", so the attack is corroborated and Confirmed critical.
 - The self-check flags any file added to the installed release folder ("not in the release"). A skill dropped into app/skills was treated as Watchtower's own.
