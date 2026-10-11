@@ -11,6 +11,25 @@
 - DQ-015: prepublish flags the owner's and other Bots' names (WT-PP08) from exports/names.txt and the saved roster.
 - DQ-016: prepublish flags a getting-started that differs from the release (WT-PP09) and any old fixed decoy location (WT-PP10, location never printed).
 
+### Adversarial review R01-R18 (Codex review, reproduced by Claude Oct 11)
+- R01: roll-call never deletes without the owner's yes (Ken's decision); an approved run deletes only in Watchtower's own roll-call folder, never through a link and never in a `--dir` folder. The daily check sweeps replies older than an hour.
+- R02: the cleanup and revet approvals hold exactly the rows shown after trimming; a target that grew since the preview needs a new one.
+- R03: a scanner run counts only with exit 0/1, a valid result and every skill back; an error with `{}` is never cached as clean.
+- R04: the daily check prints NO_CHANGES_BUT_NOT_CHECKED when a stage was skipped; the routine posts it.
+- R05: TruffleHog "not verified" is unverified, never "dead / Nothing to revoke"; copies are cleared only on the owner's yes.
+- R06: a key verdict applies only to the finding on that key's line.
+- R07: per-skill file limit 2000; a larger skill gets WT-I006 and can't be re-approved automatically.
+- R08: folder containment is separator-aware.
+- R09: decoys are opened non-blocking, so a planted FIFO can't hang a run.
+- R10, R11: install.sh stages in a private temp folder, tests the new copy before swapping, and puts the old one back if activation fails; scanner downloads use a private temp folder.
+- R12: `doctor` shares only time, command, Watchtower's own lines and the error type.
+- R13: known-installer exceptions need the exact host; every link in the line must be known.
+- R14: publish.sh takes the reviewed commit ID, needs a clean main checkout, never commits, tags that exact commit and checks main and the tag on GitHub.
+- R15: skills in unrecognized places get the full rules (and count in the score); still no wider permission to change them.
+- R16: stages mark failure explicitly; a failed engine batch keeps the earlier findings.
+- R17: the installer is downloaded by commit (template memory, setup skill, README via the release page).
+- R18: file names, paths, links and quotes in an Allow-automatically rule are not the action allowed.
+
 ### Oct 11 batch
 - WT-S004: password-vault and hosting consoles (Bitwarden, 1Password, Vercel, Cloudflare, Okta...) count as sensitive sites. Severity unchanged: the sessions are real and every Bot can use them.
 - New WT-S005 "New sign-in in the shared browser" (high, Confirmed): a sensitive site that gets its first session since the last audit. Reads only host and creation time from the browser's cookie database, never names or values. First run is a baseline.
