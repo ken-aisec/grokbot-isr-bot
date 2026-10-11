@@ -169,7 +169,7 @@
     "ASI02",
     "AST01"
    ],
-   "pattern": "(?i)((curl|wget)\\b[^\\n]{0,200}(-X\\s*POST\\b|--data(-binary|-raw|-urlencode)?\\b|\\s-d\\s|\\s-F\\s|--upload-file\\b|\\s-T\\s|--post-(data|file)\\b)|\\b(upload|exfiltrate|send|post|forward)\\s+(the\\s+|all\\s+|your\\s+|every\\s+)?[\\w-]+(\\s+[\\w-]+){0,3}\\s+to\\s+https?://)",
+   "pattern": "(?i)((curl|wget)\\b[^\\n|;&]{0,200}(-X\\s*POST\\b|--data(-binary|-raw|-urlencode)?\\b|\\s-d(\\s|@)|\\s-F\\s|--upload-file\\b|\\s-T\\s|--post-(data|file)\\b)|\\b(upload|exfiltrate|forward)\\s+(the\\s+|all\\s+|your\\s+|every\\s+)?[\\w-]+(\\s+[\\w-]+){0,3}\\s+to\\s+https?://|\\b(send|post)\\s+(the\\s+|all\\s+|your\\s+|every\\s+)?([\\w-]+\\s+){0,3}(credentials?|keys?|tokens?|secrets?|passwords?|cookies?|files?|history|env|environment|output|contents?|wallets?|\\.?ssh)\\b(\\s+[\\w-]+){0,3}\\s+to\\s+https?://)",
    "fix": "Read what is sent and where. A skill that posts files or command output to an address it names is how data leaves the computer."
   }
  ],

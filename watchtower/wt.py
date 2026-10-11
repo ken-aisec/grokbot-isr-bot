@@ -189,17 +189,29 @@ def looks_real_secret(s):
     return True
 
 
-def in_warning(text, m, rules):
-    """True when the match sits inside defensive prose: negated, quoted, or described as an attack."""
+def in_warning(text, m, rules, code_ok=False):
+    """True when the match sits inside defensive prose: negated, quoted, or described as an attack.
+    code_ok: a command in inline backticks is something to run, not a quotation (WT-T017)."""
     lo = max(0, m.start() - 90)
     before = text[lo:m.start()]
     sentence_start = max(before.rfind(". "), before.rfind("\n"))
     before = before[sentence_start + 1:] if sentence_start >= 0 else before
     after = text[m.end():m.end() + 40]
-    quoted = before.rstrip().endswith(("\"", "“", "'", "`", "(", "[")) or before.rstrip().endswith("|")
+    quoted = before.rstrip().endswith(("\"", "“", "'", "(", "[") + (() if code_ok else ("`",))) or before.rstrip().endswith("|")
     scoped = re.match(r"(?i)\s*(inside|in\s+(the|any|this|that)|within|from\s+(the|any)|embedded|contained|found\s+in|that\s+appear)", after)
     code = re.search(r"(<!--|\[//\]|r\"|\\s[+*]|\(\?i\))", before + after)
     return bool(quoted or scoped or code or rules["context_guard"].search(before))
+
+
+def sends_data(ev):
+    """WT-T017: the curl/wget segment itself (up to a pipe, ;, && or ||) carries the data flag, and isn't a -G query."""
+    m = re.search(r"(?i)\b(curl|wget)\b", ev)
+    if not m:
+        return True   # the prose form; its object words are checked by the rule
+    seg = re.split(r"\|\|?|;|&&", ev[m.start():])[0]
+    if re.search(r"(?i)(\s-G\b|\s--get\b)", seg):
+        return False
+    return bool(re.search(r"(?i)(-X\s*POST\b|--data(-binary|-raw|-urlencode)?\b|\s-d(\s|@)|\s-F\s|--upload-file\b|\s-T\s|--post-(data|file)\b)", seg))
 
 
 REF_RULES = ("WT-T001", "WT-T002", "WT-T004", "WT-T005", "WT-T006", "WT-T007", "WT-T008")
@@ -241,8 +253,10 @@ def scan_text(text, where, rules, kind="skill"):
                 if rule["id"] == "WT-T002":
                     break
                 continue
-            if rule["id"] in guarded and in_warning(text, m, rules):
+            if rule["id"] in guarded and in_warning(text, m, rules, code_ok=rule["id"] == "WT-T017"):
                 continue
+            if rule["id"] == "WT-T017" and not sends_data(m.group(0)):
+                continue   # the data flag belongs to a later command (| tr -d, ; sort -d) or -G turns it into a GET query
             if rule["id"] == "WT-T016" and not rules["write_verbs"].search(sentence_of(text, m)):
                 continue   # "failed silently", "quietly refresh the cache": quiet wording only matters next to an outward action
             if rule["id"] == SECRET_RULE and not looks_real_secret(m.group(0)):
@@ -438,6 +452,7 @@ EVIDENCE_RULES = frozenset((
     "WT-K001", "WT-K002", "WT-K003", "WT-K004", "WT-K005", "WT-K006", "WT-M001", "WT-P001", "WT-R010",
     "WT-S003", "WT-S004", "WT-S005", "WT-W001", "WT-W002", "WT-X003", "WT-X004"))
 HISTORY_SHRANK = "Shell history shrank since last check"
+NEW_SIGN_IN = "New sign-in in the shared browser"
 CONFIRMED, MAYBE_FINE = "Confirmed", "Worth a look (might be fine)"
 # v0.6.8 (Ken, Oct 10, after Cloudflare's MIT-licensed security-audit skill): a "Worth a look" finding carries no severity and
 # never moves the score; best-practice checks are Tips, also without severity or score.
@@ -451,6 +466,8 @@ VERB_AREA = (("sending email or messages", r"(?i)^(send|sends|sending|email|emai
 
 def is_evidence(f):
     """A key TruffleHog's provider check says works is a fact, whatever rule found the string."""
+    if f["rule"] == "WT-S005":
+        return f.get("title") == NEW_SIGN_IN   # proven by a session cookie; new cookies alone are worth a look
     return f["rule"] in EVIDENCE_RULES or (f["rule"] in ("WT-S001", "WT-S002") and f.get("title") == KEY_LIVE)
 
 
@@ -863,14 +880,26 @@ SESSION_FILES = ("chrome-cookie-seed.json", "cookie-seed.json", "cookies.json")
 
 
 SENSITIVE_SITE = re.compile(r"(anthropic|claude|openai|x\.ai|github|google|microsoft|aws|stripe|bank|paypal|slack|notion|"
-                            r"bitwarden|1password|lastpass|dashlane|keeper|vercel|cloudflare|okta)")
+                            r"bitwarden|1password|lastpass|dashlane|keeper|vercel|cloudflare|okta)")   # WT-S004 summary wording only
+# WT-S005: registered domains, matched exactly or as a dot-suffix (fonts.googleapis.com, max.ai and notionalvalue.io are not these).
+SENSITIVE_DOMAINS = ("anthropic.com", "claude.ai", "openai.com", "chatgpt.com", "x.ai", "grok.com", "github.com", "google.com",
+                     "microsoft.com", "live.com", "microsoftonline.com", "aws.amazon.com", "amazon.com", "stripe.com", "paypal.com",
+                     "slack.com", "notion.so", "notion.com", "bitwarden.com", "1password.com", "lastpass.com", "dashlane.com",
+                     "keepersecurity.com", "vercel.com", "cloudflare.com", "okta.com", "x.com", "twitter.com")
+SESSION_COOKIE = re.compile(r"(?i)^(__(Secure|Host)-)?(\w*session\w*|sid|ssid|hsid|apisid|sapisid|\w*_sid|auth\w*|\w*token\w*|"
+                            r"user_session|logged_in|sessionkey|__session)$")
+
+
+def sensitive_site(host):
+    h = str(host).lower().lstrip(".")
+    return any(h == d or h.endswith("." + d) for d in SENSITIVE_DOMAINS)
 BROWSER_JARS = ("~/chrome-profile/Default/Cookies", "~/.config/google-chrome/Default/Cookies")
 CHROME_EPOCH = 11644473600
 
 
 def browser_jar_hosts():
-    """Sites with a cookie in the shared browser and when the first one was created. Reads only host and creation time from the
-    browser's cookie database (opened read-only); never a cookie's name or value."""
+    """Sites with a cookie in the shared browser: {host: (first creation time, has a session-style cookie)}. Reads host, creation
+    time and cookie name from the browser's cookie database (opened read-only); never a cookie's value."""
     import sqlite3
     for j in BROWSER_JARS:
         p = os.path.expanduser(j)
@@ -878,11 +907,18 @@ def browser_jar_hosts():
             continue
         try:
             c = sqlite3.connect(f"file:{p}?immutable=1", uri=True)
-            rows = c.execute("select host_key, min(creation_utc) from cookies group by host_key").fetchall()
+            rows = c.execute("select host_key, name, creation_utc from cookies").fetchall()   # never the value
             c.close()
         except sqlite3.Error:
             continue
-        return {str(h).lstrip("."): t / 1_000_000 - CHROME_EPOCH for h, t in rows if h and t}
+        out = {}
+        for h, n, t in rows:
+            if not h or not t:
+                continue
+            h = str(h).lstrip("."); t = t / 1_000_000 - CHROME_EPOCH
+            first, sess = out.get(h, (t, False))
+            out[h] = (min(first, t), sess or bool(SESSION_COOKIE.match(str(n or ""))))
+        return out
     return None
 
 
@@ -898,14 +934,24 @@ def new_sign_ins():
     if not isinstance(prev, dict):
         return []
     known = set(prev.get("hosts", []))
-    fresh = sorted(h for h in hosts if h not in known and SENSITIVE_SITE.search(h))
+    fresh = sorted(h for h in hosts if h not in known and sensitive_site(h))
     if not fresh:
         return []
-    when = lambda h: dt.datetime.fromtimestamp(hosts[h]).strftime("%Y-%m-%d %H:%M")
-    return [finding("WT-S005", "New sign-in in the shared browser", "high", ["ASI03", "AST06"], "shared browser",
-                    "; ".join(f"{h} first session {when(h)}" for h in fresh)[:200],
-                    "Every Bot can now use this login. If neither you nor a Bot you asked signed in there, sign out of that site from its "
-                    "security settings (all sessions) and change its password.", ident=",".join(fresh))]
+    when = lambda h: dt.datetime.fromtimestamp(hosts[h][0]).strftime("%Y-%m-%d %H:%M")
+    signed = [h for h in fresh if hosts[h][1]]
+    cookies = [h for h in fresh if not hosts[h][1]]
+    out = []
+    if signed:
+        out.append(finding("WT-S005", NEW_SIGN_IN, "high", ["ASI03", "AST06"], "shared browser",
+                           "; ".join(f"{h} first session {when(h)}" for h in signed)[:200],
+                           "Every Bot can now use this login. If neither you nor a Bot you asked signed in there, sign out of that site from its "
+                           "security settings (all sessions) and change its password.", ident=",".join(signed)))
+    if cookies:
+        out.append(finding("WT-S005", "New cookies from a sensitive site (no session cookie seen)", "medium", ["ASI03"], "shared browser",
+                           "; ".join(f"{h} first cookie {when(h)}" for h in cookies)[:200],
+                           "Probably a visit, not a sign-in. If you don't expect any Bot to use this site, clear its cookies in the Grok Bot browser.",
+                           ident="cookies:" + ",".join(cookies)))
+    return out
 
 
 def browser_sessions(roots):
@@ -1240,14 +1286,14 @@ def ask_first_gaps(text):
     return [w for w, rx in ASK_AREAS if not re.search(rx, ask)]
 
 
-RULE_OBJECTS = re.compile(r"""(https?://\S+|`[^`]*`|"[^"]*"|'[^']*'|\S*/\S+|\b[\w.-]+\.(md|txt|json|csv|html?|py|sh|js|ts|ya?ml|pdf|docx?|xlsx?)\b)""", re.I)
+RULE_OBJECTS = re.compile(r"""(https?://\S+|\S*/\S+|\b[\w.-]+\.(md|txt|json|csv|html?|py|sh|js|ts|ya?ml|pdf|docx?|xlsx?)\b)""", re.I)
 
 
 def lint_auto_review(text, where, check_missing=True):
     out = []
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     for i, raw in enumerate(lines, 1):
-        l = RULE_OBJECTS.sub(" ", raw)   # R18: a file name, path, link or quotation names a thing; it isn't the action being allowed
+        l = RULE_OBJECTS.sub(" ", raw)   # R18: a file name, path or link names a thing (a quoted action is still the action); it isn't the action being allowed
         if re.search(r"(?i)allow\s+automatically", l) and re.search(r"(?i)\b(everything|anything|all|any)\b|\*|browser|all\s+commands", l):
             out.append(finding("WT-A001", "Broad Allow-automatically rule", "critical", ["ASI03", "ASI09"], f"{where}:{i}", raw,
                                "Delete it. xAI's docs: avoid rules like 'allow everything in the browser'; keep allow rules to one command in one folder."))
