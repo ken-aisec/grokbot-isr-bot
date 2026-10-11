@@ -816,6 +816,10 @@ def owned_path(p, kind, log=True):
             allowed = decoy_places() | {os.path.normpath(os.path.expanduser(x)) for x in OLD_CANARY_PATHS}
             d = os.path.dirname(n)
             ok = n in allowed and not os.path.islink(d) and os.path.realpath(d) == os.path.join(os.path.realpath(os.path.dirname(d)), os.path.basename(d))
+        elif kind == "workspace-skill":   # DQ-021: a skill copy in the workspace that two engines flag; never platform or Watchtower folders
+            ws, h = os.path.realpath(os.path.dirname(home())), os.path.realpath(home())
+            ok = rp == n and _under(rp, {ws}, strict=True) and not _under(rp, {h}) and not _under(rp, {os.path.realpath(x) for x in PLATFORM_SKILL_DIRS()}) \
+                and os.path.isfile(os.path.join(rp, "SKILL.md"))
         elif kind == "project":
             h = os.path.realpath(home())
             places = {os.path.realpath(os.path.expanduser("~")), os.path.realpath(os.path.dirname(home()))}
@@ -964,7 +968,16 @@ def audit(roots, exports, quick=False):
                 fs.append(finding("WT-I003", "Skill or plugin file removed", "info", ["AST09"], p, "missing", "Confirm you removed it."))
     else:
         notes.append("No baseline yet: integrity drift starts next run.")
-    for name, proots in sorted(note_plugins(inv).items()):
+    new_plugins = note_plugins(inv)
+    synced = catalog_sync(new_plugins)
+    for market, commit, names in synced:
+        fs.append(finding("WT-I005", "Platform catalog sync added plugins", "info", ["AST09"], f"plugins/cache/{market}",
+                          f"{len(names)} at catalog commit {commit[:12]}: {', '.join(names)}"[:200],
+                          "The platform updated its public plugin catalog; nobody installed these. None of them adds hooks, scripts or a "
+                          "program that runs on this computer. Their skills are still scanned like any other.", ident=f"{market}@{commit}"))
+        for n in names:
+            new_plugins.pop(n, None)
+    for name, proots in sorted(new_plugins.items()):
         inside = lambda p: any(p == r or p.startswith(r + "/") for r in proots)
         n_files = sum(1 for p in manifest if inside(p))
         n_skills = sum(1 for p in inv["skills"] if inside(p))
@@ -1056,7 +1069,10 @@ def audit(roots, exports, quick=False):
     if not load_json(state_path("canaries.json"), {}):
         notes.append("No canaries planted: run `wt.py canary plant` for zero-cost tripwires.")
     rc = load_json(state_path("rollcall_findings.json"), None)
-    if rc and rc.get("at", "") >= (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=35)).isoformat():
+    if rc and rc.get("at", "") >= (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=ROLLCALL_MAX_DAYS)).isoformat():
+        rc, gone = prune_removed_bots(rc)
+        if gone:
+            notes.append(f"Roll-call findings for {len(gone)} Bots no longer on the roster were dropped.")
         fs += rc.get("findings", [])
     else:
         notes.append("Roll-call is off (opt-in): other Bots' memories and routines are not checked. Ask for a roll-call to run one with your yes.")
@@ -1915,6 +1931,50 @@ def plugin_identity(plugin_json):
     name = data.get("name") if isinstance(data, dict) and isinstance(data.get("name"), str) else None
     name = name or re.sub(r"([-_@]v?\d[\w.]*)?(-[0-9a-f]{4,})?$", "", os.path.basename(d)) or os.path.basename(d)
     return name[:80], os.path.normpath(d)
+
+
+CATALOG_MARKETS = ("cursor-public", "claude-plugins-official")
+CATALOG_WINDOW = 600   # seconds: one sync lands its plugins within minutes of each other
+
+
+def runs_code(root):
+    """A plugin that brings a hook, a script or a locally launched MCP server runs code on this computer."""
+    for dp, _, fns in os.walk(root):
+        for fn in fns:
+            p = os.path.join(dp, fn)
+            if fn == "hooks.json" or os.path.splitext(fn)[1].lower() in (".sh", ".py", ".js", ".mjs", ".cjs", ".ts", ".rb", ".pl", ".ps1") \
+                    or (os.path.isfile(p) and not os.path.islink(p) and os.access(p, os.X_OK)):
+                return True
+            if fn == "mcp.json" and re.search(r'"command"\s*:', read_text(p) or ""):
+                return True
+    return False
+
+
+def catalog_sync(new_plugins):
+    """DQ-017: new plugins that arrived together from the platform's own catalog (same marketplace, same catalog commit, within
+    minutes) and run no code here are a catalog sync, not an install. Returns [(market, commit, names)] and marks them known."""
+    groups = {}
+    for name, roots in new_plugins.items():
+        for r in roots:
+            m = re.search(r"/plugins/cache/([^/]+)/[^/]+/([^/]+)$", r)
+            if m and m.group(1) in CATALOG_MARKETS and not runs_code(r):
+                try:
+                    groups.setdefault((m.group(1), m.group(2)), []).append((name, os.stat(r).st_mtime))
+                except OSError:
+                    pass
+                break
+    out = []
+    for (market, commit), items in sorted(groups.items()):
+        if len(items) >= 2 and max(t for _, t in items) - min(t for _, t in items) <= CATALOG_WINDOW:
+            out.append((market, commit, sorted(n for n, _ in items)))
+    if out:
+        st = load_json(state_path("plugins.json"), {}) or {}
+        for _, _, names in out:
+            for n in names:
+                if n in st:
+                    st[n]["status"] = "catalog"
+        save_json(state_path("plugins.json"), st)
+    return out
 
 
 def note_plugins(inv):
@@ -3315,6 +3375,36 @@ def rollcall_findings(rdir):
         f["evidence"] = mask_rollcall(f["evidence"])
     save_json(state_path("rollcall_findings.json"), {"at": now(), "masked": VERSION, "bots": bots, "findings": out})
     return out, bots
+
+
+ROLLCALL_MAX_DAYS = 35
+
+
+def roster_bots():
+    """Bot names on the roster the Bot last saved (exports/roster.json), or None when there is no roster to go by."""
+    roster = load_json(os.path.join(home(), *ROSTER_FILE), None)
+    items = roster.get("entries", roster.get("roster", [])) if isinstance(roster, dict) else roster
+    if not isinstance(items, list):
+        return None
+    return {e["name"].strip() for e in items if isinstance(e, dict) and isinstance(e.get("name"), str) and str(e.get("kind", "")).lower() in BOT_KINDS}
+
+
+def prune_removed_bots(rc):
+    """DQ-018: a Bot the owner removed leaves the report. When the saved roster is newer than the roll-call, findings for Bots not
+    on it are dropped from rollcall_findings.json itself (never hand-edited)."""
+    bots = roster_bots()
+    rpath = os.path.join(home(), *ROSTER_FILE)
+    if not bots or not os.path.isfile(rpath):
+        return rc, []
+    if dt.datetime.fromtimestamp(os.path.getmtime(rpath), dt.timezone.utc).isoformat() < rc.get("at", ""):
+        return rc, []
+    bot_of = lambda f: f["where"].split(":")[1] if f.get("where", "").startswith("rollcall:") else None
+    gone = sorted({b for b in rc.get("bots", []) if b not in bots} | {bot_of(f) for f in rc.get("findings", []) if bot_of(f) and bot_of(f) not in bots})
+    if gone:
+        rc = dict(rc, bots=[b for b in rc.get("bots", []) if b in bots], findings=[f for f in rc.get("findings", []) if bot_of(f) in bots])
+        save_json(state_path("rollcall_findings.json"), rc)
+        ledger({"event": "rollcall-removed-bots-dropped", "count": len(gone)})
+    return rc, gone
 
 
 REPLY_MAX_AGE = 3600
@@ -5364,7 +5454,9 @@ def cmd_fix(args):
     rules_needed = [r for r in ("WT-A003", "WT-A005") if any(f["rule"] == r for f in fs)]
     ch_skills, ch_other = changed_skills(fs)
     if not (args.apply or args.upgrade or args.upgrade_projects or args.accept or args.revet or args.exception or args.quarantine):
+        save_json(state_path("revet_plan.json"), {"at": now(), "skills": sorted(ch_skills)})   # exactly what --revet may touch (DQ-019)
         print(fit({"mode": "preview (nothing changed)",
+                   "changed_skills_total": len(ch_skills),
                    "changed_skills": [{k: v for k, v in r.items() if k != "path"} for r in revet(sorted(ch_skills))],
                    "changed_other_files": [short_path(p) for p in ch_other],
                    "security_tool_exceptions_possible": [x["name"] for x in exception_candidates(fs)],
@@ -5397,6 +5489,13 @@ def cmd_fix(args):
                                                     "pip": [u["name"] for u in ups if not any(x.startswith(f"Upgraded {u['name']} ") and "put" not in x for x in py_done)] if args.upgrade else left.get("pip", [])})
     if args.revet:
         only = {x.strip() for x in (getattr(args, "only", None) or "").split(",") if x.strip()}
+        plan_ = load_json(state_path("revet_plan.json"), None)
+        if isinstance(plan_, dict) and isinstance(plan_.get("skills"), list):   # only what the owner was shown (DQ-019)
+            later = sorted(d for d in ch_skills if d not in plan_["skills"])
+            if later:
+                done.append(f"Not re-scanned, not in the list you approved (changed after the preview): {', '.join(skill_name(d) for d in later)}. "
+                            "Run the fix preview again to see them.")
+            ch_skills = {d: v for d, v in ch_skills.items() if d in plan_["skills"]}
         picked = sorted(d for d in ch_skills if not only or skill_name(d) in only)
         for missing in sorted(only - {skill_name(d) for d in picked}):
             done.append(f"{missing}: not re-scanned. It isn't a skill with an open change")
@@ -5425,25 +5524,48 @@ def cmd_fix(args):
 
 
 # ---------------------------------------------------------------- quarantine: take a dangerous skill out of use without deleting it
+def PLATFORM_SKILL_DIRS():
+    return [os.path.join(b, x) for b in (os.path.expanduser("~"), "/home/box") for x in ("sand-data", "agent-data", ".grok", ".cursor", ".agents")]
+
+
+def quarantinable(f):
+    """The skill folder a finding lets the fix take out of use, or None: the owner's own skills with a critical finding, and
+    (DQ-021) a skill copy in the workspace that two engines agree is dangerous (WT-X003). Plugins and built-in skills are removed
+    in the app, not here."""
+    w = f["where"].split(":")[0]
+    d = skill_root(w) if os.path.exists(w) else None
+    if not d:
+        return None
+    if f["severity"] == "critical" and skill_tier(d + "/") == "user":
+        return os.path.normpath(d)
+    if f["rule"] == "WT-X003" and owned_path(d, "workspace-skill", log=False):
+        return os.path.normpath(d)
+    return None
+
+
+def restorable_to_workspace(p):
+    """Restore target for a workspace skill: the folder is gone (it was moved out), its parent is in the workspace, outside
+    Watchtower's own folder and the platform's folders, and not reached through a link."""
+    n = os.path.normpath(os.path.abspath(str(p)))
+    par = os.path.dirname(n)
+    ws, h = os.path.realpath(os.path.dirname(home())), os.path.realpath(home())
+    return (not os.path.exists(n) and os.path.realpath(par) == par and _under(n, {ws}, strict=True) and not _under(n, {h})
+            and not _under(n, {os.path.realpath(x) for x in PLATFORM_SKILL_DIRS()}))
+
+
 def quarantine_candidates(findings):
-    """The owner's own skills with a critical finding. Plugins and built-in skills are removed in the app, not here."""
+    """The skills the fix can take out of use (see quarantinable)."""
     out = {}
     for f in findings:
-        w = f["where"].split(":")[0]
-        d = skill_root(w) if os.path.exists(w) else None
-        if f["severity"] == "critical" and d and skill_tier(d + "/") == "user":
+        d = quarantinable(f)
+        if d:
             out.setdefault(d, []).append(plain(f)["title"])
     return [{"name": skill_name(d), "why": "; ".join(sorted(set(v))[:3])} for d, v in sorted(out.items())]
 
 
 def quarantine(names, reason=""):
     snap = load_json(state_path("last_findings.json"), {"findings": []})
-    dirs = set()                                      # the owner's own skills with an open critical finding, as quarantine_candidates offers them
-    for f in snap.get("findings", []):
-        w = f["where"].split(":")[0]
-        d = skill_root(w) if f["severity"] == "critical" and os.path.exists(w) else None
-        if d and skill_tier(d + "/") == "user":
-            dirs.add(os.path.normpath(d))
+    dirs = {d for d in map(quarantinable, snap.get("findings", [])) if d}   # exactly what quarantine_candidates offers
     reg, done = load_json(state_path("quarantine.json"), []), []
     for name in names:
         cand = os.path.normpath(name)
@@ -5455,7 +5577,7 @@ def quarantine(names, reason=""):
             done.append(f"{name}: not quarantined. It isn't one of your own skills with an open critical finding (plugins and built-in skills are removed in the app).")
             continue
         dst = os.path.join(home(), "quarantine", f"{skill_name(d)}-{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}")
-        if not (owned_path(d, "skill") and owned_path(dst, "quarantine")):
+        if not ((owned_path(d, "skill", log=False) or owned_path(d, "workspace-skill")) and owned_path(dst, "quarantine")):
             done.append(f"{name}: not quarantined. {d} is not inside your own skill folders. Nothing changed.")
             continue
         try:
@@ -5482,7 +5604,8 @@ def cmd_quarantine(args):
             print(f"Nothing named “{args.restore}” is in quarantine.")
             return 1
         e_ = hit[-1]
-        if not (owned_path(e_["to"], "quarantine") and owned_path(e_["from"], "skill")):
+        if not (owned_path(e_["to"], "quarantine") and (owned_path(e_["from"], "skill", log=False) or restorable_to_workspace(e_["from"])
+                                                       or owned_path(e_["from"], "skill"))):   # the last call only writes the refusal
             print(f"Not restored: the quarantine record for {args.restore} points outside Watchtower's quarantine folder or your own "
                   "skill folders. Nothing was moved; the refusal is in the ledger.")
             return 1
