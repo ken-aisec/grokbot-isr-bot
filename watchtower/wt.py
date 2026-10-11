@@ -146,6 +146,22 @@ KNOWN_INSTALLERS = re.compile(r"(?i)https?://(bun\.sh|deno\.land|sh\.rustup\.rs|
                               r"downloads\.slack-edge\.com|cursor\.com/install|opencode\.ai/install|get\.helm\.sh|"
                               r"install\.determinate\.systems|starship\.rs|deb\.nodesource\.com|cli\.doppler\.com|"
                               r"railway\.app/install|github\.com/cli/cli)")
+
+
+def known_installer(text):
+    """True only when every link in the line is a known installer (a decoy link next to a real one doesn't pass)."""
+    urls = re.findall(r"(?i)https?://[^\s'\"`)|;]+", text)
+    return bool(urls) and all(_known_url(u) for u in urls)
+
+
+def _known_url(u):
+    """R13: the exact host. A bare-host entry must be followed by a separator (bun.sh.evil.io is not bun.sh); an entry that
+    already names a path (tailscale.com/install) may go on (install.sh)."""
+    m = KNOWN_INSTALLERS.match(u)
+    if not m:
+        return False
+    rest = u[m.end():]
+    return rest == "" or rest[0] in ("/:?#." if "/" in m.group(1) else "/:?#")   # nvm-sh-evil is a different account
 PLACEHOLDER = re.compile(r"(?i)(example|sample|placeholder|your[_-]?|dummy|fake|test|xxxx|0000|1234|abcd|\.\.\.|<|>|\*{3})")
 
 
@@ -234,7 +250,7 @@ def scan_text(text, where, rules, kind="skill"):
             if rule["id"] == "WT-T003" and is_document_blob(m.group(0)):
                 continue
             ev = m.group(0)
-            if rule["id"] == "WT-T006" and KNOWN_INSTALLERS.search(ev):
+            if rule["id"] == "WT-T006" and known_installer(ev):
                 out.append(finding("WT-T006k", "Known installer piped to shell", "medium" if kind != "vendor" else "low",
                                    ["ASI05", "AST02"], f"{where}:{line_of(text, m.start())}", ev[:140],
                                    "A well-known installer, but still unpinned. Prefer a package manager or a pinned, checksummed download."))
@@ -416,7 +432,7 @@ SCORE_CAP = {"critical": 50, "high": 25, "medium": 12, "low": 3}      # per seve
 # string, or are one engine alone: often right, sometimes fine. A pattern finding is at most medium unless something backs it up.
 EVIDENCE_RULES = frozenset((
     "WT-A001", "WT-A002", "WT-A003", "WT-A004", "WT-A005", "WT-C001", "WT-C002", "WT-C003", "WT-C004", "WT-C005",
-    "WT-D001", "WT-D002", "WT-I001", "WT-I002", "WT-I003", "WT-I004",
+    "WT-D001", "WT-D002", "WT-I001", "WT-I002", "WT-I003", "WT-I004", "WT-I005", "WT-I006",
     # Shell history: commands that actually ran on this computer, not wording (Ken, 2026-10-10). H007 is a file-mode fact.
     "WT-H001", "WT-H002", "WT-H003", "WT-H004", "WT-H005", "WT-H006", "WT-H007", "WT-H008", "WT-H009",
     "WT-K001", "WT-K002", "WT-K003", "WT-K004", "WT-K005", "WT-K006", "WT-M001", "WT-P001", "WT-R010",
@@ -655,7 +671,7 @@ def walk(roots, max_depth=8):
             if any(x in ap + "/" for x in SKIP_PATH_PARTS):
                 dirnames[:] = []
                 continue
-            if ap.startswith(os.path.abspath(home())) or ap.startswith(SELF_ROOT):
+            if _under(ap, {os.path.abspath(home()), SELF_ROOT}):   # R08: separator-aware; watchtower-customer-skill is not inside
                 dirnames[:] = []
                 continue
             for fn in filenames:
@@ -707,7 +723,14 @@ def skill_dir_files(skill_md):
         dirnames[:] = [x for x in dirnames if x not in SKIP_DIRS]
         for fn in filenames:
             files.append(os.path.join(dirpath, fn))
-    return sorted(files)[:200]
+    files = sorted(files)
+    if len(files) > SKILL_FILE_CAP:   # R07: never silently: the skill is recorded as only partly fingerprinted
+        INCOMPLETE_SKILLS[os.path.normpath(d)] = (SKILL_FILE_CAP, len(files))
+    return files[:SKILL_FILE_CAP]
+
+
+SKILL_FILE_CAP = 2000
+INCOMPLETE_SKILLS = {}   # skill folder -> (files fingerprinted, files there)
 
 
 RUN_LIMIT = int(os.environ.get("WT_RUN_LIMIT", "540"))     # seconds a full audit may take, whatever is installed or broken
@@ -910,13 +933,17 @@ def browser_sessions(roots):
 
 
 def is_vendor(path):
-    return skill_tier(path) == "vendor"
+    """Shipped by the platform or a plugin: reduced (malicious-indicator) rules. R15: a skill in a place Watchtower doesn't
+    recognize is not trusted vendor content; it gets the full rules (and still no wider permission to be changed)."""
+    p = os.path.normpath(os.path.abspath(str(path).split(":")[0])) + "/"
+    return skill_tier(path) == "vendor" and any(x in p for x in VENDOR_CODE)
 
 
 # ---------------------------------------------------------------- audit
 def audit(roots, exports, quick=False):
     rules = load_rules()
     fs, notes = [], []
+    INCOMPLETE_SKILLS.clear()
     inv = collect_inventory(roots)
     manifest = {}
 
@@ -968,6 +995,9 @@ def audit(roots, exports, quick=False):
                 fs.append(finding("WT-I003", "Skill or plugin file removed", "info", ["AST09"], p, "missing", "Confirm you removed it."))
     else:
         notes.append("No baseline yet: integrity drift starts next run.")
+    for d, (n_done, n_all) in sorted(INCOMPLETE_SKILLS.items()):
+        fs.append(finding("WT-I006", "Skill too large to check completely", "info", ["AST07"], d, f"{n_done} of {n_all} files fingerprinted and scanned",
+                          "Files past the limit are NOT checked for changes; Watchtower can't re-approve this skill automatically. Trim it, or review changes by hand."))
     new_plugins = note_plugins(inv)
     synced = catalog_sync(new_plugins)
     for market, commit, names in synced:
@@ -1210,18 +1240,22 @@ def ask_first_gaps(text):
     return [w for w, rx in ASK_AREAS if not re.search(rx, ask)]
 
 
+RULE_OBJECTS = re.compile(r"""(https?://\S+|`[^`]*`|"[^"]*"|'[^']*'|\S*/\S+|\b[\w.-]+\.(md|txt|json|csv|html?|py|sh|js|ts|ya?ml|pdf|docx?|xlsx?)\b)""", re.I)
+
+
 def lint_auto_review(text, where, check_missing=True):
     out = []
     lines = [l.strip() for l in text.splitlines() if l.strip()]
-    for i, l in enumerate(lines, 1):
+    for i, raw in enumerate(lines, 1):
+        l = RULE_OBJECTS.sub(" ", raw)   # R18: a file name, path, link or quotation names a thing; it isn't the action being allowed
         if re.search(r"(?i)allow\s+automatically", l) and re.search(r"(?i)\b(everything|anything|all|any)\b|\*|browser|all\s+commands", l):
-            out.append(finding("WT-A001", "Broad Allow-automatically rule", "critical", ["ASI03", "ASI09"], f"{where}:{i}", l,
+            out.append(finding("WT-A001", "Broad Allow-automatically rule", "critical", ["ASI03", "ASI09"], f"{where}:{i}", raw,
                                "Delete it. xAI's docs: avoid rules like 'allow everything in the browser'; keep allow rules to one command in one folder."))
-        if re.search(r"(?i)allow\s+automatically", l) and re.search(r"(?i)\b(send|email|post|publish|purchase|pay|delete|transfer|permission)", l):
-            out.append(finding("WT-A002", "Auto-allow on a consequential action", "critical", ["ASI02", "ASI09"], f"{where}:{i}", l,
+        if re.search(r"(?i)allow\s+automatically", l) and re.search(r"(?i)\b(send|sending|sends|email|emails|post|posts|posting|publish\w*|purchase\w*|pay|pays|paying|payments?|delete\w*|transfer\w*|permissions?)\b", l):
+            out.append(finding("WT-A002", "Auto-allow on a consequential action", "critical", ["ASI02", "ASI09"], f"{where}:{i}", raw,
                                "Change it to Ask first. Sending, paying, publishing and deleting always need your yes."))
         if re.search(r"(?i)allow\s+automatically", l) and re.search(r"(?i)(automation|routine|schedul|cron|trigger|create\s+(a\s+)?skill|install|plugin|connector)", l):
-            out.append(finding("WT-A004", "Auto-allow on creating automations or installs", "high", ["ASI10", "ASI03"], f"{where}:{i}", l[:140],
+            out.append(finding("WT-A004", "Auto-allow on creating automations or installs", "high", ["ASI10", "ASI03"], f"{where}:{i}", raw[:140],
                                "Change it to Ask first. Anything that creates a routine or installs code can give injected text a way to run again later, unattended."))
     missing = ask_first_gaps(text) if check_missing else []
     if missing:
@@ -1280,15 +1314,24 @@ def carry(rules):
     return [f for f in (prev.get("findings") or []) + (prev.get("suppressed") or []) if f.get("rule") in rules]
 
 
+STAGE_FAILS = []   # R16: explicit failure markers set by the stages themselves, not read back out of note wording
+
+
+def fail_note(notes, text):
+    """A stage didn't finish (or part of it didn't): say so, and mark it failed so its previous results are kept."""
+    notes.append(text)
+    STAGE_FAILS.append(text)
+
+
 def soft(stage, rules, notes, default, fn, *a, **k):
     """Fail-soft: a stage either finishes, or it is skipped with one line saying so and its previous results are kept.
     It can never stop the audit or change the score by failing."""
-    before = len(notes)
+    before, fails_before = len(notes), len(STAGE_FAILS)
     try:
         if time_left() <= 3:
             raise TimeoutError("the run's time limit was reached before this stage started")
         res = timed(stage, fn, *a, **k)
-        failed = any("FAILED" in n for n in notes[before:])
+        failed = len(STAGE_FAILS) > fails_before or any(re.search(r"(?i)\bfailed\b", n) for n in notes[before:])
     except Exception as e:   # noqa: BLE001 - nothing a scanner or a strange file does may break the audit
         res, failed = default, True
         notes.append(f"{stage} FAILED ({type(e).__name__}: {str(e)[:100]}): skipped, NOT checked this run; the last results are kept.")
@@ -1376,6 +1419,9 @@ def stage_skills(dirs, root):
     return mapping
 
 
+SCAN_OK_EXITS = (0, 1)   # 1 = "found something" for both engines; anything else is a failed run
+
+
 def skillspector_batch(exe, stage, mapping, timeout=600):
     """One SkillSpector run over a staged folder. Returns ({original_dir: summary}, error or None)."""
     tmp = os.path.join(stage, "..", f"ss-{os.path.basename(stage)}.json")
@@ -1391,8 +1437,8 @@ def skillspector_batch(exe, stage, mapping, timeout=600):
         os.remove(tmp)
     except OSError:
         pass
-    if not isinstance(data, dict):
-        return {}, f"no result (exit {code}: {(err.strip().splitlines() or ['timed out or crashed'])[-1][:100]})"
+    if not isinstance(data, dict) or code not in SCAN_OK_EXITS or not (isinstance(data.get("skills"), list) or (len(mapping) == 1 and "risk_assessment" in data)):
+        return {}, f"no valid result (exit {code}: {(err.strip().splitlines() or ['timed out, crashed or unreadable output'])[-1][:100]})"
     res = {}
     for sk in data.get("skills") or ([dict(data, path=".")] if len(mapping) == 1 else []):
         name = os.path.basename(os.path.normpath(sk.get("path") or "."))
@@ -1403,6 +1449,8 @@ def skillspector_batch(exe, stage, mapping, timeout=600):
         issues = [i for i in sk.get("issues") or [] if isinstance(i, dict)]
         res[orig] = {"score": ra.get("score", sk.get("risk_score")), "recommendation": ra.get("recommendation", ""), "issues": len(issues),
                      "top": sorted({f"{i.get('category')}: {i.get('pattern')}" for i in issues if i.get("severity") in ("CRITICAL", "HIGH")})[:4]}
+    if len(res) < len(set(mapping.values())):      # R03: every skill sent must come back, or the batch didn't finish
+        return {}, f"incomplete result ({len(res)} of {len(set(mapping.values()))} skills)"
     return res, None
 
 
@@ -1415,9 +1463,12 @@ def husk_batch(exe, stage, mapping, timeout=600):
     if code == 124:
         return {}, TIMED_OUT
     try:
-        flagged = (json.loads(out_s) or {}).get("flagged", {})
+        data = json.loads(out_s)
+        flagged = data.get("flagged") if isinstance(data, dict) else None
     except ValueError:
-        return {}, f"no result (exit {code})"
+        flagged = None
+    if code not in SCAN_OK_EXITS or not isinstance(flagged, dict):   # R03: an error exit or "{}" is not a clean scan
+        return {}, f"no valid result (exit {code})"
     res = {}
     for n, name in enumerate(list(flagged)):
         orig = mapping.get(name)
@@ -1550,7 +1601,7 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
             continue
         for err_, who in ((ss_err, "SkillSpector"), (hk_err, "husk")):
             if err_:
-                notes.append(f"{who} failed on a batch of {len(chunk)} skills ({err_}); they'll be retried next run.")
+                fail_note(notes, f"{who} failed on a batch of {len(chunk)} skills ({err_}); they'll be retried next run.")
         if ss_err or hk_err:
             continue   # don't remember a batch that didn't finish
         for d in chunk:
@@ -1707,7 +1758,7 @@ def gitleaks_findings(roots, notes):
                             "--report-path", tmp, "--exit-code", "0", "--max-target-megabytes", "5"], 180)
         if code != 0 or not os.path.exists(tmp):
             reason = next((l for l in re.sub(r"\x1b\[[0-9;]*m", "", err).splitlines() if "FTL" in l or "error" in l.lower()), err.strip()[:160] or "no report written")
-            notes.append(f"gitleaks FAILED on {r} ({reason.strip()[-160:]}): secrets there were NOT checked by gitleaks.")
+            fail_note(notes, f"gitleaks FAILED on {r} ({reason.strip()[-160:]}): secrets there were NOT checked by gitleaks.")
             continue
         per_file, decoys = {}, canary_paths()
         for leak in load_json(tmp, []) or []:
@@ -1786,7 +1837,7 @@ def package_findings(notes):
         if not isinstance(data, dict):
             raise ValueError
     except ValueError:
-        notes.append(f"pip-audit FAILED ({(err.strip().splitlines() or ['no answer'])[-1][:120]}): installed Python packages were NOT checked this run.")
+        fail_note(notes, f"pip-audit FAILED ({(err.strip().splitlines() or ['no answer'])[-1][:120]}): installed Python packages were NOT checked this run.")
         return []
     mine = user_python_packages()
     for d in (data.get("dependencies", []) if isinstance(data, dict) else []):
@@ -1833,7 +1884,7 @@ def self_findings(notes):
     try:
         pkgs = {p_["name"]: p_["version"] for p_ in json.loads(out_s)}
     except (ValueError, KeyError, TypeError):
-        notes.append("Watchtower's own tools FAILED to list their packages: they were NOT checked this run.")
+        fail_note(notes, "Watchtower's own tools FAILED to list their packages: they were NOT checked this run.")
         return out
     req = state_path("scanner-requirements.txt")
     with open(req, "w") as f:
@@ -1843,7 +1894,7 @@ def self_findings(notes):
         data = json.loads(out_s)
         deps = data.get("dependencies", [])
     except (ValueError, AttributeError):
-        notes.append(f"Watchtower's own tools FAILED their package check ({(err.strip().splitlines() or ['no answer'])[-1][:100]}): NOT checked this run.")
+        fail_note(notes, f"Watchtower's own tools FAILED their package check ({(err.strip().splitlines() or ['no answer'])[-1][:100]}): NOT checked this run.")
         return out
     for d in deps:
         if d.get("vulns"):
@@ -2472,10 +2523,14 @@ def cmd_daily(args):
     if snap.get("scanners_missing"):
         print("SCANNERS_MISSING " + ", ".join(snap["scanners_missing"]) + ": run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, then `wt.py daily` again")
         return 0
+    gap = list(snap.get("stages_skipped") or [])
     if not new and not fixed:
-        print("NO_CHANGES")
+        # R04: nothing changed among what WAS checked; a stage that didn't finish is said, never hidden behind NO_CHANGES
+        print(f"NO_CHANGES_BUT_NOT_CHECKED {'; '.join(gap)[:300]}: these were not checked this run (last results kept)" if gap else "NO_CHANGES")
         return 0
     out = {"score": snap["score"], "score_line": score_line(snap)}
+    if gap:
+        out["not_checked_this_run"] = gap
     out.update(score_change(snap, new))
     decoys = [compact(f) for f in new if f["rule"].startswith("WT-K")]
     if decoys:
@@ -2833,7 +2888,7 @@ def history_findings(rules):
             line = re.sub(r"^: \d+:\d+;", "", line)  # zsh extended history prefix
             for rid, title, sev, owasp, rx in compiled:
                 if rx.search(line):
-                    if rid == "WT-H001" and KNOWN_INSTALLERS.search(line):
+                    if rid == "WT-H001" and known_installer(line):
                         continue
                     shown = secret.sub(lambda m: mask(m.group(0)), line)[:160]
                     out.append(finding(rid, title, sev, owasp, f"{p}:+{n}", shown,
@@ -2953,9 +3008,10 @@ def write_decoy(p, content):
         except OSError as e:
             raise DecoyLink(f"{folder} is a link or not a folder") from e
         try:
-            fd = os.open(fn, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o644, dir_fd=dfd)
+            # R09: O_NONBLOCK so a FIFO planted at the decoy can't hang the run before its type is checked
+            fd = os.open(fn, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o644, dir_fd=dfd)
         except OSError as e:
-            raise DecoyLink(f"{p} is a link") from e
+            raise DecoyLink(f"{p} is a link or not a plain file") from e
         st = os.fstat(fd)
         if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
             raise DecoyLink(f"{p} is not a plain file of its own ({st.st_nlink} names point at it)")   # a hard link to another file
@@ -3412,8 +3468,8 @@ REPLY_MAX_AGE = 3600
 
 def sweep_old_replies(rdir=None):
     """The daily check removes any roll-call reply file older than an hour (a roll-call that never finished) and logs it."""
-    rdir = rdir or os.path.join(home(), "exports", "rollcall")
-    if not os.path.isdir(rdir) or os.path.islink(rdir):
+    rdir = rdir or default_rollcall_dir()
+    if not owned_rollcall_dir(rdir):
         return 0
     gone, cutoff = 0, time.time() - REPLY_MAX_AGE
     for fn in os.listdir(rdir):
@@ -3532,7 +3588,7 @@ def delete_raw_replies(rdir):
     """The raw replies are other Bots' memories and instructions, verbatim. Nothing keeps them: once analyzed, every reply file
     in the roll-call folder is removed in the same run (a link is removed as a link; nothing it points to is touched)."""
     gone = 0
-    if not os.path.isdir(rdir) or os.path.islink(rdir):
+    if not owned_rollcall_dir(rdir):
         return 0
     for fn in os.listdir(rdir):
         p = os.path.join(rdir, fn)
@@ -3544,12 +3600,27 @@ def delete_raw_replies(rdir):
     return gone
 
 
+def default_rollcall_dir():
+    return os.path.join(home(), "exports", "rollcall")
+
+
+def owned_rollcall_dir(rdir):
+    """R01: replies are only ever deleted from Watchtower's own roll-call folder, reached without a link anywhere on the way.
+    A folder named with --dir is the owner's; nothing in it is deleted."""
+    try:
+        n = os.path.normpath(os.path.abspath(rdir))
+        return n == os.path.normpath(default_rollcall_dir()) and os.path.realpath(n) == n and os.path.isdir(n)
+    except (TypeError, ValueError, OSError):
+        return False
+
+
 def cmd_rollcall(args):
-    rdir = args.dir or os.path.join(home(), "exports", "rollcall")
+    rdir = args.dir or default_rollcall_dir()
     try:
         return _rollcall(args, rdir)
     finally:                                   # every path: NOT RUN, an error partway, or a finished run
-        removed = delete_raw_replies(rdir)
+        # Ken's pick (R01): without the owner's yes nothing is deleted; the daily check sweeps replies older than an hour
+        removed = delete_raw_replies(rdir) if getattr(args, "owner_said_yes", False) and owned_rollcall_dir(rdir) else 0
         if removed:
             ledger({"event": "rollcall-replies-deleted", "count": removed})
 
@@ -3557,12 +3628,12 @@ def cmd_rollcall(args):
 def _rollcall(args, rdir):
     if not args.owner_said_yes:
         print("NOT RUN: a roll-call needs the owner's yes in this conversation, every time. Ask them, then run "
-              "`wt.py rollcall --owner-said-yes`. The replies saved so far were deleted unread; ask the Bots again after the yes.")
+              "`wt.py rollcall --owner-said-yes`. Nothing was read or deleted; the daily check removes unread replies after an hour.")
         return 2
     roster = load_json(os.path.join(home(), *ROSTER_FILE), None)     # rooms first, so the replies are judged with this account's rooms
     rooms_file = write_rooms(roster_rooms(roster)) if roster is not None else "no roster saved: rooms.txt left as it was"
     fs, bots = rollcall_findings(rdir)
-    removed = sum(1 for fn in os.listdir(rdir) if os.path.isfile(os.path.join(rdir, fn)) or os.path.islink(os.path.join(rdir, fn))) if os.path.isdir(rdir) and not os.path.islink(rdir) else 0
+    removed = sum(1 for fn in os.listdir(rdir) if os.path.isfile(os.path.join(rdir, fn)) or os.path.islink(os.path.join(rdir, fn))) if owned_rollcall_dir(rdir) else 0
     print(fit({"bots_checked": len(bots), "bots": bots, "findings": [dict(compact(f), key=f["key"]) for f in sort_findings(fs)][:30], "by_severity": by_sev(fs), "rooms_file": rooms_file,
                "raw_replies_deleted": removed, "counted_in_score": False,
                "recommend_each_bot_adds": ROLLCALL_RULE}))
@@ -4568,7 +4639,7 @@ def fix_plan(roots):
         for dirpath, dirnames, filenames in os.walk(r):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(SKIP_PREFIXES)]
             ap = os.path.abspath(dirpath)
-            if any(x in ap + "/" for x in SKIP_PATH_PARTS) or ap.startswith(os.path.abspath(home())) or ap.startswith(SELF_ROOT):
+            if any(x in ap + "/" for x in SKIP_PATH_PARTS) or _under(ap, {os.path.abspath(home()), SELF_ROOT}):
                 dirnames[:] = []
                 continue
             if os.path.basename(ap) == "agent-tools" and filenames:
@@ -4640,7 +4711,11 @@ def tidy_apply(plan, args):
     if not saved.get("items") or time.time() - float(saved.get("ts", 0)) > TIDY_PLAN_DAYS * 86400:
         return ["Cleanup not done: there is no list from the last week for the owner to have said yes to. Run `wt.py fix` and show it first."]
     skip = {x.strip() for x in (getattr(args, "skip", None) or "").split(",") if x.strip()}
+    # a target that grew since the preview (more files than the owner saw) needs a fresh preview
     shown = {(x.get("action"), x.get("path")) for x in saved["items"]}
+    grew = {(x.get("action"), x.get("path")) for x in saved["items"] for y in plan
+            if (y["action"], y["path"]) == (x.get("action"), x.get("path")) and isinstance(x.get("files"), int) and y.get("files", 0) > x["files"]}
+    shown -= grew
     # numbers are the ones on the list the owner saw (tidy_plan.json), never the rebuilt list's: an item that dropped off
     # since the preview would shift them and the wrong folder would be emptied
     by_name = lambda x: x["path"] in skip or short_path(x["path"]) in skip or os.path.basename(x["path"].rstrip("/")) in skip
@@ -4651,7 +4726,7 @@ def tidy_apply(plan, args):
     left = [x for x in plan if named(x)]
     if left:
         done.append("Left alone as you asked, still open: " + "; ".join(f"{short_path(x['path'])} ({x['files']} files, {x['owner']})" for x in left))
-    gone = [x for x in saved["items"] if (x.get("action"), x.get("path")) not in {(y["action"], y["path"]) for y in plan}]
+    gone = [x for x in saved["items"] if (x.get("action"), x.get("path")) not in {(y["action"], y["path"]) for y in plan} or (x.get("action"), x.get("path")) in grew]
     if gone:
         done.append("Not touched because they changed since the list was shown: " + "; ".join(short_path(x.get("path", "")) for x in gone[:5]))
     ledger({"event": "tidy", "applied": [x["path"] for x in go], "skipped": [x["path"] for x in left]})
@@ -4743,7 +4818,7 @@ def trufflehog_status(paths, notes):
         return {}
     code, out_s, err = run([exe, "filesystem", *targets, "--json", "--no-update", "--results=verified,unverified,unknown"], 150)
     if code not in (0, 183) and not out_s.strip():
-        notes.append(f"TruffleHog FAILED ({err.strip()[-140:] or 'no output'}): live/dead key status is unavailable this run.")
+        fail_note(notes, f"TruffleHog FAILED ({err.strip()[-140:] or 'no output'}): live/dead key status is unavailable this run.")
         return {}
     status = {}
     for line in out_s.splitlines():
@@ -4755,7 +4830,8 @@ def trufflehog_status(paths, notes):
         f = fs_meta.get("file")
         if not f:
             continue
-        st = "live" if d.get("Verified") else ("unknown" if d.get("VerificationError") else "dead")
+        # R05: "not verified" is not "dead": TruffleHog couldn't confirm the key works, which is not the provider saying it's revoked
+        st = "live" if d.get("Verified") else ("unknown" if d.get("VerificationError") else "unverified")
         ex = d.get("ExtraData") or {}
         status.setdefault(os.path.abspath(f), []).append({"detector": d.get("DetectorName", "key"), "status": st, "line": fs_meta.get("line"),
                                                           "guide": ex.get("rotation_guide") if isinstance(ex, dict) else None})
@@ -4805,17 +4881,19 @@ def key_status_severity(findings, status, ran=None):
     ran = bool(status) if ran is None else ran
     if not ran:
         return findings
-    if status and all(k["status"] == "unknown" for ks in status.values() for k in ks):
+    if status and all(k["status"] in ("unknown", "unverified") for ks in status.values() for k in ks):
         return findings
     out = []
     for f in findings:
         if f["rule"] in ("WT-S001", "WT-S002"):
-            p = f["where"].split(":")[0]
+            p, _, ln = f["where"].partition(":")
             keys = [k for fp, ks in status.items() if fp == p or fp.startswith(p.rstrip("/") + "/") for k in ks]
+            if ln.split(":")[0].isdigit():      # R06: a verdict counts only for the key on this finding's own line
+                keys = [k for k in keys if str(k.get("line")) == ln.split(":")[0]]
             f = dict(f)
             live = [k for k in keys if k["status"] == "live"]
             dead = [k for k in keys if k["status"] == "dead"]
-            unsure = [k for k in keys if k["status"] == "unknown"]
+            unsure = [k for k in keys if k["status"] in ("unknown", "unverified")]
             names = lambda ks: ", ".join(sorted({k["detector"] for k in ks}))
             if live:
                 f["severity"], f["title"] = "critical", KEY_LIVE
@@ -4823,8 +4901,8 @@ def key_status_severity(findings, status, ran=None):
                 f["fix"] = "Turn the key off at its provider, then tell Watchtower \"fix it\" to clear every copy."
             elif unsure:
                 f["severity"], f["title"] = "medium", KEY_UNSURE
-                f["evidence"] = f"{names(unsure)} ({len(unsure)} unchecked)"
-                f["fix"] = "The provider didn't answer. If you recognize the key, treat it as live and turn it off."
+                f["evidence"] = f"{names(unsure)} ({len(unsure)} not confirmed either way)"
+                f["fix"] = "Nobody could confirm whether this key works. If you recognize the key, treat it as live and turn it off."
             elif dead:
                 f["severity"], f["title"] = "low", KEY_DEAD
                 f["evidence"] = f"{names(dead)} ({len(dead)} dead)"
@@ -4861,7 +4939,7 @@ def osv_findings(roots, notes):
             if not isinstance(data, dict):
                 raise ValueError
         except ValueError:
-            notes.append(f"OSV-Scanner FAILED on {r} ({err.strip()[-120:] or 'unreadable output'}): project dependencies there were NOT checked.")
+            fail_note(notes, f"OSV-Scanner FAILED on {r} ({err.strip()[-120:] or 'unreadable output'}): project dependencies there were NOT checked.")
             continue
         for res in data.get("results", []):
             src = (res.get("source") or {}).get("path", "")
@@ -4944,7 +5022,7 @@ def item_row(f, key_files=None):
             by = {}
             for k in keys:
                 by.setdefault(k["detector"], []).append(k["status"])
-            reason = "; ".join(f"{d}: " + ", ".join(f"{st.count(s)} {s}" for s in ("live", "dead", "unknown") if st.count(s)) for d, st in by.items())
+            reason = "; ".join(f"{d}: " + ", ".join(f"{st.count(s)} {s}" for s in ("live", "dead", "unverified", "unknown") if st.count(s)) for d, st in by.items())
         else:
             reason = f["evidence"]
     else:
@@ -5222,7 +5300,9 @@ def revet(dirs, approve=False):
         h = skill_dir_hash(d)
         diff = skill_diff(d)
         r = {"name": skill_name(d), "path": d, "changed": diff["summary"], "checked_by": ["Watchtower rules"] + installed}
-        if installed and (cache.get(d) or {}).get("stuck") and cache[d].get("hash") == h:
+        if os.path.normpath(d) in INCOMPLETE_SKILLS:
+            r.update(result="not finished", why=f"only {INCOMPLETE_SKILLS[os.path.normpath(d)][0]} of {INCOMPLETE_SKILLS[os.path.normpath(d)][1]} files can be checked, so it can't be re-approved automatically")
+        elif installed and (cache.get(d) or {}).get("stuck") and cache[d].get("hash") == h:
             r.update(result="not finished", why=f"{cache[d]['stuck']} can't get through this skill, so it can't be re-approved automatically; read the change with wt.py diff")
         elif installed and not entry_current(cache.get(d) or {}, h, installed):
             r.update(result="not finished", why="the scanners didn't finish in time; it stays open and is retried next run")
@@ -5524,8 +5604,7 @@ def cmd_fix(args):
     rules_needed = [r for r in ("WT-A003", "WT-A005") if any(f["rule"] == r for f in fs)]
     ch_skills, ch_other = changed_skills(fs)
     if not (args.apply or args.upgrade or args.upgrade_projects or args.accept or args.revet or args.exception or args.quarantine):
-        save_json(state_path("revet_plan.json"), {"at": now(), "skills": sorted(ch_skills)})   # exactly what --revet may touch (DQ-019)
-        print(fit({"mode": "preview (nothing changed)",
+        out = fit({"mode": "preview (nothing changed)",
                    "changed_skills_total": len(ch_skills),
                    "changed_skills": [{k: v for k, v in r.items() if k != "path"} for r in revet(sorted(ch_skills))],
                    "changed_other_files": [short_path(p) for p in ch_other],
@@ -5541,8 +5620,12 @@ def cmd_fix(args):
                    "decisions": fix_decisions([f for f in fs if not in_q(f)]), "quarantine_possible": quarantine_candidates(fs),
                    "ask_first_rules_missing": bool(rules_needed), "only_you": only_you,
                    "next": "Ask the user one question. On yes run: wt.py fix --apply --owner-said-yes [--skip <cleanup ids or paths they named>] --upgrade --revet --accept <rules they agreed to> "
-                           "[--quarantine <skills they agreed to take out of use>] [--exception <skill they named>] --reason \"reviewed by owner\""}, limit=6000))
-        save_json(state_path("tidy_plan.json"), {"at": now(), "ts": time.time(), "items": [tidy_row(x) for x in plan]})
+                           "[--quarantine <skills they agreed to take out of use>] [--exception <skill they named>] --reason \"reviewed by owner\""}, limit=6000)
+        shown = json.loads(out)                 # R02/DQ-019: what may be applied is exactly what survived trimming, never the full list
+        shown_skills = {r.get("name") for r in shown.get("changed_skills", [])}
+        save_json(state_path("revet_plan.json"), {"at": now(), "skills": sorted(d for d in ch_skills if skill_name(d) in shown_skills)})
+        save_json(state_path("tidy_plan.json"), {"at": now(), "ts": time.time(), "items": shown.get("safe_fixes", [])})
+        print(out)
         return 0
     done = tidy_apply(plan, args) if args.apply else []
     if args.upgrade or args.upgrade_projects:
@@ -5786,6 +5869,18 @@ STATE_FILES = ("baseline.json", "last_findings.json", "engine_cache.json", "supp
                "engines_used.json", "stage_times.json", "progress.json", "key_status.json", "run_windows.json")
 
 
+def shareable_error(text):
+    """R12: what doctor may share about the last crash: when, which command, Watchtower's own code lines and the error's type.
+    Never the error's message or any other frame: those can carry private paths, file names or content."""
+    if not text.strip():
+        return None
+    lines = text.splitlines()
+    head = re.sub(r"(wt\.py \S+).*?(\(v[\d.]+\))", r"\1 \2", lines[0])[:80]
+    frames = [f"wt.py line {m.group(1)} in {m.group(2)}" for m in re.finditer(r'File "[^"]*wt\.py", line (\d+), in (\w+)', text)][-6:]
+    kind = next((m.group(1) for l in reversed(lines) for m in [re.match(r"^([A-Za-z_][\w.]*(Error|Exception|Exit|Interrupt|Warning)|[A-Z]\w+)(:|$)", l)] if m), "error")
+    return {"at_and_command": head, "where": frames, "error_type": kind.split(".")[-1]}
+
+
 def cmd_doctor(args):
     """A support snapshot with no file contents, no keys and no skill names: versions, which folders exist, which scanners
     are installed, whether the state files are healthy, and how the last run went."""
@@ -5833,7 +5928,7 @@ def cmd_doctor(args):
                         "inventory": snap.get("inventory"), "scanners_missing": snap.get("scanners_missing"), "stages_skipped": snap.get("stages_skipped"),
                         "notes": [re.sub(r"(/[\w.@~-]+){2,}", "<path>", n)[:160] for n in snap.get("notes", [])][:12]},
            "seconds_per_stage": load_json(state_path("stage_times.json"), None), "last_engine_run": load_json(state_path("engines.json"), None),
-           "last_error": (read_text(state_path("last_error.txt")) or "")[-1200:] or None}
+           "last_error": shareable_error(read_text(state_path("last_error.txt")) or "")}
     text = json.dumps(out, indent=1)
     if args.save:
         os.makedirs(os.path.join(home(), "reports"), exist_ok=True)

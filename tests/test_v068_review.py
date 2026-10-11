@@ -51,13 +51,17 @@ class Base(unittest.TestCase):
 
 
 class RepliesNeverOutliveARun(Base):
-    def test_not_run_deletes_the_replies(self):
+    def test_not_run_reads_and_deletes_nothing(self):
+        """Ken's R01 decision (Oct 11): without the owner's yes nothing is read or deleted; the hourly daily sweep cleans up."""
         p = self.reply()
         code, out, _ = self.run_wt("rollcall")
         self.assertEqual(code, 2); self.assertIn("NOT RUN", out)
+        self.assertTrue(os.path.exists(p))
+        self.assertFalse(os.path.exists(wt.state_path("rollcall_findings.json")))   # unread
+        self.assertNotIn("rollcall-replies-deleted", [e["event"] for e in self.ledger()])
+        os.utime(p, (time.time() - 2 * 3600,) * 2)
+        self.assertEqual(wt.sweep_old_replies(), 1)
         self.assertFalse(os.path.exists(p))
-        self.assertFalse(os.path.exists(wt.state_path("rollcall_findings.json")))   # deleted unread
-        self.assertIn("rollcall-replies-deleted", [e["event"] for e in self.ledger()])
 
     def test_a_run_that_stops_partway_still_deletes_them(self):
         p = self.reply()
