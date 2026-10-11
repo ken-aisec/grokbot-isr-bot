@@ -191,27 +191,37 @@ def looks_real_secret(s):
 
 def in_warning(text, m, rules, code_ok=False):
     """True when the match sits inside defensive prose: negated, quoted, or described as an attack.
-    code_ok: a command in inline backticks is something to run, not a quotation (WT-T017)."""
+    code_ok: a command in inline backticks is something to run, not a quotation (WT-T017).
+    Piping into curl/wget is the usual send form, so a leading | is not a quotation when code_ok."""
     lo = max(0, m.start() - 90)
     before = text[lo:m.start()]
     sentence_start = max(before.rfind(". "), before.rfind("\n"))
     before = before[sentence_start + 1:] if sentence_start >= 0 else before
     after = text[m.end():m.end() + 40]
-    quoted = before.rstrip().endswith(("\"", "“", "'", "(", "[") + (() if code_ok else ("`",))) or before.rstrip().endswith("|")
+    ends_quote = before.rstrip().endswith(("\"", "“", "'", "(", "[") + (() if code_ok else ("`",)))
+    ends_pipe = (not code_ok) and before.rstrip().endswith("|")
+    quoted = ends_quote or ends_pipe
     scoped = re.match(r"(?i)\s*(inside|in\s+(the|any|this|that)|within|from\s+(the|any)|embedded|contained|found\s+in|that\s+appear)", after)
     code = re.search(r"(<!--|\[//\]|r\"|\\s[+*]|\(\?i\))", before + after)
     return bool(quoted or scoped or code or rules["context_guard"].search(before))
 
 
 def sends_data(ev):
-    """WT-T017: the curl/wget segment itself (up to a pipe, ;, && or ||) carries the data flag, and isn't a -G query."""
+    """WT-T017: the curl/wget segment itself (up to a pipe, ;, && or ||) carries a data flag.
+    -G/--get is harmless only when the data is not a file (@) or a command substitution."""
     m = re.search(r"(?i)\b(curl|wget)\b", ev)
     if not m:
         return True   # the prose form; its object words are checked by the rule
-    seg = re.split(r"\|\|?|;|&&", ev[m.start():])[0]
-    if re.search(r"(?i)(\s-G\b|\s--get\b)", seg):
+    seg = re.split(r"\|\|?|;|&&", ev[m.start():])[0].split("\n", 1)[0]  # one shell line; ignore fence backticks below
+    data = re.search(
+        r"(?i)(-X\s*POST\b|--data(-binary|-raw|-urlencode)?\b|-d[\"'\s@$]|"
+        r"-F[\"'\s]|--upload-file\b|\s-T\s|--post-(data|file)\b|--json\b|"
+        r"--body-file\b|--method=POST\b)", seg)
+    if not data:
         return False
-    return bool(re.search(r"(?i)(-X\s*POST\b|--data(-binary|-raw|-urlencode)?\b|\s-d(\s|@)|\s-F\s|--upload-file\b|\s-T\s|--post-(data|file)\b)", seg))
+    if re.search(r"(?i)(\s-G\b|\s--get\b)", seg):
+        return bool(re.search(r"(?i)(@\S|\$\(|`[^`\n]+`)", seg))
+    return True
 
 
 REF_RULES = ("WT-T001", "WT-T002", "WT-T004", "WT-T005", "WT-T006", "WT-T007", "WT-T008")
@@ -255,8 +265,8 @@ def scan_text(text, where, rules, kind="skill"):
                 continue
             if rule["id"] in guarded and in_warning(text, m, rules, code_ok=rule["id"] == "WT-T017"):
                 continue
-            if rule["id"] == "WT-T017" and not sends_data(m.group(0)):
-                continue   # the data flag belongs to a later command (| tr -d, ; sort -d) or -G turns it into a GET query
+            if rule["id"] == "WT-T017" and not sends_data(text[m.start():m.start() + 400]):
+                continue   # look past the short regex match so -G with @ or $(...) still counts; later | tr -d stays out
             if rule["id"] == "WT-T016" and not rules["write_verbs"].search(sentence_of(text, m)):
                 continue   # "failed silently", "quietly refresh the cache": quiet wording only matters next to an outward action
             if rule["id"] == SECRET_RULE and not looks_real_secret(m.group(0)):
@@ -497,7 +507,10 @@ def corroborated(f, findings):
     - an evidence finding, or
     - a finding from a different engine (gitleaks and Watchtower's own key rule, SkillSpector and husk...), or
     - a second, different high-or-critical pattern rule in the same skill (hidden Unicode plus an override order plus a
-      long encoded blob is not one unlucky wording match; one hit of one rule is)."""
+      long encoded blob is not one unlucky wording match; one hit of one rule is).
+    A WT-S005 cookie-only note stays Worth a look even when a real sign-in is at the same shared-browser place."""
+    if f["rule"] == "WT-S005" and f.get("title") != NEW_SIGN_IN:
+        return False
     here, src, skill = _place(f), f.get("source", "watchtower"), _skill_of(f)
     loud = lambda g: (g.get("severity_was") or g["severity"]) in ("critical", "high")
     for g in findings:
@@ -886,8 +899,17 @@ SENSITIVE_DOMAINS = ("anthropic.com", "claude.ai", "openai.com", "chatgpt.com", 
                      "microsoft.com", "live.com", "microsoftonline.com", "aws.amazon.com", "amazon.com", "stripe.com", "paypal.com",
                      "slack.com", "notion.so", "notion.com", "bitwarden.com", "1password.com", "lastpass.com", "dashlane.com",
                      "keepersecurity.com", "vercel.com", "cloudflare.com", "okta.com", "x.com", "twitter.com")
-SESSION_COOKIE = re.compile(r"(?i)^(__(Secure|Host)-)?(\w*session\w*|sid|ssid|hsid|apisid|sapisid|\w*_sid|auth\w*|\w*token\w*|"
-                            r"user_session|logged_in|sessionkey|__session)$")
+# Dots/hyphens allowed (chatgpt __Secure-next-auth.session-token). logged_in dropped: GitHub sets logged_in=no for anonymous visits.
+SESSION_COOKIE = re.compile(r"(?i)^([\w.-]*(session|sess)[\w.-]*|sid|ssid|hsid|apisid|sapisid|[\w.-]*_sid|"
+                            r"[\w.-]*auth[\w.-]*|[\w.-]*token[\w.-]*|sessionkey)$")
+
+
+def is_session_cookie(name):
+    """True for real login cookies. Visit/tracking names that fit the pattern (csrf_*) stay out."""
+    n = str(name or "")
+    if re.match(r"(?i)^csrf", n):
+        return False
+    return bool(SESSION_COOKIE.match(n))
 
 
 def sensitive_site(host):
@@ -917,29 +939,46 @@ def browser_jar_hosts():
                 continue
             h = str(h).lstrip("."); t = t / 1_000_000 - CHROME_EPOCH
             first, sess = out.get(h, (t, False))
-            out[h] = (min(first, t), sess or bool(SESSION_COOKIE.match(str(n or ""))))
+            out[h] = (min(first, t), sess or is_session_cookie(n))
         return out
     return None
 
 
+def _prev_host_sessions(prev):
+    """host -> had a session cookie. Legacy list format: known hosts count as already-session so we don't re-alarm on upgrade."""
+    if not isinstance(prev, dict):
+        return {}
+    h = prev.get("hosts", {})
+    if isinstance(h, list):
+        return {x: True for x in h}
+    if isinstance(h, dict):
+        return {k: bool(v) for k, v in h.items()}
+    return {}
+
+
 def new_sign_ins():
     """WT-S005: a sensitive site that got its first session in the shared browser since the last look. The first look is a baseline.
+    State stores per-host whether a session cookie was seen, so a visit that later becomes a sign-in still alarms.
     The sessions WT-S004 lists are carried across box resets by the platform's cookie seed; a new one is something that happened."""
     hosts = browser_jar_hosts()
     if hosts is None:
         return []
     path = state_path("browser_hosts.json")
     prev = load_json(path, None)
-    save_json(path, {"at": now(), "hosts": sorted(hosts)})
+    save_json(path, {"at": now(), "hosts": {h: bool(hosts[h][1]) for h in sorted(hosts)}})
     if not isinstance(prev, dict):
         return []
-    known = set(prev.get("hosts", []))
-    fresh = sorted(h for h in hosts if h not in known and sensitive_site(h))
-    if not fresh:
-        return []
+    known = _prev_host_sessions(prev)
     when = lambda h: dt.datetime.fromtimestamp(hosts[h][0]).strftime("%Y-%m-%d %H:%M")
-    signed = [h for h in fresh if hosts[h][1]]
-    cookies = [h for h in fresh if not hosts[h][1]]
+    signed, cookies = [], []
+    for h in sorted(hosts):
+        if not sensitive_site(h):
+            continue
+        sess = bool(hosts[h][1])
+        if h not in known:
+            (signed if sess else cookies).append(h)
+        elif sess and not known[h]:
+            signed.append(h)   # visit-only host flipped to a real session
     out = []
     if signed:
         out.append(finding("WT-S005", NEW_SIGN_IN, "high", ["ASI03", "AST06"], "shared browser",
@@ -1286,7 +1325,8 @@ def ask_first_gaps(text):
     return [w for w, rx in ASK_AREAS if not re.search(rx, ask)]
 
 
-RULE_OBJECTS = re.compile(r"""(https?://\S+|\S*/\S+|\b[\w.-]+\.(md|txt|json|csv|html?|py|sh|js|ts|ya?ml|pdf|docx?|xlsx?)\b)""", re.I)
+# Only real paths/URLs/filenames: slash-joined words like pay/transfer or send/post are the actions themselves.
+RULE_OBJECTS = re.compile(r"""(https?://\S+|~/\S+|\./\S+|/(?:\S+)|\b[\w.-]+\.(md|txt|json|csv|html?|py|sh|js|ts|ya?ml|pdf|docx?|xlsx?)\b)""", re.I)
 
 
 def lint_auto_review(text, where, check_missing=True):

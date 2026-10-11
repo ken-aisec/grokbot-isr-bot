@@ -18,7 +18,9 @@ class QuietFalseAlarms(unittest.TestCase):
         self.md = os.path.join(self.skill, "SKILL.md")
 
     def test_every_evidence_finding_keeps_its_severity_and_label(self):
-        ev = [F(r, sev, f"{self.md}:1") for r in sorted(wt.EVIDENCE_RULES) for sev in ("critical", "high", "medium", "low")]
+        # WT-S005 is evidence only with the New-sign-in title (cookie-only notes stay Worth a look).
+        ev = [F(r, sev, f"{self.md}:1", title=wt.NEW_SIGN_IN if r == "WT-S005" else "t")
+              for r in sorted(wt.EVIDENCE_RULES) for sev in ("critical", "high", "medium", "low")]
         ev.append(F("WT-S001", "critical", self.md, title=wt.KEY_LIVE))                        # a key the provider says works
         ev.append(F("WT-H006", "medium", "/home/box/.bash_history", title=wt.HISTORY_SHRANK))      # the file got smaller
         out = wt.label_findings(ev)
