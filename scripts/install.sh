@@ -10,17 +10,28 @@ if [[ "${1:-}" != "--scanners" ]]; then
   # ---- This is everything that runs for `bash install.sh <tag>`. It only writes inside $WT_HOME.
   TAG="${1:?usage: install.sh <tag> [commit]  (for example v0.6.8)}"; WANT="${2:-}"
   mkdir -p "$WT_HOME"/{state,reports,exports,vet}
-  rm -rf "$WT_HOME/app.new"
-  git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$TAG" "$REPO" "$WT_HOME/app.new"
-  GOT="$(git -C "$WT_HOME/app.new" rev-parse HEAD)"
+  # Private staging (0700, unpredictable name, removed on any exit): nothing else can plant a link in it.
+  STAGE="$(mktemp -d "$WT_HOME/.stage.XXXXXXXX")"; chmod 700 "$STAGE"; trap 'rm -rf "$STAGE"' EXIT
+  NEW="$STAGE/app"
+  git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$TAG" "$REPO" "$NEW"
+  GOT="$(git -C "$NEW" rev-parse HEAD)"
   # The commit ID is a checksum of every file. When the template gives one, a changed tag or repo can't slip through.
   if [[ -n "$WANT" && "$GOT" != "$WANT" ]]; then
-    echo "COMMIT CHECK FAILED - not installing (wanted $WANT, the tag points at $GOT)"; rm -rf "$WT_HOME/app.new"; exit 1
+    echo "COMMIT CHECK FAILED - not installing (wanted $WANT, the tag points at $GOT)"; exit 1
   fi
-  (cd "$WT_HOME/app.new" && sha256sum --quiet -c MANIFEST.sha256) || { echo "MANIFEST CHECK FAILED - not installing"; rm -rf "$WT_HOME/app.new"; exit 1; }
-  rm -rf "$WT_HOME/app" && mv "$WT_HOME/app.new" "$WT_HOME/app"
+  (cd "$NEW" && sha256sum --quiet -c MANIFEST.sha256) || { echo "MANIFEST CHECK FAILED - not installing"; exit 1; }
+  # Try the new copy before it replaces anything; the working copy and its commit record are only swapped after it runs.
+  python3 "$NEW/watchtower/wt.py" --version >/dev/null 2>&1 || { echo "ACTIVATION CHECK FAILED - the new version doesn't start here; the installed copy is unchanged"; exit 1; }
+  OLD="$STAGE/old"
+  [[ -e "$WT_HOME/app" ]] && mv "$WT_HOME/app" "$OLD"
+  PREV="$(cat "$WT_HOME/state/installed_commit" 2>/dev/null || true)"
+  mv "$NEW" "$WT_HOME/app"
   echo "$GOT" > "$WT_HOME/state/installed_commit"   # wt.py checks itself against this and the manifest before every run
-  python3 "$WT_HOME/app/watchtower/wt.py" --version >/dev/null
+  if ! python3 "$WT_HOME/app/watchtower/wt.py" --version >/dev/null 2>&1; then
+    rm -rf "$WT_HOME/app"; [[ -e "$OLD" ]] && mv "$OLD" "$WT_HOME/app"
+    if [[ -n "$PREV" ]]; then echo "$PREV" > "$WT_HOME/state/installed_commit"; else rm -f "$WT_HOME/state/installed_commit"; fi
+    echo "ACTIVATION FAILED - put the previous version back"; exit 1
+  fi
   echo "Watchtower $TAG installed at $WT_HOME/app (commit $GOT, manifest verified$([[ -n "$WANT" ]] && echo ", commit matches the template"))."
   echo "NEXT: read $WT_HOME/app/skills/watchtower-setup/SKILL.md and follow it from section 2."
   echo "Your skills are the SKILL.md files under $WT_HOME/app/skills/<name>/. Read the one you need when asked; never edit them."
@@ -39,7 +50,7 @@ SS="skillspector @ git+https://github.com/NVIDIA/SkillSpector@a50b9c93835c94f7d3
 # If the lock can't be used, the Python scanners are not installed without it (up to v0.6.6 this fell back to unchecked
 # downloads). gitleaks, TruffleHog and OSV-Scanner don't come from the lock: they still install from their own checksums,
 # and the script ends with CHECKSUM LOCK FAILED and a non-zero exit so the failure is never missed.
-DL="${TMPDIR:-/tmp}"
+DL="$(mktemp -d "${TMPDIR:-/tmp}/wt-dl.XXXXXXXX")"; chmod 700 "$DL"; trap 'rm -rf "$DL"' EXIT   # private: no shared-/tmp link games
 LOCK_ERR="$DL/wt-lock.err"; LOCK_FAILED=""
 if [[ -f "$LOCK" ]] && "$PIP" install --quiet --require-hashes -r "$LOCK" 2>"$LOCK_ERR" \
    && "$PIP" install --quiet --no-deps "$SS" 2>>"$LOCK_ERR"; then
@@ -53,7 +64,7 @@ else
     echo "CHECKSUM LOCK FAILED - not installing the Python scanners: $LOCK is missing."
   fi
   echo "Nothing is installed without checksums. gitleaks, TruffleHog and OSV-Scanner still install from their own checksums."
-  rm -rf "$WT_HOME/app.new"
+  rm -rf "$WT_HOME/app.new"   # a staging folder left by a version before v0.6.9
 fi
 mkdir -p "$WT_HOME/bin"
 arch="$(uname -m)"; case "$arch" in x86_64) ga=x64;; aarch64|arm64) ga=arm64;; *) echo "skip gitleaks: $arch"; ga="";; esac

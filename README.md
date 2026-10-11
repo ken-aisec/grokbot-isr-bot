@@ -48,12 +48,15 @@ Scripts find, the model judges, you approve. Scanning is deterministic Python wi
 1. Add the Watchtower template from its x.ai link.
 2. Say yes when Watchtower asks to set itself up.
 
-Manual install on the cloud computer:
+Manual install on the cloud computer. First copy the release's full commit ID from the GitHub release page
+(https://github.com/ken-aisec/grokbot-watchtower/releases), then use it for both the download and the install, so the
+installer itself and everything it installs are pinned:
 
 ```bash
+COMMIT=<full commit ID from the release page>
 mkdir -p /workspace/watchtower && cd /workspace/watchtower
-curl -fsSLO https://raw.githubusercontent.com/ken-aisec/grokbot-watchtower/v0.6.8/scripts/install.sh
-head -30 install.sh && bash install.sh v0.6.8
+curl -fsSLO "https://raw.githubusercontent.com/ken-aisec/grokbot-watchtower/$COMMIT/scripts/install.sh"
+head -40 install.sh && bash install.sh v0.6.8 "$COMMIT"
 bash /workspace/watchtower/app/scripts/install.sh --scanners
 python3 /workspace/watchtower/app/watchtower/wt.py audit
 ```

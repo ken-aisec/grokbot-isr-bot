@@ -119,6 +119,7 @@ class Publish(unittest.TestCase):
         open(os.path.join(self.repo, "scripts", "make-manifest.sh"), "w").write("#!/bin/bash\necho manifest > MANIFEST.sha256\n")
         open(os.path.join(self.repo, "tests", "test_ok.py"), "w").write("import unittest\nclass T(unittest.TestCase):\n    def test_ok(self):\n        pass\n")
         open(os.path.join(self.repo, "bot", "memories.md"), "w").write("1. Install {TAG} at {COMMIT}.\n")
+        open(os.path.join(self.repo, "MANIFEST.sha256"), "w").write("manifest\n")   # the reviewed commit carries its manifest
         stub(self.bin, "gh", 'echo "gh $*" >> "$GHLOG"\n'
                              'if [[ "$1 $2" == "api user" ]]; then echo ownerx; exit 0; fi\n'
                              'if [[ "$1 $2" == "repo view" && "$*" == *visibility* ]]; then echo "$FAKE_VIS"; exit 0; fi\n'
@@ -134,9 +135,11 @@ class Publish(unittest.TestCase):
         r = subprocess.run(["git", "--git-dir", self.remote, "rev-parse", "-q", "--verify", ref], capture_output=True, text=True)
         return r.stdout.strip() or None
 
-    def publish(self, vis="PUBLIC"):
+    def publish(self, vis="PUBLIC", reviewed=None):
+        """R14: publish.sh takes the reviewed commit ID; by default the checkout's HEAD is the reviewed candidate."""
         e = dict(os.environ, PATH=self.bin + ":" + os.environ["PATH"], GHLOG=self.ghlog, FAKE_VIS=vis, **GIT_ENV)
-        r = subprocess.run(["bash", "scripts/publish.sh"], cwd=self.repo, env=e, input="yes\n", capture_output=True, text=True, timeout=120)
+        reviewed = reviewed or self.git("rev-parse", "HEAD")
+        r = subprocess.run(["bash", "scripts/publish.sh", reviewed], cwd=self.repo, env=e, input="yes\n", capture_output=True, text=True, timeout=120)
         return r, (open(self.ghlog).read() if os.path.exists(self.ghlog) else "")
 
     def tag(self):
@@ -175,6 +178,40 @@ class Publish(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(self.remote_ref(f"refs/tags/{self.tag()}^{{commit}}"), self.git("rev-parse", "HEAD"))
         self.assertNotIn("repo edit", gh)
+
+    def test_r14_untracked_files_are_never_committed_or_tagged(self):
+        """Adversarial review R14: `git add -A` committed whatever was lying in the folder, then tagged that HEAD."""
+        reviewed = self.git("rev-parse", "HEAD")
+        open(os.path.join(self.repo, "notes-private.txt"), "w").write("not for release")
+        r, _ = self.publish(reviewed=reviewed)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("untracked", r.stdout)
+        self.assertEqual(self.git("rev-parse", "HEAD"), reviewed)                       # nothing was committed
+        self.assertIsNone(self.remote_ref(f"refs/tags/{self.tag()}"))
+
+    def test_r14_only_the_reviewed_commit_is_published(self):
+        reviewed = self.git("rev-parse", "HEAD")
+        open(os.path.join(self.repo, "later.txt"), "w").write("x"); self.git("add", "-A"); self.git("commit", "-qm", "after review")
+        r, _ = self.publish(reviewed=reviewed)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("not the reviewed commit", r.stdout)
+        self.assertIsNone(self.remote_ref(f"refs/tags/{self.tag()}"))
+        self.assertNotEqual(self.remote_ref("refs/heads/main"), self.git("rev-parse", "HEAD"))
+
+    def test_r14_wrong_branch_or_missing_id_stops(self):
+        r, _ = self.publish(reviewed="main")
+        self.assertEqual(r.returncode, 1); self.assertIn("40-character", r.stdout)
+        self.git("checkout", "-qb", "dev")
+        r, _ = self.publish()
+        self.assertEqual(r.returncode, 1); self.assertIn("publish from main", r.stdout)
+
+    def test_r14_main_tag_and_reviewed_commit_agree(self):
+        reviewed = self.git("rev-parse", "HEAD")
+        r, _ = self.publish(reviewed=reviewed)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.remote_ref("refs/heads/main"), reviewed)
+        self.assertEqual(self.remote_ref(f"refs/tags/{self.tag()}^{{commit}}"), reviewed)
+        self.assertEqual(self.git("status", "--porcelain", "--untracked-files=all"), "")   # nothing written into the checkout
 
 
 if __name__ == "__main__":
