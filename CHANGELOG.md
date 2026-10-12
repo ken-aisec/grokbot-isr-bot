@@ -14,6 +14,7 @@
 - DQ-030 / R21: `quarantine.json` `from` no longer exempts a path. Only Watchtower-home quarantine, the workspace holding folder (realpath prefix of `<dirname(WATCHTOWER_HOME)>/quarantine` and `/workspace/quarantine`), and owned `to` destinations stay unscored.
 - Regressions in `tests/test_dq022_025.py`, `tests/test_dq028_030.py`, plus a positive control that a bad skill under a live user skill root is still Confirmed.
 - Claude review R1/R2 (no blind spots): the secrets walk no longer skips sample-named folders (`docs`, `tests`, `examples`, `references`, `fixtures`) or quarantine, so keys and decoy copies there are found again. The DQ-024 template demotion now covers only the platform's own bundle (`/.grok/bundled/`, `/managed-skills/`; the built-in pptx skill is `/home/box/.grok/bundled/skills/pptx`) and only story wording (WT-T008, WT-T016); marketplace and user plugins are fully scored, and `counts()` no longer exempts template files (info severity already keeps them out of the score). Regressions in `tests/test_v070_no_blind_spots.py`.
+- Claude review R3 (keys move the score too): `counts()` no longer exempts key and decoy-copy findings (`SECRET_RULES` = WT-S001, WT-S002, WT-K003) in quarantine or in sample-named folders outside a loadable location. A real key in `myapp/docs/` or a quarantine folder is now both listed and counted; skill and wording rules there stay unscored. Regressions in `tests/test_v070_no_blind_spots.py`.
 
 ## v0.6.9 — 2026-10-11
 ### Red-team fixes (first)

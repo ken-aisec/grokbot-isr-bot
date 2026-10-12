@@ -45,5 +45,15 @@ class NoBlindSpots(Box):
         self.assertFalse(any(wt.counts(f) for f in fs), fs)
 
 
+    # R3: a key in a docs/tests folder or in quarantine also moves the score, not just the list
+    def test_key_in_docs_counts_toward_score(self):
+        fs = self.keys_found("myapp/docs/notes.txt")
+        self.assertTrue(fs and all(wt.counts(f) for f in fs), fs)
+        self.assertLess(self.snap()["score"], 100)
+
+    def test_key_in_quarantine_counts(self):
+        fs = self.keys_found("quarantine/oldskill/notes.txt")
+        self.assertTrue(fs and all(wt.counts(f) for f in fs), fs)
+
 if __name__ == "__main__":
     unittest.main()

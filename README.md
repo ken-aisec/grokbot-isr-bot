@@ -99,6 +99,8 @@ wt.py doctor [--save]         a support snapshot of this computer, safe to share
 
 State lives in `$WATCHTOWER_HOME` (default `/workspace/watchtower`). `state/ledger.jsonl` is an append-only record of every run: the audit trail non-Enterprise accounts don't get.
 
+Release drill, dev dry-run (precision plan item 8): before each release the dev build is run read-only against a real install and reports the score line plus every finding above info. Gotcha: don't just point `WATCHTOWER_HOME` at a copy of the state. The real install folder then looks foreign to the dev build (its quarantine and its own state files get flagged) and the score comes out falsely low (a false 41/F on Oct 12, against a real 94/A). Use the sandbox instead: mount a copy of the install over its own path inside a sandbox, with the rest of the computer read-only and a scratch `/tmp`, so paths match and nothing real is touched.
+
 ## Limits, stated plainly
 
 - It audits after the fact. It can't intercept another Bot's actions in real time; Auto Review is the inline control, and Watchtower checks how you've set it up.

@@ -2419,14 +2419,18 @@ def builtin(f):
     return any(x in w for x in VENDOR_CODE) or any(x in w for x in PLATFORM_FILES) or w.startswith("system python package ")
 
 
+SECRET_RULES = ("WT-S001", "WT-S002", "WT-K003")   # a key or a decoy copy counts wherever it sits (v0.7.0 review R3)
+
+
 def counts(f):
     """Only what the user owns moves the score. Built-in findings count when they are critical or high (two scanners
     agreeing a plugin is dangerous still matters); the rest are listed for information.
     DQ-022/023/024/028–030: true quarantine, sample/test folders outside loadable locations, and fiction inside
-    built-in templates never move the score. Sample-named folders inside a loadable skill still count."""
+    built-in templates never move the score. Sample-named folders inside a loadable skill still count.
+    R3: keys and decoy copies (SECRET_RULES) count wherever they sit, including quarantine and sample folders."""
     w = f.get("where", "")
     path = w.split(":")[0]
-    if path and not w.startswith(("rollcall:", "system python package ")):
+    if path and not w.startswith(("rollcall:", "system python package ")) and f["rule"] not in SECRET_RULES:
         if is_quarantined_path(path):
             return False
         if is_sample_skill_path(path) and not is_loadable_skill_location(path):
