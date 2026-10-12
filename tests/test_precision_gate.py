@@ -67,7 +67,8 @@ class BusyCleanBox(Box):
         self.assertEqual([(f["severity"], f["where"].endswith("auto-review.txt:1")) for f in a2], [("critical", True)])
 
     # -- the gate proper. Baselines measured Oct 12 on dev 4031cca.
-    @unittest.expectedFailure   # baseline: 1 Confirmed (WT-D002 high, leftpad in the cloned old-site repo). Items 1, 2, 3.
+    # baseline: 1 Confirmed (WT-D002 high, leftpad in the cloned old-site repo). Live since item 3 (Oct 12): the package fact
+    # in a project nothing loads is a Tip, not a Confirmed high.
     def test_gate_zero_confirmed(self):
         self.audit()
         fs = confirmed(self.snap()["findings"])

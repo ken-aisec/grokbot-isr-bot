@@ -601,6 +601,33 @@ def _no_severity(f, cls, label):
         f["severity_was"], f["severity"] = f["severity"], "info"   # shown without a severity, never scored
 
 
+# v0.7.1 precision item 3 (Ken, Oct 12): evidence rules split the fact from the severity. The fact stays listed; the severity
+# is only kept when the thing is reachable. WT-S004 (DQ-026: high only with a session cookie for a sensitive site) and WT-A001
+# (DQ-027: critical only when broader than one pinned address) already do this where they are made; FACT_ONLY holds the rest.
+FACT_NOTE = {"WT-D002": ("in a project nothing on this computer loads",
+                         "Nothing Grok Bot loads uses this project, so it isn't scored. If you still run or deploy it, update the package "
+                         "there (`wt.py fix` offers the upgrade).")}
+
+
+def package_reachable(f):
+    """A vulnerable package is reachable when something the platform loads uses it: a lockfile inside a skill or plugin folder."""
+    path = (f.get("where") or "").split(":")[0]
+    return not path.startswith("/") or is_loadable_skill_location(path)
+
+
+FACT_ONLY = {"WT-D002": package_reachable}
+
+
+def split_facts(fs):
+    """Mark evidence findings whose fact is real but whose thing nothing reaches: shown as a Tip (no severity, never scored)."""
+    for f in fs:
+        test = FACT_ONLY.get(f["rule"])
+        if test and not f.get("fact_only") and not test(f):
+            note, fix = FACT_NOTE[f["rule"]]
+            f.update(fact_only=True, title=f"{f['title']} ({note})", fix=fix)
+    return fs
+
+
 def label_findings(findings, covered=None):
     """Label every finding. Evidence and corroborated findings are Confirmed and keep their severity. Best-practice checks are Tips
     and an approval line the Ask-first rules already cover is a Tip; pattern findings nothing backs up are "Worth a look". Tips and
@@ -609,7 +636,7 @@ def label_findings(findings, covered=None):
     out = []
     for f in findings:
         f = dict(f)
-        if f["rule"] in TIP_RULES or f["rule"] in SCOPE_RULES or covered_by_ask_first(f, covered):
+        if f["rule"] in TIP_RULES or f["rule"] in SCOPE_RULES or f.get("fact_only") or covered_by_ask_first(f, covered):
             _no_severity(f, "tip", TIP)
         elif is_evidence(f):
             f["class"], f["label"] = "evidence", CONFIRMED
@@ -2754,7 +2781,7 @@ def run_audit_locked(args, quick):
         fs = sort_findings(fs)
     if not quick and "SkillSpector and husk" not in STAGE_FAILED:
         fs = roll_builtin(fs, meta, meta["notes"])
-    fs = platform_owned(fs)
+    fs = split_facts(platform_owned(fs))
     for f in fs:
         if builtin(f):
             f["scope"] = "builtin"

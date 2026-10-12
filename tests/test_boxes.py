@@ -258,7 +258,9 @@ class ScannersMisbehave(Box):
         self.scanners(osv_scanner="#!/bin/sh\necho '{\"results\": []}'\n")       # the package really was fixed
         r = self.audit()
         self.assertIn("WT-D002", {f["rule"] for f in r["fixed"]})
-        self.assertGreater(r["score"], score)
+        # v0.7.1 item 3: /ws/app is a project nothing on the computer loads, so its package fact is a Tip and never scored.
+        # A fixed package that was scored raises the score: tests/test_precision_item3.py checks that on a live skill.
+        self.assertGreaterEqual(r["score"], score)
 
 
 class BuiltInSoftware(Box):
