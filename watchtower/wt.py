@@ -856,6 +856,9 @@ def skill_tier(path):
 # are not scored as installed skills (never hard-code a checkout path; never match a bare segment name).
 SAMPLE_SKILL_PATH = re.compile(
     r"(?i)(^|/)(tests?|__tests__|fixtures?|testdata|examples?|docs|references)(/|$)")
+# Shipped by the platform itself, not marketplace plugins (/plugins/, /plugin-cache/ stay fully scored).
+# The built-in pptx skill on the main box is /home/box/.grok/bundled/skills/pptx (realpath, checked 2026-10-12).
+PLATFORM_BUNDLED = ("/.grok/bundled/", "/managed-skills/")
 VENDOR_TEMPLATE_PATH = re.compile(r"(?i)/(templates|examples)/")
 
 
@@ -935,9 +938,10 @@ def is_loadable_skill_location(path):
 
 
 def is_vendor_template_file(path):
-    """Example/story files inside a shipped skill (e.g. .grok/bundled/.../templates/*.js). DQ-024."""
+    """Example/story files inside the platform's own bundled skills (e.g. .grok/bundled/.../templates/*.js). DQ-024.
+    Marketplace and user plugins are never covered (v0.7.0 review R2)."""
     p = os.path.normpath(str(path).split(":")[0]).replace(os.sep, "/")
-    return any(x in p for x in VENDOR_CODE) and bool(VENDOR_TEMPLATE_PATH.search(p))
+    return any(x in p for x in PLATFORM_BUNDLED) and bool(VENDOR_TEMPLATE_PATH.search(p))
 
 
 def is_live_skill_path(path):
@@ -1174,7 +1178,7 @@ def audit(roots, exports, quick=False):
                     batch = scan_text(t, p, rules, kind=kind)
                     if is_vendor_template_file(p):   # DQ-024: story text in a built-in deck template is not a hidden-action hit
                         for f in batch:
-                            if f["rule"] in REF_RULES or f["rule"] == "WT-T008":
+                            if f["rule"] in ("WT-T008", "WT-T016"):   # story wording only; never exfil/pipe/override (R2)
                                 f["severity"] = "info"
                                 f["title"] = f["title"] + " (example text in a built-in template)"
                     fs += batch
@@ -1258,8 +1262,8 @@ def audit(roots, exports, quick=False):
     for p in walk(roots, max_depth=6):
         if p in known or p in decoys or os.path.basename(p) in SESSION_FILES:
             continue
-        if is_quarantined_path(p) or (is_sample_skill_path(p) and not is_loadable_skill_location(p)):
-            continue
+        # v0.7.0 review R1: no sample-folder or quarantine skip here. A key is a key wherever it sits, and the
+        # decoy-copy check must see docs/, tests/, examples/, references/ and fixtures/ folders too.
         if os.path.splitext(p)[1].lower() not in TEXT_EXT:
             continue
         t = read_text(p, limit=300_000)
@@ -2423,7 +2427,7 @@ def counts(f):
     w = f.get("where", "")
     path = w.split(":")[0]
     if path and not w.startswith(("rollcall:", "system python package ")):
-        if is_quarantined_path(path) or is_vendor_template_file(path):
+        if is_quarantined_path(path):
             return False
         if is_sample_skill_path(path) and not is_loadable_skill_location(path):
             return False
