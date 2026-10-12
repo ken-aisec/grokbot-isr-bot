@@ -23,7 +23,7 @@ if sys.version_info < (3, 8):   # degrade with one plain line, not a traceback (
     sys.exit(3)
 import argparse, concurrent.futures, datetime as dt, difflib, gzip, hashlib, html, json, math, os, platform, re, shutil, stat, subprocess, sys, tempfile, time, traceback
 
-VERSION = "0.6.9"
+VERSION = "0.7.0"
 HERE = os.path.dirname(os.path.abspath(__file__))
 RULES_PATH = os.path.join(HERE, "..", "rules", "text_rules.json")
 SELF_ROOT = os.path.abspath(os.path.join(HERE, ".."))
