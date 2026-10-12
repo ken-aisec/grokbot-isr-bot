@@ -852,7 +852,8 @@ def skill_tier(path):
     return "vendor"
 
 
-# DQ-022/023: sample and quarantine folders are not loadable skills (never hard-code a checkout path).
+# DQ-022/023/028–030: sample folders outside loadable locations, and real quarantine holding places,
+# are not scored as installed skills (never hard-code a checkout path; never match a bare segment name).
 SAMPLE_SKILL_PATH = re.compile(
     r"(?i)(^|/)(tests?|__tests__|fixtures?|testdata|examples?|docs|references)(/|$)")
 VENDOR_TEMPLATE_PATH = re.compile(r"(?i)/(templates|examples)/")
@@ -864,23 +865,73 @@ def is_sample_skill_path(path):
     return bool(SAMPLE_SKILL_PATH.search(p))
 
 
+def workspace_quarantine_roots():
+    """The one workspace holding folder Watchtower uses for hand-quarantine (sibling of Watchtower-home),
+    plus the production /workspace/quarantine tree. Matched as real path prefixes, never by segment name."""
+    roots = set()
+    try:
+        sibling = os.path.realpath(os.path.join(os.path.dirname(home()), "quarantine"))
+        roots.add(sibling)
+    except OSError:
+        pass
+    try:
+        roots.add(os.path.realpath("/workspace/quarantine"))
+    except OSError:
+        roots.add(os.path.normpath("/workspace/quarantine"))
+    return {r for r in roots if r}
+
+
 def is_quarantined_path(path):
-    """Watchtower-home quarantine, a workspace quarantine/ holding folder, or a path in quarantine.json."""
+    """True only for Watchtower-home quarantine, the workspace holding folder (realpath prefix), or a
+    quarantine.json `to` that is under Watchtower-home quarantine / owned as quarantine. Never `from`,
+    never a path segment named quarantine anywhere (DQ-028/030)."""
     p = os.path.normpath(os.path.abspath(str(path).split(":")[0]))
+    try:
+        pr = os.path.realpath(p)
+    except OSError:
+        pr = p
     qhome = os.path.normpath(os.path.join(home(), "quarantine"))
-    if p == qhome or _under(p, {qhome}):
+    try:
+        qhome_r = os.path.realpath(qhome)
+    except OSError:
+        qhome_r = qhome
+    if p == qhome or pr == qhome_r or _under(p, {qhome}) or _under(pr, {qhome_r}):
         return True
-    if "quarantine" in p.replace(os.sep, "/").split("/"):
-        return True
+    for hold in workspace_quarantine_roots():
+        if p == hold or pr == hold or _under(p, {hold}) or _under(pr, {hold}):
+            return True
     for e in load_json(state_path("quarantine.json"), []) or []:
-        for k in ("to", "from"):
-            t = e.get(k)
-            if not t:
-                continue
-            tn = os.path.normpath(t)
-            if p == tn or _under(p, {tn}):
-                return True
+        t = e.get("to")
+        if not t:
+            continue
+        tn = os.path.normpath(t)
+        try:
+            tr = os.path.realpath(tn)
+        except OSError:
+            tr = tn
+        # Only real quarantine destinations: owned quarantine entry, or under Watchtower-home quarantine.
+        if not (owned_path(tn, "quarantine", log=False) or tr == qhome_r or _under(tr, {qhome_r})
+                or tn == qhome or _under(tn, {qhome})):
+            continue
+        if p == tn or pr == tr or _under(p, {tn}) or _under(pr, {tr}):
+            return True
     return False
+
+
+def is_loadable_skill_location(path):
+    """User skill roots, plugin/marketplace/bundled skill folders (VENDOR_CODE). Always live and scored
+    regardless of folder names inside them (DQ-028/029)."""
+    p = os.path.normpath(os.path.abspath(str(path).split(":")[0]))
+    try:
+        pr = os.path.realpath(p)
+    except OSError:
+        pr = p
+    roots = user_skill_roots()
+    if _under(p, roots) or _under(pr, {os.path.realpath(r) for r in roots}):
+        return True
+    slash = p.replace(os.sep, "/")
+    real_slash = pr.replace(os.sep, "/")
+    return any(x in slash or x in real_slash for x in VENDOR_CODE)
 
 
 def is_vendor_template_file(path):
@@ -890,15 +941,14 @@ def is_vendor_template_file(path):
 
 
 def is_live_skill_path(path):
-    """A SKILL.md counts as an installed skill unless it sits under quarantine or a sample/test/docs
-    folder (DQ-022/023). User workflow roots are always live (even a skill named docs). Everything else
-    that is not sample/quarantine stays live so unrecognized places still get the full rules and count
-    (R15); sample trees are reported once as info, never scored."""
+    """A SKILL.md counts as an installed skill unless it sits under real quarantine. Anything under a
+    loadable location (user roots, plugin/marketplace/bundled) is always live, even if a folder is named
+    quarantine/tests/docs/references (DQ-028/029). Sample trees outside loadable locations stay non-live
+    (DQ-022). Unrecognized places stay live so they still get full rules and count (R15)."""
     p = os.path.normpath(os.path.abspath(str(path).split(":")[0]))
     if is_quarantined_path(p):
         return False
-    roots = user_skill_roots()
-    if _under(p, roots) or _under(os.path.realpath(p), {os.path.realpath(r) for r in roots}):
+    if is_loadable_skill_location(p):
         return True
     if is_sample_skill_path(p):
         return False
@@ -1208,7 +1258,7 @@ def audit(roots, exports, quick=False):
     for p in walk(roots, max_depth=6):
         if p in known or p in decoys or os.path.basename(p) in SESSION_FILES:
             continue
-        if is_sample_skill_path(p) or is_quarantined_path(p):
+        if is_quarantined_path(p) or (is_sample_skill_path(p) and not is_loadable_skill_location(p)):
             continue
         if os.path.splitext(p)[1].lower() not in TEXT_EXT:
             continue
@@ -2368,11 +2418,14 @@ def builtin(f):
 def counts(f):
     """Only what the user owns moves the score. Built-in findings count when they are critical or high (two scanners
     agreeing a plugin is dangerous still matters); the rest are listed for information.
-    DQ-022/023/024: sample/test folders, quarantine, and fiction inside built-in templates never move the score."""
+    DQ-022/023/024/028–030: true quarantine, sample/test folders outside loadable locations, and fiction inside
+    built-in templates never move the score. Sample-named folders inside a loadable skill still count."""
     w = f.get("where", "")
     path = w.split(":")[0]
     if path and not w.startswith(("rollcall:", "system python package ")):
-        if is_quarantined_path(path) or is_sample_skill_path(path) or is_vendor_template_file(path):
+        if is_quarantined_path(path) or is_vendor_template_file(path):
+            return False
+        if is_sample_skill_path(path) and not is_loadable_skill_location(path):
             return False
     return not builtin(f) or f["severity"] in ("critical", "high")
 

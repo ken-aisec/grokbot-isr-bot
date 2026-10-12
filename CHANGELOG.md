@@ -1,14 +1,18 @@
 # Changelog
 
-## v0.6.9 — 2026-10-11
-### Unreleased (DQ-022–026, local dev)
+## Unreleased
+- DQ-028 / R19: a live skill whose folder is named `quarantine` (or `tests`/`docs`/`examples`/`fixtures`) under a user root, plugin, or bundled path stays live and scored. Quarantine is never matched by a bare path segment name.
+- DQ-029 / R20: findings under `references/` (and other sample-named folders) inside a loadable skill count toward the score; sample exemption applies only outside loadable locations. Stage-2 walk uses the same rule.
+- DQ-030 / R21: `quarantine.json` `from` no longer exempts a path. Only Watchtower-home quarantine, the workspace holding folder (realpath prefix of `<dirname(WATCHTOWER_HOME)>/quarantine` and `/workspace/quarantine`), and owned `to` destinations stay unscored.
+- DQ-027: "any" inside an Ask-first clause of a pinned allow is not WT-A001 breadth; wildcards inside links still fire. Regressions in `tests/test_dq027.py`.
 - DQ-026: WT-S004 treats a sensitive domain as signed-in only when a session/auth cookie is present (same `is_session_cookie` test as WT-S005). Visit/analytics cookies (including Mixpanel `_mpxl_sid` and `_gd_session`) no longer put Bitwarden in the sensitive headline or raise high. Regressions in `tests/test_dq026.py`.
-- DQ-022: `SKILL.md` under sample/test folders (`tests`, `fixtures`, `testdata`, `examples`, `docs`, `references`, …) is not an installed skill. One WT-I007 info note lists them; they never move the score. No hard-coded checkout path.
-- DQ-023: quarantine (Watchtower-home quarantine, a workspace `quarantine/` holding folder, or `quarantine.json`) does not count toward the score.
+- DQ-022: `SKILL.md` under sample/test folders (`tests`, `fixtures`, `testdata`, `examples`, `docs`, `references`, …) **outside** a loadable skill location is not an installed skill. One WT-I007 info note lists them; they never move the score. Folders with those names inside user roots / plugin / bundled skill trees stay live and scored (see DQ-028/029). No hard-coded checkout path.
+- DQ-023: quarantine does not count toward the score: Watchtower-home quarantine, the workspace holding folder matched as a realpath prefix (not any segment named `quarantine`), and quarantine.json `to` entries that pass `owned_path(..., "quarantine")`. Never `from`.
 - DQ-024: fiction in built-in skill templates (e.g. "secretly" in a bundled pptx deck template) is demoted to info and excluded from the score (`not_counted_builtin`). Two scanners agreeing on a marketplace plugin still counts.
 - DQ-025: full audit JSON sets `not_checked_this_run` from `stages_skipped` (same meaning as daily). `wt.py breakdown` lists Confirmed critical/high/medium findings in full when audit `new` was truncated.
-- Regressions in `tests/test_dq022_025.py`, plus a positive control that a bad skill under a live user skill root is still Confirmed.
+- Regressions in `tests/test_dq022_025.py`, `tests/test_dq028_030.py`, plus a positive control that a bad skill under a live user skill root is still Confirmed.
 
+## v0.6.9 — 2026-10-11
 ### Red-team fixes (first)
 - A skill that reads credential files and posts them out was one lone pattern match ("Worth a look", no severity). New rule WT-T017 (sends data to an outside address: curl/wget POST or upload, "upload ... to https://"), and WT-T008 now catches "don't mention this step", so the attack is corroborated and Confirmed critical.
 - The self-check flags any file added to the installed release folder ("not in the release"). A skill dropped into app/skills was treated as Watchtower's own.
