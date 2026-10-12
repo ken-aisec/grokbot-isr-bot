@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Precision pass item 7 (false-alarm gate), built gate-first: `tests/profiles` gains a "busy clean box" (the platform's pptx skill, a cloned repo with old packages, an archive folder, a platform plugin catalog sync, a fixtures folder of bad samples, the pinned bridge allow, a visit-only cookie file and Watchtower's own dev checkout) and `tests/test_precision_gate.py` gates on 0 Confirmed, at most 5 worth a look, and a quiet daily watch on a no-change re-run and after a simulated platform refresh. Today's dev build fails three of these (1 Confirmed, 27 worth a look, refresh alerts); they are marked expected failures with the measured baseline and switch on by themselves (unexpected success turns the suite red) as items 1 to 6 land. Live now: the owner's skills stay quiet, the no-change re-run is quiet, the red-team suite catches 100%, keys in the archive, clone, fixtures and dev checkout are still found and counted, a bad live skill on the busy box is Confirmed, an approved skill that changes still alerts, and the pinned bridge POST stays critical WT-A002 (Ken, Oct 11).
 
 ## v0.7.0 — 2026-10-12
 - DQ-022: `SKILL.md` under sample/test folders (`tests`, `fixtures`, `testdata`, `examples`, `docs`, `references`, …) outside a loadable skill location is not an installed skill. One WT-I007 info note lists them; they never move the score. Folders with those names inside user roots / plugin / bundled skill trees stay live and scored (see DQ-028/029). No hard-coded checkout path.
