@@ -467,7 +467,7 @@ CONFIRMED, MAYBE_FINE = "Confirmed", "Worth a look (might be fine)"
 # v0.6.8 (Ken, Oct 10, after Cloudflare's MIT-licensed security-audit skill): a "Worth a look" finding carries no severity and
 # never moves the score; best-practice checks are Tips, also without severity or score.
 TIP_RULES = frozenset(("WT-R002", "WT-R003"))   # pattern-class best practice only; no evidence rule is moved
-SCOPE_RULES = frozenset(("WT-I007",))   # v0.7.1 item 1: the one "Not scanned: ..." line reads as a tip, never worth a look
+SCOPE_RULES = frozenset(("WT-I007", "WT-I008"))   # v0.7.1 items 1 and 6: "Not scanned" and "Platform refresh" summaries are tips
 TIP = "Tip"
 VERB_AREA = (("sending email or messages", r"(?i)^(send|sends|sending|email|emails|message|messages|reply|replies|dm)$"),
              ("publishing or posting", r"(?i)^(post|posts|publish|publishes|tweet|tweets)$"),
@@ -1364,6 +1364,7 @@ def audit(roots, exports, quick=False):
             if p in base and base[p] != h and is_vendor(p):
                 fs.append(finding("WT-I001", "Built-in skill or plugin updated", "low", ["AST07"], p, f"sha256 {base[p][:12]}→{h[:12]}",
                                   "Usually the platform or a plugin update. The scanners re-check the new version; the fix re-approves it if clean."))
+                fs[-1]["refresh"] = platform_file(p)
             elif p in base and base[p] != h:
                 fs.append(finding("WT-I001", "Reviewed skill or plugin changed", "high", ["AST07"], p,
                                   f"sha256 {base[p][:12]}→{h[:12]}",
@@ -1371,6 +1372,7 @@ def audit(roots, exports, quick=False):
             elif p not in base:
                 fs.append(finding("WT-I002", "New skill or plugin file", "low", ["AST09"], p, h[:12],
                                   "Vet it (`wt vet`), then run `wt baseline` to accept it."))
+                fs[-1]["refresh"] = platform_file(p)
         for p in base:
             if any(x in p for x in SKIP_PATH_PARTS):
                 continue
@@ -1380,6 +1382,7 @@ def audit(roots, exports, quick=False):
                 continue   # v0.7.1 item 1: still on disk, just outside the live scan (archive, clone, scope back to live-only)
             if p not in manifest and not p.startswith("persist:"):
                 fs.append(finding("WT-I003", "Skill or plugin file removed", "info", ["AST09"], p, "missing", "Confirm you removed it."))
+                fs[-1]["refresh"] = platform_file(p)
     else:
         notes.append("No baseline yet: integrity drift starts next run.")
     for d, (n_done, n_all) in sorted(INCOMPLETE_SKILLS.items()):
@@ -2588,6 +2591,36 @@ def keep_plugin(where):
     return kept
 
 
+REFRESH_RULE = "WT-I008"
+
+
+def summarize_refresh(fs):
+    """v0.7.1 precision item 6 (Ken, Oct 12): change alerts name the source. Changes to Grok Bot's own files (a platform refresh)
+    are one summary line, a Tip, never an alert. Watchtower's own update is already skipped (own_release_file) and the owner's
+    other project folders are outside the live scan (item 1). An unexplained change to something live still alerts: the owner's
+    skills (WT-I001 high) and plugins they installed. The full audit still accepts the platform's files only when nothing flags
+    them (roll_builtin), and the scanners and rules still read every changed file, so a refresh that adds something bad is
+    reported by what it adds."""
+    ref = [f for f in fs if f.get("refresh") and f["rule"] in ("WT-I001", "WT-I002", "WT-I003")]
+    if not ref:
+        return fs
+    names = []
+    for f in ref:
+        w = f["where"].split(":")[0]
+        root = skill_root(w) if os.path.exists(w) else None
+        n = skill_name(root) if root else os.path.basename(os.path.dirname(w))
+        if n not in names:
+            names.append(n)
+    c = {r: sum(1 for f in ref if f["rule"] == r) for r in ("WT-I001", "WT-I002", "WT-I003")}
+    shown = ", ".join(names[:6]) + (f", +{len(names) - 6} more" if len(names) > 6 else "")
+    out = [f for f in fs if f not in ref]
+    out.append(finding(REFRESH_RULE, f"Platform refresh: {len(ref)} of Grok Bot's own files changed ({shown})", "info", ["AST07"],
+                       "platform-refresh", f"{c['WT-I001']} updated, {c['WT-I002']} added, {c['WT-I003']} removed",
+                       "Nothing to do. Grok Bot updated its own skills or plugin catalog. Watchtower re-checks the new files and accepts "
+                       "them on the next full audit when nothing flags them.", ident="platform-refresh"))
+    return out
+
+
 def builtin(f):
     """Shipped by the platform or a plugin, not made or installed by hand by the user. A plugin that is new and that the
     owner hasn't kept yet is not built-in: it counts in full until they decide."""
@@ -2847,7 +2880,7 @@ def run_audit_locked(args, quick):
         fs = sort_findings(fs)
     if not quick and "SkillSpector and husk" not in STAGE_FAILED:
         fs = roll_builtin(fs, meta, meta["notes"])
-    fs = split_facts(platform_owned(fs))
+    fs = split_facts(platform_owned(summarize_refresh(fs)))
     for f in fs:
         if platform_file(f):
             f["scope"] = "platform"
@@ -2860,7 +2893,7 @@ def run_audit_locked(args, quick):
     prev = load_json(state_path("last_findings.json"), {"findings": []})
     prev_keys, cur_keys = keys_of(prev.get("findings", [])), keys_of(live)
     new = [f for f in live if not known(f, prev_keys) and (f["severity"] != "info" or f.get("class") == "pattern")]
-    fixed = [f for f in prev.get("findings", []) if not known(f, cur_keys)]
+    fixed = [f for f in prev.get("findings", []) if not known(f, cur_keys) and f["rule"] != REFRESH_RULE]   # a summary going away fixes nothing
     s, g = score(scored(live))
     if not load_json(state_path("baseline.json"), {}):
         save_json(state_path("baseline.json"), meta["manifest"])

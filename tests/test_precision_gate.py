@@ -82,7 +82,8 @@ class BusyCleanBox(Box):
         fs = worth_a_look(self.snap()["findings"])
         self.assertLessEqual(len(fs), MAX_WORTH_A_LOOK, show(fs, self.tmp))
 
-    @unittest.expectedFailure   # baseline: WT-I001 "Built-in skill or plugin updated" lines alert after a platform refresh. Item 6.
+    # baseline: WT-I001 "Built-in skill or plugin updated" lines alert after a platform refresh. Item 6.
+    # Live since item 6 (Oct 12): a platform refresh is one "Platform refresh" Tip, never an alert.
     def test_gate_daily_watch_quiet_after_a_platform_refresh(self):
         self.audit(); self.run_cmd("baseline", "--roots", *self.roots)
         profiles.platform_refresh(self, self.lay)
