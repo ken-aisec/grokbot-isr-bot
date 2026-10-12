@@ -648,6 +648,38 @@ def label_findings(findings, covered=None):
     return out
 
 
+# v0.7.1 precision item 5 (Ken, Oct 12): one finding per root cause. Within one skill, findings about the same kind of risk
+# with the same label are one line; the other rules, files and engines are listed on it as "also flagged by". Keys, decoys,
+# change alerts and evidence (two engines agreeing, a decoy read) are never folded: each one is its own fact.
+GROUP_CLASSES = ("pattern", "tip", "corroborated")
+ALSO_MAX = 12
+
+
+def _groupable(f):
+    w = f.get("where") or ""
+    return (f.get("class") in GROUP_CLASSES and w.startswith("/") and f["rule"] not in SECRET_RULES
+            and not f["rule"].startswith(("WT-K", "WT-I", "WT-X")))
+
+
+def group_root_causes(fs):
+    out, primary = [], {}
+    for f in sort_findings(fs):
+        root = skill_root(f["where"].split(":")[0]) if _groupable(f) else None
+        if not root:
+            out.append(f)
+            continue
+        k = (root, f["class"], "+".join(sorted(kinds_of(f))) or f["rule"])
+        p = primary.get(k)
+        if p is None:
+            primary[k] = f
+            out.append(f)
+            continue
+        p["also_count"] = p.get("also_count", 0) + 1
+        if len(p.setdefault("also_flagged_by", [])) < ALSO_MAX:
+            p["also_flagged_by"].append({"rule": f["rule"], "where": f["where"], "source": f.get("source", "watchtower")})
+    return out
+
+
 def open_counts(fs):
     """Worth-a-look and Tip counts, shown next to the score everywhere so a perfect score never hides open items."""
     fs = fs or []
@@ -2787,7 +2819,7 @@ def run_audit_locked(args, quick):
             f["scope"] = "builtin"
         elif in_pending_plugin(f["where"]) and f["rule"] in ("WT-X001", "WT-X002", "WT-T006k") and f["severity"] == "low":
             f["severity"] = "medium"   # one scanner flagging a skill in a plugin nobody has reviewed yet is worth a look
-    fs = sort_findings(label_findings(fs, ask_first_covered(fs)))
+    fs = sort_findings(group_root_causes(label_findings(fs, ask_first_covered(fs))))
     live, suppressed = active(fs)
     prev = load_json(state_path("last_findings.json"), {"findings": []})
     prev_keys, cur_keys = keys_of(prev.get("findings", [])), keys_of(live)
@@ -2850,7 +2882,11 @@ SLOW_RULES = ("WT-X001", "WT-X002", "WT-X003", "WT-S002", "WT-D001", "WT-D002")
 
 
 def compact(f):
-    return dict({k: f[k] for k in ("rule", "severity", "title", "where", "evidence", "fix", "owasp")}, label=label_of(f))
+    out = dict({k: f[k] for k in ("rule", "severity", "title", "where", "evidence", "fix", "owasp")}, label=label_of(f))
+    if f.get("also_count"):   # v0.7.1 item 5: one line per root cause
+        rules = sorted({a["rule"] for a in f.get("also_flagged_by", [])})
+        out["also_flagged_by"] = f"{f['also_count']} more in this skill about the same kind of risk ({', '.join(rules)})"
+    return out
 
 
 def cmd_audit(args):
