@@ -502,24 +502,77 @@ def _skill_of(f):
 
 NO_OPINION = frozenset(("WT-X004", "WT-R010"))   # "couldn't finish" / "didn't parse": facts about the run, not the content
 
+# v0.7.1 precision item 2 (Ken, Oct 12): Confirmed means dangerous and reachable. Two votes count only when they are about the
+# same file and the same kind of risk; a wording hit alone is never Confirmed, it needs a behavior signal in the same file.
+RISK_KIND = {"WT-T004": "credential", "WT-T011": "credential", "WT-S001": "credential", "WT-S002": "credential", "WT-K003": "credential",
+             "WT-T005": "exfil", "WT-T017": "exfil", "WT-T006": "pipe", "WT-T006k": "pipe", "WT-T002": "obfuscation",
+             "WT-T003": "obfuscation", "WT-T012": "exec", "WT-T008": "secrecy", "WT-T016": "secrecy", "WT-T001": "override",
+             "WT-T007": "override"}
+WORDING_RULES = frozenset(("WT-T001", "WT-T007", "WT-T008", "WT-T016"))                          # what a skill says
+BEHAVIOR_RULES = frozenset(("WT-T002", "WT-T003", "WT-T004", "WT-T005", "WT-T006", "WT-T012", "WT-T017"))   # what it does
+WORDING_BACKERS = BEHAVIOR_RULES | {"WT-T013"}
+DRIFT_RULES = frozenset(("WT-I001", "WT-I002"))   # a live file that changed or appeared: a fact about reach, never about wording   # an email or post sent with no approval line is a send, even without curl
+ENGINE_KIND_WORDS = (("credential", r"cred|secret|token|passw|api[ _-]?key|ssh|aws|keychain|cookie"),
+                     ("exfil", r"exfil|upload|leak|send|webhook|network|outbound|data[ _-]?theft|post\b"),
+                     ("pipe", r"pipe|curl|wget|remote[ _-]?(code|script)|download"),
+                     ("obfuscation", r"obfusc|encod|base64|hidden|unicode|loader|packed|homoglyph"),
+                     ("secrecy", r"conceal|secre|stealth|hide|hiding"),
+                     ("override", r"inject|override|jailbreak|ignore (previous|prior|all)"),
+                     ("exec", r"\bexec|eval|shell|command|subprocess"))
+
+
+def engine_kinds(texts):
+    """The kinds of risk a scanner's own words name ("Exfil: Upload", "obfuscated loader"). Unknown wording names none."""
+    t = " ".join(str(x) for x in texts or ()).lower()
+    return {k for k, rx in ENGINE_KIND_WORDS if re.search(rx, t)}
+
+
+def kinds_of(f):
+    return set(f.get("kinds") or ()) or ({RISK_KIND[f["rule"]]} if f["rule"] in RISK_KIND else set())
+
 
 def corroborated(f, findings):
-    """A pattern finding is backed up when, at the same file or skill folder (one inside the other), there is
-    - an evidence finding, or
-    - a finding from a different engine (gitleaks and Watchtower's own key rule, SkillSpector and husk...), or
-    - a second, different high-or-critical pattern rule in the same skill (hidden Unicode plus an override order plus a
-      long encoded blob is not one unlucky wording match; one hit of one rule is).
+    """A pattern finding is backed up (v0.7.1 item 2: two votes about the same file and the same kind of risk) when
+    - a wording hit (override, weaken approvals, secrecy, quiet action) has a behavior signal in the same file: a credential read,
+      a send to an outside address, a pipe-to-shell, hidden Unicode, an encoded blob, dynamic code. Wording alone never is;
+    - a behavior hit has, in the same file, an evidence finding or another engine's finding about the same kind of risk, or a
+      second, different loud Watchtower rule (credential read plus a send out is the classic chain);
+    - a behavior hit has a scanner's verdict on its skill folder that names the same kind of risk ("husk found something
+      somewhere in the folder" is not a vote; SkillSpector's "Exfil" backs up a send to an outside address);
+    - a rule with no kind of risk keeps the v0.6.8 test: evidence or another engine at the same place;
+    - a behavior hit in a skill that changed after approval (WT-I001/I002) is backed up by the change; wording is not;
+    - anything inside a new plugin the owner hasn't kept yet (WT-I004) counts until they decide, as before.
     A WT-S005 cookie-only note stays Worth a look even when a real sign-in is at the same shared-browser place."""
     if f["rule"] == "WT-S005" and f.get("title") != NEW_SIGN_IN:
         return False
     here, src, skill = _place(f), f.get("source", "watchtower"), _skill_of(f)
     loud = lambda g: (g.get("severity_was") or g["severity"]) in ("critical", "high")
+    fk = kinds_of(f)
     for g in findings:
         if g is f or g["rule"] in NO_OPINION:
             continue                            # a scanner that didn't finish says nothing about the content (DQ-014)
-        if _covers(here, _place(g)) and (is_evidence(g) or g.get("source", "watchtower") != src):
+        gp, gk = _place(g), kinds_of(g)
+        other = is_evidence(g) or g.get("source", "watchtower") != src
+        if g["rule"] == "WT-I004" and _covers(gp, here):
+            return True                          # a new plugin nobody has vetted: what the scanners flag in it counts until the owner decides
+        if not fk:                               # no kind of risk to match: the v0.6.8 rule, unchanged
+            if _covers(here, gp) and other:
+                return True
+            if loud(f) and loud(g) and g["rule"] != f["rule"] and not is_evidence(g) and _covers(skill, _skill_of(g)):
+                return True
+            continue
+        same_file = gp == here
+        if f["rule"] in WORDING_RULES:
+            if same_file and (g["rule"] in WORDING_BACKERS or (other and gk - {"secrecy", "override"})):
+                return True
+            continue
+        if other and same_file and fk & gk:
             return True
-        if loud(f) and loud(g) and g["rule"] != f["rule"] and not is_evidence(g) and _covers(skill, _skill_of(g)):
+        if other and gp != here and _covers(gp, here) and fk & gk:
+            return True                          # a verdict on the folder this file is in, about the same kind of risk
+        if is_evidence(g) and not gk and g["rule"] in DRIFT_RULES and _covers(gp, here):
+            return True                          # the live skill changed after approval and now does this: reach plus behavior
+        if not other and same_file and loud(f) and loud(g) and g["rule"] != f["rule"] and g["rule"] in RISK_KIND:
             return True
     return False
 
@@ -1903,9 +1956,9 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
                      f"the other {left} are picked up by the next runs, daily checks included (results are remembered).")
     set_progress("done", scanned, len(todo), started)
 
-    wt_hits = {}
+    wt_hits = {}   # v0.7.1 item 2: wording never votes (one word used to give one critical plus one high)
     for f in wt_findings:
-        if f["severity"] in ("critical", "high") and f["rule"].startswith("WT-T"):
+        if f["severity"] in ("critical", "high") and f["rule"] in BEHAVIOR_RULES:
             wt_hits.setdefault(os.path.dirname(f["where"].split(":")[0]), []).append(f["rule"])
     for d in targets:
         e_ = cache.get(d) or {}
@@ -1920,21 +1973,36 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
         s_, hk = e_.get("ss") or {}, e_.get("hk")
         ss_flag = s_.get("recommendation") == "DO_NOT_INSTALL"
         hk_flag = bool(hk)
-        wt_flag = any(k == d or k.startswith(d + "/") for k in wt_hits)
+        wt_k = {RISK_KIND[r] for k, rs in wt_hits.items() if k == d or k.startswith(d + "/") for r in rs}
+        ss_k = engine_kinds(s_.get("top", [])) if ss_flag else set()
+        hk_k = engine_kinds(hk) if hk_flag else set()
         tier = skill_tier(d + "/")
-        engines = [n for n, v in (("SkillSpector", ss_flag), ("husk", hk_flag), ("Watchtower", wt_flag)) if v]
+        # SkillSpector and husk both saying the folder is bad still agree (neither reports which file); Watchtower's own vote
+        # joins only when it names the same kind of risk as the engine it pairs with.
+        if ss_flag and hk_flag:
+            agree = [("SkillSpector", ss_k), ("husk", hk_k)]
+        else:
+            agree = [(n, k) for n, flag, k in (("SkillSpector", ss_flag, ss_k), ("husk", hk_flag, hk_k)) if flag and wt_k & k]
+            agree += [("Watchtower", wt_k & (ss_k | hk_k))] if agree else []
+        engines = [n for n, _ in agree]
         detail = "; ".join(s_.get("top", [])[:2])
         if len(engines) >= 2:
-            out.append(finding("WT-X003", "Corroborated by multiple engines", "critical" if tier == "user" else "high",
-                               ["AST01", "AST08"], d, (" + ".join(engines) + (f"; {detail}" if detail else ""))[:150],
-                               "Two independent engines agree. Disable this skill until you've read the flagged lines.", source="engines"))
+            x = finding("WT-X003", "Corroborated by multiple engines", "critical" if tier == "user" else "high",
+                        ["AST01", "AST08"], d, (" + ".join(engines) + (f"; {detail}" if detail else ""))[:150],
+                        "Two independent engines agree. Disable this skill until you've read the flagged lines.", source="engines")
+            x["kinds"] = sorted(agree[-1][1] if engines[-1] == "Watchtower" else ss_k | hk_k)
+            out.append(x)
         elif ss_flag:
-            out.append(finding("WT-X001", "SkillSpector: do not install", "high" if tier == "user" else "low", ["AST01", "AST08"], d,
-                               f"risk {s_.get('score')}; {detail}"[:150],
-                               "Run `skillspector scan <folder>` for the exact lines; one engine alone can be wrong.", source="skillspector"))
+            x = finding("WT-X001", "SkillSpector: do not install", "high" if tier == "user" else "low", ["AST01", "AST08"], d,
+                        f"risk {s_.get('score')}; {detail}"[:150],
+                        "Run `skillspector scan <folder>` for the exact lines; one engine alone can be wrong.", source="skillspector")
+            x["kinds"] = sorted(ss_k)
+            out.append(x)
         elif hk_flag:
-            out.append(finding("WT-X002", "husk flagged this skill", "medium" if tier == "user" else "low", ["AST01", "AST05"], d,
-                               hk[0][:150], "Run `husk package <folder>` for details; one engine alone can be wrong.", source="husk"))
+            x = finding("WT-X002", "husk flagged this skill", "medium" if tier == "user" else "low", ["AST01", "AST05"], d,
+                        hk[0][:150], "Run `husk package <folder>` for details; one engine alone can be wrong.", source="husk")
+            x["kinds"] = sorted(hk_k)
+            out.append(x)
     if installed:
         ENGINE_CURRENT.update(d for d in targets if entry_current(cache.get(d) or {}, hashes[d], installed))
     save_json(state_path("engines.json"), {"at": now(), "targets": len(targets), "scanned_this_run": scanned, "cached": len(targets) - len(todo),
