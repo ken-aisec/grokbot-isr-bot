@@ -651,7 +651,7 @@ def label_findings(findings, covered=None):
 # v0.7.1 precision item 5 (Ken, Oct 12): one finding per root cause. Within one skill, findings about the same kind of risk
 # with the same label are one line; the other rules, files and engines are listed on it as "also flagged by". Keys, decoys,
 # change alerts and evidence (two engines agreeing, a decoy read) are never folded: each one is its own fact.
-GROUP_CLASSES = ("pattern", "tip", "corroborated")
+GROUP_CLASSES = ("pattern", "tip", "corroborated", "platform")
 ALSO_MAX = 12
 
 
@@ -2599,6 +2599,38 @@ def builtin(f):
 
 SECRET_RULES = ("WT-S001", "WT-S002", "WT-K003")   # a key or a decoy copy counts wherever it sits (v0.7.0 review R3)
 
+# v0.7.1 precision item 4 (Ken, Oct 12): built-ins never move the score. Grok Bot's own files (the bundled and managed skills,
+# its config files, the platform's plugin catalog cache, the computer's own Python packages) go in a separate Platform section,
+# one line each. Plugins the owner installed still count as before (critical and high), and a new plugin nobody kept counts in full.
+PLATFORM = "Platform (Grok Bot's own file)"
+PLATFORM_FIX = "This is Grok Bot's own file; nothing for you to do."
+PLATFORM_CONFIRMED_FIX = ("This is Grok Bot's own file, so it doesn't move your score. Two checks agree it matters, so tell Grok Bot "
+                          "support (it's theirs to fix); Watchtower keeps it listed until it changes.")
+CATALOG_CACHE = tuple(f"/plugins/cache/{m}/" for m in CATALOG_MARKETS)
+
+
+def platform_file(f):
+    w = f.get("where", "") if isinstance(f, dict) else str(f)
+    if in_pending_plugin(w):
+        return False
+    return (any(x in w for x in PLATFORM_BUNDLED) or any(x in w for x in PLATFORM_FILES) or any(x in w for x in CATALOG_CACHE)
+            or w.startswith("system python package "))
+
+
+def mark_platform(fs):
+    """Label Grok Bot's own findings. Worth-a-look and Tips there become one Platform line each; a Confirmed one stays
+    Confirmed (it is still shown and still alerts when new) but never counts."""
+    for f in fs:
+        if f.get("scope") != "platform":
+            continue
+        if f.get("class") in ("pattern", "tip"):
+            f["class"], f["label"], f["fix"] = "platform", PLATFORM, PLATFORM_FIX
+            if f["severity"] != "info":
+                f["severity_was"], f["severity"] = f["severity"], "info"
+        elif f["rule"] not in SECRET_RULES:
+            f["fix"] = PLATFORM_CONFIRMED_FIX
+    return fs
+
 
 def counts(f):
     """Only what the user owns moves the score. Built-in findings count when they are critical or high (two scanners
@@ -2613,6 +2645,8 @@ def counts(f):
             return False
         if is_sample_skill_path(path) and not is_loadable_skill_location(path):
             return False
+    if f.get("scope") == "platform" or platform_file(f):   # v0.7.1 item 4: never, except a real key outside Grok Bot's config
+        return f["rule"] in SECRET_RULES and not any(x in w for x in PLATFORM_FILES)
     return not builtin(f) or f["severity"] in ("critical", "high")
 
 
@@ -2815,11 +2849,13 @@ def run_audit_locked(args, quick):
         fs = roll_builtin(fs, meta, meta["notes"])
     fs = split_facts(platform_owned(fs))
     for f in fs:
-        if builtin(f):
+        if platform_file(f):
+            f["scope"] = "platform"
+        elif builtin(f):
             f["scope"] = "builtin"
         elif in_pending_plugin(f["where"]) and f["rule"] in ("WT-X001", "WT-X002", "WT-T006k") and f["severity"] == "low":
             f["severity"] = "medium"   # one scanner flagging a skill in a plugin nobody has reviewed yet is worth a look
-    fs = sort_findings(group_root_causes(label_findings(fs, ask_first_covered(fs))))
+    fs = sort_findings(group_root_causes(mark_platform(label_findings(fs, ask_first_covered(fs)))))
     live, suppressed = active(fs)
     prev = load_json(state_path("last_findings.json"), {"findings": []})
     prev_keys, cur_keys = keys_of(prev.get("findings", [])), keys_of(live)
@@ -2897,7 +2933,7 @@ def cmd_audit(args):
         return 2
     out = {"score": snap["score"], "score_line": score_line(snap), "grade": snap["grade"], "new": [compact(f) for f in new][:20],
            "fixed": [compact(f) for f in fixed][:10], "open_by_severity": by_sev(snap["findings"]),
-           "top_fixes": [compact(f) for f in snap["findings"][:3]], "notes": snap["notes"], "inventory": snap["inventory"]}
+           "top_fixes": [compact(f) for f in snap["findings"] if f.get("scope") != "platform"][:3], "notes": snap["notes"], "inventory": snap["inventory"]}
     out.update(score_change(snap, new))
     exc = exceptions_active(snap)
     if exc:
@@ -2914,6 +2950,9 @@ def cmd_audit(args):
     tips = [f for f in snap["findings"] if f.get("class") == "tip"]
     if tips:
         out["tips"] = [compact(f) for f in tips][:10]
+    plat = [f for f in snap["findings"] if f.get("scope") == "platform"]
+    if plat:   # v0.7.1 item 4: Grok Bot's own files, one line each, never scored
+        out["platform"] = [f"{f['rule']} {label_of(f)}: {f['title']} at {f['where']}" for f in plat][:8]
     print(fit(out))
     return 0
 
@@ -3170,7 +3209,8 @@ def trend(hist):
 
 
 def render_md(snap, hist, tag):
-    fs = snap["findings"]
+    plat = [f for f in snap["findings"] if f.get("scope") == "platform"]   # v0.7.1 item 4: their own section, never scored
+    fs = [f for f in snap["findings"] if f.get("scope") != "platform"]
     c = by_sev(fs)
     lines = [f"# Watchtower report {tag}", "",
              f"Score {score_line(snap)} (grade {snap['grade']}), {trend(hist)}. Open findings: "
@@ -3201,6 +3241,9 @@ def render_md(snap, hist, tag):
         for f in lows:
             by_rule[(f["rule"], f["title"])] = by_rule.get((f["rule"], f["title"]), 0) + 1
         lines += ["", "Hygiene notes (low): " + "; ".join(f"{t} ×{n}" for (r, t), n in sorted(by_rule.items(), key=lambda x: -x[1]))]
+    if plat:
+        lines += ["", "## Platform", "", "Grok Bot's own files. Not in the score."]
+        lines += [f"- {f['rule']} {label_of(f)}: {f['title']} at `{f['where']}`. {f['fix']}" for f in plat[:40]]
     inv = snap.get("inventory", {})
     lines += ["", "## Inventory", "", f"Skills on disk: {inv.get('skills', 0)} · plugin files: {inv.get('plugin_files', 0)} · MCP configs: {inv.get('mcp_configs', 0)}"]
     fyi = [f for f in snap["findings"] if not counts(f)]

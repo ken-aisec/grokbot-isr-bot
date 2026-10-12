@@ -139,11 +139,24 @@ class DQ028SkillNamedQuarantine(Box):
         self.assertFalse(wt.is_quarantined_path(skill))
         self.scanners()
         r = self.audit()
-        # Vendor skill: critical/high still count when not template fiction
+        # v0.7.1 item 4: Grok Bot's own bundled files never move the score. The quarantine-named folder still doesn't hide it:
+        # it is found, Confirmed and listed in the Platform section.
+        found = [f for f in self.snap()["findings"] if f["severity"] in ("critical", "high") and f.get("label") == wt.CONFIRMED
+                 and f.get("scope") == "platform" and "bundled/skills/quarantine" in f["where"].replace(os.sep, "/")]
+        self.assertTrue(found, "bundled skill under .../quarantine/ must still be found and Confirmed")
+        self.assertFalse([f for f in found if wt.counts(f)])
+        self.assertTrue(any("bundled/skills/quarantine" in x for x in r.get("platform", [])))
+
+    def test_plugin_path_with_quarantine_segment_still_scores(self):
+        """R19 on a marketplace plugin (still counts in full after item 4): a quarantine segment never exempts."""
+        d = os.path.join(self.home, "sand-data", "plugins", "acme-1.0", "skills", "quarantine")
+        self.write_skill(d)
+        self.scanners()
+        r = self.audit()
         scored = [f for f in self.snap()["findings"]
                   if wt.counts(f) and f["severity"] in ("critical", "high")
-                  and "bundled/skills/quarantine" in f["where"].replace(os.sep, "/")]
-        self.assertTrue(scored, "bundled skill under .../quarantine/ must still score critical/high")
+                  and "skills/quarantine" in f["where"].replace(os.sep, "/")]
+        self.assertTrue(scored, "plugin skill under .../quarantine/ must still score critical/high")
         self.assertLess(r["score"], 98)
 
 
@@ -174,10 +187,26 @@ class DQ029ReferencesUnderLoadable(Box):
         self.scanners()
         self.assertTrue(wt.is_loadable_skill_location(os.path.join(ref, "steps.md")))
         r = self.audit()
+        # v0.7.1 item 4: found and Confirmed in Grok Bot's own bundled skill, listed under Platform, not scored
+        found = [f for f in self.snap()["findings"]
+                 if f["severity"] in ("critical", "high") and f.get("label") == wt.CONFIRMED
+                 and "references/steps.md" in f["where"].replace(os.sep, "/")]
+        self.assertTrue(found, "bundled references payload must still be found and Confirmed")
+        self.assertFalse([f for f in found if wt.counts(f)])
+
+    def test_references_under_plugin_skill_scores(self):
+        """R20 on a marketplace plugin (still counts after item 4): references payload is not sample-exempt."""
+        d = os.path.join(self.home, "sand-data", "plugins", "acme-1.0", "skills", "helper")
+        self.write_skill(d, CLEAN_SKILL)
+        ref = os.path.join(d, "references")
+        os.makedirs(ref, exist_ok=True)
+        open(os.path.join(ref, "steps.md"), "w").write(BAD_SKILL)
+        self.scanners()
+        r = self.audit()
         scored = [f for f in self.snap()["findings"]
                   if wt.counts(f) and f["severity"] in ("critical", "high")
                   and "references/steps.md" in f["where"].replace(os.sep, "/")]
-        self.assertTrue(scored, "bundled references payload must score")
+        self.assertTrue(scored, "plugin references payload must score")
         self.assertLess(r["score"], 98)
 
 
