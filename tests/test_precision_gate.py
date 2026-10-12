@@ -74,6 +74,7 @@ class BusyCleanBox(Box):
         self.assertFalse(fs, show(fs, self.tmp))
 
     @unittest.expectedFailure   # baseline: 27 (24 WT-T008 from one pptx template word, 2 archive, 1 fixtures note). Items 1, 4, 5.
+    # After item 1 (Oct 12): 24, all WT-T008 in the built-in pptx templates; the "Not scanned" line is a Tip. Items 4, 5 left.
     def test_gate_at_most_five_worth_a_look(self):
         self.audit()
         fs = worth_a_look(self.snap()["findings"])

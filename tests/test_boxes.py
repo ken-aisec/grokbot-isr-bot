@@ -694,7 +694,7 @@ class MainBoxLessons(Box):
         slow = SCANNERS["skillspector"].replace("skills = []\n", f"import time\nopen({log!r}, 'a').write('x\\n'); time.sleep(1.5)\nskills = []\n")
         self.scanners(skillspector=slow)
         wt.ENGINE_BUDGET, wt.ENGINE_LAUNCH_BASE, wt.ENGINE_LAUNCH_PER_SKILL, wt.ENGINE_SOLO_LIMIT = 5, 3, 0, 10
-        r = self.audit()
+        r = self.audit("--everything")                                             # v0.7.1 item 1: clones are checked on "scan everything"
         self.assertEqual(self.engines()["waiting"], 0, r["notes"])                 # v0.6.7: 3 of 8 copies, the rest left for later runs
         self.assertEqual(len(open(log).read().split()), 1)                         # one scan for eight copies
         cache = wt.load_json(wt.state_path("engine_cache.json"), {})

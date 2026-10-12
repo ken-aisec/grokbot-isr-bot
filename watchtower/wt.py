@@ -467,6 +467,7 @@ CONFIRMED, MAYBE_FINE = "Confirmed", "Worth a look (might be fine)"
 # v0.6.8 (Ken, Oct 10, after Cloudflare's MIT-licensed security-audit skill): a "Worth a look" finding carries no severity and
 # never moves the score; best-practice checks are Tips, also without severity or score.
 TIP_RULES = frozenset(("WT-R002", "WT-R003"))   # pattern-class best practice only; no evidence rule is moved
+SCOPE_RULES = frozenset(("WT-I007",))   # v0.7.1 item 1: the one "Not scanned: ..." line reads as a tip, never worth a look
 TIP = "Tip"
 VERB_AREA = (("sending email or messages", r"(?i)^(send|sends|sending|email|emails|message|messages|reply|replies|dm)$"),
              ("publishing or posting", r"(?i)^(post|posts|publish|publishes|tweet|tweets)$"),
@@ -555,7 +556,7 @@ def label_findings(findings, covered=None):
     out = []
     for f in findings:
         f = dict(f)
-        if f["rule"] in TIP_RULES or covered_by_ask_first(f, covered):
+        if f["rule"] in TIP_RULES or f["rule"] in SCOPE_RULES or covered_by_ask_first(f, covered):
             _no_severity(f, "tip", TIP)
         elif is_evidence(f):
             f["class"], f["label"] = "evidence", CONFIRMED
@@ -944,11 +945,28 @@ def is_vendor_template_file(path):
     return any(x in p for x in PLATFORM_BUNDLED) and bool(VENDOR_TEMPLATE_PATH.search(p))
 
 
+# v0.7.1 precision item 1 (Ken, Oct 12): live-only by default. Skill wording and drift rules run only on what the platform
+# loads; archives, clones and other projects are listed once as "Not scanned". `audit --everything` opts in (kept in
+# state/scope.json until `--live-only`). Keys are checked everywhere either way (secret scan does not use this).
+SCAN_EVERYTHING = False
+
+
+def scope_everything(args=None):
+    """The scan scope for this run: --everything / --live-only change it and are remembered; otherwise the last choice."""
+    path = state_path("scope.json")
+    if args is not None and getattr(args, "everything", False):
+        save_json(path, {"everything": True, "at": now()})
+    elif args is not None and getattr(args, "live_only", False):
+        save_json(path, {"everything": False, "at": now()})
+    return bool((load_json(path, {}) or {}).get("everything"))
+
+
 def is_live_skill_path(path):
     """A SKILL.md counts as an installed skill unless it sits under real quarantine. Anything under a
     loadable location (user roots, plugin/marketplace/bundled) is always live, even if a folder is named
     quarantine/tests/docs/references (DQ-028/029). Sample trees outside loadable locations stay non-live
-    (DQ-022). Unrecognized places stay live so they still get full rules and count (R15)."""
+    (DQ-022). Other places (archives, clones, other projects) are live only when the owner said "scan everything"
+    (v0.7.1 item 1); when they are, they get the full rules (R15)."""
     p = os.path.normpath(os.path.abspath(str(path).split(":")[0]))
     if is_quarantined_path(p):
         return False
@@ -956,7 +974,30 @@ def is_live_skill_path(path):
         return True
     if is_sample_skill_path(p):
         return False
-    return True
+    return SCAN_EVERYTHING
+
+
+def out_of_scope_but_present(p):
+    """A baselined file that still exists but is no longer scanned (outside loadable places, not 'scan everything')."""
+    if not os.path.isfile(p):
+        return False
+    root = skill_root(p)
+    md = os.path.join(root, "SKILL.md") if root else p
+    return not is_live_skill_path(md)
+
+
+def not_scanned_places(paths, roots):
+    """Top-level folder names (under the scan root that holds them) of SKILL.md files left out of the scan."""
+    rs = sorted({os.path.normpath(os.path.abspath(os.path.expanduser(r))) for r in roots}, key=len, reverse=True)
+    out = set()
+    for p in paths:
+        n = os.path.normpath(os.path.abspath(p))
+        if is_quarantined_path(n):
+            out.add("quarantine"); continue
+        root = next((r for r in rs if _under(n, {r}, strict=True)), None)
+        rel = os.path.relpath(n, root) if root else n.lstrip("/")
+        out.add(rel.split(os.sep)[0] if os.sep in rel else os.path.basename(os.path.dirname(n)) or rel)
+    return sorted(out)
 
 
 def owned_path(p, kind, log=True):
@@ -1160,13 +1201,18 @@ def audit(roots, exports, quick=False):
     INCOMPLETE_SKILLS.clear()
     inv = collect_inventory(roots)
     manifest = {}
-    # DQ-022/023: SKILL.md outside loadable locations — one aggregate info note, never scored as installed
+    # DQ-022/023, v0.7.1 item 1: SKILL.md outside loadable locations — one "Not scanned" line (a Tip), never scored as installed
     if inv.get("non_live_skills"):
-        folders = sorted({os.path.dirname(p) for p in inv["non_live_skills"]})
-        fs.append(finding("WT-I007", "SKILL.md outside a loadable skill folder", "info", ["AST09"],
-                          folders[0] if len(folders) == 1 else "sample/test/quarantine",
-                          f"{len(inv['non_live_skills'])} file(s) in {len(folders)} folder(s) (tests, fixtures, examples, docs, or quarantine)",
-                          "No action. Only skills the platform loads are scored; these are listed once for information."))
+        places = not_scanned_places(inv["non_live_skills"], roots)
+        shown = ", ".join(places[:6]) + (f", +{len(places) - 6} more" if len(places) > 6 else "")
+        hint = "" if SCAN_EVERYTHING else "; say 'scan everything' to include them"
+        fs.append(finding("WT-I007", f"Not scanned: {len(places)} folder{'' if len(places) == 1 else 's'} ({shown}){hint}",
+                          "info", ["AST09"], "not-scanned",
+                          f"{len(inv['non_live_skills'])} SKILL.md file(s) outside the places Grok Bot loads skills from "
+                          "(archives, clones, other projects, tests, fixtures, quarantine). Keys are still checked there.",
+                          "No action. Only skills the platform loads are checked." +
+                          ("" if SCAN_EVERYTHING else " Say 'scan everything' to include them (`wt.py audit --everything`)."),
+                          ident="not-scanned"))
 
     # 1. skills, plugins, MCP configs on disk
     for skill in inv["skills"]:
@@ -1218,6 +1264,8 @@ def audit(roots, exports, quick=False):
                 continue
             if p not in manifest and base[p] in now_hashes:
                 continue   # moved, not removed
+            if p not in manifest and not p.startswith("persist:") and out_of_scope_but_present(p):
+                continue   # v0.7.1 item 1: still on disk, just outside the live scan (archive, clone, scope back to live-only)
             if p not in manifest and not p.startswith("persist:"):
                 fs.append(finding("WT-I003", "Skill or plugin file removed", "info", ["AST09"], p, "missing", "Confirm you removed it."))
     else:
@@ -2596,10 +2644,12 @@ def note_run_window(t_start):
 
 
 def run_audit(args, quick):
+    global SCAN_EVERYTHING
     lock, t_start = take_lock(wait=0 if quick else 900), time.time()
     try:
         return run_audit_locked(args, quick)
     finally:
+        SCAN_EVERYTHING = False   # the scope lives in state/scope.json; nothing outside a run inherits it
         note_run_window(t_start)
         try:
             os.remove(lock)
@@ -2608,7 +2658,8 @@ def run_audit(args, quick):
 
 
 def run_audit_locked(args, quick):
-    global ENGINE_BUDGET
+    global ENGINE_BUDGET, SCAN_EVERYTHING
+    SCAN_EVERYTHING = scope_everything(args)
     roots = args.roots or [os.path.expanduser("~"), "/workspace"]
     exports = args.exports or os.path.join(home(), "exports")
     start = dt.datetime.now()
@@ -6319,6 +6370,9 @@ def main_inner(argv=None):
         p.add_argument("--roots", nargs="*")
         p.add_argument("--exports")
         p.add_argument("--budget", type=int, help="seconds of scanner time for this run (default 420); unfinished skills resume next run")
+        sc = p.add_mutually_exclusive_group()
+        sc.add_argument("--everything", action="store_true", help="also check skills in archives, clones and other projects (remembered)")
+        sc.add_argument("--live-only", action="store_true", help="back to the default: only what the platform loads (remembered)")
     sub.add_parser("status")
     sub.add_parser("report")
     sub.add_parser("breakdown")

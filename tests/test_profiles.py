@@ -10,9 +10,9 @@ WT = os.path.join(ROOT, "watchtower", "wt.py")
 
 
 class Profiles(Box):
-    def everyday(self):
+    def everyday(self, *extra):
         """What the routines run. run_cmd already fails on any traceback."""
-        r = self.audit()
+        r = self.audit(*extra)
         self.assertIsInstance(r["score"], int)
         self.assertIn("score_line", r)
         code, o, _ = self.run_cmd("daily", "--roots", *self.roots)
@@ -36,7 +36,7 @@ class Profiles(Box):
         code, o, _ = self.run_cmd("rollcall", "--owner-said-yes")
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(o)["bots_checked"], 24)                       # the list may be trimmed to fit; the count never is
-        r = self.everyday()
+        r = self.everyday("--everything")   # v0.7.1 item 1: half of these sit in ~/projects, checked once the owner says "scan everything"
         self.assertGreaterEqual(r["inventory"]["skills"], 100)
         self.assertEqual(wt.load_json(wt.state_path("engines.json"), {})["waiting"], 0)
 

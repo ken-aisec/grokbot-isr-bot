@@ -324,7 +324,8 @@ class Flow(unittest.TestCase):
         return buf.getvalue()
 
     def test_audit_daily_drift_report(self):
-        out = json.loads(self.call("audit", "--roots", self.root, "--exports", self.exports))
+        # v0.7.1 item 1: this fixture computer keeps its skills in a plain folder, so the owner has said "scan everything"
+        out = json.loads(self.call("audit", "--roots", self.root, "--exports", self.exports, "--everything"))
         self.assertIn("score", out)
         self.assertEqual(out["inventory"]["skills"], 2)
         self.assertEqual(self.call("daily", "--roots", self.root, "--exports", self.exports).strip(), "NO_CHANGES")
