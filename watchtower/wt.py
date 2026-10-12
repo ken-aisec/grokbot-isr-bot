@@ -1380,6 +1380,9 @@ def audit(roots, exports, quick=False):
         rc, gone = prune_removed_bots(rc)
         if gone:
             notes.append(f"Roll-call findings for {len(gone)} Bots no longer on the roster were dropped.")
+        hint = roster_hint(rc)
+        if hint:
+            notes.append(hint)
         fs += rc.get("findings", [])
     else:
         notes.append("Roll-call is off (opt-in): other Bots' memories and routines are not checked. Ask for a roll-call to run one with your yes.")
@@ -3771,6 +3774,22 @@ def prune_removed_bots(rc):
         save_json(state_path("rollcall_findings.json"), rc)
         ledger({"event": "rollcall-removed-bots-dropped", "count": len(gone)})
     return rc, gone
+
+
+def roster_hint(rc):
+    """DQ-018 leftover: removed Bots drop out only against a saved roster newer than the roll-call. Without one, say so (main box,
+    Oct 12: no roster.json, so the Oct 9 roll-call kept naming Bots removed on Oct 10)."""
+    if not rc or not rc.get("findings"):
+        return None
+    rpath = os.path.join(home(), *ROSTER_FILE)
+    day = str(rc.get("at", ""))[:10]
+    if not os.path.isfile(rpath) or not roster_bots():
+        return (f"No roster saved: roll-call findings from {day} may name Bots you removed. Save the current roster to "
+                "exports/roster.json (the audit skill does this first) and they drop out on the next run.")
+    if dt.datetime.fromtimestamp(os.path.getmtime(rpath), dt.timezone.utc).isoformat() < rc.get("at", ""):
+        return (f"The saved roster (exports/roster.json) is older than the roll-call from {day}, so removed Bots are not dropped. "
+                "Save the current roster and they drop out on the next run.")
+    return None
 
 
 REPLY_MAX_AGE = 3600
