@@ -521,6 +521,35 @@ ENGINE_KIND_WORDS = (("credential", r"cred|secret|token|passw|api[ _-]?key|ssh|a
                      ("exec", r"\bexec|eval|shell|command|subprocess"))
 
 
+HUSK_SQL_RETURN = re.compile(r"SQL keyword.*\breturned from a function", re.I)
+HUSK_AT = re.compile(r"^'([^']+)': Line (\d+):")
+SQL_SHAPE = re.compile(r"\b(select\b.*\bfrom\b|insert\s+into\b|update\s+[\w.`\"'\[\]{}$%]+\s+set\b|delete\s+from\b|merge\s+into\b|"
+                       r"(drop|create|alter|truncate)\s+(table|database|index|view|schema)\b|union\s+(all\s+)?select\b|"
+                       r"where\s+[\w.`\"'{}$%]+\s*(=|like\b|in\b))", re.I)
+
+
+def husk_messages_that_count(d, msgs):
+    """DQ-011 (4): husk flags any f-string with a SQL keyword that a function returns, so a chat message such as
+    `return f"last30days update: {topic}..."` came back as SQL injection. Such a message counts only when the line it names
+    (or the two after it, for a query split over lines) has the shape of a SQL statement. A query passed to execute(), a
+    message of any other kind, a message without a file and line, or a line Watchtower can't read are kept
+    as before."""
+    keep = []
+    for m in msgs or ():
+        at = HUSK_AT.match(str(m))
+        if at and HUSK_SQL_RETURN.search(m):
+            try:
+                with open(os.path.join(d, at.group(1)), errors="replace") as fh:
+                    lines = fh.read().splitlines()
+                n = int(at.group(2))
+                if 0 < n <= len(lines) and not SQL_SHAPE.search(" ".join(lines[n - 1:n + 2])):
+                    continue
+            except (OSError, ValueError):
+                pass
+        keep.append(m)
+    return keep
+
+
 def engine_kinds(texts):
     """The kinds of risk a scanner's own words name ("Exfil: Upload", "obfuscated loader"). Unknown wording names none."""
     t = " ".join(str(x) for x in texts or ()).lower()
@@ -948,6 +977,7 @@ INCOMPLETE_SKILLS = {}   # skill folder -> (files fingerprinted, files there)
 
 RUN_LIMIT = int(os.environ.get("WT_RUN_LIMIT", "540"))     # seconds a full audit may take, whatever is installed or broken
 DAILY_LIMIT = int(os.environ.get("WT_DAILY_LIMIT", "150"))
+MAX_BUDGET = 3600   # `audit --budget` tops out at an hour of scanner time
 DEADLINE = None                                             # set for the length of one audit
 
 
@@ -2100,7 +2130,8 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
     left = len(todo) - scanned
     if left > 0 and not any("failed on a batch" in n for n in notes):
         notes.append(f"SkillSpector and husk checked {scanned} of {len(todo)} new or changed skills in the time budget; "
-                     f"the other {left} are picked up by the next runs, daily checks included (results are remembered).")
+                     f"the other {left} are picked up by the next runs, daily checks included (results are remembered)"
+                     + (". To check them all now, run `wt.py audit --budget 1800` (up to 30 minutes)." if 300 <= budget < 1800 else "."))
     set_progress("done", scanned, len(todo), started)
 
     wt_hits = {}   # v0.7.1 item 2: wording never votes (one word used to give one critical plus one high)
@@ -2117,7 +2148,7 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
                                "Big or unusual files are the usual cause.", source="engines"))
             if not e_.get("hk"):
                 continue
-        s_, hk = e_.get("ss") or {}, e_.get("hk")
+        s_, hk = e_.get("ss") or {}, husk_messages_that_count(d, e_.get("hk"))
         ss_flag = s_.get("recommendation") == "DO_NOT_INSTALL"
         hk_flag = bool(hk)
         wt_k = {RISK_KIND[r] for k, rs in wt_hits.items() if k == d or k.startswith(d + "/") for r in rs}
@@ -2982,9 +3013,12 @@ def run_audit_locked(args, quick):
     saved = ENGINE_BUDGET
     del STAGE_FAILED[:]
     try:
-        DEADLINE = time.monotonic() + (DAILY_LIMIT if quick else RUN_LIMIT)
+        limit = DAILY_LIMIT if quick else RUN_LIMIT
         if getattr(args, "budget", None) is not None:
-            ENGINE_BUDGET = max(0, args.budget)
+            ENGINE_BUDGET = max(0, min(args.budget, MAX_BUDGET))
+            if not quick:   # DQ-010: an owner who asks for more scanner time gets it; the run limit used to cap it at about 8 minutes
+                limit = max(limit, ENGINE_BUDGET + 120)   # the other stages take about two minutes
+        DEADLINE = time.monotonic() + limit
         fs, meta = audit(roots, exports, quick=quick)
     finally:
         ENGINE_BUDGET, DEADLINE = saved, None
@@ -6713,7 +6747,7 @@ def main_inner(argv=None):
         p = sub.add_parser(name)
         p.add_argument("--roots", nargs="*")
         p.add_argument("--exports")
-        p.add_argument("--budget", type=int, help="seconds of scanner time for this run (default 420); unfinished skills resume next run")
+        p.add_argument("--budget", type=int, help="seconds of scanner time for this run (default 420, at most 3600); a full audit runs long enough to use it; unfinished skills resume next run")
         sc = p.add_mutually_exclusive_group()
         sc.add_argument("--everything", action="store_true", help="also check skills in archives, clones and other projects (remembered)")
         sc.add_argument("--live-only", action="store_true", help="back to the default: only what the platform loads (remembered)")
