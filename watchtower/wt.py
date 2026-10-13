@@ -508,7 +508,7 @@ RISK_KIND = {"WT-T004": "credential", "WT-T011": "credential", "WT-S001": "crede
              "WT-T005": "exfil", "WT-T017": "exfil", "WT-T006": "pipe", "WT-T006k": "pipe", "WT-T002": "obfuscation",
              "WT-T003": "obfuscation", "WT-T012": "exec", "WT-T008": "secrecy", "WT-T016": "secrecy", "WT-T001": "override",
              "WT-T007": "override"}
-WORDING_RULES = frozenset(("WT-T001", "WT-T007", "WT-T008", "WT-T016"))                          # what a skill says
+WORDING_RULES = frozenset(("WT-T001", "WT-T007", "WT-T008", "WT-T014", "WT-T016"))   # T014 "every email": item 8 dry run, Oct 13                          # what a skill says
 BEHAVIOR_RULES = frozenset(("WT-T002", "WT-T003", "WT-T004", "WT-T005", "WT-T006", "WT-T012", "WT-T017"))   # what it does
 WORDING_BACKERS = BEHAVIOR_RULES | {"WT-T013"}
 DRIFT_RULES = frozenset(("WT-I001", "WT-I002"))   # a live file that changed or appeared: a fact about reach, never about wording   # an email or post sent with no approval line is a send, even without curl
@@ -584,6 +584,10 @@ def corroborated(f, findings):
         other = is_evidence(g) or g.get("source", "watchtower") != src
         if g["rule"] == "WT-I004" and _covers(gp, here):
             return True                          # a new plugin nobody has vetted: what the scanners flag in it counts until the owner decides
+        if f["rule"] in WORDING_RULES and not fk:   # T014 has no kind: wording still needs a behavior signal in the same file
+            if gp == here and g["rule"] in WORDING_BACKERS:
+                return True
+            continue
         if not fk:                               # no kind of risk to match: the v0.6.8 rule, unchanged
             if _covers(here, gp) and other:
                 return True
@@ -724,6 +728,12 @@ def split_facts(fs):
     return fs
 
 
+def plain_cookie_jar(f):
+    """DQ-026 intent (item 8 dry run, Oct 13): a shared cookie jar with no sign-in on a sensitive site is advice, not a Confirmed
+    medium. It stays listed as a Tip; one session cookie for a sensitive site makes it the high Confirmed finding again."""
+    return f["rule"] == "WT-S004" and str(f.get("evidence", "")).endswith("sensitive: none")
+
+
 def label_findings(findings, covered=None):
     """Label every finding. Evidence and corroborated findings are Confirmed and keep their severity. Best-practice checks are Tips
     and an approval line the Ask-first rules already cover is a Tip; pattern findings nothing backs up are "Worth a look". Tips and
@@ -732,7 +742,8 @@ def label_findings(findings, covered=None):
     out = []
     for f in findings:
         f = dict(f)
-        if f["rule"] in TIP_RULES or f["rule"] in SCOPE_RULES or f.get("fact_only") or covered_by_ask_first(f, covered):
+        if (f["rule"] in TIP_RULES or f["rule"] in SCOPE_RULES or f.get("fact_only") or covered_by_ask_first(f, covered)
+                or plain_cookie_jar(f)):
             _no_severity(f, "tip", TIP)
         elif is_evidence(f):
             f["class"], f["label"] = "evidence", CONFIRMED
@@ -757,9 +768,37 @@ def _groupable(f):
             and not f["rule"].startswith(("WT-K", "WT-I", "WT-X")))
 
 
+ROLLCALL_GROUPED = frozenset(("WT-L001", "WT-M010"))
+
+
+def _rollcall_group(f):
+    """Item 8 dry run (Oct 13): 15 Bots sharing one connector set were 15 lethal-trifecta lines, and 10 memories judged by an
+    Oct 9 roll-call were 10. Worth-a-look roll-call findings of one rule on ROLLCALL_GROUP_MIN or more Bots are one line naming every Bot; Confirmed ones stay apart."""
+    w = f.get("where") or ""
+    return w.startswith("rollcall:") and f["rule"] in ROLLCALL_GROUPED and f.get("class") == "pattern"
+
+
+ROLLCALL_GROUP_MIN = 4   # a few Bots stay one line each (DQ-018 replay); four or more with the same rule are one fleet-wide root cause
+
+
 def group_root_causes(fs):
     out, primary = [], {}
+    n_rc = {}
+    for f in fs:
+        if _rollcall_group(f):
+            n_rc[f["rule"]] = n_rc.get(f["rule"], 0) + 1
     for f in sort_findings(fs):
+        if _rollcall_group(f) and n_rc.get(f["rule"], 0) >= ROLLCALL_GROUP_MIN:
+            k = ("rollcall", f["rule"])
+            p = primary.get(k)
+            if p is None:
+                primary[k] = f = dict(f)
+                out.append(f)
+            else:
+                p["also_count"] = p.get("also_count", 0) + 1
+                if len(p.setdefault("also_flagged_by", [])) < 20:
+                    p["also_flagged_by"].append({"rule": f["rule"], "where": f["where"], "source": f.get("source", "watchtower")})
+            continue
         root = skill_root(f["where"].split(":")[0]) if _groupable(f) else None
         if not root:
             out.append(f)
@@ -773,6 +812,9 @@ def group_root_causes(fs):
         p["also_count"] = p.get("also_count", 0) + 1
         if len(p.setdefault("also_flagged_by", [])) < ALSO_MAX:
             p["also_flagged_by"].append({"rule": f["rule"], "where": f["where"], "source": f.get("source", "watchtower")})
+    for k, p in primary.items():
+        if k[0] == "rollcall" and p.get("also_count"):
+            p["title"] = f"{p['title']} ({p['also_count'] + 1} Bots)"
     return out
 
 
@@ -1131,20 +1173,44 @@ def is_quarantined_path(path):
     return False
 
 
+# Item 8 dry run (Oct 13): snapshot folders inside the owner's skill folder (workflows/_archive/2026-10-13/...) are copies
+# nobody loads. Only folders named like an archive; tests/docs/references/quarantine names stay live (DQ-028/029).
+ARCHIVE_SEGMENT = re.compile(r"(?i)^[._]?archived?$|^_old$|^_snapshots?$")
+# Item 8 dry run (Oct 13): the platform loads ~/.agents/skills, not the .agents/skills folder inside every cloned project.
+PROJECT_LOCAL_VENDOR = "/.agents/skills/"
+
+
+def in_archive_folder(p, roots):
+    for r in roots:
+        if p.startswith(r + os.sep):
+            return any(ARCHIVE_SEGMENT.match(s) for s in os.path.relpath(p, r).split(os.sep)[:-1])
+    return False
+
+
+def home_agents_skills():
+    return [os.path.normpath(b + "/.agents/skills") for b in dict.fromkeys((os.path.expanduser("~"), "/home/box"))]
+
+
 def is_loadable_skill_location(path):
     """User skill roots, plugin/marketplace/bundled skill folders (VENDOR_CODE). Always live and scored
-    regardless of folder names inside them (DQ-028/029)."""
+    regardless of folder names inside them (DQ-028/029), except archive-named snapshot folders inside the
+    owner's skill roots, and a cloned project's own .agents/skills (item 8 dry run, Oct 13)."""
     p = os.path.normpath(os.path.abspath(str(path).split(":")[0]))
     try:
         pr = os.path.realpath(p)
     except OSError:
         pr = p
     roots = user_skill_roots()
-    if _under(p, roots) or _under(pr, {os.path.realpath(r) for r in roots}):
-        return True
+    rroots = {os.path.realpath(r) for r in roots}
+    if _under(p, roots) or _under(pr, rroots):
+        return not (in_archive_folder(p, roots) or in_archive_folder(pr, rroots))
     slash = p.replace(os.sep, "/")
     real_slash = pr.replace(os.sep, "/")
-    return any(x in slash or x in real_slash for x in VENDOR_CODE)
+    hits = [x for x in VENDOR_CODE if x in slash or x in real_slash]
+    if hits == [PROJECT_LOCAL_VENDOR]:
+        homes = home_agents_skills()
+        return _under(p, homes, strict=True) or _under(pr, {os.path.realpath(h) for h in homes}, strict=True)
+    return bool(hits)
 
 
 def is_vendor_template_file(path):
@@ -1477,7 +1543,9 @@ def audit(roots, exports, quick=False):
             if p not in manifest and base[p] in now_hashes:
                 continue   # moved, not removed
             if p not in manifest and not p.startswith("persist:") and out_of_scope_but_present(p):
-                continue   # v0.7.1 item 1: still on disk, just outside the live scan (archive, clone, scope back to live-only)
+                continue
+            if p not in manifest and not p.startswith("persist:") and not os.path.exists(p) and not is_live_skill_path(p):
+                continue   # item 8 dry run (Oct 13): gone from a place nothing loads (skill-hunt candidates, clones): not a live removal   # v0.7.1 item 1: still on disk, just outside the live scan (archive, clone, scope back to live-only)
             if p not in manifest and not p.startswith("persist:"):
                 fs.append(finding("WT-I003", "Skill or plugin file removed", "info", ["AST09"], p, "missing", "Confirm you removed it."))
                 fs[-1]["refresh"] = platform_file(p)
@@ -2293,10 +2361,13 @@ def gitleaks_findings(roots, notes):
             reason = next((l for l in re.sub(r"\x1b\[[0-9;]*m", "", err).splitlines() if "FTL" in l or "error" in l.lower()), err.strip()[:160] or "no report written")
             fail_note(notes, f"gitleaks FAILED on {r} ({reason.strip()[-160:]}): secrets there were NOT checked by gitleaks.")
             continue
-        per_file, decoys = {}, canary_paths()
+        per_file, decoys, skipped_tool = {}, canary_paths(), 0
         for leak in load_json(tmp, []) or []:
             if os.path.abspath(str(leak.get("File") or "")) in decoys:
-                continue                                  # Watchtower's own decoys (their names are this install's, not in this config)
+                continue
+            if in_toolchain_tree(str(leak.get("File") or "")):
+                skipped_tool += 1
+                continue                                  # item 8 dry run: test vectors in a language toolchain or package store                                  # Watchtower's own decoys (their names are this install's, not in this config)
             per_file.setdefault(leak.get("File"), []).append(leak)
         by_dir = {}
         for fpath in per_file:
@@ -2325,11 +2396,23 @@ def gitleaks_findings(roots, notes):
             out.append(finding("WT-S002", "gitleaks: secrets in file", secret_severity(fpath or "", generic), ["ASI03", "LLM02"],
                                f"{fpath}:{leaks[0].get('StartLine')}", f"{len(leaks)} hit(s): {', '.join(kinds)[:100]}",
                                "Check whether these are live credentials. Revoke live ones, then delete or scrub the file.", source="gitleaks"))
+        if skipped_tool:
+            notes.append(f"gitleaks: {skipped_tool} hit(s) in language toolchains and package stores (Go, pnpm, ...) not listed: "
+                         "those are the tools' own test keys. A key TruffleHog proves live is still reported wherever it is.")
         try:
             os.remove(tmp)
         except OSError:
             pass
     return out
+
+
+TOOLCHAIN_TREE = re.compile(r"/\.local/go[^/]*/|/\.local/share/pnpm/|/go/pkg/mod/|/\.rustup/toolchains/|/\.cargo/registry/")
+
+
+def in_toolchain_tree(p):
+    """Item 8 dry run (Oct 13): a Go toolchain kept as a rollback (~/.local/go.prev-1.27.1) and the pnpm store gave 11 gitleaks
+    lines from their own crypto test vectors. SKIP_PATH_PARTS already skipped ~/.local/go/ for the other stages."""
+    return bool(TOOLCHAIN_TREE.search(os.path.normpath(os.path.abspath(p)) + "/"))
 
 
 def installed_python_packages():
