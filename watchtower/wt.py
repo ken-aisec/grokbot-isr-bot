@@ -1594,6 +1594,9 @@ def audit(roots, exports, quick=False):
     for p in walk(roots, max_depth=6):
         if p in known or p in decoys or os.path.basename(p) in SESSION_FILES:
             continue
+        if is_platform_secret_store(p):   # Ken, Oct 13: the platform's masked-secret store; never read, only noted
+            fs.append(platform_secret_store_note(p))
+            continue
         # v0.7.0 review R1: no sample-folder or quarantine skip here. A key is a key wherever it sits, and the
         # decoy-copy check must see docs/, tests/, examples/, references/ and fixtures/ folders too.
         if os.path.splitext(p)[1].lower() not in TEXT_EXT:
@@ -1769,6 +1772,7 @@ def hook_findings(roots, inv):
                 out.append(finding("WT-C005", "The platform's own hook runs a script from a shared temp folder", "low", ["ASI05", "ASI10"], p,
                                    f"{c[:90]} ({there})", "This hook came with the computer and you can't change it. Every Bot can write to that folder, so a "
                                    "Bot that was tricked could plant the script. It's listed so you know; it is worth reporting to the platform.", ident=c))
+                out[-1]["platform_hook"] = True   # Ken, Oct 13: shown in the Platform section, not scored
             else:
                 out.append(finding("WT-C005", "A hook runs a script from a folder every Bot can write to", "high", ["ASI05", "ASI10"], p,
                                    f"{c[:90]} ({there})", "Find out what added this hook. If it isn't yours, remove it from that file; if it is, move the "
@@ -2365,6 +2369,8 @@ def gitleaks_findings(roots, notes):
         for leak in load_json(tmp, []) or []:
             if os.path.abspath(str(leak.get("File") or "")) in decoys:
                 continue
+            if is_platform_secret_store(str(leak.get("File") or "")):
+                continue                                  # Ken, Oct 13: the platform's masked-secret store is one Platform note (WT-I009)
             if in_toolchain_tree(str(leak.get("File") or "")):
                 skipped_tool += 1
                 continue                                  # item 8 dry run: test vectors in a language toolchain or package store                                  # Watchtower's own decoys (their names are this install's, not in this config)
@@ -2874,11 +2880,40 @@ def in_catalog_plugin(where):
     return False
 
 
+# Ken, Oct 13 (item 8 dry run): Codex's and Claude's own built-in skills and plugins are the platform's, shown not scored.
+OTHER_PLATFORM_BUNDLED = ("/.codex/skills/.system/", "/.claude/plugins/synced/")
+# Ken, Oct 13: the platform's masked-secret store (values saved through the secure secret request). Never read by Watchtower.
+PLATFORM_SECRET_STORE = ("sand-data/box-secrets.json", "agent-data/box-secrets.json")
+
+
+def is_platform_secret_store(p):
+    n = os.path.normpath(os.path.abspath(str(p).split(":")[0]))
+    return any(n == os.path.normpath(os.path.join(b, s)) for b in dict.fromkeys((os.path.expanduser("~"), "/home/box"))
+               for s in PLATFORM_SECRET_STORE)
+
+
+def platform_secret_store_note(p):
+    try:
+        mode = os.stat(p).st_mode & 0o777
+    except OSError:
+        mode = None
+    m = f"mode {mode:04o}" if mode is not None else "mode unknown"
+    tight = mode is not None and not (mode & 0o077)
+    return finding("WT-I009", "Platform secret store present" + ("" if tight else " (readable beyond its owner)"), "info", ["ASI03"], p,
+                   f"{m}; value not read", "This is the platform's own store for secrets saved through the secure secret request. "
+                   "Watchtower never reads it. Nothing for you to do" + ("." if tight else "; its permissions are wider than 0600, worth reporting to the platform."),
+                   ident="platform-secret-store")
+
+
 def platform_file(f):
     w = f.get("where", "") if isinstance(f, dict) else str(f)
     if in_pending_plugin(w):
         return False
-    return (any(x in w for x in PLATFORM_BUNDLED) or any(x in w for x in PLATFORM_FILES) or in_catalog_plugin(w)
+    if isinstance(f, dict) and f.get("platform_hook"):
+        return True
+    if f"{w}".startswith("/") and is_platform_secret_store(w):
+        return True
+    return (any(x in w for x in PLATFORM_BUNDLED) or any(x in w for x in OTHER_PLATFORM_BUNDLED) or any(x in w for x in PLATFORM_FILES) or in_catalog_plugin(w)
             or w.startswith("system python package "))
 
 
@@ -2888,9 +2923,10 @@ def mark_platform(fs):
     for f in fs:
         if f.get("scope") != "platform":
             continue
-        if f.get("class") in ("pattern", "tip"):
-            f["class"], f["label"], f["fix"] = "platform", PLATFORM, PLATFORM_FIX
-            if f["severity"] != "info":
+        if f.get("class") in ("pattern", "tip") or f.get("platform_hook"):   # Ken, Oct 13: the platform's hook is a Platform line
+            f["class"], f["label"] = "platform", PLATFORM
+            f["fix"] = f["fix"] if f.get("platform_hook") or f["rule"] == "WT-I009" else PLATFORM_FIX
+            if f["severity"] != "info" and not f.get("platform_hook"):   # the hook keeps its low (listed fact), never scored
                 f["severity_was"], f["severity"] = f["severity"], "info"
         elif f["rule"] not in SECRET_RULES:
             f["fix"] = PLATFORM_CONFIRMED_FIX
