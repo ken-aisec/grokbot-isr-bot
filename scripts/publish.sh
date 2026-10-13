@@ -5,7 +5,7 @@
 # commits, never moves a tag, and stops on any check that fails. Safe to rerun.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-TAG="v0.7.0"
+TAG="v0.7.1"
 REVIEWED="${1:-}"
 stop() { echo "STOPPED: $*. Nothing pushed."; exit 1; }
 [[ "$REVIEWED" =~ ^[0-9a-f]{40}$ ]] || stop "give the full 40-character commit ID that was reviewed (bash scripts/publish.sh <commit>)"
