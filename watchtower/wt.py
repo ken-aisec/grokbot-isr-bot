@@ -609,10 +609,77 @@ FACT_NOTE = {"WT-D002": ("in a project nothing on this computer loads",
                          "there (`wt.py fix` offers the upgrade).")}
 
 
+# Oct 12 ruling (Claude review Oct 13, F2): packages in a project count in full when a live skill, routine or hook uses that
+# project. Each audit collects every absolute path a hook command, a routine (exports, crontab, systemd user units) or a live
+# skill names; a project is used when one of those paths is inside it.
+USED_PATHS = set()
+_PATH_IN_TEXT = re.compile(r"(?<![\w:/.$~-])((?:~|\$HOME|\$\{HOME\})?/[A-Za-z0-9._@+\-/]+)")
+
+
+def paths_named(text):
+    out = set()
+    for m in _PATH_IN_TEXT.finditer(text or ""):
+        p = m.group(1).rstrip(".,;:")
+        for pre in ("${HOME}", "$HOME", "~"):
+            if p.startswith(pre + "/"):
+                p = os.path.expanduser("~") + p[len(pre):]
+                break
+        if p.count("/") >= 2:   # a bare "/tmp" or "/" names no project
+            out.add(os.path.normpath(p))
+    return out
+
+
+def project_users(roots, inv, exports):
+    """Absolute paths that hooks, routines and live skills name (see USED_PATHS)."""
+    used = set()
+    for c in hook_commands(roots, inv):
+        used |= paths_named(c)
+    if exports and os.path.isdir(exports):
+        for fn in sorted(os.listdir(exports)):
+            if fn.lower().startswith("routine"):
+                used |= paths_named(read_text(os.path.join(exports, fn)))
+    code, out, _ = run(["crontab", "-l"], 10)
+    if code == 0:
+        used |= paths_named(out)
+    units = os.path.expanduser("~/.config/systemd/user")
+    if os.path.isdir(units):
+        for fn in sorted(os.listdir(units)):
+            if os.path.isfile(os.path.join(units, fn)):
+                used |= paths_named(read_text(os.path.join(units, fn)))
+    for skill in inv.get("skills", []):
+        for p in skill_dir_files(skill):
+            if os.path.splitext(p)[1].lower() in TEXT_EXT:
+                used |= paths_named(read_text(p))
+    return used
+
+
 def package_reachable(f):
-    """A vulnerable package is reachable when something the platform loads uses it: a lockfile inside a skill or plugin folder."""
+    """A vulnerable package is reachable when something the platform loads uses it: a lockfile inside a skill or plugin
+    folder, or in a project that a hook, routine or live skill names a path inside (Oct 12 ruling)."""
     path = (f.get("where") or "").split(":")[0]
-    return not path.startswith("/") or is_loadable_skill_location(path)
+    if not path.startswith("/"):
+        return True
+    m = re.match(r"Vulnerable package (.+)$", f.get("title") or "")
+    dirs = (load_json(state_path("osv_projects.json"), {}) or {}).get("packages", {}).get(m.group(1), []) if m else []
+    projs = set()
+    for d in [path] + [x for x in dirs if isinstance(x, str) and x.startswith("/")]:   # the finding names one project; it may sit in several
+        if is_loadable_skill_location(d):
+            return True
+        d = os.path.normpath(d if not os.path.isfile(d) else os.path.dirname(d))
+        projs.add(d)
+        try:
+            projs.add(os.path.realpath(d))
+        except OSError:
+            pass
+    for u in USED_PATHS:
+        cands = {u}
+        try:
+            cands.add(os.path.realpath(u))
+        except OSError:
+            pass
+        if any(c == pr or c.startswith(pr + "/") for c in cands for pr in projs):
+            return True
+    return False
 
 
 FACT_ONLY = {"WT-D002": package_reachable}
@@ -1311,6 +1378,7 @@ def audit(roots, exports, quick=False):
     rules = load_rules()
     fs, notes = [], []
     INCOMPLETE_SKILLS.clear()
+    _RUNS_CODE.clear()
     inv = collect_inventory(roots)
     manifest = {}
     # DQ-022/023, v0.7.1 item 1: SKILL.md outside loadable locations — one "Not scanned" line (a Tip), never scored as installed
@@ -1397,6 +1465,9 @@ def audit(roots, exports, quick=False):
                           "program that runs on this computer. Their skills are still scanned like any other.", ident=f"{market}@{commit}"))
         for n in names:
             new_plugins.pop(n, None)
+    for f in fs:   # F1: a change is a platform refresh only once the plugin list says whose plugin it is
+        if "refresh" in f and f["rule"] in ("WT-I001", "WT-I002", "WT-I003"):
+            f["refresh"] = platform_file(f["where"])
     for name, proots in sorted(new_plugins.items()):
         inside = lambda p: any(p == r or p.startswith(r + "/") for r in proots)
         n_files = sum(1 for p in manifest if inside(p))
@@ -1485,6 +1556,8 @@ def audit(roots, exports, quick=False):
 
     # 5b. tripwires and shell history (zero tokens)
     fs += soft("hooks", ("WT-C005",), notes, [], hook_findings, roots, inv)
+    USED_PATHS.clear()
+    USED_PATHS.update(soft("project users", (), notes, set(), project_users, roots, inv, exports) or set())
     soft("decoys", (), notes, None, tend_canaries, notes)
     soft("saved first-run skill", (), notes, None, saved_skill_notes, notes)
     fs += remember_events(canary_findings() + history_findings(rules) + sign_ins)
@@ -1553,9 +1626,8 @@ SHARED_TEMP = re.compile(r"(?<![\w.-])(/tmp|/var/tmp|/dev/shm)/[^\s'\";|&<>]+")
 PLATFORM_HOOKS = ("python3 /tmp/hooks/expand_mcp_file_args.py",)   # ships in ~/.cursor/hooks.json on Grok Bot computers (seen Oct 2026)
 
 
-def hook_findings(roots, inv):
-    """A hook is a command the app runs by itself before or after a tool call. One that runs a script from a temp folder
-    runs whatever is at that path, and every Bot on the computer can write there."""
+def hook_files(roots, inv):
+    """[(hooks.json path, [commands])] for every hooks file the app or a plugin brings."""
     files = []
     for r in list(roots) + [os.path.expanduser("~")]:
         for sub in (".cursor", ".grok", ".claude"):
@@ -1577,7 +1649,20 @@ def hook_findings(roots, inv):
                 stack += list(x.values())
             elif isinstance(x, list):
                 stack += x
-        for c in sorted(set(cmds)):
+        out.append((p, sorted(set(cmds))))
+    return out
+
+
+def hook_commands(roots, inv):
+    return [c for _, cmds in hook_files(roots, inv) for c in cmds]
+
+
+def hook_findings(roots, inv):
+    """A hook is a command the app runs by itself before or after a tool call. One that runs a script from a temp folder
+    runs whatever is at that path, and every Bot on the computer can write there."""
+    out = []
+    for p, cmds in hook_files(roots, inv):
+        for c in cmds:
             m = SHARED_TEMP.search(c)
             if not m:
                 continue
@@ -2465,6 +2550,10 @@ def note_plugins(inv):
     for name, roots in here.items():
         if name not in st:
             st[name] = {"since": now(), "status": "known" if first and in_baseline(name) else "new"}
+            # Already there on Watchtower's first run, inside the platform's catalog cache, and runs no code: the catalog's, as a
+            # catalog sync would have filed it. One that runs code stays "known" and counts like any installed plugin (F1).
+            if first and st[name]["status"] == "known" and all(any(x in r + "/" for x in CATALOG_CACHE) and not runs_code(r) for r in roots):
+                st[name].update(status="catalog", filed="first-run")
         st[name]["roots"] = sorted(set(roots))
     if not first:
         recheck_known_plugins(st, here)
@@ -2640,13 +2729,42 @@ PLATFORM_FIX = "This is Grok Bot's own file; nothing for you to do."
 PLATFORM_CONFIRMED_FIX = ("This is Grok Bot's own file, so it doesn't move your score. Two checks agree it matters, so tell Grok Bot "
                           "support (it's theirs to fix); Watchtower keeps it listed until it changes.")
 CATALOG_CACHE = tuple(f"/plugins/cache/{m}/" for m in CATALOG_MARKETS)
+_CATALOG = {"at": None, "roots": ()}
+_RUNS_CODE = {}
+
+
+def catalog_plugin_roots():
+    """Folders of plugins the catalog sync filed as "catalog" (arrived together from the platform's catalog, run no code)."""
+    path = state_path("plugins.json")
+    try:
+        at = os.stat(path).st_mtime
+    except OSError:
+        return ()
+    if _CATALOG["at"] != at:
+        st = load_json(path, {}) or {}
+        _CATALOG.update(at=at, roots=tuple(r for v in st.values() if isinstance(v, dict) and v.get("status") == "catalog" for r in v.get("roots", [])))
+    return _CATALOG["roots"]
+
+
+def in_catalog_plugin(where):
+    """Claude review Oct 13 (F1): the marketplace cache folders also hold plugins the owner installs. Only a plugin the catalog
+    sync filed as "catalog" that still runs no code is Grok Bot's own; a known, kept or new plugin, or one that runs code, never is."""
+    w = (where or "").split(":")[0]
+    if not any(x in w for x in CATALOG_CACHE):
+        return False
+    for r in catalog_plugin_roots():
+        if w == r or w.startswith(r + "/"):
+            if r not in _RUNS_CODE:
+                _RUNS_CODE[r] = runs_code(r)
+            return not _RUNS_CODE[r]
+    return False
 
 
 def platform_file(f):
     w = f.get("where", "") if isinstance(f, dict) else str(f)
     if in_pending_plugin(w):
         return False
-    return (any(x in w for x in PLATFORM_BUNDLED) or any(x in w for x in PLATFORM_FILES) or any(x in w for x in CATALOG_CACHE)
+    return (any(x in w for x in PLATFORM_BUNDLED) or any(x in w for x in PLATFORM_FILES) or in_catalog_plugin(w)
             or w.startswith("system python package "))
 
 
