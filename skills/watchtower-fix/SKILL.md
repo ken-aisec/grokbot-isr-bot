@@ -30,7 +30,7 @@ description: The one-yes fix. Cleans up, upgrades outdated software (undoing any
 
 4. Reply in at most 6 lines: what was done (the `done` list in plain words, including by name anything it says was left open and why), the new score and the change, and anything still in `only_you`. If an upgrade was undone or skipped, say which and why.
 
-If the user approves only some of the changed skills, run `wt.py fix --revet --only <names, comma-separated>`, without `--apply`: re-approving never empties a cache or changes a file. The others stay open.
+If the user approves only some of the changed skills, run `wt.py fix --revet --only <names, comma-separated>`, without `--apply`: re-approving never empties a cache or changes a file. The others stay open. `--only` works on skills the daily check or audit already reported as changed; a fresh `wt.py fix` preview is not required when the owner names them. (A full `--revet` without `--only` still uses the preview list.)
 
 ## Never
 - Turn off or revoke a key. Show the link and let the user do it.

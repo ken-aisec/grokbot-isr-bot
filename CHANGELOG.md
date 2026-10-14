@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- DQ-040: `fix --revet --only <names>` re-approves skills the daily check or audit already reported as changed, even when there is no fresh fix preview (or the saved preview list is stale). A full `--revet` without `--only` still uses only the preview list (DQ-019). The fix skill's `--only` paragraph and the CLI help say so. Regression in `tests/test_dq040.py`.
+
 ## v0.7.1 — 2026-10-16 (precision pass: fewer false alarms)
 Summary:
 - Items 1-8 of the precision plan: live-only scanning by default (1); Confirmed means dangerous and reachable, wording alone is never Confirmed (2); evidence rules keep the fact but drop severity when unreachable, e.g. old packages in an unused clone are a Tip (3); Grok Bot's own files never move the score (4); one finding per root cause (5); change alerts name the source and platform refresh is one Tip (6); a busy-clean-box false-alarm gate in tests (7); a sandboxed main-box dry run on the release build (8).

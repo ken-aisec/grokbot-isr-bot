@@ -6467,7 +6467,10 @@ def cmd_fix(args):
     if args.revet:
         only = {x.strip() for x in (getattr(args, "only", None) or "").split(",") if x.strip()}
         plan_ = load_json(state_path("revet_plan.json"), None)
-        if isinstance(plan_, dict) and isinstance(plan_.get("skills"), list):   # only what the owner was shown (DQ-019)
+        # DQ-019: full --revet (no --only) touches only what the preview listed.
+        # DQ-040: with --only, skills the daily check or audit already reported as changed are eligible
+        # even when the preview list is missing or stale; naming them is the owner's approval.
+        if isinstance(plan_, dict) and isinstance(plan_.get("skills"), list) and not only:
             later = sorted(d for d in ch_skills if d not in plan_["skills"])
             if later:
                 done.append(f"Not re-scanned, not in the list you approved (changed after the preview): {', '.join(skill_name(d) for d in later)}. "
@@ -6882,7 +6885,7 @@ def main_inner(argv=None):
     fx.add_argument("--upgrade-projects", action="store_true", help="run npm's lockfile fix in the owner's own projects: needs its own yes, never part of the one-yes fix")
     fx.add_argument("--keep-open", help="names or paths to leave open even though their rule is in --accept (comma-separated)")
     fx.add_argument("--revet", action="store_true", help="re-scan changed skills with every engine and re-approve the clean ones")
-    fx.add_argument("--only", help="with --revet: re-approve only these skills (names, comma-separated); every other changed skill stays open")
+    fx.add_argument("--only", help="with --revet: re-approve only these skills (names, comma-separated); works on skills the daily check or audit already reported as changed (a fresh fix preview is not required); every other changed skill stays open")
     fx.add_argument("--exception", help="skill name(s) the owner confirmed as security tools (30 days)")
     fx.add_argument("--quarantine", help="the owner's own skill(s) to move out of use into Watchtower's quarantine folder (comma-separated)")
     fx.add_argument("--owner-said-yes", action="store_true", help="with --apply: the owner said yes to the cleanup list in the last preview")
