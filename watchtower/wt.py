@@ -4017,12 +4017,12 @@ def plant_canaries(only=None, token_file=None, refused=None):
         if token_file and name == "cloud-keys":
             content = open(token_file).read()
         try:
-            atime, _ = write_decoy(p, content)
+            atime, mtime = write_decoy(p, content)
         except DecoyLink as e:
             bad.append(decoy_link_finding(name, p, f"{link_target(p)}. {e}"))
             ledger({"event": "canary-refused", "decoy": name, "path": p, "why": str(e)[:200]})
             continue
-        reg[name] = {"path": p, "token": tok, "atime": atime, "planted": now(), "planted_ts": time.time()}
+        reg[name] = {"path": p, "token": tok, "atime": atime, "mtime": mtime, "planted": now(), "planted_ts": time.time()}
         planted.append(name)
     save_json(state_path("canaries.json"), reg)
     if bad:
@@ -4161,6 +4161,15 @@ def cmd_canary(args):
 BULK_KEYS = {"WT-K004": "bulk-decoy-read", "WT-K005": "own-scan-decoy-read"}
 
 
+def decoy_rewritten(v, st):
+    """True when the file was rewritten after this registry planted it AND is still armed (unread since that write: atime is
+    the re-arm value mtime - 1 day). A file read after the rewrite is still a read (WT-K001), so no read is ever hidden."""
+    planted = v.get("mtime", v.get("planted_ts"))
+    if not isinstance(planted, (int, float)) or st.st_mtime <= planted + 5:
+        return False
+    return abs(st.st_atime - (st.st_mtime - 86400)) <= 1
+
+
 def canary_findings(record=True):
     """A decoy opened on its own means something went looking: critical. Two or more decoys opened within a couple of
     minutes means a bulk reader (a Bot grepping every file, a scanner, the platform's file backup): worth knowing,
@@ -4179,6 +4188,15 @@ def canary_findings(record=True):
                                "Check recent routine runs, then re-plant with `wt.py canary plant`."))
             continue
         st = os.lstat(p)
+        if decoy_rewritten(v, st):
+            # DQ-041 (Oct 14 replay): the file here was written after this registry planted it, so its atime says nothing
+            # about a read of *our* decoy (a dry run with a copied registry and its own /tmp re-planted it). Never silent:
+            out.append(finding("WT-K007", "Decoy file rewritten since it was planted", "high", ["ASI10"], p,
+                               f"{name}: written {dt.datetime.fromtimestamp(st.st_mtime, dt.timezone.utc).isoformat(timespec='minutes')}, "
+                               f"planted {str(v.get('planted', ''))[:16]}",
+                               "The decoy on disk is not the one Watchtower recorded: something rewrote it, or this state was copied from "
+                               "another run. Re-plant with `wt.py canary plant`; if no Watchtower run or dry run explains it, tell Watchtower \"incident check\"."))
+            continue
         if st.st_atime > v["atime"] + 1:
             reads.append((name, p, st.st_atime))
             if record and owned_path(p, "decoy", log=False):
