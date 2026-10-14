@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Ken, Oct 14, Grok CLI sign-in file: `~/.grok/auth.json` (that exact path, the platform's Grok CLI login) is expected and filed like the platform secret store: one WT-I009 Platform note ("Grok CLI sign-in file present") with its mode, never read, never scored, in both the file walk and the gitleaks/TruffleHog results. Any other file under `~/.grok`, or an `auth.json` anywhere else, still counts: a live JWT or key there stays critical WT-S002. Replays in `tests/test_grok_cli_signin_oct14.py`.
 - Ken, Oct 14 (via Master Chief), WT-A002 known-and-accepted: `rules/accepted_auto_allow.json` lists exact sha256 fingerprints of auto-allow lines the owner accepted on purpose (the two Claude-bridge POST lines in `agent-data/settings.json`); a box can add its own in `state/accepted_auto_allow.json`. Only an exact match is accepted: the finding keeps critical severity and is filed under Accepted risks (shown, not scored). Any new, edited or broader auto-allow, and any other pinned POST, still fires critical. No pattern matching, ever.
 - Ken, Oct 14, WT-I001 grouping: two or more of the owner's reviewed skills that changed are one high finding ("N reviewed skills changed") listing every skill name, instead of one high per skill. Platform and built-in changes keep their own lines (main-box dry run: a built-in led the group and hid the owner's changes from the score). `fix --revet`, `diff` and approval bookkeeping still see each member skill. Replays for both in `tests/test_v071_ken_calls.py`.
 

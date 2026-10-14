@@ -3033,7 +3033,9 @@ def in_catalog_plugin(where):
 # Ken, Oct 13 (item 8 dry run): Codex's and Claude's own built-in skills and plugins are the platform's, shown not scored.
 # (Folded into PLATFORM_ROOT_SUBS / under_platform_root — Claude v0.7.1 F3.)
 # Ken, Oct 13: the platform's masked-secret store (values saved through the secure secret request). Never read by Watchtower.
-PLATFORM_SECRET_STORE = ("sand-data/box-secrets.json", "agent-data/box-secrets.json")
+PLATFORM_SECRET_STORE = ("sand-data/box-secrets.json", "agent-data/box-secrets.json",
+                         ".grok/auth.json")   # Ken, Oct 14: the Grok CLI sign-in file is expected; that exact path only
+GROK_CLI_SIGN_IN = ".grok/auth.json"
 
 
 def is_platform_secret_store(p):
@@ -3049,6 +3051,10 @@ def platform_secret_store_note(p):
         mode = None
     m = f"mode {mode:04o}" if mode is not None else "mode unknown"
     tight = mode is not None and not (mode & 0o077)
+    if os.path.normpath(str(p)).endswith(os.sep + os.path.normpath(GROK_CLI_SIGN_IN)):
+        return finding("WT-I009", "Grok CLI sign-in file present" + ("" if tight else " (readable beyond its owner)"), "info", ["ASI03"], p,
+                       f"{m}; value not read", "This is the platform's own Grok CLI sign-in file. Watchtower never reads it. Nothing for you to do"
+                       + ("." if tight else "; its permissions are wider than 0600, worth reporting to the platform."), ident="platform-grok-cli-sign-in")
     return finding("WT-I009", "Platform secret store present" + ("" if tight else " (readable beyond its owner)"), "info", ["ASI03"], p,
                    f"{m}; value not read", "This is the platform's own store for secrets saved through the secure secret request. "
                    "Watchtower never reads it. Nothing for you to do" + ("." if tight else "; its permissions are wider than 0600, worth reporting to the platform."),
