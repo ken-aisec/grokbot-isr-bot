@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Claude review Oct 14 (v0.7.1 at 4d1daaa), F3/F4 FIX FIRST: `platform_file` / vendor-template matching use realpath prefixes of the real platform roots only (`~/.grok/bundled`, `~/sand-data/managed-skills`, `~/agent-data/managed-skills`, `~/.codex/skills/.system`, `~/.claude/plugins/synced`); a user skill under `user_skill_roots()` is never platform even when a folder is named like one. A platform built-in that changes to steal credentials (or other Confirmed critical/high) alerts in daily — "Grok Bot's own <skill> changed and now …; don't use it until they do" — and only unflagged platform changes roll into the one Tip; vendor scans also run behavior rules (T004/T017) so a rug-pull is Confirmed. Regressions in `tests/test_v071_no_blind_spots.py`; GateStillCatches guards both.
 - DQ-040: `fix --revet --only <names>` re-approves skills the daily check or audit already reported as changed, even when there is no fresh fix preview (or the saved preview list is stale). A full `--revet` without `--only` still uses only the preview list (DQ-019). The fix skill's `--only` paragraph and the CLI help say so. Regression in `tests/test_dq040.py`.
 
 ## v0.7.1 — 2026-10-16 (precision pass: fewer false alarms)

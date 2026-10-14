@@ -253,7 +253,10 @@ def scan_text(text, where, rules, kind="skill"):
         out.append(finding("WT-T001r", "Describes injection patterns (reference or detector)", "info", ["AST05"], where,
                            "pattern list", "No action. Listed so you know this file contains attack examples."))
     for rule in rules["rules"]:
-        if kind == "vendor" and rule["severity"] != "critical" and rule["id"] != "WT-T002":
+        # Vendor/platform: critical rules, hidden Unicode, and behavior (credential read, send-out, pipe, exec).
+        # High wording alone stays off so fiction in built-in templates does not pile up; a built-in that turns
+        # malicious still trips T004/T017 (Claude v0.7.1 F4).
+        if kind == "vendor" and rule["severity"] != "critical" and rule["id"] != "WT-T002" and rule["id"] not in BEHAVIOR_RULES:
             continue
         for m in rule["rx"].finditer(text):
             if is_ref and rule["id"] in REF_RULES:
@@ -1109,9 +1112,50 @@ def skill_tier(path):
 SAMPLE_SKILL_PATH = re.compile(
     r"(?i)(^|/)(tests?|__tests__|fixtures?|testdata|examples?|docs|references)(/|$)")
 # Shipped by the platform itself, not marketplace plugins (/plugins/, /plugin-cache/ stay fully scored).
+# Claude v0.7.1 F3: match realpath prefixes of these roots only — never a segment anywhere in the path.
 # The built-in pptx skill on the main box is /home/box/.grok/bundled/skills/pptx (realpath, checked 2026-10-12).
-PLATFORM_BUNDLED = ("/.grok/bundled/", "/managed-skills/")
+PLATFORM_ROOT_SUBS = (
+    ".grok/bundled",
+    "sand-data/managed-skills",
+    "agent-data/managed-skills",
+    ".codex/skills/.system",
+    ".claude/plugins/synced",
+)
 VENDOR_TEMPLATE_PATH = re.compile(r"(?i)/(templates|examples)/")
+
+
+def platform_roots():
+    """The platform's real skill folders under the home folder(s)."""
+    out = []
+    for base in dict.fromkeys((os.path.expanduser("~"), "/home/box")):
+        for sub in PLATFORM_ROOT_SUBS:
+            out.append(os.path.normpath(os.path.join(base, sub)))
+    return list(dict.fromkeys(out))
+
+
+def under_platform_root(path):
+    """True only when the path really sits under a platform root (realpath prefix). A user skill whose folder is
+    named like a platform folder (e.g. workflows/managed-skills) is never platform (Claude v0.7.1 F3)."""
+    p = os.path.normpath(os.path.abspath(str(path).split(":")[0]))
+    try:
+        pr = os.path.realpath(p)
+    except OSError:
+        pr = p
+    uroots = user_skill_roots()
+    try:
+        ruroots = {os.path.realpath(r) for r in uroots}
+    except OSError:
+        ruroots = set(uroots)
+    if _under(p, uroots) or _under(pr, ruroots):
+        return False
+    proots = platform_roots()
+    rproots = set()
+    for r in proots:
+        try:
+            rproots.add(os.path.realpath(r))
+        except OSError:
+            rproots.add(r)
+    return _under(p, set(proots)) or _under(pr, rproots)
 
 
 def is_sample_skill_path(path):
@@ -1215,9 +1259,9 @@ def is_loadable_skill_location(path):
 
 def is_vendor_template_file(path):
     """Example/story files inside the platform's own bundled skills (e.g. .grok/bundled/.../templates/*.js). DQ-024.
-    Marketplace and user plugins are never covered (v0.7.0 review R2)."""
-    p = os.path.normpath(str(path).split(":")[0]).replace(os.sep, "/")
-    return any(x in p for x in PLATFORM_BUNDLED) and bool(VENDOR_TEMPLATE_PATH.search(p))
+    Marketplace and user plugins are never covered (v0.7.0 review R2). Realpath prefix only (Claude v0.7.1 F3)."""
+    p = os.path.normpath(os.path.abspath(str(path).split(":")[0])).replace(os.sep, "/")
+    return under_platform_root(path) and bool(VENDOR_TEMPLATE_PATH.search(p))
 
 
 # v0.7.1 precision item 1 (Ken, Oct 12): live-only by default. Skill wording and drift rules run only on what the platform
@@ -2805,28 +2849,71 @@ REFRESH_RULE = "WT-I008"
 
 def summarize_refresh(fs):
     """v0.7.1 precision item 6 (Ken, Oct 12): change alerts name the source. Changes to Grok Bot's own files (a platform refresh)
-    are one summary line, a Tip, never an alert. Watchtower's own update is already skipped (own_release_file) and the owner's
-    other project folders are outside the live scan (item 1). An unexplained change to something live still alerts: the owner's
-    skills (WT-I001 high) and plugins they installed. The full audit still accepts the platform's files only when nothing flags
-    them (roll_builtin), and the scanners and rules still read every changed file, so a refresh that adds something bad is
-    reported by what it adds."""
+    are one summary line, a Tip, never an alert — unless the change brings a new Confirmed critical or high (Claude v0.7.1 F4).
+    Then daily gets a real alert: the built-in turned bad; don't use it until Grok Bot fixes it. Unflagged platform changes
+    still roll into the one Tip. Owner skill changes and installed-plugin changes still alert as before."""
     ref = [f for f in fs if f.get("refresh") and f["rule"] in ("WT-I001", "WT-I002", "WT-I003")]
     if not ref:
         return fs
-    names = []
-    for f in ref:
-        w = f["where"].split(":")[0]
+    # Confirmed critical/high on a platform path (label may already be set; else evidence/corroboration still counts).
+    bad = []
+    for f in fs:
+        if f in ref or f["severity"] not in ("critical", "high"):
+            continue
+        if not (f.get("scope") == "platform" or platform_file(f)):
+            continue
+        if f.get("label") == CONFIRMED or is_evidence(f) or corroborated(f, fs):
+            bad.append(f)
+
+    def skill_of_path(w):
+        w = w.split(":")[0]
         root = skill_root(w) if os.path.exists(w) else None
-        n = skill_name(root) if root else os.path.basename(os.path.dirname(w))
-        if n not in names:
-            names.append(n)
-    c = {r: sum(1 for f in ref if f["rule"] == r) for r in ("WT-I001", "WT-I002", "WT-I003")}
-    shown = ", ".join(names[:6]) + (f", +{len(names) - 6} more" if len(names) > 6 else "")
+        return root or os.path.dirname(w), skill_name(root) if root else os.path.basename(os.path.dirname(w))
+
+    def bad_for(rf):
+        w = rf["where"].split(":")[0]
+        root, _ = skill_of_path(w)
+        for b in bad:
+            bw = b["where"].split(":")[0]
+            if bw == w or bw.startswith(w.rstrip("/") + "/") or (root and (bw == root or bw.startswith(root.rstrip("/") + "/"))):
+                return b
+        return None
+
+    flagged, unflagged = [], []
+    for rf in ref:
+        (flagged if bad_for(rf) else unflagged).append(rf)
+
     out = [f for f in fs if f not in ref]
-    out.append(finding(REFRESH_RULE, f"Platform refresh: {len(ref)} of Grok Bot's own files changed ({shown})", "info", ["AST07"],
-                       "platform-refresh", f"{c['WT-I001']} updated, {c['WT-I002']} added, {c['WT-I003']} removed",
-                       "Nothing to do. Grok Bot updated its own skills or plugin catalog. Watchtower re-checks the new files and accepts "
-                       "them on the next full audit when nothing flags them.", ident="platform-refresh"))
+    seen = set()
+    for rf in flagged:
+        b = bad_for(rf)
+        root, n = skill_of_path(rf["where"])
+        if n in seen:
+            continue
+        seen.add(n)
+        title = (f"Grok Bot's own {n} changed and now {b['title']}; it's theirs to fix, but don't use it until they do")
+        alert = finding(rf["rule"], title, b["severity"], ["AST07", "ASI03"], rf["where"],
+                        rf.get("evidence") or b.get("evidence", ""),
+                        "Grok Bot's own skill went bad. Don't use it until they fix it. Watchtower keeps it listed.",
+                        ident=f"platform-bad-{n}")
+        alert["scope"] = "platform"
+        alert["label"] = CONFIRMED
+        alert["class"] = "corroborated"
+        out.append(alert)
+    if unflagged:
+        names = []
+        for f in unflagged:
+            _, n = skill_of_path(f["where"])
+            if n not in names:
+                names.append(n)
+        c = {r: sum(1 for f in unflagged if f["rule"] == r) for r in ("WT-I001", "WT-I002", "WT-I003")}
+        shown = ", ".join(names[:6]) + (f", +{len(names) - 6} more" if len(names) > 6 else "")
+        tip = finding(REFRESH_RULE, f"Platform refresh: {len(unflagged)} of Grok Bot's own files changed ({shown})", "info", ["AST07"],
+                      "platform-refresh", f"{c['WT-I001']} updated, {c['WT-I002']} added, {c['WT-I003']} removed",
+                      "Nothing to do. Grok Bot updated its own skills or plugin catalog. Watchtower re-checks the new files and accepts "
+                      "them on the next full audit when nothing flags them.", ident="platform-refresh")
+        tip["class"], tip["label"] = "tip", TIP   # created after label_findings; keep it a Tip
+        out.append(tip)
     return out
 
 
@@ -2881,7 +2968,7 @@ def in_catalog_plugin(where):
 
 
 # Ken, Oct 13 (item 8 dry run): Codex's and Claude's own built-in skills and plugins are the platform's, shown not scored.
-OTHER_PLATFORM_BUNDLED = ("/.codex/skills/.system/", "/.claude/plugins/synced/")
+# (Folded into PLATFORM_ROOT_SUBS / under_platform_root — Claude v0.7.1 F3.)
 # Ken, Oct 13: the platform's masked-secret store (values saved through the secure secret request). Never read by Watchtower.
 PLATFORM_SECRET_STORE = ("sand-data/box-secrets.json", "agent-data/box-secrets.json")
 
@@ -2906,6 +2993,8 @@ def platform_secret_store_note(p):
 
 
 def platform_file(f):
+    """Grok Bot's own file: real platform skill roots (realpath prefix), its config files, catalog plugins, or system packages.
+    A user skill whose path merely contains a platform-looking segment is never platform (Claude v0.7.1 F3)."""
     w = f.get("where", "") if isinstance(f, dict) else str(f)
     if in_pending_plugin(w):
         return False
@@ -2913,8 +3002,10 @@ def platform_file(f):
         return True
     if f"{w}".startswith("/") and is_platform_secret_store(w):
         return True
-    return (any(x in w for x in PLATFORM_BUNDLED) or any(x in w for x in OTHER_PLATFORM_BUNDLED) or any(x in w for x in PLATFORM_FILES) or in_catalog_plugin(w)
-            or w.startswith("system python package "))
+    if any(x in w for x in PLATFORM_FILES) or in_catalog_plugin(w) or w.startswith("system python package "):
+        return True
+    path = w.split(":")[0] if isinstance(w, str) else ""
+    return bool(path.startswith("/")) and under_platform_root(path)
 
 
 def mark_platform(fs):
@@ -3151,7 +3242,7 @@ def run_audit_locked(args, quick):
         fs = sort_findings(fs)
     if not quick and "SkillSpector and husk" not in STAGE_FAILED:
         fs = roll_builtin(fs, meta, meta["notes"])
-    fs = split_facts(platform_owned(summarize_refresh(fs)))
+    fs = split_facts(platform_owned(fs))
     for f in fs:
         if platform_file(f):
             f["scope"] = "platform"
@@ -3159,7 +3250,9 @@ def run_audit_locked(args, quick):
             f["scope"] = "builtin"
         elif in_pending_plugin(f["where"]) and f["rule"] in ("WT-X001", "WT-X002", "WT-T006k") and f["severity"] == "low":
             f["severity"] = "medium"   # one scanner flagging a skill in a plugin nobody has reviewed yet is worth a look
-    fs = sort_findings(group_root_causes(mark_platform(label_findings(fs, ask_first_covered(fs)))))
+    # Label before platform-refresh summary so a built-in that turns Confirmed critical/high alerts (Claude v0.7.1 F4).
+    fs = label_findings(fs, ask_first_covered(fs))
+    fs = sort_findings(group_root_causes(mark_platform(summarize_refresh(fs))))
     live, suppressed = active(fs)
     prev = load_json(state_path("last_findings.json"), {"findings": []})
     prev_keys, cur_keys = keys_of(prev.get("findings", [])), keys_of(live)
