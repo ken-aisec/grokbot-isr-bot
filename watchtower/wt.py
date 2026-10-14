@@ -253,11 +253,12 @@ def scan_text(text, where, rules, kind="skill"):
         out.append(finding("WT-T001r", "Describes injection patterns (reference or detector)", "info", ["AST05"], where,
                            "pattern list", "No action. Listed so you know this file contains attack examples."))
     for rule in rules["rules"]:
-        # Vendor/platform: critical rules, hidden Unicode, and behavior (credential read, send-out, pipe, exec).
-        # High wording alone stays off so fiction in built-in templates does not pile up; a built-in that turns
-        # malicious still trips T004/T017 (Claude v0.7.1 F4).
-        if kind == "vendor" and rule["severity"] != "critical" and rule["id"] != "WT-T002" and rule["id"] not in BEHAVIOR_RULES:
-            continue
+        # Vendor/platform: critical rules, hidden Unicode, and high/critical behavior (credential read, send-out, pipe).
+        # High wording and medium behavior (e.g. eval) stay off so fiction and noise in shipped plugins do not pile up;
+        # a built-in that turns malicious still trips T004/T017 (Claude v0.7.1 F4).
+        if kind == "vendor" and rule["severity"] != "critical" and rule["id"] != "WT-T002":
+            if not (rule["id"] in BEHAVIOR_RULES and rule["severity"] in ("critical", "high")):
+                continue
         for m in rule["rx"].finditer(text):
             if is_ref and rule["id"] in REF_RULES:
                 out.append(finding(rule["id"], rule["title"] + " (in an attack-pattern reference)", "low", rule["owasp"],
