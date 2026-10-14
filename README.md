@@ -118,3 +118,11 @@ Release drill, dev dry-run (precision plan item 8): before each release the dev 
 ## License
 
 Apache-2.0. See `THREAT_MODEL.md`, `EGRESS.md` and `SECURITY.md`.
+
+## Accepted auto-allow lines (WT-A002)
+
+An auto-allow on a consequential action (sending, posting, paying, deleting, an HTTP POST) is always a critical WT-A002.
+An owner can accept one exact line on purpose: `rules/accepted_auto_allow.json` (shipped) and `state/accepted_auto_allow.json`
+(this box) list sha256 fingerprints of the exact line text. A matching line keeps its critical severity but is filed under
+Accepted risks, shown in the report and not scored. Any new, edited or broader line has a different fingerprint and fires.
+Several reviewed skills that changed show as one high WT-I001 line naming every skill.

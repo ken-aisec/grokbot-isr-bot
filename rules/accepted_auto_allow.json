@@ -1,0 +1,14 @@
+[
+  {
+    "rule": "WT-A002",
+    "sha256": "b07aa819d212553b69abb7a291ef3db89e7717be205c4363493a82503e1fc2db",
+    "label": "Claude bridge POST (allow line 3)",
+    "accepted": "Ken, 2026-10-14 (via Master Chief)"
+  },
+  {
+    "rule": "WT-A002",
+    "sha256": "5db09e7672ec4cacd15fbcaa4120d6f197aba6a060c60c7ed86ce765ab5d4bd6",
+    "label": "Claude bridge POST, Ask first for any other URL (allow line 5)",
+    "accepted": "Ken, 2026-10-14 (via Master Chief)"
+  }
+]

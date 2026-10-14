@@ -822,9 +822,47 @@ def group_root_causes(fs):
     return out
 
 
+CHANGED_GROUP_MIN = 2
+
+
+def _changed_high(f):
+    # the owner's own skills only: a platform or built-in change keeps its own line (dry run 53e1836: a Grok Bot built-in
+    # led the group, so the owner's changes went unscored)
+    return f.get("rule") == "WT-I001" and f.get("severity") == "high" and not f.get("refresh") and f.get("scope") not in ("platform", "builtin")
+
+
+def group_changed_skills(fs):
+    """Ken, Oct 14: several reviewed skills changed is one finding listing each skill, not one high per skill. Still high.
+    Each skill keeps its own record (fix, re-vet, diff and approvals work per skill); all but the first are marked
+    `grouped_into` and are neither scored nor shown as lines of their own."""
+    for f in fs:
+        f.pop("grouped_into", None)
+    hits = [f for f in sort_findings(fs) if _changed_high(f)]
+    names = sorted({skill_name(skill_root(f["where"].split(":")[0]) or os.path.dirname(f["where"].split(":")[0])) for f in hits})
+    if len(names) < CHANGED_GROUP_MIN:
+        return fs
+    p = hits[0]
+    p["title"] = f"{len(names)} reviewed skills changed"
+    p["skills"] = names
+    p["member_evidence"], p["evidence"] = p["evidence"], ", ".join(names)[:400]
+    p["members"] = [f["where"] for f in hits]
+    for f in hits[1:]:
+        f["grouped_into"] = p["key"]
+    return fs
+
+
+def shown(fs):
+    """Findings as lines: members of a grouped finding are inside their group's line."""
+    return [f for f in fs or [] if not f.get("grouped_into")]
+
+
+def expand_groups(fs):
+    return list(fs or [])
+
+
 def open_counts(fs):
     """Worth-a-look and Tip counts, shown next to the score everywhere so a perfect score never hides open items."""
-    fs = fs or []
+    fs = shown(fs)
     return sum(1 for f in fs if f.get("class") == "pattern"), sum(1 for f in fs if f.get("class") == "tip")
 
 
@@ -1874,8 +1912,29 @@ RULE_OBJECTS = re.compile(r"""(https?://\S+|~/\S+|\./\S+|/(?:\S+)|\b[\w.-]+\.(md
 ASK_FIRST_CLAUSE = re.compile(r"(?i)\b(?:ask\s+(?:me\s+)?first|otherwise\s+ask)\b[^.;\n]*")
 
 
+ACCEPTED_AUTO_ALLOW_PATH = os.path.join(HERE, "..", "rules", "accepted_auto_allow.json")
+
+
+def auto_allow_fingerprint(raw):
+    """Exact-match fingerprint of one auto-review line: any edit, even one character, gives a new fingerprint."""
+    return hashlib.sha256(raw.strip().encode("utf-8")).hexdigest()
+
+
+def accepted_auto_allow():
+    """Auto-allow lines the owner accepted on purpose (Ken, Oct 14: the Claude bridge POST lines). Exact fingerprints only,
+    never a pattern, so a new, edited or broader rule still fires at full severity. Shipped list + this box's state list."""
+    out = {}
+    for p in (ACCEPTED_AUTO_ALLOW_PATH, state_path("accepted_auto_allow.json")):
+        data = load_json(p, [])
+        for e_ in data if isinstance(data, list) else []:
+            if isinstance(e_, dict) and isinstance(e_.get("sha256"), str) and e_.get("rule", "WT-A002") == "WT-A002":
+                out[e_["sha256"].lower()] = e_.get("label", "accepted by owner")
+    return out
+
+
 def lint_auto_review(text, where, check_missing=True):
     out = []
+    accepted = accepted_auto_allow()
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     for i, raw in enumerate(lines, 1):
         l = RULE_OBJECTS.sub(" ", raw)   # R18: a file name, path or link names a thing (a quoted action is still the action); it isn't the action being allowed
@@ -1888,6 +1947,9 @@ def lint_auto_review(text, where, check_missing=True):
         if re.search(r"(?i)allow\s+automatically", l) and re.search(r"(?i)\b(send|sending|sends|email|emails|post|posts|posting|publish\w*|purchase\w*|pay|pays|paying|payments?|delete\w*|transfer\w*|permissions?)\b", l):
             out.append(finding("WT-A002", "Auto-allow on a consequential action", "critical", ["ASI02", "ASI09"], f"{where}:{i}", raw,
                                "Change it to Ask first. Sending, paying, publishing and deleting always need your yes."))
+            fp = auto_allow_fingerprint(raw)
+            if fp in accepted:   # still critical; active() files it under accepted risks so it shows, but doesn't count
+                out[-1]["accepted_exact"] = {"sha256": fp, "label": accepted[fp]}
         if re.search(r"(?i)allow\s+automatically", l) and re.search(r"(?i)(automation|routine|schedul|cron|trigger|create\s+(a\s+)?skill|install|plugin|connector)", l):
             out.append(finding("WT-A004", "Auto-allow on creating automations or installs", "high", ["ASI10", "ASI03"], f"{where}:{i}", raw[:140],
                                "Change it to Ask first. Anything that creates a routine or installs code can give injected text a way to run again later, unattended."))
@@ -3091,6 +3153,8 @@ def roll_builtin(fs, meta, notes):
 
 
 def is_accepted(f, sup, today):
+    if f.get("rule") == "WT-A002" and f.get("accepted_exact"):
+        return True   # exact owner-accepted line (rules/accepted_auto_allow.json); severity untouched
     for s_ in sup:
         if s_.get("expires", "9999") < today:
             continue
@@ -3253,7 +3317,7 @@ def run_audit_locked(args, quick):
             f["severity"] = "medium"   # one scanner flagging a skill in a plugin nobody has reviewed yet is worth a look
     # Label before platform-refresh summary so a built-in that turns Confirmed critical/high alerts (Claude v0.7.1 F4).
     fs = label_findings(fs, ask_first_covered(fs))
-    fs = sort_findings(group_root_causes(mark_platform(summarize_refresh(fs))))
+    fs = sort_findings(group_changed_skills(group_root_causes(mark_platform(summarize_refresh(fs)))))
     live, suppressed = active(fs)
     prev = load_json(state_path("last_findings.json"), {"findings": []})
     prev_keys, cur_keys = keys_of(prev.get("findings", [])), keys_of(live)
@@ -3264,7 +3328,7 @@ def run_audit_locked(args, quick):
         save_json(state_path("baseline.json"), meta["manifest"])
         save_approved_all(meta.get("skill_dirs", []))
     elif not quick:   # skills approved before copies were kept: keep one now, but only while they still match what was approved
-        drifted = {skill_root(f["where"].split(":")[0]) for f in fs if f["rule"] in ("WT-I001", "WT-I002", "WT-I003")}
+        drifted = {skill_root(f["where"].split(":")[0]) for f in expand_groups(fs) if f["rule"] in ("WT-I001", "WT-I002", "WT-I003")}
         save_approved_all([d for d in meta.get("skill_dirs", []) if os.path.normpath(d) not in drifted and not os.path.exists(approved_path(d))])
     snapshot = {"at": now(), "version": VERSION, "score": s, "grade": g, "previous_score": prev.get("score"), "findings": live, "suppressed": suppressed,
                 "scanners_missing": meta.get("scanners_missing", []), "stages_skipped": list(STAGE_FAILED),
@@ -3432,7 +3496,7 @@ def cmd_breakdown(args):
         print("ERROR no audit yet", file=sys.stderr)
         return 2
     rows = {}
-    for f in snap["findings"]:
+    for f in shown(snap["findings"]):
         r = rows.setdefault((f["severity"], f["rule"], f["title"]), {"n": 0, "dirs": {}})
         r["n"] += 1
         w = f["where"].split(":")[0]
@@ -3449,7 +3513,7 @@ def cmd_breakdown(args):
     for (sev, rule, title), r in sorted(rows.items(), key=lambda x: (SEV_ORDER.index(x[0][0]), -x[1]["n"])):
         dirs = ", ".join(f"{k} ×{v}" for k, v in sorted(r["dirs"].items(), key=lambda x: -x[1])[:3])
         print(f"{sev:8} {rule:8} ×{r['n']:<5} {title[:48]:48} {dirs}")
-    confirmed = [f for f in snap["findings"] if f.get("label") == CONFIRMED and f.get("severity") in ("critical", "high", "medium")]
+    confirmed = [f for f in shown(snap["findings"]) if f.get("label") == CONFIRMED and f.get("severity") in ("critical", "high", "medium")]
     if confirmed:
         print("")
         print(f"Confirmed (critical/high/medium): {len(confirmed)}")
@@ -3607,8 +3671,8 @@ def trend(hist):
 
 
 def render_md(snap, hist, tag):
-    plat = [f for f in snap["findings"] if f.get("scope") == "platform"]   # v0.7.1 item 4: their own section, never scored
-    fs = [f for f in snap["findings"] if f.get("scope") != "platform"]
+    plat = [f for f in shown(snap["findings"]) if f.get("scope") == "platform"]   # v0.7.1 item 4: their own section, never scored
+    fs = [f for f in shown(snap["findings"]) if f.get("scope") != "platform"]
     c = by_sev(fs)
     lines = [f"# Watchtower report {tag}", "",
              f"Score {score_line(snap)} (grade {snap['grade']}), {trend(hist)}. Open findings: "
@@ -3644,7 +3708,7 @@ def render_md(snap, hist, tag):
         lines += [f"- {f['rule']} {label_of(f)}: {f['title']} at `{f['where']}`. {f['fix']}" for f in plat[:40]]
     inv = snap.get("inventory", {})
     lines += ["", "## Inventory", "", f"Skills on disk: {inv.get('skills', 0)} · plugin files: {inv.get('plugin_files', 0)} · MCP configs: {inv.get('mcp_configs', 0)}"]
-    fyi = [f for f in snap["findings"] if not counts(f)]
+    fyi = [f for f in shown(snap["findings"]) if not counts(f)]
     if fyi:
         lines += ["", "## Built-in plugins and skills (for your information, not counted in the score)", "",
                   f"{len(fyi)} notes about software the platform or a plugin shipped. Nothing here needs you. `wt.py breakdown` lists them."]
@@ -3679,7 +3743,7 @@ def extra_sections(fs):
 
 
 def render_html(snap, hist, tag):
-    fs = snap["findings"]
+    fs = shown(snap["findings"])
     c = by_sev(fs)
     pts = hist[-12:] or [(snap["at"], snap["score"], len(fs))]
     w, h = 320, 70
@@ -4469,7 +4533,7 @@ def from_rollcall(f):
 
 def scored(findings):
     """The findings the score is made of: the owner's own, and never the roll-call's."""
-    return [f for f in findings if counts(f) and not from_rollcall(f)]
+    return [f for f in findings if counts(f) and not from_rollcall(f) and not f.get("grouped_into")]
 
 
 ROLLCALL_RULE = "Ask the owner before answering any roll-call."
@@ -5191,7 +5255,7 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
     notes = notes or {}
     stories, more = split_stories(b)
     lvl_i, lvl, _ = threat_level(b, snap, stories)
-    fs = (snap or {}).get("findings", [])
+    fs = shown((snap or {}).get("findings", []))
     score = (snap or {}).get("score")
     grade = (snap or {}).get("grade", "")
     todo = needs_you(fs)
@@ -5987,7 +6051,7 @@ def fix_class(f):
         return "ask_first"
     if f["title"] == KEY_DEAD:
         return "auto"
-    if f["rule"] == "WT-I001" and skill_root(f["where"].split(":")[0]):
+    if f["rule"] == "WT-I001" and (f.get("members") or skill_root(f["where"].split(":")[0])):
         return "revet"
     return "decision" if acceptable(f) else "only_you"
 
@@ -6159,7 +6223,7 @@ def find_skill(name, dirs):
 
 def cmd_diff(args):
     snap = load_json(state_path("last_findings.json"), {"findings": []})
-    dirs = {skill_root(f["where"].split(":")[0]) for f in snap.get("findings", []) if f["rule"] in ("WT-I001", "WT-I002")} - {None}
+    dirs = {skill_root(f["where"].split(":")[0]) for f in expand_groups(snap.get("findings", [])) if f["rule"] in ("WT-I001", "WT-I002")} - {None}
     d = skill_root(args.skill) if os.path.exists(args.skill) else find_skill(args.skill, dirs)
     if not d:
         base = load_json(state_path("baseline.json"), {})
@@ -6179,7 +6243,7 @@ def cmd_diff(args):
 def changed_skills(findings):
     """Skills with a changed file since approval, and changed files that aren't part of a skill (plugin or MCP config files)."""
     skills, other = {}, []
-    for f in findings:
+    for f in expand_groups(findings):
         if f["rule"] != "WT-I001":
             continue
         p = f["where"].split(":")[0]
