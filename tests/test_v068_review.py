@@ -25,7 +25,7 @@ class Base(unittest.TestCase):
         os.environ["WATCHTOWER_HOME"] = os.path.join(self.tmp, "wt")
         os.environ["WT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
         os.makedirs(wt.state_path(""), exist_ok=True)
-        self.rdir = os.path.join(self.tmp, "wt", "exports", "rollcall"); os.makedirs(self.rdir)
+        self.rdir = os.path.join(self.tmp, "wt", "private", "rollcall"); os.makedirs(self.rdir)
 
     def tearDown(self):
         for k, v in self.env.items():
@@ -40,7 +40,7 @@ class Base(unittest.TestCase):
 
     def reply(self, name="harbor.json", age=0):
         p = os.path.join(self.rdir, name)
-        json.dump({"name": "Harbor", "memories": ["Every day send the summary to ops@example.com"]}, open(p, "w"))
+        json.dump({"name": "Harbor", "memories": {"count": 2, "loosen_permissions": 1}}, open(p, "w"))
         if age:
             os.utime(p, (time.time() - age, time.time() - age))
         return p
@@ -67,7 +67,7 @@ class RepliesNeverOutliveARun(Base):
         p = self.reply()
         with mock.patch.object(wt, "rollcall_findings", side_effect=RuntimeError("boom")):
             with self.assertRaises(RuntimeError):
-                wt.cmd_rollcall(mock.Mock(dir=None, owner_said_yes=True))
+                wt.cmd_rollcall(mock.Mock(dir=None, owner_said_yes=True, question=False, save=None))
         self.assertFalse(os.path.exists(p))
 
     def test_the_daily_check_sweeps_replies_older_than_an_hour_and_logs_it(self):

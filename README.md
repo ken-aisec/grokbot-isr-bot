@@ -12,7 +12,7 @@ Watchtower is a security officer for that setup. It is read-only until you say y
 | `watchtower-audit` | A 0–100 posture score and the top three fixes across skills, plugins, MCP configs, Auto Review rules, local execution, logged-in browser sessions, CLI credentials, secrets, vulnerable packages, persistence, integrity drift, canaries and shell history |
 | `watchtower-brief` | The weekly report, one page you can read in a minute: status, score, threat level, trend charts, a one-click fix, what needs you, and the three threats that matter to your setup |
 | `watchtower-report` | Weekly Markdown report and a self-contained HTML dashboard |
-| `watchtower-rollcall` | DMs every Bot for its routines, connectors and stored memories, then flags poisoned memories, unsafe routines and the lethal trifecta (private data + untrusted input + a way out) |
+| `watchtower-rollcall` | DMs every Bot one fixed question that asks only for counts, names and yes/no answers (never memory text: Bots can't verify who sends a roll-call), then flags risky memories, routines that send without asking and the lethal trifecta (private data + untrusted input + a way out) |
 | `watchtower-prepublish` | PASS/FAIL before you share a Bot as a template: secrets, emails, phone numbers, private doc links, internal hosts, local paths, and a missing approval boundary |
 | `watchtower-incident` | Evidence pack first (findings, canaries, changed files, history, processes, connections, jobs), then containment one approved step at a time |
 | `watchtower-codescan` | OWASP Top 10 (2021) review of code your Bots write, plus semgrep if installed |
@@ -27,7 +27,7 @@ On a template install these are files the Bot reads, not slash commands: ask in 
 | Daily watch | 06:00 | Silent unless something changed. Scripts only; the model reads a delta under 4 KB. |
 | Weekly audit and report | Sunday 05:00 | One audit, one report, one summary. |
 | Weekly tidy | Sunday 06:00 | Lists every cache or file it would empty or change, with whose it is, and waits for one yes. |
-| Monthly roll-call reminder | Off by default | Opt-in. Only reminds; each roll-call needs the owner's yes. Replies are deleted after analysis and never scored. |
+| Monthly roll-call reminder | Off by default | Opt-in. Only reminds; each roll-call needs the owner's yes. Replies sit in a 0700 folder as 0600 files, are deleted as each is analyzed, and are never scored. |
 
 Every finding carries a rule ID, severity, file and line (secrets masked), the fix, and a mapping to the [OWASP Top 10 for Agentic Applications](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/) (ASI), the [OWASP Agentic Skills Top 10](https://owasp.org/www-project-agentic-skills-top-10/) (AST), or the OWASP Top 10 (2021) for code.
 
@@ -78,6 +78,7 @@ wt.py vet FILE|-              vet before installing (exit 1 = Do not install)
 wt.py audit | daily           full or quick audit (compact JSON for the Bot)
 wt.py report                  weekly report + dashboard.html
 wt.py brief [--summary F]     weekly threat brief (HTML)
+wt.py rollcall --save <Bot>      save one reply (stdin) as a 0600 file in the private 0700 roll-call folder
 wt.py rollcall --owner-said-yes  analyze roll-call replies, keep masked findings, delete the replies
 wt.py prepublish PATH         check a Bot before sharing it as a template
 wt.py fix                      preview: the cleanup list (path, file count, whose) and everything else

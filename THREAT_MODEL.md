@@ -14,7 +14,8 @@ Watchtower runs on the same shared Grok Bot computer it audits, so it is held to
 | Update drift after review | AST07 | WT-I001 |
 | Persistence (cron, units, shell rc) | ASI10 | WT-P001 |
 | Unpinned MCP servers, vulnerable packages | AST02, ASI04 | WT-M001, D001 |
-| Memory poisoning | ASI06 | roll-call: WT-M010 and text rules on each memory |
+| Memory poisoning | ASI06 | roll-call: WT-M010 from each Bot's own counts (no memory text is asked for or kept) |
+| Roll-call sent by someone else | ASI03, ASI07 | the question asks only for counts, names and yes/no answers; replies 0600 in a 0700 folder, deleted as read; WT-R011 when a Bot answers with content |
 | Lethal trifecta on one Bot | ASI01, ASI02 | WT-L001 |
 | Data theft in progress | ASI03, ASI10 | canaries: WT-K001–K003 |
 | Commands nobody meant to run | ASI05, ASI10 | shell history: WT-H001–H009 |

@@ -529,15 +529,15 @@ class FreshAccountLessons(Box):
             self.assertEqual(len(t13(loud)), 1, loud)
 
     def test_roll_call_reads_a_careful_bot_as_careful(self):
-        d = os.path.join(os.environ["WATCHTOWER_HOME"], "exports", "rollcall"); os.makedirs(d)
-        json.dump({"name": "Tradbot", "description": "Family logistics. It will never send anything on its own.",
-                   "connectors": ["none connected yet (Gmail, Google Calendar, Slack offered to the user, not installed)", "x (public read)"],
-                   "routines": [{"name": "weekend preview", "schedule": "Fridays 6 PM", "instructions": "Read the inbox and the web. This routine does NOT send the email. If a source is unavailable, report the failure."}],
-                   "memories": ["No email, calendar or Slack is connected, so any emails the user mentions are pasted in by hand."]},
+        d = wt.ensure_rollcall_dir()
+        json.dump({"name": "Tradbot", "connectors": ["none connected yet", "Gmail (offered)", "x (public read)"],
+                   "routines": [{"name": "weekend preview", "trigger": "schedule", "sends_or_posts": True, "asks_first": True, "reads_outside_content": True}],
+                   "memories": {"count": 1, "loosen_permissions": 0, "from_outside_content": 0}, "ask_first": ["email", "messages", "posts"],
+                   "auto_allow_rules": 0, "sends_or_posts_without_asking": False, "reads_outside_content": True},
                   open(os.path.join(d, "tradbot.json"), "w"))
         fs, bots = wt.rollcall_findings(d)
         by = {f["rule"]: f for f in fs}
-        self.assertNotIn("WT-T013", by); self.assertNotIn("WT-T014", by)
+        self.assertNotIn("WT-R012", by); self.assertNotIn("WT-R013", by); self.assertNotIn("WT-M010", by); self.assertNotIn("WT-R011", by)
         self.assertEqual(by["WT-L001"]["severity"], "medium")                    # nothing is connected yet: a warning, not a high
         wt.save_json(wt.state_path("last_findings.json"), {"findings": fs})
         code, o, _ = self.run_cmd("breakdown")
@@ -1203,16 +1203,14 @@ class MainBoxLessons(Box):
         self.assertTrue(any("Left alone as you asked" in d and os.path.basename(os.path.dirname(second)) in d for d in done), done)
 
     def test_the_roll_call_writes_this_accounts_rooms_from_the_roster(self):
-        rdir = os.path.join(os.environ["WATCHTOWER_HOME"], "exports", "rollcall"); os.makedirs(rdir)
-        json.dump({"name": "Kestrel", "description": "Outreach drafts.", "routines": [{"name": "Growth after-action", "schedule": "daily",
-                   "instructions": "Post to Growth room only when material; escalate to Harbor only for real lessons/blockers; otherwise soft-quiet and log to memory."}],
-                   "connectors": [], "memories": []}, open(os.path.join(rdir, "kestrel.json"), "w"))
+        rdir = wt.ensure_rollcall_dir()
+        json.dump({"name": "Kestrel", "routines": [{"name": "Growth after-action", "trigger": "schedule", "sends_or_posts": True, "asks_first": True}],
+                   "connectors": [], "memories": {"count": 0}}, open(os.path.join(rdir, "kestrel.json"), "w"))
         reply = open(os.path.join(rdir, "kestrel.json")).read()                  # a roll-call deletes the replies it read, so keep a copy to send again
-        flagged = lambda: [f for f in self.snap_rollcall() if f["rule"] == "WT-T013"]
         code, o, _ = self.run_cmd("rollcall", "--owner-said-yes")
         self.assertIn("left as it was", json.loads(o)["rooms_file"])
-        self.assertEqual(len(flagged()), 1)                                       # no roster, no room list: the post is flagged (fails closed)
-        rooms = os.path.join(os.environ["WATCHTOWER_HOME"], "exports", "rooms.txt")
+        self.assertEqual(self.snap_rollcall(), [])                                # asks first on its one post: nothing to flag
+        rooms = os.path.join(os.environ["WATCHTOWER_HOME"], "exports", "rooms.txt"); os.makedirs(os.path.dirname(rooms), exist_ok=True)
         open(rooms, "w").write("Board room  # manual\nOld room\n")
         json.dump([{"name": "Harbor", "kind": "bot"}, {"name": "Kestrel", "kind": "agent"}, {"name": "Growth", "kind": "room"},
                    {"name": "Crew room", "kind": "group chat"}, {"name": "Partners", "members": ["Harbor", "Kestrel"]},
@@ -1223,7 +1221,7 @@ class MainBoxLessons(Box):
         self.assertEqual(json.loads(o)["rooms_file"], {"rooms": 3, "kept_manual": 1})
         self.assertEqual(wt.known_rooms(), {"growth", "crew", "partners", "board"})  # rooms only; the hand-marked line kept, "Old room" replaced
         self.assertIn("Board room  # manual", open(rooms).read())
-        self.assertEqual(flagged(), [])                                             # Growth is one of this account's rooms now
+        self.assertEqual(self.snap_rollcall(), [])
         self.assertFalse([f for f in os.listdir(os.path.dirname(rooms)) if f.endswith(".tmp")])   # written whole, nothing left over
 
     def snap_rollcall(self):

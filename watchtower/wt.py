@@ -4354,55 +4354,208 @@ def memory_flag(m, rules=None):
     return None
 
 
-def rollcall_findings(rdir):
-    rules = load_rules()
+# v0.7.1 red-team (second account, Oct 14): any agent can send the roll-call and Bots can't check who is asking, so the question
+# asks only for a shape: counts, names and yes/no answers. Nothing in a reply should be worth stealing. Analysis reads only that
+# shape (shape_reply); any other field, and any text where a count, a name or a yes/no belongs, is dropped unread and never kept.
+ROLLCALL_TRIGGERS = ("schedule", "slack", "github", "email", "webhook", "other")
+ROLLCALL_ASK_FIRST = ("email", "messages", "posts", "calendar", "files", "purchases", "settings")
+ROLLCALL_SEND_AREAS = frozenset(("email", "messages", "posts"))
+ROLLCALL_FIELDS = frozenset(("name", "connectors", "routines", "memories", "ask_first", "auto_allow_rules",
+                             "sends_or_posts_without_asking", "reads_outside_content"))
+ROLLCALL_ROUTINE_FIELDS = frozenset(("name", "trigger", "sends_or_posts", "asks_first", "reads_outside_content"))
+ROLLCALL_MEMORY_FIELDS = frozenset(("count", "loosen_permissions", "from_outside_content"))
+RC_NAME_MAX = 60
+RC_CONN_MAX = 40
+
+
+def _rc_yesno(v):
+    """A yes/no answer, or None when the reply put anything else there."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str) and v.strip().lower() in ("yes", "no", "true", "false"):
+        return v.strip().lower() in ("yes", "true")
+    return None
+
+
+def _rc_count(v):
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, int):
+        return max(0, min(v, 100000))
+    if isinstance(v, str) and re.fullmatch(r"\s*\d{1,6}\s*", v):
+        return int(v)
+    return None
+
+
+def _rc_name(v, n):
+    """A short name, masked. Text longer than a name is not a name: it is dropped, never truncated into the report."""
+    if not isinstance(v, str):
+        return None
+    t = re.sub(r"\s+", " ", v).strip()
+    if not t or len(t) > n:
+        return None
+    return mask_rollcall(t, n)
+
+
+def shape_reply(d):
+    """Keep only the roll-call shape from a parsed reply. Returns (shape, extra) where extra lists, by field name only, what the
+    reply carried beyond the question (never the values)."""
+    extra = set()
+    for k in d:
+        if k not in ROLLCALL_FIELDS:
+            extra.add(str(k)[:30])
+    out = {"name": _rc_name(d.get("name"), RC_NAME_MAX)}
+    if d.get("name") is not None and out["name"] is None:
+        extra.add("name (not a short name)")
+    conns, raw = [], d.get("connectors")
+    for c in (raw if isinstance(raw, list) else ([] if raw is None else [raw]))[:40]:
+        nm = _rc_name(c, RC_CONN_MAX)
+        if nm is None:
+            extra.add("connectors (not names)")
+        else:
+            conns.append(nm)
+    out["connectors"] = conns
+    rts, raw = [], d.get("routines")
+    if raw is not None and not isinstance(raw, list):
+        extra.add("routines (not a list)")
+        raw = []
+    for r in (raw or [])[:60]:
+        if not isinstance(r, dict):
+            extra.add("routines (not the asked shape)")
+            continue
+        for k in r:
+            if k not in ROLLCALL_ROUTINE_FIELDS:
+                extra.add(f"routines.{str(k)[:24]}")
+        trig = r.get("trigger")
+        trig = trig.strip().lower() if isinstance(trig, str) and trig.strip().lower() in ROLLCALL_TRIGGERS else "other"
+        if r.get("trigger") is not None and trig == "other" and str(r.get("trigger")).strip().lower() != "other":
+            extra.add("routines.trigger (not one of the listed kinds)")
+        nm = _rc_name(r.get("name"), RC_NAME_MAX)
+        if r.get("name") is not None and nm is None:
+            extra.add("routines.name (not a short name)")
+        rts.append({"name": nm or f"routine {len(rts) + 1}", "trigger": trig, "sends_or_posts": _rc_yesno(r.get("sends_or_posts")),
+                    "asks_first": _rc_yesno(r.get("asks_first")), "reads_outside_content": _rc_yesno(r.get("reads_outside_content"))})
+    out["routines"] = rts
+    mem, raw = {}, d.get("memories")
+    if isinstance(raw, dict):
+        for k in raw:
+            if k not in ROLLCALL_MEMORY_FIELDS:
+                extra.add(f"memories.{str(k)[:24]}")
+        for k in ROLLCALL_MEMORY_FIELDS:
+            mem[k] = _rc_count(raw.get(k))
+            if raw.get(k) is not None and mem[k] is None:
+                extra.add(f"memories.{k} (not a count)")
+    elif raw is not None:
+        extra.add("memories (text, not counts)")            # an old-style or naive answer: never read, only its size is known
+        mem = {"count": len(raw) if isinstance(raw, list) else None, "loosen_permissions": None, "from_outside_content": None}
+    out["memories"] = mem
+    af, raw = [], d.get("ask_first")
+    for a in (raw if isinstance(raw, list) else ([] if raw is None else [raw])):
+        v = a.strip().lower() if isinstance(a, str) else None
+        if v in ROLLCALL_ASK_FIRST:
+            af.append(v)
+        else:
+            extra.add("ask_first (not one of the listed areas)")
+    out["ask_first"] = sorted(set(af))
+    out["auto_allow_rules"] = _rc_count(d.get("auto_allow_rules"))
+    if d.get("auto_allow_rules") is not None and out["auto_allow_rules"] is None:
+        extra.add("auto_allow_rules (not a count)")
+    for k in ("sends_or_posts_without_asking", "reads_outside_content"):
+        out[k] = _rc_yesno(d.get(k))
+        if d.get(k) is not None and out[k] is None:
+            extra.add(f"{k} (not yes/no)")
+    return out, sorted(extra)
+
+
+def _rc_read(p):
+    """Read one reply file without following a link, then remove it at once (analysis keeps only the shape)."""
+    try:
+        if os.path.islink(p) or not os.path.isfile(p):
+            return None
+        fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as f:
+            raw = f.read(65536)
+        try:
+            return json.loads(raw.decode("utf-8", "replace"))
+        except ValueError:
+            return None
+    except OSError:
+        return None
+
+
+def _rc_remove(p, rdir):
+    if owned_rollcall_dir(rdir):
+        try:
+            os.remove(p)
+            return 1
+        except OSError:
+            pass
+    return 0
+
+
+def rollcall_findings(rdir, removed=None):
+    """Each reply is read once, reduced to its shape, and deleted right away (in Watchtower's own folder). Findings name what
+    the Bot said about itself in counts and yes/no answers; no reply text is kept anywhere."""
     out, bots = [], []
     if not os.path.isdir(rdir):
         return out, bots
+    gone = 0
     for fn in sorted(os.listdir(rdir)):
+        p = os.path.join(rdir, fn)
         if not fn.endswith(".json"):
             continue
-        p = os.path.join(rdir, fn)
-        d = load_json(p, None)
+        d = _rc_read(p)
+        gone += _rc_remove(p, rdir)
+        label = mask_rollcall(fn[:-5], RC_NAME_MAX)
         if not isinstance(d, dict):
-            out.append(finding("WT-R010", "Roll-call reply did not parse", "low", ["ASI07"], p, fn,
+            out.append(finding("WT-R010", "Roll-call reply did not parse", "low", ["ASI07"], f"rollcall:{label}", "reply was not the asked JSON",
                                "Ask that Bot again; a Bot that won't describe itself is worth a closer look."))
             continue
-        name = d.get("name") or fn[:-5]
+        sh, extra = shape_reply(d)
+        d = None                                              # the parsed reply is not kept past this point
+        name = sh["name"] or label
         bots.append(name)
         where = f"rollcall:{name}"
-        mems = d.get("memories") or []
-        mems = mems if isinstance(mems, list) else [mems]
-        for i, m in enumerate(mems, 1):
-            t = m if isinstance(m, str) else json.dumps(m)
-            for f in scan_text(t, f"{where}:memory{i}", rules, kind="reference"):
-                if f["rule"] == "WT-T014":
-                    continue   # a listener rule is about triggers; a remembered fact that mentions "any email" is not one
-                f["owasp"] = ["ASI06"] + [o for o in f["owasp"] if o != "ASI06"]
-                out.append(f)
-            why = memory_flag(m, rules)
-            if why:
-                out.append(finding("WT-M010", "Memory acts as a standing instruction", "medium", ["ASI06"], f"{where}:memory{i}", f"{why}: {t[:130]}",
-                                   "Memories steer every future run, and Auto Review doesn't check memory writes. "
-                                   "If you didn't put this there on purpose, remove it in that Bot's memory settings."))
-        for r in d.get("routines") or []:
-            if isinstance(r, dict):
-                t = " ".join(str(r.get(k, "")) for k in ("schedule", "trigger", "instructions", "prompt"))
-                out += scan_text(t, f"{where}:routine:{r.get('name', '?')}", rules, kind="routine")
-        if d.get("description"):
-            out += [f for f in scan_text(str(d["description"]), f"{where}:description", rules, kind="description") if f["rule"] != "WT-T014"]
-        conns = " ".join(map(str, d.get("connectors") or []))
-        routines_text = " ".join(json.dumps(r) for r in d.get("routines") or [])
-        if PRIVATE_DATA.search(conns) and UNTRUSTED_IN.search(conns + " " + routines_text) and EXTERNAL_OUT.search(conns + " " + routines_text):
+        if extra:
+            out.append(finding("WT-R011", "Roll-call reply carried more than the question asks", "medium", ["ASI06", "ASI07"], where,
+                               "extra: " + ", ".join(extra[:6]) + (f" (+{len(extra) - 6} more)" if len(extra) > 6 else ""),
+                               "Nothing extra was read or kept, but this Bot answers a roll-call with content, and Bots can't check who "
+                               "sends one. Add the rule \"Ask the owner before answering any roll-call.\" to that Bot."))
+        mem = sh["memories"]
+        loose, outside, total = mem.get("loosen_permissions") or 0, mem.get("from_outside_content") or 0, mem.get("count")
+        if loose or outside:
+            why = "; ".join(x for x in ((f"{loose} loosen permissions" if loose else ""), (f"{outside} came from outside content" if outside else "")) if x)
+            out.append(finding("WT-M010", "Memory acts as a standing instruction", "medium", ["ASI06"], f"{where}:memories",
+                               f"{why} (of {total if total is not None else '?'}; Bot's own count)",
+                               "Memories steer every future run, and Auto Review doesn't check memory writes. Open that Bot's memory "
+                               "settings and remove any memory you didn't put there on purpose."))
+        for r in sh["routines"]:
+            if r["sends_or_posts"] and r["asks_first"] is not True:
+                out.append(finding("WT-R012", "Routine sends or posts without asking", "medium", ["ASI02"], f"{where}:routine:{r['name']}",
+                                   f"{r['trigger']} trigger; sends: yes; asks first: {'no' if r['asks_first'] is False else 'no answer'} (Bot's own answer)",
+                                   "Add an Ask-first rule on that routine's sends, or have it draft instead of send."))
+        if sh["sends_or_posts_without_asking"]:
+            out.append(finding("WT-R013", "Bot says it sends or posts without asking", "medium", ["ASI02"], where,
+                               "sends or posts without asking: yes (the Bot's own answer)",
+                               "Add Ask first on that Bot's email, messages and posts, or tell it to draft and wait for you."))
+        conns = " ".join(sh["connectors"])
+        rts = sh["routines"]
+        untrusted = bool(UNTRUSTED_IN.search(conns)) or sh["reads_outside_content"] is True or any(
+            r["reads_outside_content"] or r["trigger"] in ("slack", "email", "github", "webhook") for r in rts)
+        way_out = bool(EXTERNAL_OUT.search(conns)) or sh["sends_or_posts_without_asking"] is True or any(r["sends_or_posts"] for r in rts)
+        if PRIVATE_DATA.search(conns) and untrusted and way_out:
             waiting = bool(re.search(r"(?i)\b(none|nothing|not\s+(yet\s+)?(connected|installed|set\s+up)|no\s+connectors?|offered)\b", conns))
+            guarded = ROLLCALL_SEND_AREAS <= set(sh["ask_first"])
             out.append(finding("WT-L001", "Risky combination once its connectors are added: private data + untrusted input + a way out" if waiting
-                               else "Lethal trifecta: private data + untrusted input + a way out", "medium" if waiting else "high", ["ASI01", "ASI02"], where,
-                               conns[:150],
+                               else "Lethal trifecta: private data + untrusted input + a way out", "medium" if (waiting or guarded) else "high", ["ASI01", "ASI02"], where,
+                               ("connectors: " + ", ".join(sh["connectors"][:8]) + ("; Ask first on email, messages and posts" if guarded else ""))[:150],
                                "This Bot can read private data, reads content strangers control, and can send outward. "
                                "That's the combination prompt injection needs. Split the jobs across Bots or put Ask first on every send."))
+    if removed is not None:
+        removed.append(gone)
     for f in out:                                         # only masked findings are kept, never the reply itself
         f["evidence"] = mask_rollcall(f["evidence"])
-    save_json(state_path("rollcall_findings.json"), {"at": now(), "masked": VERSION, "bots": bots, "findings": out})
+    save_json(state_path("rollcall_findings.json"), {"at": now(), "masked": VERSION, "shape_only": True, "bots": bots, "findings": out})
     return out, bots
 
 
@@ -4459,7 +4612,7 @@ def sweep_old_replies(rdir=None):
     """The daily check removes any roll-call reply file older than an hour (a roll-call that never finished) and logs it."""
     rdir = rdir or default_rollcall_dir()
     if not owned_rollcall_dir(rdir):
-        return 0
+        return clear_legacy_replies()
     gone, cutoff = 0, time.time() - REPLY_MAX_AGE
     for fn in os.listdir(rdir):
         p = os.path.join(rdir, fn)
@@ -4470,7 +4623,7 @@ def sweep_old_replies(rdir=None):
             pass
     if gone:
         ledger({"event": "rollcall-replies-swept", "count": gone, "older_than_seconds": REPLY_MAX_AGE})
-    return gone
+    return gone + clear_legacy_replies()
 
 
 def migrate_rollcall_state():
@@ -4590,7 +4743,76 @@ def delete_raw_replies(rdir):
 
 
 def default_rollcall_dir():
+    """v0.7.1 red-team: replies live in a 0700 folder inside Watchtower's home (never exports/ or another shared path)."""
+    return os.path.join(home(), "private", "rollcall")
+
+
+def legacy_rollcall_dir():
     return os.path.join(home(), "exports", "rollcall")
+
+
+def ensure_rollcall_dir():
+    """Make private/ and private/rollcall 0700 (fixing a wider mode left by hand). Refuses a link anywhere on the way."""
+    rdir = default_rollcall_dir()
+    for d in (os.path.dirname(rdir), rdir):
+        if os.path.islink(d):
+            raise OSError(f"{d} is a link; Watchtower won't use it for roll-call replies")
+        os.makedirs(d, mode=0o700, exist_ok=True)
+        os.chmod(d, 0o700)
+    if not owned_rollcall_dir(rdir):
+        raise OSError("roll-call folder is not Watchtower's own")
+    return rdir
+
+
+def tighten_replies(rdir):
+    """Any reply file put in the folder some other way is made 0600 before it is read."""
+    if not owned_rollcall_dir(rdir):
+        return
+    for fn in os.listdir(rdir):
+        p = os.path.join(rdir, fn)
+        if os.path.isfile(p) and not os.path.islink(p):
+            try:
+                os.chmod(p, 0o600)
+            except OSError:
+                pass
+
+
+def clear_legacy_replies():
+    """Replies an older version left in exports/rollcall (a folder every Bot can list) are removed; links only as links."""
+    d = legacy_rollcall_dir()
+    n = os.path.normpath(d)
+    if os.path.islink(n) or not os.path.isdir(n) or os.path.realpath(n) != n:
+        return 0
+    gone = 0
+    for fn in os.listdir(n):
+        p = os.path.join(n, fn)
+        if os.path.islink(p) or os.path.isfile(p):
+            try:
+                os.remove(p); gone += 1
+            except OSError:
+                pass
+    try:
+        os.rmdir(n)
+    except OSError:
+        pass
+    return gone
+
+
+def save_reply(bot, text):
+    """`wt.py rollcall --save <Bot>`: write one reply (stdin) as a 0600 file in the 0700 folder. Prints no reply text."""
+    rdir = ensure_rollcall_dir()
+    base = re.sub(r"[^\w.-]+", "_", str(bot or "bot")).strip("._")[:RC_NAME_MAX] or "bot"
+    for i in range(1, 100):
+        p = os.path.join(rdir, f"{base}.json" if i == 1 else f"{base}-{i}.json")
+        try:
+            fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        except FileExistsError:
+            continue
+        with os.fdopen(fd, "w") as f:
+            os.fchmod(f.fileno(), 0o600)
+            f.write(text[:65536])
+        return p
+    raise OSError("too many replies saved for one Bot")
 
 
 def owned_rollcall_dir(rdir):
@@ -4604,12 +4826,26 @@ def owned_rollcall_dir(rdir):
 
 
 def cmd_rollcall(args):
+    if getattr(args, "question", False) is True:
+        print(ROLLCALL_PROMPT)
+        return 0
+    if isinstance(getattr(args, "save", None), str):
+        try:
+            p = save_reply(args.save, sys.stdin.read())
+        except OSError as e:
+            print(f"NOT SAVED: {e}")
+            return 2
+        print(f"Saved {os.path.basename(p)} (mode 0600) in Watchtower's private roll-call folder. It is deleted when the roll-call runs, "
+              "or by the daily check after an hour.")
+        return 0
     rdir = args.dir or default_rollcall_dir()
     try:
         return _rollcall(args, rdir)
     finally:                                   # every path: NOT RUN, an error partway, or a finished run
         # Ken's pick (R01): without the owner's yes nothing is deleted; the daily check sweeps replies older than an hour
         removed = delete_raw_replies(rdir) if getattr(args, "owner_said_yes", False) and owned_rollcall_dir(rdir) else 0
+        if getattr(args, "owner_said_yes", False):
+            removed += clear_legacy_replies()
         if removed:
             ledger({"event": "rollcall-replies-deleted", "count": removed})
 
@@ -4619,21 +4855,33 @@ def _rollcall(args, rdir):
         print("NOT RUN: a roll-call needs the owner's yes in this conversation, every time. Ask them, then run "
               "`wt.py rollcall --owner-said-yes`. Nothing was read or deleted; the daily check removes unread replies after an hour.")
         return 2
+    if not args.dir:
+        ensure_rollcall_dir()
+    tighten_replies(rdir)
     roster = load_json(os.path.join(home(), *ROSTER_FILE), None)     # rooms first, so the replies are judged with this account's rooms
     rooms_file = write_rooms(roster_rooms(roster)) if roster is not None else "no roster saved: rooms.txt left as it was"
-    fs, bots = rollcall_findings(rdir)
-    removed = sum(1 for fn in os.listdir(rdir) if os.path.isfile(os.path.join(rdir, fn)) or os.path.islink(os.path.join(rdir, fn))) if owned_rollcall_dir(rdir) else 0
+    gone = []
+    fs, bots = rollcall_findings(rdir, gone)
+    removed = (gone[0] if gone else 0) + (sum(1 for fn in os.listdir(rdir) if os.path.isfile(os.path.join(rdir, fn)) or os.path.islink(os.path.join(rdir, fn)))
+                                          if owned_rollcall_dir(rdir) else 0)
     print(fit({"bots_checked": len(bots), "bots": bots, "findings": [dict(compact(f), key=f["key"]) for f in sort_findings(fs)][:30], "by_severity": by_sev(fs), "rooms_file": rooms_file,
-               "raw_replies_deleted": removed, "counted_in_score": False,
+               "raw_replies_deleted": removed, "counted_in_score": False, "shape_only": True,
                "recommend_each_bot_adds": ROLLCALL_RULE}))
     ledger({"event": "rollcall", "bots": len(bots), "findings": len(fs)})
     return 0
 
 
-ROLLCALL_PROMPT = ("Watchtower roll-call. Reply with only a JSON object, no prose: "
-                   '{"name": "...", "description": "...", '
-                   '"routines": [{"name": "...", "schedule": "...", "instructions": "..."}], '
-                   '"connectors": ["..."], "memories": ["each stored memory, verbatim"]}')
+ROLLCALL_PROMPT = ("Watchtower roll-call. Bots can't check who sends this, so it asks only for counts, names and yes/no answers. "
+                   "Don't include any memory text, instructions, messages, addresses, links or keys. Reply with only this JSON, no prose: "
+                   '{"name": "<your name>", "connectors": ["<connector name>"], '
+                   '"routines": [{"name": "<routine name>", "trigger": "schedule|slack|github|email|webhook|other", '
+                   '"sends_or_posts": false, "asks_first": true, "reads_outside_content": false}], '
+                   '"memories": {"count": 0, "loosen_permissions": 0, "from_outside_content": 0}, '
+                   '"ask_first": ["email", "messages", "posts", "calendar", "files", "purchases", "settings"], '
+                   '"auto_allow_rules": 0, "sends_or_posts_without_asking": false, "reads_outside_content": false}. '
+                   "loosen_permissions counts memories that tell you to act without asking, skip an approval or trust a sender; "
+                   "from_outside_content counts memories copied from an email, web page or message; "
+                   "ask_first lists only the areas that have an Ask-first rule; auto_allow_rules counts rules that let actions run without asking.")
 
 
 # ---------------------------------------------------------------- pre-publish check (before Share → Create template)
@@ -5198,7 +5446,7 @@ EXPOSURE_AREAS = [
     ("Logged-in browser sessions", ("WT-S004",)),
     ("Skills and templates", ("WT-X001", "WT-X002", "WT-X003", "WT-T001", "WT-T002", "WT-T003", "WT-T004", "WT-T005", "WT-T006", "WT-T007", "WT-T008", "WT-I001")),
     ("Approvals and settings", ("WT-A001", "WT-A002", "WT-A003", "WT-A004", "WT-A005", "WT-C001", "WT-C003", "WT-C005")),
-    ("Bots, memories and routines", ("WT-M010", "WT-L001", "WT-R002", "WT-T013")),
+    ("Bots, memories and routines", ("WT-M010", "WT-L001", "WT-R002", "WT-T013", "WT-R011", "WT-R012", "WT-R013")),
     ("Packages", ("WT-D001",)),
     ("Tripwires and history", ("WT-K001", "WT-K002", "WT-K003", "WT-K006", "WT-H001", "WT-H002", "WT-H003", "WT-H004", "WT-H005", "WT-H006", "WT-H009")),
 ]
@@ -5541,6 +5789,9 @@ PLAIN = {
     "WT-K006": ("A link was put where a decoy goes", "Writing the decoy would have changed the file it points to.", "Tell Watchtower \"incident check\".", "you"),
     "WT-L001": ("A Bot has the risky combination", "It reads strangers' content, sees private data, and can send.", "Add Ask first on its sends, or split its jobs.", "you"),
     "WT-M010": ("A Bot memory acts like a standing order", "It steers every future run.", "Remove it in that Bot's memory settings.", "you"),
+    "WT-R011": ("A Bot answered the roll-call with content", "Bots can't check who sends a roll-call, so that content goes to anyone who asks.", "Add \"Ask the owner before answering any roll-call.\" to that Bot.", "you"),
+    "WT-R012": ("A Bot's routine sends or posts without asking", "A tricked run could send on its own.", "Add Ask first on that routine's sends, or have it draft.", "you"),
+    "WT-R013": ("A Bot says it sends or posts without asking", "A tricked Bot could send on its own.", "Add Ask first on its email, messages and posts.", "you"),
     "WT-T013": ("Some skills send or post without asking", "A tricked Bot could act on them.", "Tell Watchtower \"fix it\" and say yes if they're meant to send on their own.", "you"),
     "WT-H003": ("A command opened a remote shell", "That's how attackers take over machines.", "Tell Watchtower \"incident check\".", "you"),
 }
@@ -7081,6 +7332,8 @@ def main_inner(argv=None):
     ac.add_argument("--reason"); ac.add_argument("--days", type=int, default=90); ac.add_argument("--list", action="store_true"); ac.add_argument("--remove", action="store_true"); ac.add_argument("--all-current", action="store_true")
     ev = sub.add_parser("events"); ev.add_argument("action", choices=["list", "clear"]); ev.add_argument("--rule"); ev.add_argument("--owner-said-yes", action="store_true")
     r = sub.add_parser("rollcall"); r.add_argument("--dir"); r.add_argument("--owner-said-yes", action="store_true", help="the owner said yes to this roll-call in this conversation")
+    r.add_argument("--question", action="store_true", help="print the one fixed roll-call question to send, unchanged")
+    r.add_argument("--save", metavar="BOT", help="save one Bot's reply (read from stdin) as a 0600 file in the private roll-call folder")
     pp = sub.add_parser("prepublish"); pp.add_argument("path"); pp.add_argument("--json", action="store_true")
     ic = sub.add_parser("incident"); ic.add_argument("--note")
     cs = sub.add_parser("codescan"); cs.add_argument("path")

@@ -6,14 +6,14 @@ import json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, wt  # noqa: E402
 
-TRIFECTA = {"description": "Helps.", "connectors": ["Gmail", "Slack", "X"],
-            "routines": [{"name": "Morning", "schedule": "daily 7am", "instructions": "Read new mentions on X and post a reply."}],
-            "memories": []}
+TRIFECTA = {"connectors": ["Gmail", "Slack", "X"],
+            "routines": [{"name": "Morning", "trigger": "schedule", "sends_or_posts": True, "asks_first": False, "reads_outside_content": True}],
+            "memories": {"count": 0, "loosen_permissions": 0, "from_outside_content": 0}}
 
 
 class DQ018Leftover(Box):
     def rollcall(self, *names):
-        rdir = os.path.join(os.environ["WATCHTOWER_HOME"], "exports", "rollcall"); os.makedirs(rdir, exist_ok=True)
+        rdir = wt.default_rollcall_dir(); os.makedirs(rdir, exist_ok=True)
         for n in names:
             json.dump(dict(TRIFECTA, name=n), open(os.path.join(rdir, n.lower().split()[0] + ".json"), "w"))
         code, o, _ = self.run_cmd("rollcall", "--owner-said-yes")
@@ -39,7 +39,7 @@ class DQ018Leftover(Box):
         self.audit()   # the full notes go to the report's coverage notes; the audit JSON keeps only the first few
         self.assertTrue(any("roster.json" in n and "removed" in n for n in self.snap()["notes"]), self.snap()["notes"])
         self.assertIn("No roster saved", wt.render_md(self.snap(), [], "2026-W42"))   # the weekly report's coverage notes say it
-        exp = os.path.join(os.environ["WATCHTOWER_HOME"], "exports")
+        exp = os.path.join(os.environ["WATCHTOWER_HOME"], "exports"); os.makedirs(exp, exist_ok=True)
         json.dump([{"name": "Delta", "kind": "bot"}], open(os.path.join(exp, "roster.json"), "w"))
         r = self.audit()
         self.assertFalse(any("roster.json" in n and ("No roster" in n or "older than" in n) for n in self.snap()["notes"]), self.snap()["notes"])

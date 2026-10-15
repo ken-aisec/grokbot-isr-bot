@@ -12,14 +12,15 @@ def empty_account(box):
 def power_user(box, skills=120, bots=24):
     """20+ Bots and 100+ skills, spread over the folders a heavy user ends up with, plus a roster and roll-call replies."""
     out = box.skills(skills // 2) + box.skills(skills - skills // 2, where="projects/agent-skills")
-    exp = os.path.join(box.ws, "watchtower", "exports"); os.makedirs(os.path.join(exp, "rollcall"), exist_ok=True)
+    exp = os.path.join(box.ws, "watchtower", "exports"); os.makedirs(exp, exist_ok=True)
+    rc = os.path.join(box.ws, "watchtower", "private", "rollcall"); os.makedirs(rc, mode=0o700, exist_ok=True)
     roster = [{"name": f"Bot{i:02d}", "kind": "bot"} for i in range(bots)] + [{"name": "Ops room", "kind": "room"}]
     json.dump(roster, open(os.path.join(exp, "roster.json"), "w"))
     for i in range(bots):
-        json.dump({"name": f"Bot{i:02d}", "description": "Helps with work.", "connectors": ["Gmail", "Slack"],
-                   "routines": [{"name": "Morning", "schedule": "daily 7am", "instructions": "Draft a summary. Ask before sending."}],
-                   "memories": [f"(2026-09-{i % 28 + 1:02d}) [log] prefers short replies"]},
-                  open(os.path.join(exp, "rollcall", f"bot{i:02d}.json"), "w"))
+        json.dump({"name": f"Bot{i:02d}", "connectors": ["Gmail", "Slack"],
+                   "routines": [{"name": "Morning", "trigger": "schedule", "sends_or_posts": True, "asks_first": True, "reads_outside_content": False}],
+                   "memories": {"count": 1, "loosen_permissions": 0, "from_outside_content": 0}},
+                  open(os.path.join(rc, f"bot{i:02d}.json"), "w"))
     return out
 
 
@@ -60,9 +61,10 @@ def emoji_names(box):
         d = os.path.join(base, n); os.makedirs(d)
         open(os.path.join(d, "SKILL.md"), "w").write(f"---\nname: {n}\ndescription: Résumé — 要約 📰\n---\nResume las notas. Pregunta antes de enviar.\n")
         out.append(d)
-    exp = os.path.join(box.ws, "watchtower", "exports"); os.makedirs(os.path.join(exp, "rollcall"), exist_ok=True)
+    exp = os.path.join(box.ws, "watchtower", "exports"); os.makedirs(exp, exist_ok=True)
+    rc = os.path.join(box.ws, "watchtower", "private", "rollcall"); os.makedirs(rc, mode=0o700, exist_ok=True)
     json.dump([{"name": "Ïris 🤖", "kind": "bot"}, {"name": "Танго", "kind": "bot"}], open(os.path.join(exp, "roster.json"), "w"))
-    json.dump({"name": "Ïris 🤖", "memories": ["Prefiere respuestas cortas 🙂"]}, open(os.path.join(exp, "rollcall", "ïris.json"), "w"))
+    json.dump({"name": "Ïris 🤖", "memories": {"count": 1}}, open(os.path.join(rc, "ïris.json"), "w"))
     open(os.path.join(exp, "names.txt"), "w").write("José\n")
     return out
 

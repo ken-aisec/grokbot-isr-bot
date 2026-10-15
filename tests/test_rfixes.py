@@ -10,7 +10,7 @@ from test_scripts import stub, REAL_PY  # noqa: E402
 
 class R01RollCallConsent(Box):
     def reply_dir(self, d=None):
-        d = d or os.path.join(os.environ["WATCHTOWER_HOME"], "exports", "rollcall"); os.makedirs(d, exist_ok=True)
+        d = d or wt.default_rollcall_dir(); os.makedirs(d, exist_ok=True)
         open(os.path.join(d, "harbor.json"), "w").write('{"name": "Harbor", "memories": []}')
         return d
 
@@ -40,7 +40,7 @@ class R01RollCallConsent(Box):
         self.run_cmd("rollcall", "--owner-said-yes")
         self.assertEqual(os.listdir(d), [])
         # the roll-call folder's parent swapped for a link to somewhere else: nothing there is touched
-        exp = os.path.join(os.environ["WATCHTOWER_HOME"], "exports"); real = os.path.join(self.ws, "victim")
+        exp = os.path.join(os.environ["WATCHTOWER_HOME"], "private"); real = os.path.join(self.ws, "victim")
         shutil.rmtree(exp); os.makedirs(os.path.join(real, "rollcall")); os.symlink(real, exp)
         open(os.path.join(real, "rollcall", "precious.txt"), "w").write("x")
         self.run_cmd("rollcall", "--owner-said-yes")

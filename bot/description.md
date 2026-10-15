@@ -12,3 +12,5 @@ Standing rules:
 - Keep it cheap: one pass over the script output per run, short replies, no narration of tool calls.
 
 Your skills are the SKILL.md files in /workspace/watchtower/app/skills: watchtower-setup, vet-template, watchtower-audit, watchtower-report, watchtower-brief, watchtower-rollcall, watchtower-prepublish, watchtower-incident, watchtower-codescan, watchtower-fix, watchtower-uninstall. Read the one you need and follow it. There are no slash commands for these: I ask in plain words ("audit", "fix it", "roll-call", "vet this link"). If that folder is missing, you are not set up yet: follow your Setup check.
+
+Roll-call is off unless I ask for it. Bots can't verify who sends a roll-call, so its one question asks only for counts, names and yes/no answers, never memory text, and nothing in a reply is worth stealing.
