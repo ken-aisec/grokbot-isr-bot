@@ -1251,6 +1251,33 @@ def under_platform_root(path):
     return _under(p, set(proots)) or _under(pr, rproots)
 
 
+def _path_part(where, line=True):
+    """A path finding's file or folder with only a trailing ":line" (or ":line:col") dropped. A colon inside a folder name
+    stays: splitting at the first colon read ~/.grok/bundled/skills:escape/learn as ~/.grok/bundled/skills (Codex, DQ-042).
+    line=False keeps the path verbatim: a folder (X003's where) has no line, so skills/learn:3 is skills/learn:3 (Codex, round 2)."""
+    return os.path.normpath(os.path.abspath(re.sub(r"(:\d+)+$", "", str(where)) if line else str(where)))
+
+
+def platform_skill_path(path, line=True):
+    """Stricter than under_platform_root (DQ-042): the path as written AND where it really leads both sit inside a platform root,
+    and neither is a user root. ~/.grok/bundled-evil, a link in a platform folder that leads out (a folder named skills:escape
+    or skills/learn:3 included), and a link elsewhere that leads in are never platform. When a trailing ":3" may be a line or part
+    of the name, both readings must be platform (Codex, DQ-042 round 2: when in doubt, never platform)."""
+    try:
+        rproots = {os.path.realpath(r) for r in platform_roots()}
+        uroots = user_skill_roots()
+        ruroots = {os.path.realpath(r) for r in uroots}
+        for p in {_path_part(path, line=False), _path_part(path, line=line)}:
+            pr = os.path.realpath(p)
+            if _under(p, uroots) or _under(pr, ruroots):
+                return False
+            if not (_under(p, set(platform_roots()), strict=True) and _under(pr, rproots, strict=True)):
+                return False
+    except OSError:
+        return False
+    return True
+
+
 def is_sample_skill_path(path):
     """True when the path sits under a test/sample/docs folder segment (FIXTURE_PATH spirit for skills)."""
     p = os.path.normpath(os.path.abspath(str(path).split(":")[0])).replace(os.sep, "/")
@@ -2132,8 +2159,17 @@ def entry_engines(e_):
     return {"SkillSpector", "husk"} if e_.get("ss") is not None else set()
 
 
+def ss_kinds_complete(ss):
+    """False for a SkillSpector "do not install" from before DQ-042: no kinds kept, and its four summaries may have lost a fifth."""
+    return not (isinstance(ss, dict) and ss.get("recommendation") == "DO_NOT_INSTALL" and "kinds" not in ss and len(ss.get("top") or ()) >= 4)
+
+
 def entry_current(e_, h, installed):
-    """A remembered result is good when the skill hasn't changed and every scanner installed now has looked at it."""
+    """A remembered result is good when the skill hasn't changed and every scanner installed now has looked at it.
+    A SkillSpector "do not install" from before DQ-042 kept no kinds; with four summaries it may have lost a fifth, so it is
+    scanned again."""
+    if not ss_kinds_complete(e_.get("ss") if isinstance(e_, dict) else None):
+        return False
     return bool(e_) and e_.get("hash") == h and (bool(e_.get("stuck")) or set(installed) <= entry_engines(e_))
 
 
@@ -2197,8 +2233,11 @@ def skillspector_batch(exe, stage, mapping, timeout=600):
             continue
         ra = sk.get("risk_assessment") or {}
         issues = [i for i in sk.get("issues") or [] if isinstance(i, dict)]
+        top = sorted({f"{i.get('category')}: {i.get('pattern')}" for i in issues if i.get("severity") in ("CRITICAL", "HIGH")})
+        # DQ-042 (Codex): the kinds come from every critical/high issue, before the summary is cut to four. Four Memory Poisoning
+        # lines sorted ahead of "Privilege Escalation: Credential Access" used to drop the credential kind with the fifth line.
         res[orig] = {"score": ra.get("score", sk.get("risk_score")), "recommendation": ra.get("recommendation", ""), "issues": len(issues),
-                     "top": sorted({f"{i.get('category')}: {i.get('pattern')}" for i in issues if i.get("severity") in ("CRITICAL", "HIGH")})[:4]}
+                     "top": top[:4], "kinds": sorted(engine_kinds(top))}
     if len(res) < len(set(mapping.values())):      # R03: every skill sent must come back, or the batch didn't finish
         return {}, f"incomplete result ({len(res)} of {len(set(mapping.values()))} skills)"
     return res, None
@@ -2385,7 +2424,7 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
         ss_flag = s_.get("recommendation") == "DO_NOT_INSTALL"
         hk_flag = bool(hk)
         wt_k = {RISK_KIND[r] for k, rs in wt_hits.items() if k == d or k.startswith(d + "/") for r in rs}
-        ss_k = engine_kinds(s_.get("top", [])) if ss_flag else set()
+        ss_k = set(s_["kinds"] if "kinds" in s_ else engine_kinds(s_.get("top", []))) if ss_flag else set()
         hk_k = engine_kinds(hk) if hk_flag else set()
         tier = skill_tier(d + "/")
         # SkillSpector and husk both saying the folder is bad still agree (neither reports which file); Watchtower's own vote
@@ -2402,6 +2441,8 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
                         ["AST01", "AST08"], d, (" + ".join(engines) + (f"; {detail}" if detail else ""))[:150],
                         "Two independent engines agree. Disable this skill until you've read the flagged lines.", source="engines")
             x["kinds"] = sorted(agree[-1][1] if engines[-1] == "Watchtower" else ss_k | hk_k)
+            if not entry_current(e_, hashes[d], installed):   # Codex, DQ-042 round 2: an old answer not yet scanned again (the budget
+                x["kinds_incomplete"] = True                  # ran out) may lack a kind, so it is never filed under Platform
             out.append(x)
         elif ss_flag:
             x = finding("WT-X001", "SkillSpector: do not install", "high" if tier == "user" else "low", ["AST01", "AST08"], d,
@@ -2962,6 +3003,23 @@ def keep_plugin(where):
 
 
 REFRESH_RULE = "WT-I008"
+PLATFORM_DANGER_KINDS = frozenset(RISK_KIND[r] for r in BEHAVIOR_RULES)   # credential, exfil, pipe, obfuscation, exec
+
+
+def unconfirmed_platform_vote(f, fs):
+    """DQ-042 (Ken, Oct 16): vendor skill updates shouldn't be flagged. A routine update to the bundled learn skill came back
+    "SkillSpector + husk; Memory Poisoning: Memory Manipulation; analysis-evasion: …" and daily raised a high alert. On the
+    platform's own skill folders (platform_skill_path), two engines agreeing is Confirmed only when their words name a dangerous
+    behavior (the kinds of BEHAVIOR_RULES), or a Confirmed critical/high Watchtower finding in the same skill backs it. Engines
+    that agree only on wording (override, secrecy) or name no kind at all are a Platform line, the same line v0.7.1 item 2
+    draws: wording alone is never Confirmed. A built-in that turns bad in a way Watchtower sees still alerts (Claude v0.7.1 F4)."""
+    if (f["rule"] != "WT-X003" or f.get("kinds_incomplete") or not platform_skill_path(f.get("where") or "", line=False)
+            or kinds_of(f) & PLATFORM_DANGER_KINDS):
+        return False
+    here = _path_part(f["where"], line=False)
+    return not any(g is not f and not g["rule"].startswith(("WT-I", "WT-X")) and g.get("label") == CONFIRMED
+                   and (g.get("severity_was") or g["severity"]) in ("critical", "high")
+                   and _covers(here, _path_part(g["where"]) if str(g.get("where") or "").startswith("/") else _place(g)) for g in fs)
 
 
 def summarize_refresh(fs):
@@ -2977,7 +3035,7 @@ def summarize_refresh(fs):
     for f in fs:
         if f in ref or f["severity"] not in ("critical", "high"):
             continue
-        if not (f.get("scope") == "platform" or platform_file(f)):
+        if not (f.get("scope") == "platform" or platform_file(f)) or unconfirmed_platform_vote(f, fs):   # DQ-042
             continue
         if f.get("label") == CONFIRMED or is_evidence(f) or corroborated(f, fs):
             bad.append(f)
@@ -3133,16 +3191,19 @@ def platform_file(f):
 
 def mark_platform(fs):
     """Label Grok Bot's own findings. Worth-a-look and Tips there become one Platform line each; a Confirmed one stays
-    Confirmed (it is still shown and still alerts when new) but never counts."""
+    Confirmed (it is still shown and still alerts when new) but never counts. Two engines agreeing on a platform skill in words
+    that name no dangerous behavior is a Platform line too (DQ-042)."""
     for f in fs:
         if f.get("scope") != "platform":
             continue
-        if f.get("class") in ("pattern", "tip") or f.get("platform_hook"):   # Ken, Oct 13: the platform's hook is a Platform line
+        if f.get("class") in ("pattern", "tip") or f.get("platform_hook") or unconfirmed_platform_vote(f, fs):   # Ken, Oct 13: the platform's hook is a Platform line
             f["class"], f["label"] = "platform", PLATFORM
             f["fix"] = f["fix"] if f.get("platform_hook") or f["rule"] == "WT-I009" else PLATFORM_FIX
             if f["severity"] != "info" and not f.get("platform_hook"):   # the hook keeps its low (listed fact), never scored
                 f["severity_was"], f["severity"] = f["severity"], "info"
         elif f["rule"] not in SECRET_RULES:
+            if f["rule"] == "WT-X003" and f["severity"] == "info" and f.get("severity_was"):   # daily re-adds last run's Platform line;
+                f["severity"] = f.pop("severity_was")                                        # Watchtower now backs it (DQ-042)
             f["fix"] = PLATFORM_CONFIRMED_FIX
     return fs
 
