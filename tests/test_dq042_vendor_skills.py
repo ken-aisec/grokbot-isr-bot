@@ -15,6 +15,7 @@ plugins are unchanged. The contrast row from the same box (a plugin-cache skill,
       evidence: SkillSpector + Watchtower; Privilege Escalation: Credential Access; Rogue Agent: Self-Modification
 """
 import json, os, sys, unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, wt  # noqa: E402
@@ -386,6 +387,113 @@ class DangerousFifthIssue(_Learn, Box):
         self.daily()                                                          # daily keeps the audit's line as it was
         x = [f for f in self.learn(self.snap()["findings"]) if f["rule"] == "WT-X003"]
         self.assertEqual([(f["severity"], f["label"]) for f in x], [("high", wt.CONFIRMED)])
+
+
+class _StaysConfirmed(_Learn):
+    """Codex, DQ-042 round 3 (Ken: when evidence is incomplete, never demote to Platform): learn's vote stays high and Confirmed,
+    and the change keeps its "tell Grok Bot support" alert."""
+    REL = ".grok/bundled/skills"
+
+    def assert_still_alerts(self):
+        fs = self.snap()["findings"]
+        x = [f for f in self.learn(fs) if f["rule"] == "WT-X003"]
+        self.assertEqual([(f["severity"], f["label"], f.get("kinds_incomplete")) for f in x], [("high", wt.CONFIRMED, True)])
+        self.assertFalse([f for f in fs if f["rule"] == "WT-I008" and "learn" in f["title"]])
+        a = [f for f in fs if f["title"].startswith(LEARN_TITLE)]
+        self.assertEqual(len(a), 1)
+        self.assertEqual((a[0]["severity"], a[0]["label"], a[0]["scope"], a[0]["fix"]), ("high", wt.CONFIRMED, "platform", wt.PLATFORM_CONFIRMED_FIX))
+        self.assertIn("support", a[0]["fix"])
+
+
+SKIPPED = TimeoutError("the run's time limit was reached before this stage started")
+
+
+class LegacyLineWhenTheStageIsSkipped(_StaysConfirmed, Box):
+    """Codex, DQ-042 round 3: when the whole SkillSpector and husk stage is skipped, the audit keeps last run's scanner lines
+    (soft and carry) and daily re-adds them. A line from before this fix was built from four summaries and has no
+    kinds_incomplete, so it was filed under Platform although a fifth issue named a credential."""
+
+    def setUp(self):
+        super().setUp()
+        self.refresh(LEARN_V2, skillspector=skillspector(FIFTH_ISSUES), husk=husk(LEARN_HUSK))
+        p = wt.state_path("engine_cache.json")
+        cache = wt.load_json(p, {})
+        ss = cache[self.d]["ss"]
+        ss.pop("kinds", None)                                                 # what a run before this fix remembered
+        wt.save_json(p, cache)
+        self.old = sorted(wt.engine_kinds(ss["top"]) | wt.engine_kinds([LEARN_HUSK]))
+        self.assertNotIn("credential", self.old)                              # the four summaries alone name no behavior
+        snap = self.snap()
+        for f in snap["findings"]:
+            if f["rule"] == "WT-X003" and f["where"] == self.d:
+                f["kinds"] = self.old                                         # and the line it wrote
+                f.pop("kinds_incomplete", None)
+        wt.save_json(wt.state_path("last_findings.json"), snap)
+        wt.ENGINE_CURRENT.clear()                                             # each run is its own process
+
+    def test_an_audit_that_skips_the_stage_never_demotes_the_kept_line(self):
+        with mock.patch.object(wt, "engine_findings", side_effect=SKIPPED):
+            r = self.audit()
+        self.assertTrue([n for n in r["notes"] if n.startswith("SkillSpector and husk FAILED")], r["notes"])
+        self.assertEqual([f["kinds"] for f in self.learn(self.snap()["findings"]) if f["rule"] == "WT-X003"], [self.old])
+        self.assert_still_alerts()
+
+    def test_a_daily_that_skips_the_stage_never_demotes_the_kept_line(self):
+        with mock.patch.object(wt, "engine_findings", side_effect=SKIPPED):
+            self.daily()
+        self.assert_still_alerts()
+
+
+def husk_detail(log, fail):
+    """A fake husk whose registry flags the marked skill but whose detail run doesn't deliver: "missing" exits 2 and writes no
+    SARIF; "slow" takes 30 seconds, longer than the run gives it. Each detail run is logged."""
+    return ('#!/usr/bin/env python3\nimport json, os, sys, time\na = sys.argv[1:]\nif a[0] == "registry":\n    stage = a[-1]\n'
+            f'    flagged = {{n: 1 for n in sorted(os.listdir(stage)) if {MARK!r} in open(os.path.join(stage, n, "SKILL.md"), errors="replace").read()}}\n'
+            '    print(json.dumps({"flagged": flagged})); sys.exit(0)\n'
+            f'open({log!r}, "a").write("package\\n")\n'
+            f'if {fail!r} == "missing":\n    sys.exit(2)\ntime.sleep(30)\n'
+            f'json.dump({{"runs": [{{"results": [{{"message": {{"text": {LEARN_HUSK!r}}}}}]}}]}}, open(a[a.index("--output") + 1], "w"))\n')
+
+
+class HuskDetailMissing(_StaysConfirmed, Box):
+    """Codex, DQ-042 round 3: husk's registry flagged learn, then the run for its words timed out or left no SARIF. The answer
+    was cached as current with husk saying only "flagged", so SkillSpector's wording-only issues filed the vote under Platform
+    and the change alert became the WT-I008 Tip. A flag without husk's words is incomplete: it never demotes, and the words
+    are asked for again next run."""
+
+    def setUp(self):
+        super().setUp()
+        self.log = os.path.join(self.tmp, "husk-package.log")
+
+    def calls(self):
+        return open(self.log).read().count("package") if os.path.exists(self.log) else 0
+
+    def test_a_detail_run_that_times_out(self):
+        self.scanners(skillspector=skillspector(LEARN_ISSUES), husk=husk_detail(self.log, "slow"))
+        self.audit(); self.run_cmd("baseline", "--roots", *self.roots)
+        put(os.path.join(self.d, "SKILL.md"), LEARN_V2)
+        self.audit("--budget", "3")                                           # husk's detail run gets under 3 seconds
+        self.assertEqual(self.calls(), 1)
+        self.assert_still_alerts()
+        self.assertTrue(wt.load_json(wt.state_path("engine_cache.json"), {})[self.d].get("hk_partial"))
+        self.scanners(skillspector=skillspector(LEARN_ISSUES), husk=husk(LEARN_HUSK))   # next run husk answers in time
+        self.audit()
+        e_ = wt.load_json(wt.state_path("engine_cache.json"), {})[self.d]
+        self.assertEqual((e_["hk"], e_.get("hk_partial")), ([LEARN_HUSK], None))   # asked again, and its words are kept
+        x = [f for f in self.learn(self.snap()["findings"]) if f["rule"] == "WT-X003"]   # now complete: wording only, a Platform line
+        self.assertEqual([(f["severity"], f["label"], f.get("kinds_incomplete")) for f in x], [("info", wt.PLATFORM, None)])
+
+    def test_a_detail_run_that_leaves_no_sarif(self):
+        self.refresh(LEARN_V2, skillspector=skillspector(LEARN_ISSUES), husk=husk_detail(self.log, "missing"))
+        self.assertEqual(self.calls(), 1)
+        self.assert_still_alerts()
+        self.assertTrue(wt.load_json(wt.state_path("engine_cache.json"), {})[self.d].get("hk_partial"))
+        self.audit()                                                        # the words are asked for again
+        self.assertEqual(self.calls(), 2)
+        self.assert_still_alerts()
+        self.daily()                                                          # daily included
+        self.assertEqual(self.calls(), 3)
+        self.assert_still_alerts()
 
 
 if __name__ == "__main__":
