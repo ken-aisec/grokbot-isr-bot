@@ -2088,7 +2088,15 @@ STAGE_FAILED = []        # stages that did not finish in the current run
 def carry(rules):
     """Last run's findings for rules whose stage didn't finish this time: unknown is not the same as fixed."""
     prev = load_json(state_path("last_findings.json"), {}) or {}
-    return [f for f in (prev.get("findings") or []) + (prev.get("suppressed") or []) if f.get("rule") in rules]
+    return [kept_line(f) for f in (prev.get("findings") or []) + (prev.get("suppressed") or []) if f.get("rule") in rules]
+
+
+def kept_line(f):
+    """A scanner line kept from the last run wasn't refreshed by this one. A WT-X003 kept that way may lack a kind (one written
+    before DQ-042 read only four summaries), so it is never filed under Platform until a scan refreshes it (Codex, DQ-042 round 3)."""
+    if f.get("rule") == "WT-X003":
+        f["kinds_incomplete"] = True
+    return f
 
 
 STAGE_FAILS = []   # R16: explicit failure markers set by the stages themselves, not read back out of note wording
@@ -2167,8 +2175,10 @@ def ss_kinds_complete(ss):
 def entry_current(e_, h, installed):
     """A remembered result is good when the skill hasn't changed and every scanner installed now has looked at it.
     A SkillSpector "do not install" from before DQ-042 kept no kinds; with four summaries it may have lost a fifth, so it is
-    scanned again."""
+    scanned again. So is one where husk flagged the skill but its words never came back (hk_partial, Codex DQ-042 round 3)."""
     if not ss_kinds_complete(e_.get("ss") if isinstance(e_, dict) else None):
+        return False
+    if isinstance(e_, dict) and e_.get("hk_partial") and not e_.get("stuck"):
         return False
     return bool(e_) and e_.get("hash") == h and (bool(e_.get("stuck")) or set(installed) <= entry_engines(e_))
 
@@ -2243,9 +2253,12 @@ def skillspector_batch(exe, stage, mapping, timeout=600):
     return res, None
 
 
-def husk_batch(exe, stage, mapping, timeout=600):
+def husk_batch(exe, stage, mapping, timeout=600, partial=None):
     """Husk's own bulk mode flags names in one run; only flagged skills are re-run for their messages.
-    The detail runs stop when the time is up: a flagged skill is still flagged, just with a shorter message."""
+    The detail runs stop when the time is up: a flagged skill is still flagged, just with a shorter message.
+    A flagged skill whose words didn't come back (no time left, a timeout, an error exit, no SARIF, no message) is added to
+    `partial`: "flagged" names no kind, so it must never read as wording only (Codex, DQ-042 round 3)."""
+    partial = set() if partial is None else partial
     cache = os.path.join(stage, "..", "husk-cache.json")
     t0 = time.monotonic()
     code, out_s, err = run([exe, "registry", "--cache", cache, "--json", stage], timeout)
@@ -2266,11 +2279,15 @@ def husk_batch(exe, stage, mapping, timeout=600):
         left = timeout - (time.monotonic() - t0)
         if n >= 25 or left < 1:
             res[orig] = [f"flagged ({flagged[name]} issues)"]
+            partial.add(orig)
             continue
         sarif = os.path.join(stage, "..", f"hk-{name}.sarif")
-        run([exe, "package", os.path.join(stage, name), "--output", sarif], min(60, left))
+        code, _, _ = run([exe, "package", os.path.join(stage, name), "--output", sarif], min(60, left))
         data = load_json(sarif, None) or {}
-        res[orig] = [r.get("message", {}).get("text", "") for run_ in data.get("runs", []) for r in run_.get("results", [])] or ["flagged"]
+        msgs = [r.get("message", {}).get("text", "") for run_ in data.get("runs", []) for r in run_.get("results", [])]
+        if code not in SCAN_OK_EXITS or not any(str(m).strip() for m in msgs):
+            partial.add(orig)
+        res[orig] = msgs or ["flagged"]
         try:
             os.remove(sarif)
         except OSError:
@@ -2353,7 +2370,7 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
         if len(chunk) == 1:
             cap = max(cap, ENGINE_SOLO_LIMIT)                            # alone, a slow skill only costs its own time
         stage = tempfile.mkdtemp(prefix="stage-", dir=state_path())
-        ss, hk, ss_err, hk_err = {}, {}, None, None
+        ss, hk, ss_err, hk_err, hk_part = {}, {}, None, None, set()
         try:
             mapping = stage_skills(chunk, stage)
             set_progress("SkillSpector and husk", scanned, len(todo), started)
@@ -2362,7 +2379,7 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
             lim = min(cap, left_s())
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
                 f_ss = pool.submit(skillspector_batch, ss_exe, stage, mapping, lim) if ss_exe and lim > 0 else None
-                f_hk = pool.submit(husk_batch, hk_exe, stage, mapping, lim) if hk_exe and lim > 0 else None
+                f_hk = pool.submit(husk_batch, hk_exe, stage, mapping, lim, hk_part) if hk_exe and lim > 0 else None
                 if ss_exe:
                     ss, ss_err = f_ss.result() if f_ss else ({}, TIMED_OUT)
                 if hk_exe:
@@ -2393,8 +2410,9 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
                 fail_note(notes, f"{who} failed on a batch of {len(chunk)} skills ({err_}); they'll be retried next run.")
         if ss_err or hk_err:
             continue   # don't remember a batch that didn't finish
-        for d in chunk:
-            scanned += remember(d, {"hash": hashes[d], "ss": ss.get(d), "hk": hk.get(d), "engines": installed, "at": now()})
+        for d in chunk:   # husk's words missing (hk_partial): not current, so they are asked for again next run (DQ-042 round 3)
+            scanned += remember(d, {"hash": hashes[d], "ss": ss.get(d), "hk": hk.get(d), "engines": installed, "at": now(),
+                                    **({"hk_partial": True} if d in hk_part else {})})
         save_json(state_path("engine_cache.json"), cache)   # progress survives an interrupted run
         if size < ENGINE_CHUNK and len(chunk) == size:      # a smaller batch fit: go back to the normal size next run
             size = ENGINE_CHUNK
@@ -2441,8 +2459,8 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
                         ["AST01", "AST08"], d, (" + ".join(engines) + (f"; {detail}" if detail else ""))[:150],
                         "Two independent engines agree. Disable this skill until you've read the flagged lines.", source="engines")
             x["kinds"] = sorted(agree[-1][1] if engines[-1] == "Watchtower" else ss_k | hk_k)
-            if not entry_current(e_, hashes[d], installed):   # Codex, DQ-042 round 2: an old answer not yet scanned again (the budget
-                x["kinds_incomplete"] = True                  # ran out) may lack a kind, so it is never filed under Platform
+            if not entry_current(e_, hashes[d], installed):   # Codex, DQ-042 rounds 2-3: an old answer not yet scanned again (the budget
+                x["kinds_incomplete"] = True                  # ran out), or husk's words missing, may lack a kind: never filed under Platform
             out.append(x)
         elif ss_flag:
             x = finding("WT-X001", "SkillSpector: do not install", "high" if tier == "user" else "low", ["AST01", "AST08"], d,
@@ -3424,7 +3442,7 @@ def run_audit_locked(args, quick):
         rescanned = {f["where"] for f in fs if f["rule"].startswith("WT-X")} | ENGINE_CURRENT   # these have an up-to-date answer, flagged or clean
         for f in prev_snap.get("findings", []):
             if f["rule"] in SLOW_RULES and not known(f, have) and f["where"] not in rescanned:
-                fs.append(f)
+                fs.append(kept_line(f))
         fs = sort_findings(fs)
     if not quick and "SkillSpector and husk" not in STAGE_FAILED:
         fs = roll_builtin(fs, meta, meta["notes"])
