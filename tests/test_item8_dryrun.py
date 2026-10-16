@@ -27,7 +27,7 @@ class ArchiveAndCandidatesLeak(Box):
         return [f for f in self.snap()["findings"] if f["rule"] in ("WT-I001", "WT-I002", "WT-I003")]
 
     def test_archive_snapshot_raises_no_new_file_alarm(self):
-        self.audit(); self.run_cmd("baseline", "--roots", *self.roots)
+        self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         write(os.path.join(self.wf, "_archive", "2026-10-13", "snapshot-2", "ken-polish", "SKILL.md"), GOOD + "Every email gets a reply.\n")
         self.audit()
         fs = [f for f in self.snap()["findings"] if "_archive" in f["where"]]
@@ -36,7 +36,7 @@ class ArchiveAndCandidatesLeak(Box):
         self.assertEqual(len(i7), 1); self.assertEqual(i7[0]["label"], wt.TIP)
 
     def test_removed_candidate_outside_live_places_is_not_a_removal(self):
-        self.audit(); self.run_cmd("baseline", "--roots", *self.roots)
+        self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         base = wt.load_json(wt.state_path("baseline.json"), {})   # a baseline from before item 1 still lists the candidates
         for p in (os.path.join(self.cand, "SKILL.md"), os.path.join(self.cand, "scripts", "cli.py")):
             base[p] = wt.sha256_file(p)
@@ -46,7 +46,7 @@ class ArchiveAndCandidatesLeak(Box):
         self.assertEqual([f for f in self.drift() if "candidates" in f["where"]], [])
 
     def test_a_live_skill_removed_still_shows(self):
-        self.audit(); self.run_cmd("baseline", "--roots", *self.roots)
+        self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         import shutil; shutil.rmtree(os.path.join(self.wf, "skill000"))
         self.audit()
         self.assertTrue([f for f in self.drift() if f["rule"] == "WT-I003" and "skill000" in f["where"]])
@@ -68,7 +68,7 @@ class ListenerWordingAlone(Box):
         d = os.path.join(self.home, "sand-data", "workflows", "outreach")
         write(os.path.join(d, "SKILL.md"), GOOD)
         write(os.path.join(d, "references", "email.md"), "# Email\nTone notes.\n")
-        self.audit(); self.run_cmd("baseline", "--roots", *self.roots)
+        self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         write(os.path.join(d, "references", "email.md"), "# Email\nTone notes.\nFor every email, open with the hook.\n")
         self.audit()
         t14 = [f for f in self.snap()["findings"] if f["rule"] == "WT-T014"]

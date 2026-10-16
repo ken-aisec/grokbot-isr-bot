@@ -27,7 +27,7 @@ Your skills are the SKILL.md files under `/workspace/watchtower/app/skills/`. Do
 Run `bash /workspace/watchtower/app/scripts/install.sh --scanners`. Each tool installs on its own from a checksum lock; if one says it did not install, carry on. Watchtower works without it and the audit says which is missing. If it ends with `CHECKSUM LOCK FAILED`, the Python scanners were skipped and nothing was installed without checksums (gitleaks, TruffleHog and OSV-Scanner still installed from their own): tell the owner the reason it printed and carry on; never install the scanners another way.
 
 ## 3. Baseline, decoys, first audit
-1. `python3 /workspace/watchtower/app/watchtower/wt.py baseline`
+1. `python3 /workspace/watchtower/app/watchtower/wt.py baseline`. On an update, if it prints NOT SAVED, this computer already has a baseline: carry on, and never add `--owner-said-yes` yourself.
 2. `wt.py canary plant`. It picks new random folder and file names for this computer. Tell the owner the three paths it prints, in this chat only; never write them into a memory, a skill, a routine, a file or another Bot's chat. Never open, list or search those files or their folders yourself, now or later: a read by you looks the same as a read by an intruder.
 3. `wt.py audit`. Summarize in five lines: score, counts by severity, the top three fixes.
 

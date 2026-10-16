@@ -86,15 +86,18 @@ wt.py fix --apply --owner-said-yes [--skip N,..] --upgrade --revet --accept RULE
 wt.py fix --upgrade-projects   npm lockfile fixes in your own projects (its own yes)
 wt.py diff SKILL               what changed in a skill since you approved it
 wt.py exception add SKILL --reason "..."   keep one named security-tool skill that two scanners flag (30 days)
-wt.py accept RULE WHERE --reason "..."   accept one risk on purpose (90 days)
+wt.py accept RULE WHERE --reason "..."   accept one risk on purpose (90 days); WHERE is a whole name (the place, skill
+                                         folder name, or "package version"); decoy alarms and Confirmed findings are refused
 wt.py accept --all-current RULES         accept everything currently open for those rules
 wt.py events list|clear        one-time detections
-wt.py canary plant|status|remove
+wt.py canary plant|status      plant the decoys; see what touched them
+wt.py canary remove --owner-said-yes   remove the decoys (only after the owner's yes)
+wt.py auto-allow [keep IDS --owner-said-yes]   list Allow-automatically lines on consequential actions; keep exact ones after the owner's yes
 wt.py incident --note "..."   evidence pack + containment checklist
 wt.py codescan PATH           OWASP Top 10 code review
 wt.py status                  what a running audit is doing and how long each stage took
 wt.py breakdown | show RULE   findings by rule; evidence with context
-wt.py baseline                accept current skills as reviewed
+wt.py baseline [--owner-said-yes]   accept current skills as reviewed (the first one on a computer needs no flag)
 wt.py doctor [--save]         a support snapshot of this computer, safe to share (no file contents, keys or skill names)
 ```
 
@@ -123,7 +126,13 @@ Apache-2.0. See `THREAT_MODEL.md`, `EGRESS.md` and `SECURITY.md`.
 ## Accepted auto-allow lines (WT-A002)
 
 An auto-allow on a consequential action (sending, posting, paying, deleting, an HTTP POST) is always a critical WT-A002.
-An owner can accept one exact line on purpose: `rules/accepted_auto_allow.json` (shipped) and `state/accepted_auto_allow.json`
-(this box) list sha256 fingerprints of the exact line text. A matching line keeps its critical severity but is filed under
-Accepted risks, shown in the report and not scored. Any new, edited or broader line has a different fingerprint and fires.
+An owner can accept one exact line on purpose: `wt.py auto-allow` lists the lines with an id (the line's whole sha256), and after the owner's yes
+`wt.py auto-allow keep <id> --owner-said-yes` stores its sha256 fingerprint in `state/accepted_auto_allow.json` (this box
+only; nothing is shipped, so a line one owner accepted is never accepted for anyone else). A matching line keeps its critical
+severity but is filed under Accepted risks, shown in the report and not scored. Any new, edited or broader line has a
+different fingerprint and fires.
+
+If Watchtower ran on a computer before and its baseline is later missing, empty or unreadable, that is a high WT-I010
+"Watchtower's memory was reset", never a quiet fresh start: nothing is re-approved until the owner says yes to
+`wt.py baseline --owner-said-yes`.
 Several reviewed skills that changed show as one high WT-I001 line naming every skill.

@@ -15,7 +15,7 @@ class ChangeSources(Box):
     def setUp(self):
         super().setUp()
         self.lay = profiles.busy_clean_box(self); self.scanners()
-        self.audit(); self.run_cmd("baseline", "--roots", *self.roots)
+        self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
 
     def daily(self):
         return self.run_cmd("daily", "--roots", *self.roots)[1].strip()
@@ -55,7 +55,7 @@ class ChangeSources(Box):
     def test_an_update_to_a_plugin_the_owner_installed_still_alerts(self):
         d = os.path.join(self.home, "sand-data", "plugins", "acme-1.0", "skills", "helper"); os.makedirs(d)
         open(os.path.join(d, "SKILL.md"), "w").write("# helper\nExplain the API.\n")
-        self.audit(); self.run_cmd("baseline", "--roots", *self.roots)
+        self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         open(os.path.join(d, "SKILL.md"), "a").write("Now explains webhooks too.\n")
         out = self.daily()
         self.assertNotEqual(out, "NO_CHANGES")

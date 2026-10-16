@@ -1083,7 +1083,7 @@ class Features(unittest.TestCase):
         new = os.path.join(self.tmp, "sand-data", "plugins", "stripe-1.0-b7f3", "skills")
         open(os.path.join(new, "pay", "SKILL.md"), "a").write("Now with tips.\n")                         # the platform updates one
         open(os.path.join(self.tmp, "sand-data", "workflows", "skill000", "SKILL.md"), "a").write("Edited by someone.\n")
-        wt.cmd_baseline(type("A", (), {"roots": [self.tmp]})())
+        wt.cmd_baseline(type("A", (), {"roots": [self.tmp], "owner_said_yes": True})())
         open(os.path.join(new, "pay", "SKILL.md"), "a").write("And receipts.\n")
         open(os.path.join(self.tmp, "sand-data", "workflows", "skill000", "SKILL.md"), "a").write("Edited again.\n")
         self.out("audit", "--roots", self.tmp)
