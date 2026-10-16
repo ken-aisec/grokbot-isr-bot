@@ -496,5 +496,75 @@ class HuskDetailMissing(_StaysConfirmed, Box):
         self.assert_still_alerts()
 
 
+class LegacyHuskPlaceholder(_StaysConfirmed, Box):
+    """Codex, DQ-042 final review: a husk answer cached before hk_partial existed, whose words never came back, is a placeholder
+    ("flagged", "flagged (5 issues)", or empty) with no hk_partial. It was read as current, so SkillSpector's wording-only
+    issues filed learn's vote under Platform and the change alert became the WT-I008 Tip. Such an answer is incomplete: it is
+    scanned again, and until husk's words come back the vote stays high and Confirmed."""
+    PLACEHOLDERS = (["flagged"], ["flagged (5 issues)"], [""], ["  ", "flagged (1 issue)"])
+
+    def setUp(self):
+        super().setUp()
+        self.log = os.path.join(self.tmp, "husk-package.log")
+        self.refresh(LEARN_V2, skillspector=skillspector(LEARN_ISSUES), husk=husk(LEARN_HUSK))   # complete: a Platform line
+
+    def calls(self):
+        return open(self.log).read().count("package") if os.path.exists(self.log) else 0
+
+    def legacy(self, hk):
+        """What a run before hk_partial remembered when husk's detail run didn't deliver."""
+        p = wt.state_path("engine_cache.json")
+        cache = wt.load_json(p, {})
+        cache[self.d]["hk"] = hk
+        cache[self.d].pop("hk_partial", None)
+        wt.save_json(p, cache)
+        wt.ENGINE_CURRENT.clear()                                             # each run is its own process
+
+    def test_a_placeholder_is_scanned_again_and_never_demoted(self):
+        self.scanners(skillspector=skillspector(LEARN_ISSUES), husk=husk_detail(self.log, "missing"))   # the words still don't come
+        for n, hk in enumerate(self.PLACEHOLDERS, 1):
+            with self.subTest(hk=hk):
+                self.legacy(hk)
+                self.audit()
+                self.assertEqual(self.calls(), n)                             # a scan was attempted
+                self.assert_still_alerts()
+
+    def test_with_no_time_to_scan_it_again_it_is_never_demoted(self):
+        for hk in self.PLACEHOLDERS:
+            with self.subTest(hk=hk):
+                self.legacy(hk)
+                self.audit("--budget", "0")
+                self.assertEqual(wt.load_json(wt.state_path("engine_cache.json"), {})[self.d]["hk"], hk)   # not scanned again
+                self.assert_still_alerts()
+
+    def test_a_daily_scans_it_again_too(self):
+        self.scanners(skillspector=skillspector(LEARN_ISSUES), husk=husk_detail(self.log, "missing"))
+        self.legacy(["flagged (5 issues)"])
+        self.daily()
+        self.assertEqual(self.calls(), 1)
+        self.assert_still_alerts()
+
+    def test_when_the_words_come_back_it_is_complete_and_left_alone(self):
+        self.legacy(["flagged"])
+        self.audit()                                                          # the normal husk answers this time
+        e_ = wt.load_json(wt.state_path("engine_cache.json"), {})[self.d]
+        self.assertEqual((e_["hk"], e_.get("hk_partial")), ([LEARN_HUSK], None))
+        x = [f for f in self.learn(self.snap()["findings"]) if f["rule"] == "WT-X003"]
+        self.assertEqual([(f["severity"], f["label"], f.get("kinds_incomplete")) for f in x], [("info", wt.PLATFORM, None)])
+        self.scanners(skillspector=skillspector(LEARN_ISSUES), husk=husk_detail(self.log, "missing"))
+        self.audit()
+        self.assertEqual(self.calls(), 0)                                     # complete now: not scanned again
+
+    def test_a_complete_legacy_answer_is_not_scanned_again(self):
+        self.legacy([LEARN_HUSK])                                             # real words, from before hk_partial
+        self.scanners(skillspector=skillspector(LEARN_ISSUES), husk=husk_detail(self.log, "missing"))
+        for _ in range(2):
+            self.audit()
+        self.daily()
+        self.assertEqual(self.calls(), 0)
+        x = [f for f in self.learn(self.snap()["findings"]) if f["rule"] == "WT-X003"]
+        self.assertEqual([(f["severity"], f["label"]) for f in x], [("info", wt.PLATFORM)])
+
+
 if __name__ == "__main__":
     unittest.main()

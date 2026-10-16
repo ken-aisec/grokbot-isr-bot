@@ -2172,13 +2172,21 @@ def ss_kinds_complete(ss):
     return not (isinstance(ss, dict) and ss.get("recommendation") == "DO_NOT_INSTALL" and "kinds" not in ss and len(ss.get("top") or ()) >= 4)
 
 
+def hk_words_missing(hk):
+    """True when husk flagged a skill but none of its messages say anything: "flagged", "flagged (5 issues)", or empty. That is
+    what husk_batch writes when the words don't come back; a cache from before hk_partial kept it with no mark (Codex, DQ-042)."""
+    return bool(hk) and isinstance(hk, list) and not any(re.search(r"[^\W\d_]", re.sub(r"(?i)\b(flagged|issues?)\b", "", str(m)))
+                                                         for m in hk)
+
+
 def entry_current(e_, h, installed):
     """A remembered result is good when the skill hasn't changed and every scanner installed now has looked at it.
     A SkillSpector "do not install" from before DQ-042 kept no kinds; with four summaries it may have lost a fifth, so it is
-    scanned again. So is one where husk flagged the skill but its words never came back (hk_partial, Codex DQ-042 round 3)."""
+    scanned again. So is one where husk flagged the skill but its words never came back (hk_partial, Codex DQ-042 round 3),
+    including one cached before hk_partial existed, whose husk answer is only a placeholder (Codex, DQ-042 final review)."""
     if not ss_kinds_complete(e_.get("ss") if isinstance(e_, dict) else None):
         return False
-    if isinstance(e_, dict) and e_.get("hk_partial") and not e_.get("stuck"):
+    if isinstance(e_, dict) and (e_.get("hk_partial") or hk_words_missing(e_.get("hk"))) and not e_.get("stuck"):
         return False
     return bool(e_) and e_.get("hash") == h and (bool(e_.get("stuck")) or set(installed) <= entry_engines(e_))
 
