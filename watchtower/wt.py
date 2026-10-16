@@ -66,11 +66,65 @@ def load_json(path, default):
     return data
 
 
+def load_json_regular(path, default):
+    """load_json for a state file someone could swap: opened without following a link and without waiting on a FIFO, and read
+    only if what was opened is a regular file. Anything else counts as not there."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return default
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return default
+        with os.fdopen(fd) as f:
+            fd = None                          # the file object owns it now
+            data = json.load(f)
+    except (OSError, ValueError):
+        return default
+    finally:
+        if fd is not None:
+            os.close(fd)
+    if default is not None and data is not None and isinstance(default, (dict, list)) and not isinstance(data, type(default)):
+        return default
+    return data
+
+
 def save_json(path, obj):
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
         json.dump(obj, f, indent=2, sort_keys=True)
     os.replace(tmp, path)
+
+
+def save_json_keep_mode(path, obj):
+    """Write a state file to a new file beside it, synced, then swapped in, so a reader never sees half of it. The file keeps
+    the mode it had (a file tightened to 0600 stays 0600), and a link put where the file goes is replaced, not written through."""
+    try:
+        st = os.lstat(path)
+        mode = stat.S_IMODE(st.st_mode) if stat.S_ISREG(st.st_mode) else None
+    except OSError:
+        mode = None
+    tmp = f"{path}.{os.getpid()}.tmp"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    try:
+        fd = os.open(tmp, flags, 0o666 if mode is None else 0o600)
+    except FileExistsError:                    # left by an earlier run with this pid; a link is removed as a link
+        os.remove(tmp)
+        fd = os.open(tmp, flags, 0o666 if mode is None else 0o600)
+    try:
+        with os.fdopen(fd, "w") as f:
+            if mode is not None:
+                os.fchmod(f.fileno(), mode)
+            json.dump(obj, f, indent=2, sort_keys=True)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def load_rules():
@@ -4493,10 +4547,27 @@ def _rc_remove(p, rdir):
     return 0
 
 
-def rollcall_findings(rdir, removed=None):
+def merge_rollcall(prev, rnd, findings, bots, answered):
+    """Oct 15: Foxtrot's late reply, run on its own, replaced all ten Bots' findings with its own. A run in the same roll-call
+    round (`rnd`) as the saved file now merges per Bot: a Bot that answered this run (`answered`) replaces only its own findings,
+    every other Bot keeps its findings and its name. Outside a round, or against a file from another round or from before
+    shape-only replies, this run's findings replace the file as before. A finding's Bot is the `bot` saved with it, never read
+    back out of `where`: a Bot may be named "Alpha:memories", which is also where Alpha's WT-M010 points. A finding with no
+    saved Bot is kept, never dropped on a guess."""
+    fresh = {"at": now(), "round": rnd, "masked": VERSION, "shape_only": True, "bots": list(bots), "findings": list(findings)}
+    if (rnd is None or not isinstance(prev, dict) or prev.get("round") != rnd or prev.get("shape_only") is not True or not prev.get("masked")
+            or not isinstance(prev.get("bots"), list) or not isinstance(prev.get("findings"), list)):
+        return fresh
+    kept = [f for f in prev["findings"] if isinstance(f, dict) and not (isinstance(f.get("bot"), str) and f["bot"] in answered)]
+    earlier = [b for b in prev["bots"] if isinstance(b, str) and b not in answered]
+    return dict(fresh, bots=earlier + fresh["bots"], findings=kept + fresh["findings"])
+
+
+def rollcall_findings(rdir, removed=None, kept=None):
     """Each reply is read once, reduced to its shape, and deleted right away (in Watchtower's own folder). Findings name what
-    the Bot said about itself in counts and yes/no answers; no reply text is kept anywhere."""
-    out, bots = [], []
+    the Bot said about itself in counts and yes/no answers; no reply text is kept anywhere. Returns this run's findings and
+    Bots; the saved file also keeps earlier Bots from the same roll-call round (merge_rollcall), named in `kept`."""
+    out, bots, answered = [], [], set()
     if not os.path.isdir(rdir):
         return out, bots
     gone = 0
@@ -4508,14 +4579,17 @@ def rollcall_findings(rdir, removed=None):
         gone += _rc_remove(p, rdir)
         label = mask_rollcall(fn[:-5], RC_NAME_MAX)
         if not isinstance(d, dict):
-            out.append(finding("WT-R010", "Roll-call reply did not parse", "low", ["ASI07"], f"rollcall:{label}", "reply was not the asked JSON",
-                               "Ask that Bot again; a Bot that won't describe itself is worth a closer look."))
+            answered.add(label)
+            out.append(dict(finding("WT-R010", "Roll-call reply did not parse", "low", ["ASI07"], f"rollcall:{label}", "reply was not the asked JSON",
+                                    "Ask that Bot again; a Bot that won't describe itself is worth a closer look."), bot=label))
             continue
         sh, extra = shape_reply(d)
         d = None                                              # the parsed reply is not kept past this point
         name = sh["name"] or label
+        answered.add(name)
         bots.append(name)
         where = f"rollcall:{name}"
+        first = len(out)
         if extra:
             out.append(finding("WT-R011", "Roll-call reply carried more than the question asks", "medium", ["ASI06", "ASI07"], where,
                                "extra: " + ", ".join(extra[:6]) + (f" (+{len(extra) - 6} more)" if len(extra) > 6 else ""),
@@ -4551,15 +4625,47 @@ def rollcall_findings(rdir, removed=None):
                                ("connectors: " + ", ".join(sh["connectors"][:8]) + ("; Ask first on email, messages and posts" if guarded else ""))[:150],
                                "This Bot can read private data, reads content strangers control, and can send outward. "
                                "That's the combination prompt injection needs. Split the jobs across Bots or put Ask first on every send."))
+        for f in out[first:]:                             # each finding names its Bot, so a merge never parses `where`
+            f["bot"] = name
     if removed is not None:
         removed.append(gone)
     for f in out:                                         # only masked findings are kept, never the reply itself
         f["evidence"] = mask_rollcall(f["evidence"])
-    save_json(state_path("rollcall_findings.json"), {"at": now(), "masked": VERSION, "shape_only": True, "bots": bots, "findings": out})
+    p = state_path("rollcall_findings.json")
+    prev = load_json_regular(p, None)                     # a link or FIFO put there is not read (and never waited on)
+    rc = merge_rollcall(prev, current_rollcall_round(), out, bots, answered)
+    save_json_keep_mode(p, rc)
+    if kept is not None:
+        kept.extend(rc["bots"][:len(rc["bots"]) - len(bots)])
     return out, bots
 
 
 ROLLCALL_MAX_DAYS = 35
+ROLLCALL_ROUND_DAYS = 7     # a round opens at --question/--save; late replies within it merge, the next monthly roll-call starts fresh
+
+
+def current_rollcall_round():
+    """When the open roll-call round began (its id), or None: no round, a garbled or time-zone-less time, one in the future,
+    or one opened more than ROLLCALL_ROUND_DAYS ago."""
+    d = load_json_regular(state_path("rollcall_round.json"), None)
+    try:
+        opened = d["opened"]
+        t = dt.datetime.fromisoformat(opened)
+        age = dt.datetime.now(dt.timezone.utc) - t
+    except (KeyError, TypeError, ValueError):
+        return None
+    return opened if dt.timedelta(0) <= age <= dt.timedelta(days=ROLLCALL_ROUND_DAYS) else None
+
+
+def open_rollcall_round():
+    """Handing out the question or saving a reply opens a round when none is open. Asking a slow Bot again, or saving its late
+    reply, stays in the round that is open: it never starts a new one."""
+    rnd = current_rollcall_round()
+    if rnd is None:
+        rnd = now()
+        save_json_keep_mode(state_path("rollcall_round.json"), {"opened": rnd})     # never through a link planted beside it
+        ledger({"event": "rollcall-opened", "round": rnd})
+    return rnd
 
 
 def roster_bots():
@@ -4580,11 +4686,11 @@ def prune_removed_bots(rc):
         return rc, []
     if dt.datetime.fromtimestamp(os.path.getmtime(rpath), dt.timezone.utc).isoformat() < rc.get("at", ""):
         return rc, []
-    bot_of = lambda f: f["where"].split(":")[1] if f.get("where", "").startswith("rollcall:") else None
+    bot_of = lambda f: f["bot"] if isinstance(f.get("bot"), str) else (f["where"].split(":")[1] if f.get("where", "").startswith("rollcall:") else None)
     gone = sorted({b for b in rc.get("bots", []) if b not in bots} | {bot_of(f) for f in rc.get("findings", []) if bot_of(f) and bot_of(f) not in bots})
     if gone:
         rc = dict(rc, bots=[b for b in rc.get("bots", []) if b in bots], findings=[f for f in rc.get("findings", []) if bot_of(f) in bots])
-        save_json(state_path("rollcall_findings.json"), rc)
+        save_json_keep_mode(state_path("rollcall_findings.json"), rc)
         ledger({"event": "rollcall-removed-bots-dropped", "count": len(gone)})
     return rc, gone
 
@@ -4628,11 +4734,12 @@ def sweep_old_replies(rdir=None):
 
 def migrate_rollcall_state():
     """A rollcall_findings.json written before v0.6.8 kept evidence unmasked. Mask it once with mask_rollcall, keeping only
-    at/bots/findings; if it can't be read as findings, delete it. Either way it is logged."""
+    at/bots/findings; if it can't be read as findings, delete it. Either way it is logged. It is read the same hardened way as
+    the merge (no link followed, no FIFO waited on), so a link or FIFO in its place is deleted as unreadable, never opened."""
     p = state_path("rollcall_findings.json")
-    if not os.path.isfile(p):
+    if not os.path.lexists(p):
         return None
-    d = load_json(p, None)
+    d = load_json_regular(p, None)
     if isinstance(d, dict) and d.get("masked"):
         return None
     try:
@@ -4641,7 +4748,7 @@ def migrate_rollcall_state():
         for f in fs:
             f["evidence"] = mask_rollcall(f.get("evidence", ""))
         bots = [mask_rollcall(b, 60) for b in d.get("bots", []) if isinstance(b, str)]
-        save_json(p, {"at": d.get("at") or now(), "masked": VERSION, "bots": bots, "findings": fs})
+        save_json_keep_mode(p, {"at": d.get("at") or now(), "masked": VERSION, "bots": bots, "findings": fs})
         ledger({"event": "rollcall-state-masked", "findings": len(fs)})
         return "masked"
     except (KeyError, TypeError, AssertionError):
@@ -4827,6 +4934,7 @@ def owned_rollcall_dir(rdir):
 
 def cmd_rollcall(args):
     if getattr(args, "question", False) is True:
+        open_rollcall_round()
         print(ROLLCALL_PROMPT)
         return 0
     if isinstance(getattr(args, "save", None), str):
@@ -4835,6 +4943,7 @@ def cmd_rollcall(args):
         except OSError as e:
             print(f"NOT SAVED: {e}")
             return 2
+        open_rollcall_round()
         print(f"Saved {os.path.basename(p)} (mode 0600) in Watchtower's private roll-call folder. It is deleted when the roll-call runs, "
               "or by the daily check after an hour.")
         return 0
@@ -4860,14 +4969,14 @@ def _rollcall(args, rdir):
     tighten_replies(rdir)
     roster = load_json(os.path.join(home(), *ROSTER_FILE), None)     # rooms first, so the replies are judged with this account's rooms
     rooms_file = write_rooms(roster_rooms(roster)) if roster is not None else "no roster saved: rooms.txt left as it was"
-    gone = []
-    fs, bots = rollcall_findings(rdir, gone)
+    gone, kept = [], []
+    fs, bots = rollcall_findings(rdir, gone, kept)
     removed = (gone[0] if gone else 0) + (sum(1 for fn in os.listdir(rdir) if os.path.isfile(os.path.join(rdir, fn)) or os.path.islink(os.path.join(rdir, fn)))
                                           if owned_rollcall_dir(rdir) else 0)
     print(fit({"bots_checked": len(bots), "bots": bots, "findings": [dict(compact(f), key=f["key"]) for f in sort_findings(fs)][:30], "by_severity": by_sev(fs), "rooms_file": rooms_file,
-               "raw_replies_deleted": removed, "counted_in_score": False, "shape_only": True,
+               "raw_replies_deleted": removed, "counted_in_score": False, "shape_only": True, "earlier_bots_kept": kept,
                "recommend_each_bot_adds": ROLLCALL_RULE}))
-    ledger({"event": "rollcall", "bots": len(bots), "findings": len(fs)})
+    ledger({"event": "rollcall", "bots": len(bots), "findings": len(fs), "earlier_bots_kept": len(kept)})
     return 0
 
 
