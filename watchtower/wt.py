@@ -1803,12 +1803,12 @@ def audit(roots, exports, quick=False):
     else:
         notes.append("No exports folder: routine text not checked (Auto Review rules come from settings.json).")
 
-    nat = native_settings()
+    nat = native_settings(entries=True)
     if nat:
-        rules_text, settings, p = nat
-        native_rules = rules_text
-        if rules_text:
-            fs += lint_auto_review(rules_text, p, check_missing=False)
+        entries, settings, p = nat
+        native_rules = "\n".join(entries)
+        if entries:
+            fs += lint_auto_review(entries, p, check_missing=False)
         fs += lint_settings(settings, p)
     else:
         notes.append("Grok Bot settings.json not found: Auto Review rules and local execution checked from exports only.")
@@ -1949,9 +1949,11 @@ def hook_findings(roots, inv):
 NATIVE_SETTINGS = ["~/agent-data/settings.json", "/home/box/agent-data/settings.json"]
 
 
-def native_settings():
+def native_settings(entries=False):
     """Read Grok Bot's own settings file (spike, Oct 5 2026): autoReviewInstructions + localToolPermission.
-    Returns (auto_review_text, settings_dict, path) or None. Schema is undocumented, so parse loosely."""
+    Returns (auto_review_text, settings_dict, path) or None. Schema is undocumented, so parse loosely.
+    With entries=True the first item is the list of rule entries instead, each whole: an entry can span several lines, and
+    read line by line its continuation would be linted, shown, hashed and kept unseen (Codex, round 3)."""
     cands = [os.environ["WATCHTOWER_SETTINGS"]] if os.environ.get("WATCHTOWER_SETTINGS") else NATIVE_SETTINGS
     for cand in cands:
         p = os.path.expanduser(cand)
@@ -1974,7 +1976,7 @@ def native_settings():
         settings = {"local_execution": mapped}
         if "autoReview" in data:
             settings["auto_review"] = bool(data.get("autoReview"))
-        return "\n".join(lines), settings, p
+        return (lines if entries else "\n".join(lines)), settings, p
     return None
 
 
@@ -1992,7 +1994,12 @@ def ask_first_gaps(text):
 RULE_OBJECTS = re.compile(r"""(https?://\S+|~/\S+|\./\S+|/(?:\S+)|\b[\w.-]+\.(md|txt|json|csv|html?|py|sh|js|ts|ya?ml|pdf|docx?|xlsx?)\b)""", re.I)
 
 
-ASK_FIRST_CLAUSE = re.compile(r"(?i)\b(?:ask\s+(?:me\s+)?first|otherwise\s+ask)\b[^.;\n]*")
+# The clause ends at a stop or at any line break str.splitlines() knows: a native entry is linted whole (round 3), and the clause
+# must never run on into the next line's allowance (Codex, round 4). Nor may its opener: "otherwise\nask" or "ask me\nfirst"
+# split over two lines is no clause, as it wasn't line by line (Codex, round 5), so each gap is spaces that aren't a line break.
+LINE_BREAKS = r"\n\r\v\f\x1c-\x1e\x85\N{LINE SEPARATOR}\N{PARAGRAPH SEPARATOR}"
+_GAP = rf"[^\S{LINE_BREAKS}]+"
+ASK_FIRST_CLAUSE = re.compile(rf"(?i)\b(?:ask{_GAP}(?:me{_GAP})?first|otherwise{_GAP}ask)\b[^.;{LINE_BREAKS}]*")
 
 
 def auto_allow_fingerprint(raw):
@@ -2012,10 +2019,15 @@ def accepted_auto_allow():
     return out
 
 
+def rule_entries(text):
+    """Rule entries, each stripped and whole: a list (native settings) keeps a multi-line entry as one; text is one per line."""
+    return [l.strip() for l in (text if isinstance(text, list) else text.splitlines()) if l.strip()]
+
+
 def lint_auto_review(text, where, check_missing=True):
     out = []
     accepted = accepted_auto_allow()
-    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    lines = rule_entries(text)
     for i, raw in enumerate(lines, 1):
         l = RULE_OBJECTS.sub(" ", raw)   # R18: a file name, path or link names a thing (a quoted action is still the action); it isn't the action being allowed
         # DQ-027: an "Ask first for any other ..." clause narrows the rule; its "any" isn't breadth. A wildcard inside a link still is.
@@ -2034,7 +2046,7 @@ def lint_auto_review(text, where, check_missing=True):
         if re.search(r"(?i)allow\s+automatically", l) and re.search(r"(?i)(automation|routine|schedul|cron|trigger|create\s+(a\s+)?skill|install|plugin|connector)", l):
             out.append(finding("WT-A004", "Auto-allow on creating automations or installs", "high", ["ASI10", "ASI03"], f"{where}:{i}", raw[:140],
                                "Change it to Ask first. Anything that creates a routine or installs code can give injected text a way to run again later, unattended."))
-    missing = ask_first_gaps(text) if check_missing else []
+    missing = ask_first_gaps("\n".join(lines)) if check_missing else []
     if missing:
         out.append(finding("WT-A003", "Missing Ask-first rules", "medium", ["ASI09"], where, ", ".join(missing),
                            "Add Ask-first rules in Settings → General → Auto-review for: " + ", ".join(missing) + "."))
@@ -2084,13 +2096,13 @@ def auto_allow_lines():
                 t = read_text(os.path.join(exports, fn))
                 if t is not None:
                     srcs.append((f"export:{fn}", t))
-    nat = native_settings()
+    nat = native_settings(entries=True)
     if nat and nat[0]:
         srcs.append((nat[2], nat[0]))
     out, seen = [], set()
     for where, text in srcs:
-        for i, raw in enumerate([l.strip() for l in text.splitlines() if l.strip()], 1):
-            if any(f["rule"] == "WT-A002" for f in lint_auto_review(raw, where, check_missing=False)):
+        for i, raw in enumerate(rule_entries(text), 1):   # a native entry stays whole, so `keep` covers every line the owner is shown
+            if any(f["rule"] == "WT-A002" for f in lint_auto_review([raw], where, check_missing=False)):
                 fp = auto_allow_fingerprint(raw)
                 if fp not in seen:
                     seen.add(fp)
@@ -2144,7 +2156,7 @@ def cmd_auto_allow(args):
     data = data if isinstance(data, list) else []
     new = [x for fp, x in picked.items() if fp not in kept]
     for x in new:
-        data.append({"rule": "WT-A002", "sha256": x["sha256"], "label": x["line"][:80], "accepted": f"owner, {dt.date.today().isoformat()}",
+        data.append({"rule": "WT-A002", "sha256": x["sha256"], "label": exact_line(x["line"])[:80], "accepted": f"owner, {dt.date.today().isoformat()}",
                      "reason": (args.reason or "")[:200]})
     if new:
         save_json_keep_mode(state_path("accepted_auto_allow.json"), data)
