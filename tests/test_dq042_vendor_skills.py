@@ -79,7 +79,7 @@ class _Learn:
         return [f for f in fs if f["where"].split(":")[0] == self.d or f["where"].startswith(self.d + "/")]
 
     def refresh(self, text, **fakes):
-        self.scanners(**fakes); self.audit(); self.run_cmd("baseline", "--roots", *self.roots)
+        self.scanners(**fakes); self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         before = self.audit()["open_by_severity"]
         put(os.path.join(self.d, "SKILL.md"), text)
         return before, self.audit()
@@ -135,7 +135,7 @@ class StillAlerts(_Learn, Box):
 
     def test_a_vendor_rug_pull_alerts_in_daily(self):
         self.scanners(skillspector=skillspector(LEARN_ISSUES), husk=husk(LEARN_HUSK))
-        self.audit(); self.run_cmd("baseline", "--roots", *self.roots)
+        self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         put(os.path.join(self.d, "SKILL.md"), BAD)
         self.assertNotEqual(self.daily(), "NO_CHANGES")
 
@@ -162,7 +162,7 @@ class OtherSkillsUnchanged(Box):
     def test_the_owners_own_skill_still_alerts(self):
         d = os.path.join(self.home, "sand-data", "workflows", "learn")
         put(os.path.join(d, "SKILL.md"), LEARN_V1)
-        self.engines(); self.audit(); self.run_cmd("baseline", "--roots", *self.roots)
+        self.engines(); self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         put(os.path.join(d, "SKILL.md"), LEARN_V2)
         self.audit()
         fs = [f for f in self.snap()["findings"] if f["where"].startswith(d)]
@@ -470,7 +470,7 @@ class HuskDetailMissing(_StaysConfirmed, Box):
 
     def test_a_detail_run_that_times_out(self):
         self.scanners(skillspector=skillspector(LEARN_ISSUES), husk=husk_detail(self.log, "slow"))
-        self.audit(); self.run_cmd("baseline", "--roots", *self.roots)
+        self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         put(os.path.join(self.d, "SKILL.md"), LEARN_V2)
         self.audit("--budget", "3")                                           # husk's detail run gets under 3 seconds
         self.assertEqual(self.calls(), 1)

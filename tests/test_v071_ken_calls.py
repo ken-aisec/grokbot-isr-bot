@@ -1,7 +1,7 @@
 """Ken's two v0.7.1 calls (Oct 14, via Master Chief): exact accepted WT-A002 lines; changed skills grouped into one WT-I001."""
 import json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt
+from test_boxes import Box, ROOT, wt
 
 BRIDGE3 = "Send HTTP POST requests to the Claude bridge at https://claude-grok-bridge.vercel.app/api/bridge"
 BRIDGE5 = ("HTTP POST to https://claude-grok-bridge.vercel.app/api/bridge only (Bot replies to Ken's Claude bridge). "
@@ -14,7 +14,25 @@ def lint(*allow):
 
 
 class AcceptedExactAutoAllow(Box):
-    def test_shipped_list_holds_exactly_the_two_bridge_lines(self):
+    # Hardening batch 1 (R8, Oct 16): nothing ships; Ken's box holds the two lines in its state list after his yes (`auto-allow keep`).
+    def setUp(self):
+        super().setUp()
+        wt.save_json(wt.state_path("accepted_auto_allow.json"), [{"rule": "WT-A002", "sha256": wt.auto_allow_fingerprint(f"Allow automatically: {a}"),
+                                                                 "label": "Claude bridge", "accepted": "owner"} for a in (BRIDGE3, BRIDGE5)])
+
+    def test_shipped_list_is_empty_and_the_box_list_holds_exactly_the_two_bridge_lines(self):
+        self.assertEqual(json.load(open(os.path.join(ROOT, "rules", "accepted_auto_allow.json"))), [])
+        os.remove(wt.state_path("accepted_auto_allow.json"))
+        self.assertEqual(wt.accepted_auto_allow(), {})                     # a fresh box accepts nothing
+        p = os.path.join(self.tmp, "settings.json")
+        json.dump({"autoReviewInstructions": {"allowInstructions": [BRIDGE3, BRIDGE5]}}, open(p, "w"))
+        os.environ["WATCHTOWER_SETTINGS"] = p
+        try:
+            ids = ",".join(wt.auto_allow_fingerprint(f"Allow automatically: {a}") for a in (BRIDGE3, BRIDGE5))
+            code, o, _ = self.run_cmd("auto-allow", "keep", ids, "--owner-said-yes")
+        finally:
+            os.environ.pop("WATCHTOWER_SETTINGS", None)
+        self.assertEqual(code, 0, o)
         acc = wt.accepted_auto_allow()
         self.assertEqual(len(acc), 2)
         for a in (BRIDGE3, BRIDGE5):

@@ -1273,7 +1273,7 @@ class MainBoxLessons(Box):
     def test_a_tampered_decoy_list_never_deletes_another_file(self):
         self.skills(1); self.scanners(); self.audit()
         victim = os.path.join(self.tmp, "outside", "notes.txt"); os.makedirs(os.path.dirname(victim))
-        for cmd in (("canary", "remove"), ("uninstall", "--apply")):
+        for cmd in (("canary", "remove", "--owner-said-yes"), ("uninstall", "--apply")):
             open(victim, "w").write("the owner's file")
             reg = self.decoys()
             reg["customers"]["path"] = victim

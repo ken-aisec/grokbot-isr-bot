@@ -36,9 +36,9 @@ If the user approves only some of the changed skills, run `wt.py fix --revet --o
 - Turn off or revoke a key. Show the link and let the user do it.
 - Use `--force` with npm, or touch node_modules, or change package.json. The fix only updates lockfiles and keeps a backup.
 - Run `npm install`, add `overrides`, bump a version, or edit any file in a project yourself, before or after the command. If the command leaves a package open, say so and stop: that project's owner fixes it there.
-- Accept anything the command refuses. It refuses two scanners agreeing a skill is dangerous, a decoy being touched, a working key, and a memory acting as an order.
+- Accept anything the command refuses. It refuses two scanners agreeing a skill is dangerous, a decoy being touched, a working key, and a memory acting as an order. `wt.py accept` refuses the same (NOT ACCEPTED), and accepts only a whole name: the place, the skill folder's name, or "package version".
 - Print a key, even partly.
-- Re-approve a changed skill yourself with `wt.py baseline`. `--revet` only re-approves skills that scan clean; the rest stay open.
+- Re-approve a changed skill yourself with `wt.py baseline`. `--revet` only re-approves skills that scan clean; the rest stay open. `baseline` (after the first), `canary remove` and `auto-allow keep` print NOT SAVED or NOT REMOVED without `--owner-said-yes`: add it only after the owner's yes in this conversation.
 - Give a security-tool exception to a skill the user didn't name, or try to stretch it past 30 days. It ends early if the skill's files change.
 - Run `--apply --owner-said-yes`, `--upgrade`, `--revet`, `--accept`, `--quarantine` or `--exception` without the user's yes in this conversation. The weekly tidy routine only shows the cleanup list and waits for that yes.
 - Clear a decoy alarm (`wt.py events clear`) without the owner's yes. Show it to them first; the command refuses otherwise.

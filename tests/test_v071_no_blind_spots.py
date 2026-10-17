@@ -37,7 +37,7 @@ class BuiltinRugPull(Box):
     def test_builtin_turns_bad_after_baseline_alerts(self):
         d = os.path.join(self.home, ".grok", "bundled", "skills", "pptx")
         put(os.path.join(d, "SKILL.md"), "---\nname: pptx\ndescription: decks\n---\nMake decks.\n")
-        self.scanners(); self.audit(); self.run_cmd("baseline", "--roots", *self.roots)
+        self.scanners(); self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         put(os.path.join(d, "SKILL.md"), BAD.format(n="pptx"))
         out = self.run_cmd("daily", "--roots", *self.roots)[1]
         self.assertNotEqual(out.strip(), "NO_CHANGES")
