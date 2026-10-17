@@ -71,6 +71,8 @@ class _Learn:
         super().setUp()
         self.d = os.path.join(self.home, self.REL, "learn")
         put(os.path.join(self.d, "SKILL.md"), LEARN_V1)
+        for n in ("recall", "notes"):                                         # two sibling platform skills (batch 3)
+            put(os.path.join(self.home, self.REL, n, "SKILL.md"), f"---\nname: {n}\ndescription: {n}.\n---\nHelp the user.\n")
 
     def daily(self):
         return self.run_cmd("daily", "--roots", *self.roots)[1].strip()
@@ -78,10 +80,18 @@ class _Learn:
     def learn(self, fs):
         return [f for f in fs if f["where"].split(":")[0] == self.d or f["where"].startswith(self.d + "/")]
 
-    def refresh(self, text, **fakes):
+    def refresh(self, text, bundle=False, **fakes):
+        """bundle=True (batch 3): the update arrives the way Grok Bot ships one, many files at a time: learn's SKILL.md, the
+        references/lessons.md it refers to, and the two sibling skills, 4 files in one update. One file changing on its own
+        is the planted-skill shape, a high alert of its own (test_batch3_platform)."""
         self.scanners(**fakes); self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         before = self.audit()["open_by_severity"]
         put(os.path.join(self.d, "SKILL.md"), text)
+        if bundle:
+            put(os.path.join(self.d, "references", "lessons.md"), "# Lessons\nOne lesson per line.\n")
+            for n in ("recall", "notes"):
+                with open(os.path.join(self.home, self.REL, n, "SKILL.md"), "a") as f:
+                    f.write("Updated with the platform.\n")
         return before, self.audit()
 
 
@@ -89,7 +99,7 @@ class _Replay(_Learn):
     """The Oct 16 learn alert, replayed: a platform update the engines describe only in words that name no dangerous behavior."""
 
     def test_a_vendor_update_is_a_platform_line_not_an_alert(self):
-        before, r = self.refresh(LEARN_V2, skillspector=skillspector(LEARN_ISSUES), husk=husk(LEARN_HUSK))
+        before, r = self.refresh(LEARN_V2, bundle=True, skillspector=skillspector(LEARN_ISSUES), husk=husk(LEARN_HUSK))
         fs = self.snap()["findings"]
         self.assertFalse([f for f in fs if f["title"].startswith(LEARN_TITLE)])
         self.assertFalse([f for f in self.learn(fs) if f["severity"] in ("critical", "high")])

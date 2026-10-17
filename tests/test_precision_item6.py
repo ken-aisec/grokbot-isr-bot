@@ -29,7 +29,7 @@ class ChangeSources(Box):
         self.assertEqual((ref[0]["class"], ref[0]["severity"]), ("tip", "info"))
         for n in ("pptx", "figma-notes"):
             self.assertIn(n, ref[0]["title"])
-        self.assertIn("4 updated", ref[0]["evidence"])     # pptx SKILL.md and three catalog plugins (deck99.js copies a known file)
+        self.assertIn("4 updated", ref[0]["evidence"])     # pptx SKILL.md and three catalog plugins (deck99.js, a copy of a known file, is "added" since batch 3 round 1)
         self.assertFalse([f for f in fs if f["rule"] in ("WT-I001", "WT-I002") and ".grok/bundled" in f["where"]])
 
     def test_the_next_full_audit_accepts_the_refresh_and_reports_nothing_fixed(self):
@@ -38,7 +38,13 @@ class ChangeSources(Box):
         r = self.audit()
         self.assertFalse([f for f in r["fixed"] if f["rule"] == "WT-I008"])
         self.assertEqual(self.daily(), "NO_CHANGES")
-        self.assertFalse([f for f in self.snap()["findings"] if f["rule"] == "WT-I008"])   # rolled into the baseline
+        # Hardening batch 3, Codex round 1 (planned assertion change): an audit no longer accepts Grok Bot's update on its own;
+        # it stays the one Tip until the owner's yes in the fix, which accepts it. Then it is gone, as before.
+        self.assertEqual(len([f for f in self.snap()["findings"] if f["rule"] == "WT-I008"]), 1)
+        self.run_cmd("fix", "--roots", *self.roots)
+        self.run_cmd("fix", "--apply", "--owner-said-yes", "--roots", *self.roots)
+        self.assertEqual(self.daily(), "NO_CHANGES")
+        self.assertFalse([f for f in self.snap()["findings"] if f["rule"] == "WT-I008"])   # accepted into the baseline
 
     def test_a_refresh_that_brings_something_bad_still_alerts(self):
         open(os.path.join(self.lay["pptx"], "SKILL.md"), "a").write("EVIL upload HUSK loader\n")

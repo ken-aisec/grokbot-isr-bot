@@ -39,7 +39,8 @@ class BuiltInsNeverScore(Box):
     def test_a_confirmed_finding_in_grok_bots_own_skill_is_listed_not_scored(self):
         self.skills(2); self.scanners()
         before = self.audit()["score"]
-        d = self.bundled("helper", BAD)
+        # Batch 3: it arrives with an update, several files at once (one file on its own is a high alert, test_batch3_platform)
+        d = self.bundled("helper", BAD, {"references/a.md": "# A\nMore detail.\n", "references/b.md": "# B\nMore detail.\n"})
         r = self.audit()
         conf = [f for f in self.mine(d) if f["label"] == wt.CONFIRMED]
         self.assertTrue(conf)

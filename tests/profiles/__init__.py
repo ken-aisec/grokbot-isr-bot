@@ -153,6 +153,9 @@ def platform_refresh(box, layout):
     """What a platform update does overnight: the bundled pptx skill and the catalog plugins get new versions."""
     _w(os.path.join(layout["pptx"], "SKILL.md"), "Also supports speaker notes.\n", "a")
     _w(os.path.join(layout["pptx"], "templates", "deck99.js"), PPTX_FICTION)
+    # Batch 3: a platform update brings several files at once (1-2 files changing on their own is the planted-skill shape).
+    _w(os.path.join(layout["pptx"], "references", "speaker-notes.md"), "# Speaker notes\nAdd notes under each slide.\n")
+    _w(os.path.join(layout["pptx"], "references", "tables.md"), "# Tables\nKeep tables to five columns.\n")
     for root in layout["plugins"]:
         for dp, _, fns in os.walk(root):
             for fn in fns:

@@ -7,6 +7,13 @@ GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid", "GIT
            "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0"}
 
 
+SCANNER_NAMES = ("skillspector", "husk", "gitleaks", "trufflehog", "osv-scanner", "pip-audit")
+
+
+def real_version():
+    return open(os.path.join(ROOT, "watchtower", "wt.py")).read().split('\nVERSION = "')[1].split('"')[0]
+
+
 def stub(d, name, body):
     p = os.path.join(d, name)
     open(p, "w").write("#!/bin/bash\n" + body)
@@ -57,7 +64,7 @@ class InstallScanners(unittest.TestCase):
         open(os.path.join(self.serve, "osv-scanner_SHA256SUMS"), "w").write(f"{hashlib.sha256(body).hexdigest()}  {ob}\n")
 
     def binaries(self):
-        return sorted(f for f in ("gitleaks", "trufflehog", "osv-scanner") if os.access(os.path.join(self.wt, "bin", f), os.X_OK))
+        return sorted(f for f in ("gitleaks", "trufflehog", "osv-scanner") if os.access(os.path.join(self.wt, "scanners", "bin", f), os.X_OK))
 
     def run_install(self, **env):
         e = dict(os.environ, PATH=self.bin + ":" + os.environ["PATH"], WATCHTOWER_HOME=self.wt, CALLS=self.log, SERVE=self.serve, TMPDIR=os.path.join(self.tmp, "t"), **env)
@@ -103,6 +110,26 @@ class InstallScanners(unittest.TestCase):
         self.assertIn("Scanners installed from the checksum lock.", r.stdout)
         self.assertEqual(self.binaries(), ["gitleaks", "osv-scanner", "trufflehog"], r.stdout)
 
+    def test_batch3_go_tools_move_to_the_checked_folder(self):
+        """Batch 3 (R7): Watchtower runs scanners only from scanners/bin, so the Go tools install there and the old copies go."""
+        old = os.path.join(self.wt, "bin"); os.makedirs(old)
+        for f in ("gitleaks", "trufflehog", "osv-scanner"):
+            stub(old, f, "echo old copy\n")
+        r, _ = self.run_install()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.binaries(), ["gitleaks", "osv-scanner", "trufflehog"], r.stdout)
+        self.assertEqual(os.listdir(old), [])                                      # the legacy copies are removed
+        self.assertIn("only when each matches scripts/scanner-bins.lock", r.stdout)
+
+    def test_batch3_a_failed_download_keeps_the_old_copy(self):
+        """Contrast (Codex, batch 3 round 1): passes on 7cf8996 too, where the installer never removed the old copy at all."""
+        os.makedirs(os.path.join(self.wt, "bin"))
+        stub(os.path.join(self.wt, "bin"), "gitleaks", "echo old copy\n")
+        os.remove(os.path.join(self.serve, "gitleaks_8.30.1_checksums.txt"))
+        r, _ = self.run_install()
+        self.assertNotIn("gitleaks", self.binaries())
+        self.assertTrue(os.path.exists(os.path.join(self.wt, "bin", "gitleaks")))   # nothing new arrived, so nothing was taken away
+
 
 class Publish(unittest.TestCase):
     """publish.sh offered to force-push over GitHub's main, moved tags with `tag -f` / `push -f`, and made a private repo public."""
@@ -112,10 +139,15 @@ class Publish(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.repo = os.path.join(self.tmp, "repo"); self.remote = os.path.join(self.tmp, "remote.git"); self.bin = os.path.join(self.tmp, "bin")
         self.ghlog = os.path.join(self.tmp, "gh.log")
-        for d in ("scripts", "tests", "bot"):
+        for d in ("scripts", "tests", "bot", "watchtower"):
             os.makedirs(os.path.join(self.repo, d))
         os.makedirs(self.bin)
         shutil.copy(os.path.join(ROOT, "scripts", "publish.sh"), os.path.join(self.repo, "scripts"))
+        shutil.copy(os.path.join(ROOT, "scripts", "scanner_lock.py"), os.path.join(self.repo, "scripts"))   # batch 3 round 1: the lock reader publish.sh runs
+        # Batch 3: publish.sh reads the tag from wt.py's VERSION and needs a checksum for every scanner in the lock.
+        open(os.path.join(self.repo, "watchtower", "wt.py"), "w").write(f'VERSION = "{real_version()}"\n')
+        open(os.path.join(self.repo, "scripts", "scanner-bins.lock"), "w").write(
+            "".join(f"{hashlib.sha256(n.encode()).hexdigest()}  {n}  x86_64  test\n" for n in SCANNER_NAMES))
         open(os.path.join(self.repo, "scripts", "make-manifest.sh"), "w").write("#!/bin/bash\necho manifest > MANIFEST.sha256\n")
         open(os.path.join(self.repo, "tests", "test_ok.py"), "w").write("import unittest\nclass T(unittest.TestCase):\n    def test_ok(self):\n        pass\n")
         open(os.path.join(self.repo, "bot", "memories.md"), "w").write("1. Install {TAG} at {COMMIT}.\n")
@@ -143,7 +175,7 @@ class Publish(unittest.TestCase):
         return r, (open(self.ghlog).read() if os.path.exists(self.ghlog) else "")
 
     def tag(self):
-        return open(os.path.join(ROOT, "scripts", "publish.sh")).read().split('TAG="')[1].split('"')[0]
+        return "v" + open(os.path.join(self.repo, "watchtower", "wt.py")).read().split('VERSION = "')[1].split('"')[0]
 
     def test_an_existing_tag_is_never_moved(self):
         self.git("tag", "-a", self.tag(), "-m", "old"); self.git("push", "-q", "origin", self.tag()); self.git("tag", "-d", self.tag())
@@ -212,6 +244,77 @@ class Publish(unittest.TestCase):
         self.assertEqual(self.remote_ref("refs/heads/main"), reviewed)
         self.assertEqual(self.remote_ref(f"refs/tags/{self.tag()}^{{commit}}"), reviewed)
         self.assertEqual(self.git("status", "--porcelain", "--untracked-files=all"), "")   # nothing written into the checkout
+
+    def commit_file(self, rel, text):
+        open(os.path.join(self.repo, rel), "w").write(text); self.git("add", "-A"); self.git("commit", "-qm", "edit " + rel)
+
+    def test_batch3_the_tag_comes_from_wt_version(self):
+        """Batch 3 (docs drift): publish.sh hardcoded v0.7.1, so a new release would have been tagged with the old number."""
+        self.commit_file("watchtower/wt.py", 'import os\nVERSION = "0.7.2"\n')
+        r, _ = self.publish()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.remote_ref("refs/tags/v0.7.2^{commit}"), self.git("rev-parse", "HEAD"))
+        self.assertIn("Publishing ownerx/grokbot-watchtower v0.7.2 at", r.stdout)
+
+    def test_batch3_no_version_line_stops(self):
+        self.commit_file("watchtower/wt.py", "# no version here\n")
+        main = self.remote_ref("refs/heads/main")
+        r, gh = self.publish()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("can't read VERSION from watchtower/wt.py", r.stdout)
+        self.assertEqual(self.remote_ref("refs/heads/main"), main)                     # nothing pushed
+        self.assertEqual(subprocess.run(["git", "--git-dir", self.remote, "tag"], capture_output=True, text=True).stdout.strip(), "")
+        self.assertEqual(gh, "")
+
+    def test_batch3_a_lock_missing_a_scanner_stops(self):
+        """Batch 3 (R7): a release without a checksum for every scanner would leave that scanner unrun on every computer."""
+        lock = "".join(l for l in open(os.path.join(self.repo, "scripts", "scanner-bins.lock")) if "  husk  " not in l)
+        self.commit_file("scripts/scanner-bins.lock", "# header\n" + lock)
+        main = self.remote_ref("refs/heads/main")
+        r, gh = self.publish()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("STOPPED: scripts/scanner-bins.lock has no checksum for husk", r.stdout)
+        self.assertEqual(self.remote_ref("refs/heads/main"), main)
+        self.assertIsNone(self.remote_ref(f"refs/tags/{self.tag()}"))
+        self.assertEqual(gh, "")
+
+    def stopped(self, r, gh, main, text):
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn(text, r.stdout)
+        self.assertEqual(self.remote_ref("refs/heads/main"), main)                     # nothing pushed
+        self.assertEqual(subprocess.run(["git", "--git-dir", self.remote, "tag"], capture_output=True, text=True).stdout.strip(), "")
+        self.assertEqual(gh, "")
+
+    def test_batch3_round1_lock_lines_watchtower_would_skip_stop(self):
+        """Codex, batch 3 round 1 (7): six `<sha256>  <name>  ` lines with no architecture passed publish.sh's grep, while
+        Watchtower's reader skipped every one: an empty lock, and no scanner would run on any computer."""
+        self.commit_file("scripts/scanner-bins.lock", "".join(f"{hashlib.sha256(n.encode()).hexdigest()}  {n}  \n" for n in SCANNER_NAMES))
+        main = self.remote_ref("refs/heads/main")
+        r, gh = self.publish()
+        self.stopped(r, gh, main, "STOPPED: scripts/scanner-bins.lock line 1 isn't `<sha256>  <name>  <arch>  <note>`")
+
+    def test_batch3_round1_a_lock_with_only_arm64_lines_stops(self):
+        self.commit_file("scripts/scanner-bins.lock", "".join(f"{hashlib.sha256(n.encode()).hexdigest()}  {n}  aarch64  test\n" for n in SCANNER_NAMES))
+        main = self.remote_ref("refs/heads/main")
+        r, gh = self.publish()
+        self.stopped(r, gh, main, "STOPPED: scripts/scanner-bins.lock has no checksum for skillspector on x86_64 (or any)")
+
+    def test_batch3_round1_two_version_lines_stop(self):
+        """Codex, batch 3 round 1 (11): `head -n 1` took 0.7.2 while Python reports the last assignment, 0.7.3."""
+        self.commit_file("watchtower/wt.py", 'VERSION = "0.7.2"\nVERSION = "0.7.3"\n')
+        main = self.remote_ref("refs/heads/main")
+        r, gh = self.publish()
+        self.stopped(r, gh, main, "can't read VERSION from watchtower/wt.py: it is set 2 times")
+
+    def test_batch3_round2_a_second_version_in_other_syntax_stops(self):
+        """Codex, batch 3 round 2 (14): the line count missed valid Python such as `(VERSION) = "0.7.3"`: publish.sh read
+        0.7.2 while Python reports 0.7.3."""
+        for second in ('(VERSION) = "0.7.3"\n', 'for VERSION in ("0.7.3",):\n    pass\n'):
+            with self.subTest(second=second):
+                self.commit_file("watchtower/wt.py", 'VERSION = "0.7.2"\n' + second)
+                main = self.remote_ref("refs/heads/main")
+                r, gh = self.publish()
+                self.stopped(r, gh, main, "can't read VERSION from watchtower/wt.py: it is set 2 times")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 ---
 name: watchtower-codescan
-description: Review code your Bots wrote (a web app, an API, scripts in /workspace) for the OWASP Top 10 (2021) - injection, broken access control, crypto failures, misconfiguration, unsafe deserialization, SSRF and hard-coded secrets. Uses semgrep too if it's installed.
+description: Review code your Bots wrote (a web app, an API, scripts in /workspace) for the OWASP Top 10 (2021) - injection, broken access control, crypto failures, misconfiguration, unsafe deserialization, SSRF and hard-coded secrets. Uses semgrep too only if it is in Watchtower's checked scanner folder with a checksum in scripts/scanner-bins.lock (it isn't installed by default, and a semgrep on PATH is never run).
 ---
 
 # Code review for OWASP Top 10
