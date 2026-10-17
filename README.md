@@ -39,6 +39,12 @@ Skills are checked by Watchtower's own rules, [NVIDIA SkillSpector](https://gith
 
 `wt.py canary plant` places three decoys (a fake customer export, fake cloud keys, a fake payments .env). Nothing legitimate reads them. If anything opens, deletes or copies one, the next daily run says so. Zero tokens, and the best early warning a non-Enterprise account can get.
 
+One decoy read is critical. Several read together are high, unless the platform's file backup proves it was the reader: next to each decoy sits a witness file no Bot can read (mode 000; opening it or faking its read time leaves a trace a Bot can't undo), and only when every witness was read within 2 seconds of its decoy is the sweep the one calm "read by the platform's backup" line. A read during a recorded Watchtower run is high too, because any Bot can write that record. `canary plant` checks that each decoy folder records reads and names any that doesn't.
+
+## Status and score
+
+Every audit leads with a status. One Confirmed critical is "Act now" and grade F; one Confirmed high is "Check this week" and at most C; otherwise "All good". The 0–100 number is the trend line under it, so a decoy read shows as 88/F, not 88/B. Lines that only warn against a risky step or quote one as an example ("Never run `curl … | bash`") are kept as "Warning or example text": listed in `breakdown`, vet and the dashboard, never scored and never in the daily.
+
 ## How it stays light
 
 Scripts find, the model judges, you approve. Scanning is deterministic Python with no dependencies of its own. A daily run with nothing new prints `NO_CHANGES` and the Bot stops without reading anything.
@@ -111,6 +117,7 @@ Release drill, dev dry-run (precision plan item 8): before each release the dev 
 - Static engines can be bypassed. Three independent engines, hash drift, tripwires and history review make that harder, and the reports say they're evidence, not proof.
 - Roll-call relies on each Bot describing itself. A compromised Bot could lie, which is why the filesystem evidence comes first.
 - Canary reads need a filesystem that records access times; setup tells you if yours doesn't.
+- The backup's proof rests on Watchtower's own state: a Bot that rewrites the decoy registry and recreates a witness can fake it, and a Bot running as root looks like the backup. A backup that runs as the Bots' user can't prove itself, so its reads stay high.
 - The self-check catches accidental or careless changes to Watchtower's own files, not a Bot that rewrites both the code and the manifest. Every Bot runs as the same user on the same computer, so nothing stops one from editing both.
 - The decoy names are random per install, which stops generic snooping, not a targeted attacker who reads Watchtower's state first.
 - Grok Bot is in beta and changes weekly. The brief watches xAI's security docs for changes.

