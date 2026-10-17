@@ -105,7 +105,8 @@ class CleanCorpus(unittest.TestCase):
             self.assertFalse([f for f in fs if f["rule"] == rule and not f.get("guarded")], (text, fs))
             rec = [f for f in records(fs) if f["rule"] == rule]
             self.assertTrue(rec, (text, fs))                                    # kept, so nothing was dropped
-            self.assertTrue(all(f["severity"] == "info" and f["severity_was"] for f in rec), rec)
+            want = "medium" if rule in wt.GUARD_CODE_RULES else "info"          # a dangerous verb or target: downgraded but still flagged
+            self.assertTrue(all(f["severity"] == want and f["severity_was"] for f in rec), rec)
             lab = [f for f in wt.label_findings(fs) if f.get("guarded")]
             self.assertEqual({(f["class"], f["label"]) for f in lab}, {("guarded", "Warning or example text")})
 

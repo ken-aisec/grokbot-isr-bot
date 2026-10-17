@@ -43,7 +43,7 @@ One decoy read is critical. Several read together are high, unless the platform'
 
 ## Status and score
 
-Every audit leads with a status. One Confirmed critical is "Act now" and grade F; one Confirmed high is "Check this week" and at most C; otherwise "All good". The 0–100 number is the trend line under it, so a decoy read shows as 88/F, not 88/B. Lines that only warn against a risky step or quote one as an example ("Never run `curl … | bash`") are kept as "Warning or example text": listed in `breakdown`, vet and the dashboard, never scored and never in the daily.
+Every audit leads with a status. One Confirmed critical is "Act now" and grade F; one Confirmed high is "Check this week" and at most C; otherwise "All good". The 0–100 number is the trend line under it, so a decoy read shows as 88/F, not 88/B. Lines that only warn against a risky step or quote one as an example ("Never run `curl … | bash`") are kept as "Warning or example text": listed in `breakdown`, vet and the dashboard, never scored and never in the daily. When such a line names a credential path, an exfiltration host, a pipe-to-shell or an upload, vet still shows it at medium and says "Install with changes" at best, and `revet` won't re-approve a changed skill because of it.
 
 ## How it stays light
 

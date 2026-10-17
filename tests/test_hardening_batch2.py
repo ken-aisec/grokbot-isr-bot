@@ -78,7 +78,7 @@ class GuardRecords(unittest.TestCase):
     def test_a_negated_send_is_kept_as_a_record(self):   # replay
         rules = wt.load_rules()
         fs = [f for f in wt.scan_text(NEGATED, "/ws/s/SKILL.md", rules) if f["rule"] == "WT-T017"]
-        self.assertEqual([(f["severity"], f["severity_was"], f["guarded"]) for f in fs], [("info", "high", "negated")])
+        self.assertEqual([(f["severity"], f["severity_was"], f["guarded"]) for f in fs], [("medium", "high", "negated")])   # downgraded but still flagged
         self.assertIn("reads as a warning or example", fs[0]["title"])
         lab = wt.label_findings(fs)
         self.assertEqual((lab[0]["class"], lab[0]["label"]), ("guarded", "Warning or example text"))
