@@ -438,6 +438,18 @@ class FreshAccountLessons(Box):
         self.run_cmd("canary", "plant")
         return wt.load_json(wt.state_path("canaries.json"), {})
 
+    def backup_read(self, p):
+        """The platform's backup (root) reads a decoy and the mode-000 witness beside it at the same moment (hardening batch 2).
+        The tests run as an ordinary user, so the witness read is simulated with utime and the registry learns the ctime it left."""
+        open(p).read()
+        w = os.path.join(os.path.dirname(p), wt.WITNESS)
+        os.utime(w, (os.stat(p).st_atime, os.stat(w).st_mtime))
+        reg = wt.load_json(wt.state_path("canaries.json"), {})
+        for v in reg.values():
+            if os.path.dirname(os.path.expanduser(v["path"])) == os.path.dirname(p):
+                v["witness"]["ctime_ns"] = os.stat(w).st_ctime_ns
+        wt.save_json(wt.state_path("canaries.json"), reg)
+
     def test_the_fix_takes_dangerous_skills_out_of_use_with_one_yes(self):
         wf = self.fixtures("bad/silent-sender", "bad/exfil-helper", "bad/hidden-unicode", "clean/weekly-digest-safe", "clean/meeting-notes")
         self.scanners(); self.audit()
@@ -498,7 +510,7 @@ class FreshAccountLessons(Box):
         self.assertEqual(ctimes, [os.stat(p).st_ctime_ns for p in paths])        # an unread decoy is never touched, so a backup has nothing to re-upload
         wt.save_json(wt.state_path("run_windows.json"), [])
         for p in paths[:2]:                                                      # two of three, seconds apart: what the real box showed at 13:42
-            open(p).read()
+            self.backup_read(p)
         code, o, _ = self.run_cmd("canary", "status")
         self.assertIn("WT-K004", o); self.assertNotIn("WT-K001", o)
         code, o2, _ = self.run_cmd("canary", "status")
@@ -509,7 +521,7 @@ class FreshAccountLessons(Box):
         wt.remember_events(fs)
         for _ in range(2):
             for p in paths:
-                open(p).read()
+                self.backup_read(p)
             ev = wt.remember_events(wt.canary_findings())
         self.assertEqual(len([e for e in ev if e["rule"] == "WT-K004"]), 1)      # one line, updated
         self.assertIn("3 times", ev[0]["evidence"])

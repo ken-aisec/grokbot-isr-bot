@@ -1,5 +1,5 @@
 {
- "version": "0.1.0",
+ "version": "0.2.0",
  "rules": [
   {
    "id": "WT-T001",
@@ -179,7 +179,11 @@
  "schedule_terms": "(?i)\\b(every\\s+\\d+\\s+(minutes?|hours?|days?)|every\\s+(day|weekday|week|morning|hour|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|daily|weekly|hourly|routine|cron|schedule[d]?)\\b",
  "nodata_terms": "(?i)(if\\s+(the\\s+)?(source|data|input|site|tool|connector|script)s?\\s+(is|are)?\\s*(unavailable|missing|down|empty|fails?)|if\\s+[\\w.-]+\\s+(fails?|errors?|times?\\s+out|is\\s+(unavailable|down|empty))|source\\s+failures?|report\\s+the\\s+failure|if\\s+nothing|send\\s+nothing|no\\s+new\\s+findings)",
  "high_freq": "(?i)(\\bhourly\\b|every\\s+\\d+\\s+minutes?|every\\s+(30|15|10|5)\\s*min|every\\s+hour)",
- "context_guard": "(?i)(\\bnever\\b|don'?t|do\\s+not|\\bnot\\b|avoid|refuse|warn|inject|attack|malicious|treat\\s+(it|this|them)\\s+as\\s+data|e\\.g\\.|for\\s+example|such\\s+as|data,\\s+never\\s+instructions)",
+ "context_guard": "never|not|no|nor|\\w+n't|cannot|without|avoid(s|ed|ing)?|refus(e|es|ed|ing)|eg|such|examples?|instance|detect(s|ed|ing)?|flag(s|ged|ging)?|block(s|ed|ing)?|attackers?|malicious|warn(s|ed|ing)?|warnings?",
+ "guard_filler": {
+  "verbs": "(run|use|read|open|cat|send|post|upload|forward|share|copy|pipe|install|fetch|download|execute|follow|obey|edit|access|print|log|store)(s|es|d|ed|ing)?|running|copies|copied",
+  "nouns": "data|files?|keys?|credentials?|secrets?|tokens?|passwords?|notes?|contents?|output|history|env|api"
+ },
  "guarded_rules": [
   "WT-T001",
   "WT-T007",
