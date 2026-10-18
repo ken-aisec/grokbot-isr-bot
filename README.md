@@ -143,7 +143,7 @@ Release drill, dev dry-run (precision plan item 8): before each release the dev 
 
 ## Tests
 
-`make test` runs more than 700 tests: seeded malicious skills must be caught, clean and defensive text must not be flagged, hostile feed content must not execute in the brief, and every feature has its own test.
+`make test` runs more than 800 tests: seeded malicious skills must be caught, clean and defensive text must not be flagged, hostile feed content must not execute in the brief, and every feature has its own test.
 
 ## License
 

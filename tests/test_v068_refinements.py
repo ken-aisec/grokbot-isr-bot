@@ -142,7 +142,11 @@ class Disprove(Base):
         self.assertFalse(wt.dismiss(self.fs[0]["key"], " ")[0])
         for p in ("skills/watchtower-audit/SKILL.md", "routines/daily-watch.md", "skills/watchtower-rollcall/SKILL.md"):
             t = open(os.path.join(ROOT, p)).read()
-            self.assertIn("wt.py dismiss <key>", t, p); self.assertIn("dismissed.jsonl", t, p); self.assertIn("reason to keep it", t, p)
+            if p == "routines/daily-watch.md":   # batch 4 (R6): the unattended routine never dismisses; it still reports the owner's dismissals
+                self.assertNotIn("wt.py dismiss <key>", t, p)
+            else:
+                self.assertIn("wt.py dismiss <key>", t, p)
+            self.assertIn("dismissed.jsonl", t, p); self.assertIn("reason to keep it", t, p)
 
 
 class MemoryStandingOrders(Base):
