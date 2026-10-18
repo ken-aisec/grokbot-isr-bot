@@ -74,6 +74,7 @@ Every computer is different, so Watchtower assumes things will go wrong and is t
 - The audit has a hard time limit. Every scanner gets only the time that is left.
 - A stage that fails is skipped with one line saying so, and its last results are kept. A failure never moves the score and never reports old findings as fixed.
 - Only what you own counts toward the score. Grok Bot's own files never move it (a key there still does). Plugins you installed count when a finding on them is critical or high. Grok Bot's own updates are one Platform line, accepted at the next full audit when nothing flags them.
+- Platform updates need the vendor's release list. A new or changed file in the platform's own skill folders (`.grok/bundled`, the managed skills, `.codex/skills/.system`, `.claude/plugins/synced`) is a platform update only when its path and its exact sha256 are listed in `rules/platform-release.lock`, which ships with Watchtower's release and is checked against `MANIFEST.sha256` like the rest of it. None of the vendors publishes such a list, so it ships empty until hashes are copied from a fresh computer. Until then every new or changed platform file is a counted high, daily included ("…isn't on Grok Bot's release list"): don't use that skill until someone has looked. `wt.py fix` lists those files (`platform_unverified`: path, new or changed, the start of its sha256) after reading each one once and running Watchtower's rules on those bytes; only on the owner's yes to exactly that list does `wt.py fix --approve-platform <code> --owner-said-yes` approve them, as they were shown. A file that changed since the list was shown approves nothing, and any later change is a new alert. A platform name that is a link (for example to one of the owner's skills) is shown with the file it leads to, and the yes covers that name, that destination and those bytes. The yes is kept in `state/platform_approved.json`; a line in `baseline.json` alone never vouches for a platform file, and `wt.py baseline --owner-said-yes` doesn't approve one. Daily lists every open one (`platform_unverified`) until the owner decides, not just new ones. Every file in those folders is checked, found by a walk of its own (links, `node_modules` and files outside skill folders included); a folder it can't finish is a high alert (WT-I011).
 - Watchtower runs only its own scanners, from its own folder, and only when each program file matches the checksum in `scripts/scanner-bins.lock`. For the Python scanners (SkillSpector, husk, pip-audit) that file is the small entry point pip writes; their package code was checked against `scripts/scanners.lock` when it was installed and isn't checked again on each run. It runs a sealed in-memory copy of the bytes it checked, and Python scanners only with the computer's own root-owned Python. A scanner whose copy isn't the one the lock lists is not run, its last results are kept, and that is a high alert; one the lock doesn't list for this computer yet is not run either, and that is a plain note.
 - One run at a time. No stack traces: one plain line, and `wt.py doctor --save` writes a snapshot you can send to the author.
 - Watchtower holds its own tools to the same standard: scanners install from a lock file with a checksum for every package (`scripts/scanners.lock`), nothing is unpacked unless its checksum passes, and the audit checks Watchtower's own scanner packages for known holes.
@@ -101,6 +102,9 @@ wt.py fix --revet [--only NAMES]   re-scan changed skills with every scanner and
 wt.py fix --exception NAMES    keep skills the owner confirmed as security tools (30 days)
 wt.py fix --quarantine NAMES   move the owner's own skills out of use into Watchtower's quarantine folder
 wt.py fix --upgrade-projects   npm and Rust lockfile fixes in your own projects (its own yes)
+wt.py fix --approve-platform CODE --owner-said-yes   approve exactly the platform files the preview listed (platform_unverified),
+                                         as they were shown; nothing if any of them changed since
+wt.py fix --platform-from CURSOR   the next page of that list (its next_page); approved files leave the list at once
 wt.py quarantine [NAMES] [--restore NAME] [--reason "..."]   list, quarantine or restore the owner's own skills
 wt.py diff SKILL [--lines N]   what changed in a skill since you approved it
 wt.py exception add SKILL --reason "..."   keep one named security-tool skill that two scanners flag (30 days)
@@ -138,12 +142,13 @@ Release drill, dev dry-run (precision plan item 8): before each release the dev 
 - Canary reads need a filesystem that records access times; setup tells you if yours doesn't.
 - The backup's proof rests on Watchtower's own state: a Bot that rewrites the decoy registry and recreates a witness can fake it, and a Bot running as root looks like the backup. A backup that runs as the Bots' user can't prove itself, so its reads stay high.
 - The self-check catches accidental or careless changes to Watchtower's own files, not a Bot that rewrites both the code and the manifest. Every Bot runs as the same user on the same computer, so nothing stops one from editing both.
+- The platform release list is only as trustworthy as Watchtower's own release files, and a yes to a platform file rests on Watchtower's rules and the owner's look, not on the scanners (they still check it in the full audit and can only raise).
 - The decoy names are random per install, which stops generic snooping, not a targeted attacker who reads Watchtower's state first.
 - Grok Bot is in beta and changes weekly. The brief watches xAI's security docs for changes.
 
 ## Tests
 
-`make test` runs more than 700 tests: seeded malicious skills must be caught, clean and defensive text must not be flagged, hostile feed content must not execute in the brief, and every feature has its own test.
+`make test` runs more than 750 tests: seeded malicious skills must be caught, clean and defensive text must not be flagged, hostile feed content must not execute in the brief, and every feature has its own test.
 
 ## License
 

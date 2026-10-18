@@ -19,6 +19,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, wt  # noqa: E402
+import profiles  # noqa: E402
 
 MARK = "LEARN-REFRESH"   # what the fake engines flag on; no Watchtower rule reads it
 
@@ -71,6 +72,8 @@ class _Learn:
         super().setUp()
         self.d = os.path.join(self.home, self.REL, "learn")
         put(os.path.join(self.d, "SKILL.md"), LEARN_V1)
+        for text in (LEARN_V2, BAD):   # item 8: the vendor's own releases, the rug pull included, are on its release list
+            profiles.vendor_release(self, (os.path.join(self.d, "SKILL.md"), text))
 
     def daily(self):
         return self.run_cmd("daily", "--roots", *self.roots)[1].strip()
@@ -81,6 +84,7 @@ class _Learn:
     def refresh(self, text, **fakes):
         self.scanners(**fakes); self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         before = self.audit()["open_by_severity"]
+        profiles.vendor_release(self, (os.path.join(self.d, "SKILL.md"), text))   # item 8: a real vendor update is on its release list
         put(os.path.join(self.d, "SKILL.md"), text)
         return before, self.audit()
 

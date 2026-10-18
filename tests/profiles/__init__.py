@@ -149,10 +149,26 @@ def busy_clean_box(box):
     return {"live": live, "pptx": pptx, "clone": clone, "plugins": plugins, "dev": dev}
 
 
+def vendor_release(box, *items):
+    """Item 8: list files in the box's vendor release list (box.platform_lock), as `sha256sum` run from the home folder prints
+    them. An item is a path (its bytes now) or (path, text or bytes) for bytes the vendor ships that aren't on disk yet."""
+    import hashlib
+    with open(box.platform_lock, "a") as f:
+        for it in items:
+            p, data = it if isinstance(it, tuple) else (it, None)
+            if data is None:
+                with open(p, "rb") as g:
+                    data = g.read()
+            data = data.encode() if isinstance(data, str) else data
+            f.write(f"{hashlib.sha256(data).hexdigest()}  {os.path.relpath(p, box.home)}\n")
+
+
 def platform_refresh(box, layout):
     """What a platform update does overnight: the bundled pptx skill and the catalog plugins get new versions."""
     _w(os.path.join(layout["pptx"], "SKILL.md"), "Also supports speaker notes.\n", "a")
     _w(os.path.join(layout["pptx"], "templates", "deck99.js"), PPTX_FICTION)
+    # Item 8: a real vendor update is on the vendor's release list
+    vendor_release(box, os.path.join(layout["pptx"], "SKILL.md"), os.path.join(layout["pptx"], "templates", "deck99.js"))
     for root in layout["plugins"]:
         for dp, _, fns in os.walk(root):
             for fn in fns:

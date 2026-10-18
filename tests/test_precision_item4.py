@@ -20,6 +20,7 @@ class BuiltInsNeverScore(Box):
         open(os.path.join(d, "SKILL.md"), "w").write(f"---\nname: {name}\ndescription: {name}.\n---\n{body}\n")
         for rel, text in (extra or {}).items():
             p = os.path.join(d, rel); os.makedirs(os.path.dirname(p), exist_ok=True); open(p, "w").write(text)
+        profiles.vendor_release(self, *[os.path.join(dp, fn) for dp, _, fns in os.walk(d) for fn in fns])   # item 8: Grok Bot's own release
         return d
 
     def mine(self, d):

@@ -53,9 +53,19 @@ class Box(unittest.TestCase):
         self.roots = [self.home, self.ws]
         self.saved = (wt.RUN_LIMIT, wt.DAILY_LIMIT, wt.ENGINE_BUDGET, wt.ENGINE_LAUNCH_BASE, wt.ENGINE_LAUNCH_PER_SKILL, wt.ENGINE_SOLO_LIMIT)
         clear_scanner_checks()
+        # Item 8: the vendor release list is a file in this box, empty until a test lists a vendor's files (profiles.vendor_release)
+        self.saved_lock = getattr(wt, "PLATFORM_LOCK", None)
+        self.platform_lock = os.path.join(self.tmp, "platform-release.lock")
+        with open(self.platform_lock, "w") as f:
+            f.write("# test box: no vendor files listed yet\n")
+        wt.PLATFORM_LOCK = self.platform_lock
 
     def tearDown(self):
         clear_scanner_checks()
+        if self.saved_lock is None:
+            vars(wt).pop("PLATFORM_LOCK", None)
+        else:
+            wt.PLATFORM_LOCK = self.saved_lock
         wt.RUN_LIMIT, wt.DAILY_LIMIT, wt.ENGINE_BUDGET, wt.ENGINE_LAUNCH_BASE, wt.ENGINE_LAUNCH_PER_SKILL, wt.ENGINE_SOLO_LIMIT = self.saved
         for k, v in self.env.items():
             if v is None:
