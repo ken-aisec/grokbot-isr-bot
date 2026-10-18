@@ -2704,11 +2704,33 @@ PLATFORM_APPROVALS = "platform_approved.json"
 # The very first baseline still vouches for the platform files it finds, and records them here. Leaving them out (what Codex asked)
 # makes every bundled file a high from the first run on, which changes 857ab38 assertions (a busy clean box is quiet, a platform
 # refresh is one Tip, the DQ-042 replays), so it is a Known gap: a Bot that wipes all of Watchtower's state gets a new first run.
+# Review 3 (high 2): only then. An emptied baseline with any sign of an earlier run vouches for nothing (earlier_run_evidence).
 FIRST_BASELINE_VOUCHES = True
 
 
+# Codex, item 8 review 3 (high 1): a platform_approved.json written with a plant's path, target and digest was provenance on its
+# own. Each record now counts only when the ledger holds the approval event that wrote it: approve_platform's "platform-approved"
+# or the first baseline's "platform-first-baseline", each listing a digest of every (path, sha256, target) it approved. Bounded
+# hardening, not authentication (Known gap): a Bot that writes both files, appending a matching ledger line, still forges one.
+PLATFORM_APPROVAL_EVENTS = ("platform-approved", "platform-first-baseline")
+
+
+def platform_approval_bind(p, h, t):
+    return hashlib.sha256(f"wt-platform-record-v1\n{os.path.normpath(p)}\t{h}\t{os.path.normpath(t)}\n".encode("utf-8", "surrogateescape")).hexdigest()[:32]
+
+
+def platform_approval_binds():
+    """Every record digest an approval event in the ledger lists."""
+    out = set()
+    for e_ in ledger_events(PLATFORM_APPROVAL_EVENTS):
+        b = e_.get("bind")
+        out.update(x for x in (b if isinstance(b, list) else ()) if isinstance(x, str))
+    return out
+
+
 def platform_approvals():
-    """{literal path: (sha256, the real path it led to)} the owner approved as platform files. Anything malformed is ignored."""
+    """{literal path: (sha256, the real path it led to)} the owner approved as platform files, each held to the ledger event that
+    approved it (platform_approval_binds). Anything malformed, or with no such event, is ignored."""
     d = load_json_regular(state_path(PLATFORM_APPROVALS), None)
     files = d.get("files") if isinstance(d, dict) and d.get("v") == 1 else None
     out = {}
@@ -2716,15 +2738,21 @@ def platform_approvals():
         if (isinstance(p, str) and p.startswith("/") and isinstance(e, dict) and isinstance(e.get("sha256"), str)
                 and re.fullmatch(r"[0-9a-f]{64}", e["sha256"]) and isinstance(e.get("target"), str) and e["target"].startswith("/")):
             out[os.path.normpath(p)] = (e["sha256"], os.path.normpath(e["target"]))
+    if out:
+        binds = platform_approval_binds()
+        out = {p: v for p, v in out.items() if platform_approval_bind(p, *v) in binds}
     return out
 
 
-def record_platform_approvals(entries):
-    """Add {path: (sha256, target)} to the platform approval record (approve_platform, the first baseline)."""
+def record_platform_approvals(entries, event):
+    """Add {path: (sha256, target)} to the platform approval record (approve_platform, the first baseline). The ledger event,
+    with a digest of each entry, is written first: a record without its event is ignored."""
     if not entries:
         return
+    entries = {os.path.normpath(p): (h, os.path.normpath(t)) for p, (h, t) in entries.items()}
+    ledger(dict(event, bind=sorted(platform_approval_bind(p, h, t) for p, (h, t) in entries.items())))
     rec = platform_approvals()
-    rec.update({os.path.normpath(p): (h, t) for p, (h, t) in entries.items()})
+    rec.update(entries)
     save_json_keep_mode(state_path(PLATFORM_APPROVALS), {"v": 1, "files": {p: {"sha256": h, "target": t} for p, (h, t) in sorted(rec.items())}})
 
 
@@ -2768,14 +2796,29 @@ PLATFORM_WALK_MAX_DEPTH = 32
 PLATFORM_WALK_MAX_LINKS = 1000   # folder links followed in one walk
 
 
-def platform_inventory(roots):
-    """([every file name in the platform folders that lie within these roots], [(folder, why) for what it couldn't finish])."""
+def platform_walk_starts(roots):
+    """Where platform_inventory walks: each platform folder that lies within these roots, and each requested root that lies
+    inside a platform folder (as written or where it leads). Codex, item 8 review 3 (high 3): only the first kind was walked, so
+    `--roots ~/.grok/bundled/bin` fingerprinted none of its loose scripts and `--roots ~/.grok/bundled/skills` none of the files
+    the scanner's inventory skips (node_modules). A start inside another one is walked once, under the outer one."""
     scope = {os.path.normpath(os.path.abspath(os.path.expanduser(r))) for r in roots}
     rscope = {os.path.realpath(r) for r in scope}
-    files, short, links = [], [], 0
+    starts = []
     for root in platform_roots():
-        if not (_under(root, scope) or _under(os.path.realpath(root), rscope)):
+        rroot = os.path.realpath(root)
+        if _under(root, scope) or _under(rroot, rscope):
+            starts.append(root)
             continue
+        starts += [s for s in sorted(scope) if _under(s, {root}, strict=True) or _under(os.path.realpath(s), {rroot}, strict=True)]
+    starts = list(dict.fromkeys(starts))
+    return [s for s in starts if not _under(s, set(starts) - {s}, strict=True)]
+
+
+def platform_inventory(roots):
+    """([every file name in the platform folders that lie within these roots, and in the roots that lie within a platform folder],
+    [(folder, why) for what it couldn't finish])."""
+    files, short, links = [], [], 0
+    for root in platform_walk_starts(roots):
         try:
             st = os.stat(root)
         except OSError:
@@ -3292,7 +3335,8 @@ def audit(roots, exports, quick=False):
     # item 8 (R3): no vendor provenance, a counted high. Checked before any exemption (Codex, item 8 review 1: Watchtower's own
     # watchtower-fix/SKILL.md copied into .grok/bundled/skills passed as its own release, with no line for that path). Review 2
     # (high 3): a matching baseline.json line is not provenance, only the release list or the owner's record (platform_proven).
-    unproven = set() if base_status == "first" and FIRST_BASELINE_VOUCHES else platform_unproven(manifest)
+    first_vouches = base_status == "first" and FIRST_BASELINE_VOUCHES and not earlier_run_evidence()   # review 3 (high 2)
+    unproven = set() if first_vouches else platform_unproven(manifest)
     for p in sorted(unproven):
         fs.append(unverified_platform_finding(p, manifest[p], base.get(p)))
     if base_status == "reset":   # R4: never a fresh start; nothing is re-approved until the owner says yes
@@ -3511,7 +3555,7 @@ def audit(roots, exports, quick=False):
     fs += scanner_x005()   # batch 3 (R7): every scanner was looked at just above, in audit and daily alike
     fs = sort_findings(dedupe(fs))
     meta = {"inventory": {k: len(v) for k, v in inv.items() if k not in ("non_live_skills", "platform_aliases")}, "notes": notes, "manifest": manifest, "persistence": snap, "scanners_missing": gone,
-            "skill_dirs": [os.path.dirname(x) for x in inv["skills"]], "baseline_status": base_status}
+            "skill_dirs": [os.path.dirname(x) for x in inv["skills"]], "baseline_status": base_status, "first_vouches": first_vouches}
     return fs, meta
 
 
@@ -5787,18 +5831,15 @@ BASELINE_META = "baseline_meta.json"
 RESET_WHY = {"missing": "is missing", "empty": "is empty", "unreadable": "can't be read"}
 
 
-def ran_before():
-    """True once Watchtower has run on this box: the baseline's meta file exists, or the ledger has an audit, daily or baseline.
-    The ledger is read line by line (never through a link or a FIFO), so a long-lived box never looks new because it is big."""
-    if os.path.lexists(state_path(BASELINE_META)):
-        return True
+def ledger_events(kinds):
+    """The ledger's events of these kinds, read line by line (never through a link or a FIFO); a line that isn't one is skipped."""
     try:
         fd = os.open(state_path("ledger.jsonl"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except OSError:
-        return False
+        return
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
-            return False
+            return
         with os.fdopen(fd, "rb") as f:
             fd = None
             for line in f:
@@ -5808,13 +5849,39 @@ def ran_before():
                     e_ = json.loads(line)
                 except ValueError:
                     continue
-                if isinstance(e_, dict) and e_.get("event") in ("audit", "daily", "baseline"):
-                    return True
+                if isinstance(e_, dict) and e_.get("event") in kinds:
+                    yield e_
     except OSError:
-        return False
+        return
     finally:
         if fd is not None:
             os.close(fd)
+
+
+def ran_before():
+    """True once Watchtower has run on this box: the baseline's meta file exists, or the ledger has an audit, daily or baseline.
+    The ledger is read line by line (never through a link or a FIFO), so a long-lived box never looks new because it is big."""
+    if os.path.lexists(state_path(BASELINE_META)):
+        return True
+    for _ in ledger_events(("audit", "daily", "baseline")):
+        return True
+    return False
+
+
+# Codex, item 8 review 3 (high 2): an empty baseline.json plus a baseline_meta.json saying "files": 0 is a first run (load_baseline),
+# so the first baseline vouched for every unlisted platform file even on a box with years of history. The first baseline vouches
+# only when nothing shows an earlier run; otherwise its unproven platform files are held like any other (save_first_baseline).
+EARLIER_RUN_FILES = ("last_findings.json", "score_history.csv", "events.json", PLATFORM_APPROVALS, "approved")
+
+
+def earlier_run_evidence():
+    """True when anything Watchtower keeps shows it ran here before: an audit, daily, baseline or platform approval in the
+    ledger, or a findings file, score history, event store, platform record or approved copy. The meta file alone is not enough (a box
+    that held nothing has one); a Bot that deletes all of these still gets a new first run (Known gap)."""
+    if any(os.path.lexists(state_path(fn)) for fn in EARLIER_RUN_FILES):
+        return True
+    for _ in ledger_events(("audit", "daily", "baseline") + PLATFORM_APPROVAL_EVENTS):
+        return True
     return False
 
 
@@ -5854,11 +5921,14 @@ def save_baseline(base):
     save_baseline_meta(len(base))
 
 
-def save_first_baseline(manifest):
+def save_first_baseline(manifest, vouches):
     """The first baseline on a box (R10: it needs no yes). Codex, item 8 review 2 (high 3): it approved every platform file it
-    found, with or without provenance. Returns the platform files it left out (they wait for `--approve-platform`)."""
-    if FIRST_BASELINE_VOUCHES:
-        record_platform_approvals(platform_baseline_entries(manifest))
+    found, with or without provenance. Returns the platform files it left out (they wait for `--approve-platform`). `vouches` is
+    the audit's own reading (meta["first_vouches"]), taken before this run wrote anything: review 3 (high 2), only a box with no
+    earlier run vouches for its platform files."""
+    if vouches:
+        entries = platform_baseline_entries(manifest)
+        record_platform_approvals(entries, {"event": "platform-first-baseline", "count": len(entries)})
         save_baseline(manifest)
         return set()
     held = platform_unproven(manifest)
@@ -6133,8 +6203,8 @@ def run_audit_locked(args, quick):
              and not f.get("guarded")]                                                                # nor does a warning-text record
     s, g = score(scored(live))
     if meta["baseline_status"] == "first":
-        save_first_baseline(meta["manifest"])
-        save_approved_all(meta.get("skill_dirs", []))
+        held = save_first_baseline(meta["manifest"], meta.get("first_vouches"))
+        save_approved_all(meta.get("skill_dirs", []), held, load_baseline()[0])
     elif meta["baseline_status"] == "ok":
         if not os.path.lexists(state_path(BASELINE_META)):   # an install from before the meta file: remember it ran
             save_baseline_meta(len(load_baseline()[0]))
@@ -6377,7 +6447,7 @@ def cmd_baseline(args):
     roots = args.roots or [os.path.expanduser("~"), "/workspace"]
     fs, meta = audit(roots, None, quick=True)
     if status == "first":
-        held = save_first_baseline(meta["manifest"])
+        held = save_first_baseline(meta["manifest"], meta.get("first_vouches"))
     else:
         # Codex, item 8 review 2 (high 3): the owner's yes to a new baseline covers their own skills and plugins, never a platform
         # file without provenance. Such a file keeps the line it had (so it still shows as changed) or stays out, and only the
@@ -6387,7 +6457,7 @@ def cmd_baseline(args):
         base = {p: h for p, h in meta["manifest"].items() if p not in held}
         base.update({p: old[p] for p in held if p in old})
         save_baseline(base)
-    n = save_approved_all(meta.get("skill_dirs", []))
+    n = save_approved_all(meta.get("skill_dirs", []), held, load_baseline()[0])
     ledger(dict({"event": "baseline", "files": len(meta["manifest"]), "copies": n}, **({"after_reset": True} if status == "reset" else {})))
     print(f"Baseline saved: {len(meta['manifest']) - len(held)} skill and plugin files. Kept a copy of {n} skills so the next change shows as a diff."
           + (f" Not approved by this: {len(held)} file(s) in the platform's own folders that its release list doesn't include. They stay "
@@ -9728,17 +9798,25 @@ def read_snapshot(p):
     return h.hexdigest(), data
 
 
-def save_approved(d, snapshot=None, dir_hash=None):
+def save_approved(d, snapshot=None, dir_hash=None, keep=None):
     """Keep a copy of a skill as approved (text files only, compressed, inside Watchtower's own state) so a later
     change can be shown as a diff. Other files are remembered by fingerprint. With `snapshot` ({path: (sha256, bytes)}, from
     read_snapshot), the copy is made from exactly those bytes and covers only those files: Codex, item 8 review 2 (medium 2),
     revet saved the digest it checked but read the files again for the copy, so a version swapped in after the check became the
-    "approved copy" and `wt.py diff` called it unchanged."""
+    "approved copy" and `wt.py diff` called it unchanged. `keep` ({relative name: (sha256, text or None)}) carries those files
+    over from the copy before, unchanged (save_approved_all)."""
     os.makedirs(state_path("approved"), exist_ok=True)
     files, hashes, total = {}, {}, 0
+    for rel, (h, t) in (keep or {}).items():
+        hashes[rel] = h
+        if t is not None:
+            files[rel] = mask_secrets(t)
+            total += len(t)
     for p in skill_files(d):
         rel = os.path.relpath(p, d)
         text_ok = os.path.splitext(p)[1].lower() in TEXT_EXT
+        if rel in hashes:
+            continue   # kept from the copy before
         if snapshot is not None:
             if p not in snapshot:
                 continue   # not among the files checked and approved
@@ -9803,11 +9881,33 @@ def mask_approved_copies():
     return n
 
 
-def save_approved_all(dirs):
+def save_approved_all(dirs, held=(), base=None):
+    """Keep a copy of each skill as just approved. Codex, item 8 review 3 (medium): `baseline --owner-said-yes` kept a platform
+    file it refused at its old baseline line, but still copied its bytes as they are now, so `wt.py diff` called the refused
+    change "same as the approved copy". A skill holding a `held` file keeps that file's entry from the copy before (none, if it
+    had none); its other files are copied from one read, and only when those bytes are the ones `base` now approves."""
+    held = {os.path.normpath(p) for p in held}
+    base = base or {}
     n = 0
     for d in sorted(set(dirs)):
         try:
-            save_approved(d)
+            if any(_under(p, {os.path.normpath(d)}, strict=True) for p in held):
+                old = load_approved(d)
+                old = old if isinstance(old, dict) else {}
+                oh = old.get("hashes") if isinstance(old.get("hashes"), dict) else {}
+                of = old.get("files") if isinstance(old.get("files"), dict) else {}
+                snapshot, keep = {}, {}
+                for p in skill_files(d):
+                    s = None if os.path.normpath(p) in held else read_snapshot(p)
+                    if s is not None and s[0] == base.get(p):
+                        snapshot[p] = s
+                        continue
+                    rel = os.path.relpath(p, d)
+                    if isinstance(oh.get(rel), str):
+                        keep[rel] = (oh[rel], of.get(rel) if isinstance(of.get(rel), str) else None)
+                save_approved(d, snapshot, old.get("hash") if isinstance(old.get("hash"), str) else None, keep)
+            else:
+                save_approved(d)
             n += 1
         except OSError:
             pass
@@ -10439,7 +10539,8 @@ def approve_platform(code, yes, cursor=None):
         return ["NOT APPROVED: Watchtower has no approved list to add these to right now. Run `wt.py fix` again."]
     for p, (h, _, _) in offered.items():
         base[p] = h
-    record_platform_approvals({p: (h, t) for p, (h, _, t) in offered.items()})
+    record_platform_approvals({p: (h, t) for p, (h, _, t) in offered.items()},
+                              {"event": "platform-approved", "count": len(offered), "code": platform_code(offered)})
     save_baseline(base)
     # Codex, item 8 review 2 (medium 1): what was just approved leaves the candidate list now, not at the next audit, so the next
     # `wt.py fix` offers the files after them. Each one is checked from disk again by every later audit.
@@ -10448,7 +10549,6 @@ def approve_platform(code, yes, cursor=None):
         snap["findings"] = [f for f in snap["findings"] if not (isinstance(f, dict) and f.get("unverified_platform") and not f.get("platform_coverage")
                                                                 and isinstance(f.get("where"), str) and os.path.normpath(f["where"]) in offered)]
         save_json(state_path("last_findings.json"), snap)
-    ledger({"event": "platform-approved", "count": len(offered), "code": platform_code(offered)})
     return [f"Approved {len(offered)} platform file(s) exactly as the owner saw them. Any later change to them is a new alert."]
 
 
