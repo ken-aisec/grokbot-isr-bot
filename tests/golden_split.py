@@ -1,7 +1,8 @@
 """Golden-output check for the wt.py split into watchtower/wt_parts (no behavior change; D1/D2/D3).
 
-Not part of `make test` (the name doesn't match test*.py). Run it as `bash scripts/golden-check.sh [PRE_REF] [quick|full]`;
-PRE_REF (default HEAD) is the commit before the split. It also holds the reassembly helpers test_split_guard uses.
+Not part of `make test` (the name doesn't match test*.py). Run it as `bash scripts/golden-check.sh PRE_REF [quick|full]`;
+PRE_REF (required, no default: 9b106b9 for this split) is the commit before the split. It also holds the reassembly helpers
+test_split_guard uses.
 
 Step 0 rebuilds the pre-split wt.py from the working tree's wt.py and parts and compares it byte for byte with PRE_REF's.
 The same commands then run on PRE_REF's tree twice (calibration) and once on the working tree's tracked files, one after the
@@ -10,10 +11,11 @@ output and files (path, type, mode bits, content) after only the normalizations 
 durations, always, since two calibration runs can time a stage alike by chance). Paths,
 scores, finding keys, rule ids, severity, key order, help text, file modes and exit codes are never normalized.
 
-Every run that reads the computer is sealed: `unshare -rmn` (no network), scratch folders mounted over /home, /workspace and
+Every tier run is sealed: `unshare -rmn` (no network), scratch folders mounted over /home, /workspace and
 /var/tmp and, last, this check's own folder over /tmp, a sentinel checked in each before Python starts, and an environment built
 from scratch (never inherited, never printed). The real home folder, /workspace/watchtower and the decoys are never visible.
-Everything is written under one mkdtemp folder in /tmp, removed when the check passes and kept (path printed) when it fails."""
+The check fails, and never prints its RESULT line, when the sandbox is unavailable (there is no unsealed fallback), when ONLY
+selects no scenario, and when no scenario was compared. Everything is written under one mkdtemp folder in /tmp, removed when the check passes and kept (path printed) when it fails."""
 import datetime as dt, difflib, hashlib, json, os, re, shutil, statistics, subprocess, sys, tempfile, unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -524,11 +526,13 @@ def git(*args, **kw):
 
 
 class GoldenSplit(unittest.TestCase):
-    PRE = os.environ.get("WT_GOLDEN_PRE", "HEAD")
+    PRE = os.environ.get("WT_GOLDEN_PRE", "")
     MODE = os.environ.get("WT_GOLDEN_TIERS", "full")
 
     @classmethod
     def setUpClass(cls):
+        if not cls.PRE:
+            raise RuntimeError("no baseline: run `bash scripts/golden-check.sh PRE_REF`, PRE_REF the commit before the split (9b106b9)")
         cls.report = []
         cls.B = tempfile.mkdtemp(prefix="wt-golden-", dir="/tmp")
         real = os.path.realpath(cls.B)
@@ -593,15 +597,17 @@ class GoldenSplit(unittest.TestCase):
     def scenarios(self):
         quick = self.MODE == "quick"
         out = [("tierA", {"kind": "tierA", "all_cwds": not quick, "subcommands": list(SUBCOMMANDS)})]
-        if not self.sandbox:
-            return out
         for prof in (("busy_clean_box",) if quick else PROFILES):
             for mode in ("cli", "driver"):
                 out.append((f"box-{prof}-{mode}", {"kind": "box", "profile": prof, "mode": mode}))
         if not quick:
             out += [("crash", {"kind": "crash"}), ("extended", {"kind": "extended"}), ("tierC", {"kind": "tierC"})]
         only = os.environ.get("WT_GOLDEN_ONLY", "")
-        return [s for s in out if re.search(only, s[0])] if only else out
+        if only:
+            out = [s for s in out if re.search(only, s[0])]
+            if not out:
+                self.fail_with(f"ONLY={only!r} matches no {self.MODE} scenario, so nothing would be compared")
+        return out
 
     def place(self, tree):
         code = os.path.join(self.B, "code")
@@ -631,33 +637,20 @@ class GoldenSplit(unittest.TestCase):
         with open(os.path.join(self.B, "out", f"{tag}-{sid}.json")) as f:
             return json.load(f)
 
-    def run_plain(self, sid, plan, tag):
-        """Tier A without unshare: the runner runs directly, every path it uses under B (tier A reads no computer state)."""
-        S = os.path.join(self.B, "run", sid)
-        os.makedirs(os.path.join(S, "x"), exist_ok=True)
-        out = os.path.join(self.B, "out", f"{tag}-{sid}.json")
-        plan = dict(plan, scratch=S, out=out, tree=os.path.join(self.B, "code"), sealed=False)
-        path = os.path.join(self.B, "plans", f"{tag}-{sid}.json")
-        with open(path, "w") as f:
-            json.dump(plan, f)
-        p = subprocess.run([self.py, "-I", "-B", os.path.join(self.B, "runner.py"), path], capture_output=True,
-                           env={"PATH": "/usr/bin:/bin", "TZ": "UTC", "LC_ALL": "C.UTF-8"}, cwd=self.B, timeout=3600)
-        if p.returncode:
-            self.fail_with(f"{sid} ({tag}): the runner failed with {p.returncode}: {p.stderr.decode('utf-8', 'replace')[-1500:]}")
-        with open(out) as f:
-            return json.load(f)
-
     def test_1_tiers(self):
         if not self.sandbox:
-            self.say("unshare -rmn is unavailable (or Python lives under a folder the sandbox replaces): only tier A can run")
+            self.say("FAILED: no tier ran; nothing was compared")
+            self.fail_with("unshare -rmn is unavailable (or Python lives under a folder the sandbox replaces): every tier needs the "
+                           "sealed sandbox (tiers B and C read the computer's state), so nothing was compared")
         problems, used_cal, used_post = [], {}, {}
         enabled = {"N1", "N2", "N3", "N4", "N5", "N6", "N9"}
         needed = set()
+        compared = 0
         for sid, plan in self.scenarios():
             res = {}
             for tag, tree in (("pre1", self.pre), ("pre2", self.pre), ("post", self.post)):
                 self.place(tree)
-                res[tag] = self.run_sandboxed(sid, plan, tag)["items"] if self.sandbox else self.run_plain(sid, plan, tag)
+                res[tag] = self.run_sandboxed(sid, plan, tag)["items"]
             crash = sid == "crash"
             a, b, c = res["pre1"], res["pre2"], res["post"]
             # calibration: pre against pre. Whatever differs must be covered by a rule; a rule is needed when the runs differ
@@ -687,6 +680,7 @@ class GoldenSplit(unittest.TestCase):
                 for k in sorted(set(a) & set(c)):
                     if frames(a[k]) != frames(c[k]):
                         problems.append(f"[{sid}] the crash frames' function sequence differs in {k!r}: {frames(a[k])} vs {frames(c[k])}")
+            compared += 1
             n_cmds = len([k for k in a if k.endswith(" :rc")])
             self.say(f"{sid}: {n_cmds} commands, {len(a)} items; calibration {'ok' if not bad_cal else f'{len(bad_cal)} uncovered'}; "
                      f"post {'identical' if not diff_post else f'{len(diff_post)} differing items'}")
@@ -701,7 +695,10 @@ class GoldenSplit(unittest.TestCase):
             for p in problems[:40]:
                 self.say(p)
             self.fail_with(f"{len(problems)} problems")
-        self.say("RESULT: post == pre on every tier run")
+        if not compared:
+            self.say("FAILED: no scenario was compared")
+            self.fail_with("no scenario was compared, so nothing shows post == pre")
+        self.say(f"RESULT: post == pre on every tier run ({compared} scenarios compared)")
 
     def timing(self):
         res =self.run_sandboxed("timing", {"kind": "timing", "timing_trees": ["/tmp/trees/pre", "/tmp/trees/post"]}, "both")["timing"]
