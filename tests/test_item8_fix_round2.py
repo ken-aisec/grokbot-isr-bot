@@ -114,10 +114,10 @@ class BaselineIsNotProvenance(_Platform):
         self.assertNotEqual(self.daily(), "NO_CHANGES")
         self.assertEqual(len(self.counted_high(plant)), 1)
         pv = self.preview()["platform_unverified"]
-        self.assertEqual([o["path"] for o in pv["offered"]], [plant])
-        self.assertIn("Approved 1", self.approve(pv["code"]))
+        self.assertEqual([f["where"] for f in pv["files"]], [plant])
+        self.assertIn("platform-release.lock", self.approve("0" * 20))        # Ken's decision (Oct 18): no yes approves it
         self.audit()
-        self.assertFalse(self.counted_high(plant))
+        self.assertEqual(len(self.counted_high(plant)), 1)
 
     def test_3_a_blanket_baseline_yes_never_approves_a_platform_file(self):
         self.start()
@@ -130,7 +130,8 @@ class BaselineIsNotProvenance(_Platform):
         base = wt.load_baseline()[0]
         self.assertNotIn(plant, base)
         self.assertEqual(base[alpha], was)                                      # keeps its line, so it still shows as changed
-        self.assertIn("--approve-platform", out)
+        self.assertIn("platform-release.lock", out)
+        self.assertNotIn("--approve-platform", out)
         self.assertNotEqual(self.daily(), "NO_CHANGES")
         self.assertEqual(len(self.counted_high(plant)), 1)
         self.assertEqual(len(self.counted_high(alpha)), 1)
@@ -158,34 +159,33 @@ class Pages(_Platform):
             snap["findings"].append(dict(wt.unverified_platform_finding(p, "0" * 64), key=sha(p)[:16]))
         wt.save_json(wt.state_path("last_findings.json"), snap)
 
-    def test_4_the_next_fix_offers_the_files_after_the_approved_ones(self):
+    def test_4_the_list_is_the_exact_count_with_no_code_or_pages(self):
         self.start()
-        n = wt.PLATFORM_YES_MAX_FILES + 1
+        n = wt.PLATFORM_OPEN_SHOWN + 1
         self.forge([f"p{i:04d}" for i in range(n)])
         pv = self.preview()["platform_unverified"]
-        self.assertEqual(len(pv["offered"]), n - 1)
-        self.assertEqual(pv.get("deferred"), 1)
-        self.assertIn(f"Approved {n - 1}", self.approve(pv["code"]))
-        pv = self.preview()["platform_unverified"]
-        self.assertEqual([o["path"] for o in pv["offered"]], [self.md(f"p{n - 1:04d}")])
-        self.assertIn("Approved 1", self.approve(pv["code"]))
+        self.assertEqual((pv["open"], len(pv["files"]), pv.get("more")), (n, n - 1, 1))
+        self.assertFalse({"code", "next_page"} & set(pv), pv)
+        self.assertIn("platform-release.lock", self.approve("0" * 20))
+        pv2 = self.preview()["platform_unverified"]
+        self.assertEqual(pv2, pv)                                               # nothing left the list
+        self.assertIn("platform-release.lock", self.approve("0" * 20))
 
-    def test_4_refused_files_never_starve_the_ones_after_them(self):
+    def test_4_no_page_or_code_approves_anything(self):
         self.start()
-        self.forge([f"a{i:04d}" for i in range(wt.PLATFORM_YES_MAX_FILES)], text=FLAGGED)
+        self.forge([f"a{i:04d}" for i in range(wt.PLATFORM_OPEN_SHOWN)], text=FLAGGED)
         self.forge(["zz-clean"])
         pv = self.preview()["platform_unverified"]
-        self.assertFalse(pv["offered"])
-        self.assertTrue(pv.get("next_page"), pv)
-        self.assertIn("--platform-from", pv["deferred_note"])
-        nxt = pv["next_page"]
-        pv2 = json.loads(self.run_cmd("fix", "--platform-from", nxt, "--roots", *self.roots)[1])["platform_unverified"]
-        self.assertEqual([o["path"] for o in pv2["offered"]], [self.md("zz-clean")])
-        self.assertIn(f"--platform-from {nxt}", pv2["ask"])
-        self.assertIn("NOT APPROVED", self.approve(pv2["code"]))                # the code is for that page only
-        out = self.run_cmd("fix", "--approve-platform", pv2["code"], "--platform-from", nxt, "--owner-said-yes", "--roots", *self.roots)[1]
-        self.assertIn("Approved 1", out)
-        self.assertEqual(wt.load_baseline()[0][self.md("zz-clean")], sha(self.md("zz-clean")))
+        self.assertNotIn("next_page", pv)
+        nxt = self.md("a0049").encode().hex()                                   # what a page cursor used to look like
+        out = self.run_cmd("fix", "--platform-from", nxt, "--roots", *self.roots)[1]
+        self.assertIn("platform-release.lock", out)
+        self.assertIn("NOT APPROVED", self.approve("0" * 20))
+        out = self.run_cmd("fix", "--approve-platform", "0" * 20, "--platform-from", nxt, "--owner-said-yes", "--roots", *self.roots)[1]
+        self.assertIn("platform-release.lock", out)
+        self.assertNotIn(self.md("zz-clean"), wt.load_baseline()[0])
+        self.audit()
+        self.assertEqual(len(self.counted_high(self.md("zz-clean"))), 1)
 
 
 class ApprovedCopyOneRead(_Platform):
@@ -231,38 +231,29 @@ class LinkToTheOwnersFile(_Platform):
         self.assertEqual(len(self.counted_high(plat)), 1)
         return own, plat
 
-    def test_6_the_link_is_approved_with_where_it_leads_and_its_bytes(self):
+    def test_6_a_platform_link_to_the_owners_file_stays_high(self):
         own, plat = self.layout()
         pv = self.preview()["platform_unverified"]
-        row = [o for o in pv["offered"] if o["path"] == plat]
-        self.assertEqual(len(row), 1, pv)
-        self.assertEqual((row[0]["leads_to"], row[0]["sha256"]), (own, sha(own)[:12]))
-        self.assertIn("Approved 1", self.approve(pv["code"]))
+        self.assertIn(plat, [f["where"] for f in pv["files"]], pv)
+        self.assertIn("platform-release.lock", self.approve("0" * 20))        # Ken's decision (Oct 18): no yes approves it
         self.audit()
-        self.assertFalse(self.counted_high(plat))
+        self.assertEqual(len(self.counted_high(plat)), 1)
         add(own, "Changed again.\n")                                            # other bytes: a new alert
         self.audit()
         self.assertEqual(len(self.counted_high(plat)), 1)
 
-    def test_6_a_link_moved_while_it_is_read_is_refused(self):
+    def test_6_a_link_moved_at_any_time_grants_nothing(self):
         own, plat = self.layout()
         other = os.path.join(self.tmp, "elsewhere", "other.md")
         put(other, CLEAN.format(n="other"))
-        real = wt._read_once
-
-        def read_then_move(p):
-            out = real(p)
-            if os.path.islink(plat) and os.readlink(plat) == own:
-                os.remove(plat)
-                os.symlink(other, plat)
-            return out
-        wt._read_once = read_then_move
-        try:
-            pv = self.preview()["platform_unverified"]
-        finally:
-            wt._read_once = real
-        self.assertNotIn(plat, [o["path"] for o in pv["offered"]])
-        self.assertEqual([o["why"] for o in pv["not_offered"] if o["path"] == plat], ["it changed where it leads while Watchtower read it"])
+        os.remove(plat)
+        os.symlink(other, plat)
+        self.audit()
+        pv = self.preview()["platform_unverified"]
+        self.assertIn(plat, [f["where"] for f in pv["files"]])
+        self.assertIn("platform-release.lock", self.approve("0" * 20))
+        self.audit()
+        self.assertEqual(len(self.counted_high(plat)), 1)
 
 
 class Docs(unittest.TestCase):

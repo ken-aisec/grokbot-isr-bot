@@ -72,7 +72,7 @@ class _Learn:
         super().setUp()
         self.d = os.path.join(self.home, self.REL, "learn")
         put(os.path.join(self.d, "SKILL.md"), LEARN_V1)
-        for text in (LEARN_V2, BAD):   # item 8: the vendor's own releases, the rug pull included, are on its release list
+        for text in (LEARN_V1, LEARN_V2, BAD):   # item 8: the vendor's own releases, the rug pull included, are on its release list
             profiles.vendor_release(self, (os.path.join(self.d, "SKILL.md"), text))
 
     def daily(self):

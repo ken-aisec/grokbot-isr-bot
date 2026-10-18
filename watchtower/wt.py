@@ -2530,7 +2530,8 @@ def _exactly_at(where, places):
 # silently change is one in Watchtower's own release: rules/platform-release.lock, listed in MANIFEST.sha256 and held to it here
 # like the scanner lock. Lines are `sha256sum` output run from the home folder: "<sha256>  <path under the home folder>". A new or
 # changed file in a platform folder is a platform update only when its path and its exact bytes are listed; anything else is a
-# counted high until the owner says yes to those exact bytes (`wt.py fix`, platform_unverified). It ships with no entries.
+# counted high until a Watchtower release lists it. Ken's decision (Oct 18): release list only. Nothing on the computer approves a
+# platform file (no owner's yes, no record, no first-run trust): all of that is state the Bot can write. It ships with no entries.
 PLATFORM_LOCK_REL = "rules/platform-release.lock"
 PLATFORM_LOCK = os.path.join(HERE, "..", PLATFORM_LOCK_REL)   # tests point this at a file in their box; never read from the environment
 PLATFORM_LOCK_MAX_BYTES = 4 * 1024 * 1024
@@ -2676,17 +2677,18 @@ def platform_vendor(p):
 def unverified_platform_finding(p, h, was=None):
     """A new or changed file in a platform folder that the vendor release list doesn't include, with these bytes at this path:
     a counted high. No `refresh` key, so it never goes into the Platform refresh Tip and an audit never rolls it into the
-    baseline; `unverified_platform` keeps it out of the platform scope, `fix --revet` and `accept` (only the owner's yes to the
-    exact bytes shown approves it: `wt.py fix`, platform_unverified)."""
+    baseline; `unverified_platform` keeps it out of the platform scope, `fix --revet`, `accept` and `dismiss`. Only a Watchtower
+    release that lists it clears it (Ken's decision, Oct 18)."""
     v = platform_vendor(p)
     fix = (f"Nothing shows {v} made this change, so treat it like a file someone added. Don't use this skill until you've looked. "
-           "Say \"fix it\" to see the exact files; Watchtower approves only those files, as they are now.")
+           "Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its "
+           "platform list. If you didn't expect it, remove it.")
     if was is None:
         f = finding("WT-I002", f"A new file appeared in {v}'s own skill folder, and {v}'s release list doesn't include it", "high",
                     ["AST09", "AST07"], p, h[:12], fix)
-    elif was == h:   # Codex, item 8 review 2 (high 3): in baseline.json, which the Bot can write, but never approved as a platform file
-        f = finding("WT-I002", f"A file in {v}'s own skill folder is on Watchtower's list without the owner's yes or {v}'s release list", "high",
-                    ["AST09", "AST07"], p, f"sha256 {h[:12]}, no platform approval", fix)
+    elif was == h:   # Codex, item 8 review 2 (high 3): in baseline.json, which the Bot can write; a baseline line is never provenance
+        f = finding("WT-I002", f"A file in {v}'s own skill folder is on Watchtower's list, but {v}'s release list doesn't include it", "high",
+                    ["AST09", "AST07"], p, f"sha256 {h[:12]}, not on the release list", fix)
     else:
         f = finding("WT-I001", f"One of {v}'s own files changed, and the new version isn't on {v}'s release list", "high",
                     ["AST07"], p, f"sha256 {was[:12]}→{h[:12]}", fix)
@@ -2694,96 +2696,18 @@ def unverified_platform_finding(p, h, was=None):
     return f
 
 
-# Codex, item 8 review 2 (high 3): a matching line in baseline.json skipped the release-list check, and the first run and a blanket
-# `baseline --owner-said-yes` wrote such lines for any file in a platform folder. A platform file now needs the release list, or an
-# entry here: written only by the owner's yes to the exact list `wt.py fix` showed (approve_platform) and by the very first baseline
-# (see the Known gap in CHANGELOG), each binding the literal path, where it leads, and the sha256. baseline.json alone is never
-# provenance. This file is in Watchtower's state, so a Bot that rewrites both it and baseline.json can still forge an approval:
-# there is no store the Bot can't write at this layer (Known gap).
-PLATFORM_APPROVALS = "platform_approved.json"
-# The very first baseline still vouches for the platform files it finds, and records them here. Leaving them out (what Codex asked)
-# makes every bundled file a high from the first run on, which changes 857ab38 assertions (a busy clean box is quiet, a platform
-# refresh is one Tip, the DQ-042 replays), so it is a Known gap: a Bot that wipes all of Watchtower's state gets a new first run.
-# Review 3 (high 2): only then. An emptied baseline with any sign of an earlier run vouches for nothing (earlier_run_evidence).
-FIRST_BASELINE_VOUCHES = True
+# Codex, item 8 review 2 (high 3): a matching line in baseline.json skipped the release-list check. Reviews 2 and 3 then added an
+# owner's yes (`fix --approve-platform`), a record of it in state/platform_approved.json bound to a ledger line, and a first baseline
+# that vouched for every platform file on a new box. All of that lived in Watchtower's state, which the Bot can write, so a Bot
+# that wrote the record and its ledger line, or wiped the state for a new first run, made its own plant a platform file.
+# Ken's decision (Oct 18): release list only. A file in a platform folder is trusted only by platform_listed, on every run, first
+# or not; baseline.json, the old record and the ledger are never read for it, and `--approve-platform` is refused (approve_platform).
+OLD_PLATFORM_APPROVALS = "platform_approved.json"   # written by earlier versions; never read, never deleted (one note while it exists)
 
 
-# Codex, item 8 review 3 (high 1): a platform_approved.json written with a plant's path, target and digest was provenance on its
-# own. Each record now counts only when the ledger holds the approval event that wrote it: approve_platform's "platform-approved"
-# or the first baseline's "platform-first-baseline", each listing a digest of every (path, sha256, target) it approved. Bounded
-# hardening, not authentication (Known gap): a Bot that writes both files, appending a matching ledger line, still forges one.
-PLATFORM_APPROVAL_EVENTS = ("platform-approved", "platform-first-baseline")
-
-
-def platform_approval_bind(p, h, t):
-    return hashlib.sha256(f"wt-platform-record-v1\n{os.path.normpath(p)}\t{h}\t{os.path.normpath(t)}\n".encode("utf-8", "surrogateescape")).hexdigest()[:32]
-
-
-def platform_approval_binds():
-    """Every record digest an approval event in the ledger lists."""
-    out = set()
-    for e_ in ledger_events(PLATFORM_APPROVAL_EVENTS):
-        b = e_.get("bind")
-        out.update(x for x in (b if isinstance(b, list) else ()) if isinstance(x, str))
-    return out
-
-
-def platform_approvals():
-    """{literal path: (sha256, the real path it led to)} the owner approved as platform files, each held to the ledger event that
-    approved it (platform_approval_binds). Anything malformed, or with no such event, is ignored."""
-    d = load_json_regular(state_path(PLATFORM_APPROVALS), None)
-    files = d.get("files") if isinstance(d, dict) and d.get("v") == 1 else None
-    out = {}
-    for p, e in (files.items() if isinstance(files, dict) else ()):
-        if (isinstance(p, str) and p.startswith("/") and isinstance(e, dict) and isinstance(e.get("sha256"), str)
-                and re.fullmatch(r"[0-9a-f]{64}", e["sha256"]) and isinstance(e.get("target"), str) and e["target"].startswith("/")):
-            out[os.path.normpath(p)] = (e["sha256"], os.path.normpath(e["target"]))
-    if out:
-        binds = platform_approval_binds()
-        out = {p: v for p, v in out.items() if platform_approval_bind(p, *v) in binds}
-    return out
-
-
-def record_platform_approvals(entries, event):
-    """Add {path: (sha256, target)} to the platform approval record (approve_platform, the first baseline). The ledger event,
-    with a digest of each entry, is written first: a record without its event is ignored."""
-    if not entries:
-        return
-    entries = {os.path.normpath(p): (h, os.path.normpath(t)) for p, (h, t) in entries.items()}
-    ledger(dict(event, bind=sorted(platform_approval_bind(p, h, t) for p, (h, t) in entries.items())))
-    rec = platform_approvals()
-    rec.update(entries)
-    save_json_keep_mode(state_path(PLATFORM_APPROVALS), {"v": 1, "files": {p: {"sha256": h, "target": t} for p, (h, t) in sorted(rec.items())}})
-
-
-def platform_proven(p, h, rec=None):
-    """A file in a platform folder is the vendor's or the owner's to vouch for: its path and exact bytes are on the vendor release
-    list, or the owner approved exactly these bytes at this literal path while it led where it leads now. Never baseline.json."""
-    if platform_listed(p, h):
-        return True
-    e = (platform_approvals() if rec is None else rec).get(os.path.normpath(p))
-    try:
-        return e is not None and e[0] == h and os.path.realpath(p) == e[1]
-    except OSError:
-        return False
-
-
-def platform_unproven(manifest, rec=None):
-    """The files in this manifest that sit in a platform folder without provenance (platform_proven)."""
-    rec = platform_approvals() if rec is None else rec
-    return {p for p, h in manifest.items() if not p.startswith("persist:") and platform_ish(p) and not platform_proven(p, h, rec)}
-
-
-def platform_baseline_entries(manifest, rec=None):
-    """{path: (sha256, target)} for the first baseline: its unproven platform files, recorded as approved (Known gap)."""
-    out = {}
-    for p in platform_unproven(manifest, rec):
-        if re.fullmatch(r"[0-9a-f]{64}", manifest[p]):
-            try:
-                out[p] = (manifest[p], os.path.realpath(p))
-            except OSError:
-                pass
-    return out
+def platform_unproven(manifest):
+    """The files in this manifest that sit in a platform folder and aren't on the release list with these bytes (platform_listed)."""
+    return {p for p, h in manifest.items() if not p.startswith("persist:") and platform_ish(p) and not platform_listed(p, h)}
 
 
 # Codex, item 8 review 2 (high 1): the platform files were only what the scanner's inventory kept, so a baselined SKILL.md turned
@@ -3334,9 +3258,9 @@ def audit(roots, exports, quick=False):
     base, base_status, base_why = load_baseline()
     # item 8 (R3): no vendor provenance, a counted high. Checked before any exemption (Codex, item 8 review 1: Watchtower's own
     # watchtower-fix/SKILL.md copied into .grok/bundled/skills passed as its own release, with no line for that path). Review 2
-    # (high 3): a matching baseline.json line is not provenance, only the release list or the owner's record (platform_proven).
-    first_vouches = base_status == "first" and FIRST_BASELINE_VOUCHES and not earlier_run_evidence()   # review 3 (high 2)
-    unproven = set() if first_vouches else platform_unproven(manifest)
+    # (high 3): a matching baseline.json line is not provenance. Ken's decision (Oct 18): only the release list is, on every run; a
+    # first run (a new box, or one whose state was wiped) vouches for nothing.
+    unproven = platform_unproven(manifest)
     for p in sorted(unproven):
         fs.append(unverified_platform_finding(p, manifest[p], base.get(p)))
     if base_status == "reset":   # R4: never a fresh start; nothing is re-approved until the owner says yes
@@ -3380,7 +3304,10 @@ def audit(roots, exports, quick=False):
         notes.append("No baseline yet: integrity drift starts next run.")
     if platform_lock_problem():
         notes.append(f"The platform release list ({PLATFORM_LOCK_REL}) can't be used: {platform_lock_problem()}. So no file in a platform "
-                     "folder is verified by it: every new or changed one is a high alert until the owner says yes to it.")
+                     "folder is verified by it: every new or changed one is a high alert until a Watchtower release lists it.")
+    if os.path.lexists(state_path(OLD_PLATFORM_APPROVALS)):
+        notes.append(f"state/{OLD_PLATFORM_APPROVALS} is left from an earlier Watchtower and is no longer read: platform files it listed are "
+                     "alerts again unless the release list includes them. You can delete it.")
     for d, (n_done, n_all) in sorted(INCOMPLETE_SKILLS.items()):
         fs.append(finding("WT-I006", "Skill too large to check completely", "info", ["AST07"], d, f"{n_done} of {n_all} files fingerprinted and scanned",
                           "Files past the limit are NOT checked for changes; Watchtower can't re-approve this skill automatically. Trim it, or review changes by hand."))
@@ -3555,7 +3482,7 @@ def audit(roots, exports, quick=False):
     fs += scanner_x005()   # batch 3 (R7): every scanner was looked at just above, in audit and daily alike
     fs = sort_findings(dedupe(fs))
     meta = {"inventory": {k: len(v) for k, v in inv.items() if k not in ("non_live_skills", "platform_aliases")}, "notes": notes, "manifest": manifest, "persistence": snap, "scanners_missing": gone,
-            "skill_dirs": [os.path.dirname(x) for x in inv["skills"]], "baseline_status": base_status, "first_vouches": first_vouches}
+            "skill_dirs": [os.path.dirname(x) for x in inv["skills"]], "baseline_status": base_status}
     return fs, meta
 
 
@@ -5868,23 +5795,6 @@ def ran_before():
     return False
 
 
-# Codex, item 8 review 3 (high 2): an empty baseline.json plus a baseline_meta.json saying "files": 0 is a first run (load_baseline),
-# so the first baseline vouched for every unlisted platform file even on a box with years of history. The first baseline vouches
-# only when nothing shows an earlier run; otherwise its unproven platform files are held like any other (save_first_baseline).
-EARLIER_RUN_FILES = ("last_findings.json", "score_history.csv", "events.json", PLATFORM_APPROVALS, "approved")
-
-
-def earlier_run_evidence():
-    """True when anything Watchtower keeps shows it ran here before: an audit, daily, baseline or platform approval in the
-    ledger, or a findings file, score history, event store, platform record or approved copy. The meta file alone is not enough (a box
-    that held nothing has one); a Bot that deletes all of these still gets a new first run (Known gap)."""
-    if any(os.path.lexists(state_path(fn)) for fn in EARLIER_RUN_FILES):
-        return True
-    for _ in ledger_events(("audit", "daily", "baseline") + PLATFORM_APPROVAL_EVENTS):
-        return True
-    return False
-
-
 def load_baseline():
     """(baseline, status, why). status "ok": a baseline to compare with. "first": nothing approved yet (the first run ever, or a
     box whose meta file says the baseline held nothing): take one. "reset" (R4, Oct 16): Watchtower ran here before and its
@@ -5921,16 +5831,10 @@ def save_baseline(base):
     save_baseline_meta(len(base))
 
 
-def save_first_baseline(manifest, vouches):
+def save_first_baseline(manifest):
     """The first baseline on a box (R10: it needs no yes). Codex, item 8 review 2 (high 3): it approved every platform file it
-    found, with or without provenance. Returns the platform files it left out (they wait for `--approve-platform`). `vouches` is
-    the audit's own reading (meta["first_vouches"]), taken before this run wrote anything: review 3 (high 2), only a box with no
-    earlier run vouches for its platform files."""
-    if vouches:
-        entries = platform_baseline_entries(manifest)
-        record_platform_approvals(entries, {"event": "platform-first-baseline", "count": len(entries)})
-        save_baseline(manifest)
-        return set()
+    found, with or without provenance. Ken's decision (Oct 18): a first baseline, on a new box or a wiped one, vouches for no
+    platform file. Returns the platform files it left out (they stay high alerts until a Watchtower release lists them)."""
     held = platform_unproven(manifest)
     save_baseline({p: h for p, h in manifest.items() if p not in held})
     return held
@@ -5967,7 +5871,7 @@ def roll_builtin(fs, meta, notes):
     keep, rolled = [], 0
     for f in fs:
         w = f["where"].split(":")[0]
-        # item 8 (R3): a platform change the vendor release list doesn't include waits for the owner's yes, never rolls
+        # item 8 (R3): a platform change the vendor release list doesn't include waits for a release that lists it, never rolls
         if f["rule"] in ("WT-I001", "WT-I002", "WT-I003") and builtin(f) and not f.get("unverified_platform"):
             root = skill_root(w)
             checked = (not root) or (not installed) or entry_current(cache.get(root) or {}, skill_dir_hash(root), installed)
@@ -5988,7 +5892,7 @@ def roll_builtin(fs, meta, notes):
 
 def is_accepted(f, sup, today):
     if f.get("unverified_platform"):
-        return False   # Codex, item 8 review 1: before every branch, key matches included; only --approve-platform approves these
+        return False   # Codex, item 8 review 1: before every branch, key matches included; only a release that lists it clears one
     if f.get("rule") == "WT-A002" and f.get("accepted_exact"):
         return True   # exact owner-accepted line (state/accepted_auto_allow.json); severity untouched
     names = refused = None
@@ -6203,7 +6107,7 @@ def run_audit_locked(args, quick):
              and not f.get("guarded")]                                                                # nor does a warning-text record
     s, g = score(scored(live))
     if meta["baseline_status"] == "first":
-        held = save_first_baseline(meta["manifest"], meta.get("first_vouches"))
+        held = save_first_baseline(meta["manifest"])
         save_approved_all(meta.get("skill_dirs", []), held, load_baseline()[0])
     elif meta["baseline_status"] == "ok":
         if not os.path.lexists(state_path(BASELINE_META)):   # an install from before the meta file: remember it ran
@@ -6385,10 +6289,12 @@ def platform_open(snap):
     fs = [f for f in snap.get("findings", []) if isinstance(f, dict) and f.get("unverified_platform")]
     if not fs:
         return None
-    out = {"open": len(fs), "files": [{k: f[k] for k in ("rule", "severity", "title", "where")} for f in fs[:PLATFORM_OPEN_SHOWN]],
-           "next": "Still open from any earlier day too: files in the platform's own folders that its release list doesn't include. Don't "
-                   "use them until someone has looked. Say \"fix it\": `wt.py fix` shows the exact files, and only the owner's yes to "
-                   "that list approves them (`--approve-platform`)."}
+    out = {"open": len(fs), "files": [dict({k: f[k] for k in ("rule", "severity", "title", "where")}, evidence=f.get("evidence", ""))
+                                      for f in fs[:PLATFORM_OPEN_SHOWN]],
+           "next": f"Still open from any earlier day too: files in the platform's own folders that Watchtower's release list ({PLATFORM_LOCK_REL}) "
+                   "doesn't include. Don't use them until someone has looked. Nothing on this computer approves them: remove any the owner "
+                   "didn't expect; a real vendor update clears when a Watchtower release lists it. `wt.py show WT-I002 --limit 100000` and "
+                   "`wt.py show WT-I001 --limit 100000` list every one."}
     if len(fs) > PLATFORM_OPEN_SHOWN:
         out["more"] = len(fs) - PLATFORM_OPEN_SHOWN
     return out
@@ -6447,11 +6353,11 @@ def cmd_baseline(args):
     roots = args.roots or [os.path.expanduser("~"), "/workspace"]
     fs, meta = audit(roots, None, quick=True)
     if status == "first":
-        held = save_first_baseline(meta["manifest"], meta.get("first_vouches"))
+        held = save_first_baseline(meta["manifest"])
     else:
         # Codex, item 8 review 2 (high 3): the owner's yes to a new baseline covers their own skills and plugins, never a platform
-        # file without provenance. Such a file keeps the line it had (so it still shows as changed) or stays out, and only the
-        # owner's yes to the exact list `wt.py fix` shows approves it (`--approve-platform`).
+        # file the release list doesn't include. Such a file keeps the line it had (so it still shows as changed) or stays out, and
+        # only a Watchtower release that lists it clears it (Ken's decision, Oct 18).
         old = load_baseline()[0]
         held = platform_unproven(meta["manifest"])
         base = {p: h for p, h in meta["manifest"].items() if p not in held}
@@ -6460,8 +6366,8 @@ def cmd_baseline(args):
     n = save_approved_all(meta.get("skill_dirs", []), held, load_baseline()[0])
     ledger(dict({"event": "baseline", "files": len(meta["manifest"]), "copies": n}, **({"after_reset": True} if status == "reset" else {})))
     print(f"Baseline saved: {len(meta['manifest']) - len(held)} skill and plugin files. Kept a copy of {n} skills so the next change shows as a diff."
-          + (f" Not approved by this: {len(held)} file(s) in the platform's own folders that its release list doesn't include. They stay "
-             "high alerts; only the owner's yes to the exact list `wt.py fix` shows approves them (`--approve-platform`)." if held else ""))
+          + (f" Not approved by this: {len(held)} file(s) in the platform's own folders that Watchtower's release list ({PLATFORM_LOCK_REL}) "
+             "doesn't include. They stay high alerts until a Watchtower release lists them." if held else ""))
     return 0
 
 
@@ -6544,8 +6450,8 @@ def dismiss(key, reason):
     else:
         entry.update(key=f["key"], rule=f["rule"], where=f["where"], cls=f.get("class") or ("evidence" if is_evidence(f) else "pattern"))
         m = SAFE_CLAIM.search(dismiss_context(f))
-        if f.get("unverified_platform"):   # item 8 review 1: only --approve-platform approves these
-            ok, why = False, "a platform file not on the vendor's release list: only the owner's yes to `wt.py fix`'s list approves it"
+        if f.get("unverified_platform"):   # item 8 review 1; Ken's decision (Oct 18): only a release that lists it clears one
+            ok, why = False, "a platform file not on the vendor's release list: only a Watchtower release that lists it clears it"
         elif is_evidence(f) or entry["cls"] != "pattern":
             ok, why = False, f"{entry['cls']} finding: only Worth-a-look findings can be dropped"
         elif not (reason or "").strip():
@@ -9612,7 +9518,7 @@ def accept_refused(f):
     if f.get("unverified_platform"):   # item 8 (R3)
         v = platform_vendor(f.get("where", ""))
         return (f"{f['rule']} is a file in {v}'s own folder that {v}'s release list doesn't include, so it can't be marked as fine. "
-                "`wt.py fix` shows the exact files; only the owner's yes to that list approves them (`--approve-platform`).")
+                "Nothing on this computer approves it: only a Watchtower release that lists it clears it. If you didn't expect it, remove it.")
     if f["rule"].startswith("WT-K"):
         return refusal(f["rule"])
     if not acceptable(f) and f["rule"] not in ACCEPT_ONE_ALSO and (is_evidence(f) or f.get("class") == "corroborated"):
@@ -9666,7 +9572,7 @@ def upgrade_tried():
 
 
 def fix_class(f):
-    if f.get("unverified_platform"):   # item 8 (R3): only the owner's yes to the exact files `wt.py fix` shows (platform_unverified)
+    if f.get("unverified_platform"):   # item 8 (R3): only a release that lists it clears one (`wt.py fix` lists them: platform_unverified)
         return "platform"
     if f["rule"] in ("WT-D001", "WT-D002"):
         t = upgrade_tried()
@@ -9698,7 +9604,7 @@ def accept_current(rules, reason, days=90, skip=()):
         if f["rule"] not in rules:
             continue
         w = f["where"].split(":")[0]
-        if not acceptable(f) or f.get("unverified_platform"):   # item 8 review 1: only --approve-platform approves these
+        if not acceptable(f) or f.get("unverified_platform"):   # item 8 review 1: only a release that lists one clears it
             skipped.append(f"{plain(f)['title']} ({short_path(w)}): can't be accepted")
             continue
         if (skill_root(w) or w) in bad_roots:
@@ -9885,13 +9791,15 @@ def save_approved_all(dirs, held=(), base=None):
     """Keep a copy of each skill as just approved. Codex, item 8 review 3 (medium): `baseline --owner-said-yes` kept a platform
     file it refused at its old baseline line, but still copied its bytes as they are now, so `wt.py diff` called the refused
     change "same as the approved copy". A skill holding a `held` file keeps that file's entry from the copy before (none, if it
-    had none); its other files are copied from one read, and only when those bytes are the ones `base` now approves."""
+    had none); its other files are copied from one read, and only when those bytes are the ones `base` now approves. #9 medium b:
+    a held file that skill_files doesn't list now (a link, say) keeps its entry too, so the refused change still shows in the diff."""
     held = {os.path.normpath(p) for p in held}
     base = base or {}
     n = 0
     for d in sorted(set(dirs)):
         try:
-            if any(_under(p, {os.path.normpath(d)}, strict=True) for p in held):
+            nd = os.path.normpath(d)
+            if any(_under(p, {nd}, strict=True) for p in held):
                 old = load_approved(d)
                 old = old if isinstance(old, dict) else {}
                 oh = old.get("hashes") if isinstance(old.get("hashes"), dict) else {}
@@ -9904,6 +9812,10 @@ def save_approved_all(dirs, held=(), base=None):
                         continue
                     rel = os.path.relpath(p, d)
                     if isinstance(oh.get(rel), str):
+                        keep[rel] = (oh[rel], of.get(rel) if isinstance(of.get(rel), str) else None)
+                for p in held:
+                    rel = os.path.relpath(p, nd)
+                    if _under(p, {nd}, strict=True) and rel not in keep and isinstance(oh.get(rel), str):
                         keep[rel] = (oh[rel], of.get(rel) if isinstance(of.get(rel), str) else None)
                 save_approved(d, snapshot, old.get("hash") if isinstance(old.get("hash"), str) else None, keep)
             else:
@@ -9957,6 +9869,9 @@ def skill_diff(d, context=2):
         if rel in cur and old["hashes"].get(rel) == sha256_file(cur[rel]):
             continue
         names.append(rel)
+        if rel not in cur and rel in old["hashes"] and os.path.islink(os.path.join(d, rel)):
+            out.append(f"~ {rel}: replaced by a link (Watchtower doesn't follow links inside a skill)")
+            continue
         a = old["files"].get(rel)
         b = read_text(cur[rel], limit=APPROVED_FILE_LIMIT) if rel in cur and os.path.splitext(rel)[1].lower() in TEXT_EXT else None
         if rel not in old["hashes"]:
@@ -10068,18 +9983,17 @@ def revet(dirs, approve=False):
                 r["result"] = "clean"
                 files = skill_dir_files(os.path.join(d, "SKILL.md")) if approve else []
                 # item 8 (R3): re-approving writes every file of the skill; one in a platform folder that the vendor release list
-                # doesn't include (a plant beside a listed update) is approved only by the owner's yes to its exact bytes.
+                # doesn't include (a plant beside a listed update) is never approved here: only a release that lists it clears it.
                 # Codex, item 8 review 1: each file is hashed once, and that digest is both the one held to the list and the
                 # one saved; hashing again to save let bytes swapped in after the check be approved.
-                # Review 2: read once, so the approved copy is made from the same bytes (medium 2), and held to the release list or
-                # the owner's platform record, never to a baseline.json line (high 3).
+                # Review 2: read once, so the approved copy is made from the same bytes (medium 2), and held to the release list
+                # only, never to a baseline.json line (high 3).
                 snapshot = {p: read_snapshot(p) for p in files}
                 digests = {p: s[0] for p, s in snapshot.items()}
-                rec = platform_approvals()
-                unlisted = [p for p, hp in digests.items() if platform_ish(p) and not platform_proven(p, hp, rec)]
+                unlisted = [p for p, hp in digests.items() if platform_ish(p) and not platform_listed(p, hp)]
                 if unlisted:
                     r.update(result="not finished", why=f"{len(unlisted)} file(s) in it aren't on {platform_vendor(d)}'s release list; "
-                             "only the owner's yes to the exact files `wt.py fix` shows approves those")
+                             "only a Watchtower release that lists them clears those")
                 elif approve:
                     for k in [k for k in base if k.startswith(d + "/") and k not in files]:
                         del base[k]
@@ -10356,200 +10270,20 @@ def upgrade_npm(projects):
     return done
 
 
-# Item 8 (R3, Codex highs 3 and 4): the owner's yes to a platform change is bound to the bytes shown. The candidates are the
-# unverified_platform findings in last_findings.json, used only as a list of paths: each one is proved again from disk, read once
-# into memory, and Watchtower's rules run on those bytes. No engine and no engine_cache.json are used (an engine reads a staged
-# copy later, and the cache is the Bot's to write), and nothing is written to state: the code covers the exact (path, sha256)
-# set shown, and the apply works the same set out again from disk.
-PLATFORM_YES_MAX_FILES = 200
-PLATFORM_YES_MAX_BYTES = 2 * 1024 * 1024
-PLATFORM_YES_MAX_TOTAL = 32 * 1024 * 1024   # bytes read in one preview or apply
-PLATFORM_YES_SHOWN = 20   # not-offered files listed by name; the rest are counted
+# Item 8 (R3, Codex highs 3 and 4) bound the owner's yes to the bytes `wt.py fix` showed, and reviews 1 to 3 bounded its reads and
+# pages. Ken's decision (Oct 18): there is no yes. A file in a platform folder is trusted only through the release list, so
+# `fix --approve-platform` and `--platform-from` stay in the parser (a Bot following an older SKILL.md gets a plain answer, not an
+# argparse error) and are refused: nothing is read, written or approved. The preview shows the same read-only list daily does
+# (platform_open).
+PLATFORM_YES_REFUSED = ("NOT APPROVED: Watchtower doesn't approve platform files on this computer (Ken's decision, Oct 18). A file in Grok "
+                        f"Bot's, Codex's or Claude's own skill folder is trusted only when Watchtower's release list ({PLATFORM_LOCK_REL}) has its "
+                        "path and exact sha256. Nothing was changed. If you didn't expect these files, remove them; a real vendor update clears "
+                        "when a Watchtower release lists it.")
 
 
-def _read_once(p):
-    """The bytes of a plain file (never a link), at most PLATFORM_YES_MAX_BYTES, or (None, why)."""
-    try:
-        fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
-    except OSError as e:
-        return None, f"it can't be opened as a plain file ({errno.errorcode.get(e.errno, 'error')})"
-    try:
-        st = os.fstat(fd)
-        if not stat.S_ISREG(st.st_mode):
-            return None, "it isn't a plain file"
-        if st.st_size > PLATFORM_YES_MAX_BYTES:
-            return None, "it is larger than 2 MB, too large to check here"
-        data = b""
-        while len(data) <= PLATFORM_YES_MAX_BYTES:
-            chunk = os.read(fd, PLATFORM_YES_MAX_BYTES + 1 - len(data))
-            if not chunk:
-                break
-            data += chunk
-    except OSError as e:
-        return None, f"it can't be read ({errno.errorcode.get(e.errno, 'error')})"
-    finally:
-        os.close(fd)
-    if len(data) > PLATFORM_YES_MAX_BYTES:
-        return None, "it is larger than 2 MB, too large to check here"
-    return data, ""
-
-
-def _read_platform(p):
-    """(bytes, the real file they came from, why). Codex, item 8 review 2 (medium 3): a platform name that is a link to the owner's
-    own file raised a high that nothing could approve, because the read refused every link. The literal name is followed to its
-    real file, that file is read once (never through a further link), and the read counts only when the literal name still leads
-    to the same file (device and inode) afterwards, so a link moved while it was read is refused."""
-    try:
-        target = os.path.realpath(p)
-        before = os.lstat(target)
-    except OSError as e:
-        return None, None, f"it can't be opened ({errno.errorcode.get(e.errno, 'error')})"
-    data, why = _read_once(target)
-    if data is None:
-        return None, None, why
-    try:
-        after = os.stat(p)
-        same = os.path.realpath(p) == target and (after.st_dev, after.st_ino) == (before.st_dev, before.st_ino)
-    except OSError:
-        same = False
-    if not same:
-        return None, None, "it changed where it leads while Watchtower read it"
-    return data, target, ""
-
-
-def platform_candidates():
-    """The files the unverified_platform findings in last_findings.json name, sorted: used only as a list of paths."""
-    snap = load_json(state_path("last_findings.json"), {}) or {}
-    fs = snap.get("findings") if isinstance(snap, dict) else None
-    return sorted({os.path.normpath(f["where"]) for f in (fs if isinstance(fs, list) else [])
-                   if isinstance(f, dict) and f.get("unverified_platform") and not f.get("platform_coverage")
-                   and isinstance(f.get("where"), str) and f["where"].startswith("/")})
-
-
-def platform_cursor(p):
-    return p.encode("utf-8", "surrogateescape").hex()
-
-
-def platform_after(cursor):
-    """The path a --platform-from cursor names, or None when there isn't one; ValueError when it isn't one."""
-    if cursor is None:
-        return None
-    return bytes.fromhex(cursor.strip()).decode("utf-8", "surrogateescape")
-
-
-def platform_unverified_set(after=None):
-    """(offered {path: (sha256, "new"|"changed", real path)}, not offered [(path, why)], deferred: how many weren't looked at,
-    the cursor for the next page or None), worked out from disk now. Codex, item 8 review 1: the 200-file limit was checked after
-    each candidate was read, hashed and scanned, so 1,000 candidates (a big update, or a forged findings file) meant 1,000 reads.
-    The limit now comes before any work on a candidate: at most PLATFORM_YES_MAX_FILES are looked at and PLATFORM_YES_MAX_TOTAL
-    bytes read. Review 2 (medium 1): the rest used to wait behind the same first 200 for ever (files just approved, or refused
-    every time, filled them again). A page starts after `after`, the last path the page before it looked at, and files the owner
-    approves leave the list at once (approve_platform)."""
-    cands = platform_candidates()
-    if after is not None:
-        cands = [c for c in cands if c > after]
-    base, status, _ = load_baseline()
-    offered, refused = {}, []
-    if status not in ("ok", "first"):
-        return offered, [(p, "Watchtower has no approved list to add it to right now") for p in cands[:PLATFORM_YES_SHOWN]], max(0, len(cands) - PLATFORM_YES_SHOWN), None
-    rules, rec = load_rules(), platform_approvals()
-    looked, read = 0, 0
-    for i, p in enumerate(cands):
-        if looked >= PLATFORM_YES_MAX_FILES or read >= PLATFORM_YES_MAX_TOTAL:
-            return offered, refused, len(cands) - i, platform_cursor(cands[i - 1])
-        looked += 1
-        if not platform_ish(p):
-            continue   # not in a platform folder: an ordinary change, approved the ordinary way
-        if any(ord(c) < 32 or ord(c) in (0x7f, 0x85, 0x2028, 0x2029) for c in p):
-            refused.append((p, "its name has a control character"))
-            continue
-        data, target, why = _read_platform(p)
-        if data is None:
-            refused.append((p, why))
-            continue
-        read += len(data)
-        h = hashlib.sha256(data).hexdigest()
-        if platform_listed(p, h) or (rec.get(p) == (h, target) and base.get(p) == h):
-            continue   # on the release list, or approved already: not a change to approve here
-        if any(ord(c) < 32 or ord(c) in (0x7f, 0x85, 0x2028, 0x2029) for c in target):
-            refused.append((p, "it leads to a file whose name has a control character"))
-            continue
-        hits = [f for f in scan_text(data.decode("utf-8", "replace"), p, rules, kind="reference")
-                if not f.get("guarded") and f["severity"] in ("critical", "high", "medium")]
-        if hits:
-            refused.append((p, f"Watchtower's rules flag it ({hits[0]['title']})"))
-            continue
-        offered[p] = (h, "changed" if p in base and base[p] != h else "new", target)
-    return offered, refused, 0, None
-
-
-def platform_code(offered):
-    """The approval code for exactly this (path, sha256, real path) set."""
-    lines = sorted(f"{p}\t{h}\t{t}\n" for p, (h, _, t) in offered.items())
-    return hashlib.sha256(("wt-platform-yes-v2\n" + "".join(lines)).encode("utf-8", "surrogateescape")).hexdigest()[:20]
-
-
-def platform_unverified_preview(cursor=None):
-    try:
-        after = platform_after(cursor)
-    except ValueError:
-        return {"error": "That --platform-from value isn't one Watchtower gave. Run `wt.py fix` without it."}
-    offered, refused, deferred, nxt = platform_unverified_set(after)
-    if not offered and not refused and not deferred:
-        return None
-    rows = []
-    for p, (h, c, t) in sorted(offered.items()):
-        rows.append(dict({"path": p, "change": c, "sha256": h[:12], "checked": "Watchtower's rules found nothing in this exact file"},
-                         **({"leads_to": t} if t != p else {})))
-    out = {"offered": rows, "not_offered": [{"path": p, "why": why} for p, why in refused[:PLATFORM_YES_SHOWN]]}
-    if len(refused) > PLATFORM_YES_SHOWN:
-        out["not_offered_more"] = len(refused) - PLATFORM_YES_SHOWN
-    page = f" --platform-from {cursor.strip()}" if cursor else ""
-    if offered:
-        code = platform_code(offered)
-        out["code"] = code
-        out["ask"] = ("Show the owner these files" + (", and where each linked one leads" if any("leads_to" in r for r in rows) else "") +
-                      f". Only on a yes to exactly this list run `wt.py fix --approve-platform {code}{page} --owner-said-yes`.")
-    if refused:
-        out["not_offered_note"] = "These stay high alerts: don't use them until someone has looked."
-    if deferred:
-        out["deferred"] = deferred
-        out["next_page"] = nxt
-        out["deferred_note"] = (f"{deferred} more file(s) weren't looked at: one fix checks at most {PLATFORM_YES_MAX_FILES}. "
-                                "They stay high alerts. Files the owner approves leave this list at once, so after a yes `wt.py fix` "
-                                f"shows the next ones. To look at the next ones without deciding on these, run `wt.py fix --platform-from {nxt}`.")
-    return out
-
-
-def approve_platform(code, yes, cursor=None):
-    """`fix --approve-platform CODE [--platform-from CURSOR] --owner-said-yes`: approve exactly the files the preview showed, as
-    they were shown: their path, the real file each leads to, and the sha256 of the bytes read once (platform_unverified_set)."""
-    if not yes:
-        return ["NOT SAVED: approving platform files needs the owner's yes. Show them the platform_unverified list from `wt.py fix`; "
-                "only after their yes to exactly that list run `wt.py fix --approve-platform <code> --owner-said-yes`."]
-    try:
-        after = platform_after(cursor)
-    except ValueError:
-        return ["NOT APPROVED: that --platform-from value isn't one Watchtower gave. Run `wt.py fix` again."]
-    offered = platform_unverified_set(after)[0]
-    if not offered or not isinstance(code, str) or platform_code(offered) != code.strip().lower():
-        return ["NOT APPROVED: Grok Bot's files changed since the owner saw the list. Run `wt.py fix` again and show the owner the new list."]
-    base, status, _ = load_baseline()
-    if status not in ("ok", "first"):
-        return ["NOT APPROVED: Watchtower has no approved list to add these to right now. Run `wt.py fix` again."]
-    for p, (h, _, _) in offered.items():
-        base[p] = h
-    record_platform_approvals({p: (h, t) for p, (h, _, t) in offered.items()},
-                              {"event": "platform-approved", "count": len(offered), "code": platform_code(offered)})
-    save_baseline(base)
-    # Codex, item 8 review 2 (medium 1): what was just approved leaves the candidate list now, not at the next audit, so the next
-    # `wt.py fix` offers the files after them. Each one is checked from disk again by every later audit.
-    snap = load_json(state_path("last_findings.json"), {}) or {}
-    if isinstance(snap, dict) and isinstance(snap.get("findings"), list):
-        snap["findings"] = [f for f in snap["findings"] if not (isinstance(f, dict) and f.get("unverified_platform") and not f.get("platform_coverage")
-                                                                and isinstance(f.get("where"), str) and os.path.normpath(f["where"]) in offered)]
-        save_json(state_path("last_findings.json"), snap)
-    return [f"Approved {len(offered)} platform file(s) exactly as the owner saw them. Any later change to them is a new alert."]
+def approve_platform(*_):
+    """`fix --approve-platform CODE [--platform-from CURSOR] [--owner-said-yes]`: always refused, and writes nothing."""
+    return [PLATFORM_YES_REFUSED]
 
 
 def cmd_fix(args):
@@ -10565,9 +10299,9 @@ def cmd_fix(args):
                 for g in needs_you([f for f in fs if fix_class(f) == "only_you" and not in_q(f)], 5)]   # quarantine handles those; don't hand them back to the owner
     rules_needed = [r for r in ("WT-A003", "WT-A005") if any(f["rule"] == r for f in fs)]
     ch_skills, ch_other = changed_skills(fs)
-    approving = getattr(args, "approve_platform", None) is not None
+    approving = getattr(args, "approve_platform", None) is not None or getattr(args, "platform_from", None) is not None
     if not (args.apply or args.upgrade or args.upgrade_projects or args.accept or args.revet or args.exception or args.quarantine or approving):
-        plat = platform_unverified_preview(getattr(args, "platform_from", None))   # item 8 (R3): a dict, never trimmed by fit, so the owner sees the whole list the code covers
+        plat = platform_open(snap)   # item 8: a dict, never trimmed by fit; read-only (Ken's decision, Oct 18: nothing here approves them)
         out = fit({"mode": "preview (nothing changed)",
                    **({"platform_unverified": plat} if plat else {}),
                    "changed_skills_total": len(ch_skills),
@@ -10594,7 +10328,7 @@ def cmd_fix(args):
         return 0
     done = tidy_apply(plan, args) if args.apply else []
     if approving:
-        done += approve_platform(args.approve_platform, getattr(args, "owner_said_yes", False), getattr(args, "platform_from", None))
+        done += approve_platform()
     if args.upgrade or args.upgrade_projects:
         left = load_json(state_path("upgrade_left.json"), {}) or {}
         py_done = upgrade_python(ups) if args.upgrade and ups else []
@@ -11085,9 +10819,9 @@ def build_parser():
     fx.add_argument("--only", help="with --revet: re-approve only these skills (names, comma-separated); works on skills the daily check or audit already reported as changed (a fresh fix preview is not required); every other changed skill stays open")
     fx.add_argument("--exception", help="skill name(s) the owner confirmed as security tools (30 days)")
     fx.add_argument("--quarantine", help="the owner's own skill(s) to move out of use into Watchtower's quarantine folder (comma-separated)")
-    fx.add_argument("--owner-said-yes", action="store_true", help="with --apply: the owner said yes to the cleanup list in the last preview; with --approve-platform: to that platform list")
-    fx.add_argument("--approve-platform", metavar="CODE", help="approve exactly the platform files the preview's platform_unverified list showed, as they were shown (needs --owner-said-yes)")
-    fx.add_argument("--platform-from", metavar="CURSOR", help="the platform_unverified list's next page (its next_page value); with --approve-platform, the page that code is for")
+    fx.add_argument("--owner-said-yes", action="store_true", help="with --apply: the owner said yes to the cleanup list in the last preview")
+    fx.add_argument("--approve-platform", metavar="CODE", help="refused: platform files are trusted only by rules/platform-release.lock (kept so older instructions get a plain answer)")
+    fx.add_argument("--platform-from", metavar="CURSOR", help="refused, like --approve-platform")
     fx.add_argument("--skip", help="with --apply: cleanup items (ids or paths, comma-separated) the owner said to leave alone")
     qq = sub.add_parser("quarantine"); qq.add_argument("names", nargs="?"); qq.add_argument("--restore"); qq.add_argument("--reason")
     un = sub.add_parser("uninstall"); un.add_argument("--apply", action="store_true"); un.add_argument("--remove-folder", action="store_true")

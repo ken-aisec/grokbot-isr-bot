@@ -2,8 +2,8 @@
 #
 # The sha256 of every file a vendor ships in the platform's own skill folders, by its path under the home folder.
 # A new or changed file in one of those folders is a platform update (the quiet "Platform refresh" Tip) only when its
-# path and its exact bytes are listed here. Anything else is a counted high alert until the owner says yes to those
-# exact bytes in `wt.py fix`.
+# path and its exact bytes are listed here. Anything else is a counted high alert until a release lists it: nothing on
+# the computer approves it (no owner's yes, no record, no first-run trust; Ken's decision, Oct 18).
 #
 # This file ships with Watchtower's release: it is listed in MANIFEST.sha256 and an installed copy is held to that line,
 # so it is exactly as trustworthy as wt.py itself. None of the vendors publishes these hashes, and anything inside the
@@ -20,4 +20,4 @@
 #     .claude/plugins/synced -type f -exec sha256sum {} + 2>/dev/null >> <checkout>/rules/platform-release.lock
 # then run `bash scripts/make-manifest.sh` and publish a release. Several releases may list the same path.
 #
-# No entries yet: every new or changed platform file is a high alert until the owner's yes.
+# No entries yet: every file in those folders is a high alert until a release lists it.

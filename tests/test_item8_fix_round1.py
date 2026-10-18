@@ -171,7 +171,7 @@ class OwnReleaseAfterProvenance(_Platform):
 class BoundedPlatformList(_Platform):
     N = 1000
 
-    def test_6_preview_reads_at_most_the_limit_and_defers_the_rest(self):
+    def test_6_preview_and_refused_yes_read_no_platform_file(self):
         self.start()
         snap = self.snap()
         for i in range(self.N):
@@ -179,23 +179,24 @@ class BoundedPlatformList(_Platform):
             put(p, CLEAN.format(n=f"p{i:04d}"))
             snap["findings"].append(dict(wt.unverified_platform_finding(p, "0" * 64), key=f"{i:016d}"))   # a forged, long list
         wt.save_json(wt.state_path("last_findings.json"), snap)
-        real, reads = wt._read_once, []
+        real, reads = os.open, []
 
-        def counting(p):
-            reads.append(p)
-            return real(p)
-        wt._read_once = counting
+        def counting(p, *a, **k):
+            if str(p).startswith(self.root + os.sep):
+                reads.append(p)
+            return real(p, *a, **k)
+        os.open = counting
         try:
-            pv = self.preview()["platform_unverified"]
-            n_preview = len(reads)
-            self.assertLessEqual(n_preview, wt.PLATFORM_YES_MAX_FILES)
-            self.assertEqual(len(pv["offered"]), wt.PLATFORM_YES_MAX_FILES)
-            self.assertEqual(pv.get("deferred"), self.N - wt.PLATFORM_YES_MAX_FILES)
-            self.assertIn("weren't looked at", pv["deferred_note"])
-            self.assertIn(f"Approved {wt.PLATFORM_YES_MAX_FILES}", self.approve(pv["code"]))
-            self.assertLessEqual(len(reads) - n_preview, wt.PLATFORM_YES_MAX_FILES)
+            pv = self.preview()["platform_unverified"]                         # Ken's decision (Oct 18): a read-only list
+            self.assertEqual(len(reads), 0)
+            self.assertEqual(pv["open"], self.N)
+            self.assertEqual(len(pv["files"]), wt.PLATFORM_OPEN_SHOWN)
+            self.assertEqual(pv.get("more"), self.N - wt.PLATFORM_OPEN_SHOWN)
+            self.assertIn("wt.py show WT-I002", pv["next"])
+            self.assertIn("platform-release.lock", self.approve("0" * 20))
+            self.assertEqual(len(reads), 0)
         finally:
-            wt._read_once = real
+            os.open = real
 
 
 if __name__ == "__main__":

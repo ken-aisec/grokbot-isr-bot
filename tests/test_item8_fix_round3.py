@@ -75,7 +75,7 @@ class FirstRunWithHistory(_Platform):
         self.empty_it()
         self.assertNotEqual(self.daily(), "NO_CHANGES")
         self.assertEqual(len(self.counted_high(plant)), 1)
-        self.assertNotIn(plant, wt.platform_approvals())
+        self.assertFalse(os.path.lexists(wt.state_path("platform_approved.json")))   # nothing writes a platform record now
         self.assertNotIn(plant, wt.load_baseline()[0])
         self.audit()                                                            # and it stays a high after the new first baseline
         self.assertEqual(len(self.counted_high(plant)), 1)
@@ -87,7 +87,7 @@ class FirstRunWithHistory(_Platform):
         self.empty_it()
         out = self.run_cmd("baseline", "--roots", *self.roots)[1]
         self.assertIn("Not approved by this: 1", out)
-        self.assertNotIn(plant, wt.platform_approvals())
+        self.assertFalse(os.path.lexists(wt.state_path("platform_approved.json")))   # nothing writes a platform record now
         self.audit()
         self.assertEqual(len(self.counted_high(plant)), 1)
 
@@ -100,7 +100,7 @@ class FirstRunWithHistory(_Platform):
 
 class ForgedApprovalRecord(_Platform):
     def forge(self, p):
-        path = wt.state_path(wt.PLATFORM_APPROVALS)
+        path = wt.state_path("platform_approved.json")                         # the record earlier versions wrote
         d = wt.load_json(path, None) or {"v": 1, "files": {}}
         d["files"][p] = {"sha256": sha(p), "target": os.path.realpath(p)}
         wt.save_json(path, d)
@@ -118,22 +118,22 @@ class ForgedApprovalRecord(_Platform):
         plant = self.md("helper")
         put(plant, CLEAN.format(n="helper"))
         self.audit()
-        self.assertIn("Approved 1", self.approve(self.preview()["platform_unverified"]["code"]))
+        self.assertIn("platform-release.lock", self.approve("0" * 20))        # Ken's decision (Oct 18): the yes is refused
         add(plant, "Changed after the yes.\n")
         self.forge(plant)
         self.assertNotEqual(self.daily(), "NO_CHANGES")
         self.assertEqual(len(self.counted_high(plant)), 1)
 
-    def test_3_contrast_the_owners_yes_is_still_provenance(self):
-        """Contrast: passes on base too."""
+    def test_3_the_owners_yes_is_not_provenance(self):
+        """Was a contrast (the owner's yes was provenance); Ken's decision (Oct 18): it is refused."""
         self.start()
         plant = self.md("helper")
         put(plant, CLEAN.format(n="helper"))
         self.audit()
-        self.assertIn("Approved 1", self.approve(self.preview()["platform_unverified"]["code"]))
+        self.assertIn("platform-release.lock", self.approve("0" * 20))
         self.audit()
-        self.assertFalse(self.counted_high(plant))
-        self.assertEqual(self.daily(), "NO_CHANGES")
+        self.assertEqual(len(self.counted_high(plant)), 1)
+        self.assertNotEqual(self.daily(), "NO_CHANGES")
 
 
 class BlanketBaselineKeepsCopies(_Platform):

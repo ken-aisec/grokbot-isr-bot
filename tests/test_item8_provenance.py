@@ -7,6 +7,8 @@ grouping, file counts and state the Bot can write; Codex left four highs open (c
 Now a new or changed file in a platform folder is a platform update only when its path and exact bytes are on the vendor
 release list Watchtower ships (rules/platform-release.lock, held to MANIFEST.sha256). Anything else is a counted high, daily
 included, until the owner says yes to the exact bytes `wt.py fix` shows (`--approve-platform <code> --owner-said-yes`).
+Ken's decision (Oct 18) removed that yes: only the release list clears one, and the tests that used the yes now check it is
+refused (tests/test_item8_release_only.py has the replays).
 
 Each test fails on the base (857ab38) unless its docstring says it is a contrast. The real-path tests (SubstringBypass,
 OutsideTheHomeFolders, VendorRoots, ColonNames, LiteralPath) are re-added from dd27c42.
@@ -48,6 +50,7 @@ class _Platform(Box):
         self.root = os.path.join(self.home, self.REL)
         for n in ("alpha", "beta", "gamma"):
             put(self.md(n), CLEAN.format(n=n))
+        profiles.vendor_release(self, *(self.md(n) for n in ("alpha", "beta", "gamma")))   # the vendor's own, as its release lists them
         self.skills(1)                                                          # one of the owner's own
 
     def md(self, n, root=None):
@@ -212,10 +215,10 @@ class EngineBytes(_Platform):
         self.audit()
         self.assertNotIn(plant, wt.load_baseline()[0])
         self.assertEqual(len(self.counted_high(plant)), 1)
-        pv = self.preview()["platform_unverified"]                             # the yes covers what is on disk now, read once
-        self.assertEqual([(o["path"], o["sha256"]) for o in pv["offered"]], [(plant, sha(plant)[:12])])
-        self.assertIn("Approved 1", self.approve(pv["code"]))
-        self.assertEqual(wt.load_baseline()[0][plant], sha(plant))
+        pv = self.preview()["platform_unverified"]                             # listed, never approved (Ken's decision, Oct 18)
+        self.assertEqual([f["where"] for f in pv["files"]], [plant])
+        self.assertIn("platform-release.lock", self.approve("0" * 20))
+        self.assertNotIn(plant, wt.load_baseline()[0])
         put(plant, CLEAN.format(n="helper") + "Planted.\n")                    # other bytes than the ones shown: a new high
         self.scanners()
         self.assertNotEqual(self.daily(), "NO_CHANGES")
@@ -226,7 +229,7 @@ class EngineBytes(_Platform):
         plant = self.md("helper")
         put(plant, CLEAN.format(n="helper"))
         self.audit()
-        code = self.preview()["platform_unverified"]["code"]
+        code = "0" * 20                                                         # the preview has no code to give
         add(plant, "Changed after the owner saw it.\n")
         out = self.approve(code)
         self.assertIn("NOT APPROVED", out)
@@ -244,7 +247,7 @@ class PlanCantWiden(_Platform):
         a, b = self.md("helper"), self.md("other")
         put(a, CLEAN.format(n="helper"))
         self.audit()
-        code = self.preview()["platform_unverified"]["code"]
+        code = "0" * 20                                                         # the preview has no code to give
         put(b, CLEAN.format(n="other"))
         wt.save_json(wt.state_path("platform_plan.json"), {"at": wt.now(), "files": {b: sha(b), a: sha(a)}})
         snap = self.snap()
@@ -269,35 +272,37 @@ class PlanCantWiden(_Platform):
         put(plant, CLEAN.format(n="helper"))
         self.audit()
         self.assertIn("NOT APPROVED", self.approve("0" * 20))
-        code = self.preview()["platform_unverified"]["code"]
-        self.assertIn("NOT SAVED", self.approve(code, yes=False))
+        code = "0" * 20                                                         # the preview has no code to give
+        self.assertIn("NOT APPROVED", self.approve(code, yes=False))
         self.assertNotIn(plant, wt.load_baseline()[0])
 
-    def test_4_the_owners_yes_approves_exactly_the_shown_files_and_later_changes_alert(self):
+    def test_4_the_owners_yes_is_refused_and_the_files_stay_high(self):
         self.start()
         a, b = self.md("helper"), self.md("other")
         put(a, CLEAN.format(n="helper")); put(b, CLEAN.format(n="other"))
+        v1 = sha(self.md("alpha"))
         add(self.md("alpha"), "One more line.\n")
         self.audit()
         pv = self.preview()["platform_unverified"]
-        self.assertEqual(sorted((o["path"], o["change"], o["sha256"]) for o in pv["offered"]),
-                         sorted([(a, "new", sha(a)[:12]), (b, "new", sha(b)[:12]), (self.md("alpha"), "changed", sha(self.md("alpha"))[:12])]))
-        self.assertTrue(all(o["checked"] == "Watchtower's rules found nothing in this exact file" for o in pv["offered"]))
-        self.assertIn(f"--approve-platform {pv['code']} --owner-said-yes", pv["ask"])
-        self.assertIn("Approved 3", self.approve(pv["code"]))
+        self.assertEqual(sorted(f["where"] for f in pv["files"]), sorted([a, b, self.md("alpha")]))
+        self.assertEqual(pv["open"], 3)
+        self.assertNotIn("code", pv)
+        self.assertNotIn("--approve-platform", json.dumps(pv))
+        self.assertIn("platform-release.lock", self.approve("0" * 20))
         base = wt.load_baseline()[0]
-        self.assertEqual((base[a], base[b], base[self.md("alpha")]), (sha(a), sha(b), sha(self.md("alpha"))))
+        self.assertEqual((a in base, b in base, base[self.md("alpha")]), (False, False, v1))
         with open(wt.state_path("ledger.jsonl")) as f:
             events = [json.loads(l) for l in f if l.strip()]
-        self.assertTrue([e for e in events if e.get("event") == "platform-approved" and e.get("count") == 3])
+        self.assertFalse([e for e in events if e.get("event") == "platform-approved"])
         self.audit()
-        self.assertFalse(self.counted_high(a) + self.counted_high(b))
-        self.assertEqual(self.daily(), "NO_CHANGES")
+        for p in (a, b, self.md("alpha")):
+            self.assertEqual(len(self.counted_high(p)), 1, p)
+        self.assertNotEqual(self.daily(), "NO_CHANGES")
         add(a, "Changed after the yes.\n")
         self.assertNotEqual(self.daily(), "NO_CHANGES")
         x = self.counted_high(a)
-        self.assertEqual([f["rule"] for f in x], ["WT-I001"])
-        self.assertIn("isn't on Grok Bot's release list", x[0]["title"])
+        self.assertEqual([f["rule"] for f in x], ["WT-I002"])
+        self.assertIn("Grok Bot's release list doesn't include it", x[0]["title"])
 
     def test_4_a_file_the_rules_flag_is_never_offered(self):
         self.start()
@@ -305,9 +310,9 @@ class PlanCantWiden(_Platform):
         put(bad, FLAGGED.format(n="helper"))
         self.audit()
         pv = self.preview()["platform_unverified"]
-        self.assertFalse(pv["offered"])
+        self.assertNotIn("offered", pv)
         self.assertNotIn("code", pv)
-        self.assertEqual([o["path"] for o in pv["not_offered"]], [bad])
+        self.assertEqual([f["where"] for f in pv["files"]], [bad])
         self.assertEqual(len(self.counted_high(bad)), 1)
 
 
@@ -368,6 +373,7 @@ class Dq042WithoutProvenance(Box):
         d = os.path.join(self.home, ".grok", "bundled", "skills", "learn")
         md = os.path.join(d, "SKILL.md")
         put(md, dq042.LEARN_V1)
+        profiles.vendor_release(self, md)                                       # v1 is the vendor's; v2 isn't listed
         self.scanners(skillspector=dq042.skillspector(dq042.LEARN_ISSUES), husk=dq042.husk(dq042.LEARN_HUSK))
         self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         self.audit()
