@@ -53,9 +53,19 @@ class Box(unittest.TestCase):
         self.roots = [self.home, self.ws]
         self.saved = (wt.RUN_LIMIT, wt.DAILY_LIMIT, wt.ENGINE_BUDGET, wt.ENGINE_LAUNCH_BASE, wt.ENGINE_LAUNCH_PER_SKILL, wt.ENGINE_SOLO_LIMIT)
         clear_scanner_checks()
+        # Item 8: the vendor release list is a file in this box, empty until a test lists a vendor's files (profiles.vendor_release)
+        self.saved_lock = getattr(wt, "PLATFORM_LOCK", None)
+        self.platform_lock = os.path.join(self.tmp, "platform-release.lock")
+        with open(self.platform_lock, "w") as f:
+            f.write("# test box: no vendor files listed yet\n")
+        wt.PLATFORM_LOCK = self.platform_lock
 
     def tearDown(self):
         clear_scanner_checks()
+        if self.saved_lock is None:
+            vars(wt).pop("PLATFORM_LOCK", None)
+        else:
+            wt.PLATFORM_LOCK = self.saved_lock
         wt.RUN_LIMIT, wt.DAILY_LIMIT, wt.ENGINE_BUDGET, wt.ENGINE_LAUNCH_BASE, wt.ENGINE_LAUNCH_PER_SKILL, wt.ENGINE_SOLO_LIMIT = self.saved
         for k, v in self.env.items():
             if v is None:
@@ -329,6 +339,8 @@ class FactoryBox(Box):
         open(os.path.join(sd, "plugins", "acme-1.0", "plugin.json"), "w").write('{"name": "acme"}')
         open(os.path.join(sd, "gateway.json"), "w").write('{\n "url": "https://gw.internal.example",\n "token": "Ya2u' + "Q7xLp3ZtV9" * 4 + '"\n}\n')
         json.dump([{"domain": ".google.com", "name": "SID", "value": "x" * 40}], open(os.path.join(sd, "chrome-cookie-seed.json"), "w"))
+        import profiles   # item 8: the factory's own skill packs, as the vendor's release lists them, under both names in use
+        profiles.vendor_release_tree(self, os.path.join(sd, "managed-skills"), os.path.join(self.home, "agent-data", "managed-skills"))
         self.scanners(pip_audit='#!/bin/sh\necho \'{"dependencies": [' + ", ".join(
             '{"name": "%s", "version": "1.0", "vulns": [{"id": "PYSEC-1", "fix_versions": ["9.9"]}]}' % n for n in ("cryptography", "jwcrypto", "pip", "wheel")) + "]}'\n",
             osv_scanner="#!/bin/sh\necho '{\"results\": []}'\n",

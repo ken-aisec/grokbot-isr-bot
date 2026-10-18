@@ -5,6 +5,8 @@ from contextlib import redirect_stdout, redirect_stderr
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "watchtower"))
 import wt  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import profiles  # noqa: E402
 wt.NATIVE_SETTINGS[:] = [p for p in wt.NATIVE_SETTINGS if p.startswith("~")]
 
 warnings.simplefilter("ignore", ResourceWarning)
@@ -53,8 +55,15 @@ class Box(unittest.TestCase):
         self.ws = os.path.join(self.tmp, "workspace"); os.makedirs(self.ws, exist_ok=True)
         self.roots = [self.home, self.ws]
         self.saved = (wt.RUN_LIMIT, wt.DAILY_LIMIT, wt.ENGINE_BUDGET)
+        # Item 8: the vendor release list is a file in this box, as in test_boxes.Box (profiles.vendor_release lists files in it)
+        self.saved_lock = wt.PLATFORM_LOCK
+        self.platform_lock = os.path.join(self.tmp, "platform-release.lock")
+        with open(self.platform_lock, "w") as f:
+            f.write("# test box: no vendor files listed yet\n")
+        wt.PLATFORM_LOCK = self.platform_lock
 
     def tearDown(self):
+        wt.PLATFORM_LOCK = self.saved_lock
         wt.RUN_LIMIT, wt.DAILY_LIMIT, wt.ENGINE_BUDGET = self.saved
         for k, v in self.env.items():
             if v is None:
@@ -185,6 +194,7 @@ class DQ029ReferencesUnderLoadable(Box):
         ref = os.path.join(d, "references")
         os.makedirs(ref, exist_ok=True)
         open(os.path.join(ref, "steps.md"), "w").write(BAD_SKILL)
+        profiles.vendor_release(self, os.path.join(d, "SKILL.md"), os.path.join(ref, "steps.md"))   # item 8: as Grok Bot shipped it
         self.scanners()
         self.assertTrue(wt.is_loadable_skill_location(os.path.join(ref, "steps.md")))
         r = self.audit()
