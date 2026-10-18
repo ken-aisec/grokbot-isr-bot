@@ -2713,13 +2713,14 @@ def platform_unproven(manifest):
 
 
 # PR #9 (Ken: few false alarms): the platform's own sync bookkeeping, rewritten at every sync with no release (Ken's box, Oct 18:
-# managed-skills/cache.json, 554 KB, at each managed-skills sync; the empty .bucket-<id> marker and the <bucket>/*.meta.json,
-# .marketplaces.json and manifest.json Claude's plugin sync writes). Nothing loads them as a skill, so they are no provenance
-# subject: not walked, fingerprinted or listed (rules/platform-release.lock's fill command skips this same pattern). Exact names at
-# exact places only: never a skill or plugin folder's file, never .grok/bundled (its manifest.json changes with each release).
+# managed-skills/cache.json, 554 KB, at each managed-skills sync; the empty .bucket-<id> marker Claude's plugin sync writes). They
+# are no provenance subject: not walked, fingerprinted or listed (rules/platform-release.lock's fill command skips exactly the
+# files platform_churn_file skips). Exact names at exact places only: both sit at a platform folder's top, never in a skill folder.
+# Codex, lock-trim review 1 (high): the bucket's *.meta.json, manifest.json and .marketplaces.json were skipped too, but Claude's
+# plugin loader reads them (installation_preference "required" enables a plugin the user disabled; manifest name/generation pick
+# the plugin folders; .marketplaces.json builds the source choices), so they are provenance subjects again.
 _SYNC_BUCKET = r"[0-9a-f-]{36}_[0-9a-f-]{36}"
-PLATFORM_CHURN = re.compile(r"((sand-data|agent-data)/managed-skills/cache\.json|\.claude/plugins/synced/(\.bucket-" + _SYNC_BUCKET
-                            + r"|" + _SYNC_BUCKET + r"/([^/]+\.meta\.json|\.marketplaces\.json|manifest\.json)))")
+PLATFORM_CHURN = re.compile(r"((sand-data|agent-data)/managed-skills/cache\.json|\.claude/plugins/synced/\.bucket-" + _SYNC_BUCKET + r")")
 
 
 def platform_churn(rel):
@@ -2728,17 +2729,24 @@ def platform_churn(rel):
 
 
 def platform_churn_file(p):
-    """platform_churn for a file on disk: a plain file (never a link), with no exec bit, in a folder with no SKILL.md, whose path as
-    written and its real path are each, relative to every home base they sit under, a churn name. Anything else is a provenance
-    subject: a link named cache.json, a cache.json in a skill folder, or one reached through a linked folder from elsewhere."""
+    """platform_churn for a file on disk, exactly what the lock's fill command can test (Codex, lock-trim review 1, medium): relative
+    to every home base it sits under, its path is a churn name and its real path is that same path under the real home (no link
+    anywhere below the home folder: not the file, not a folder above it); lstat says a regular file with no exec bit and one name
+    (st_nlink 1: no hardlink alias). Anything else is a provenance subject."""
     try:
         n = os.path.normpath(os.path.abspath(str(p)))
-        rels = [_home_rels(q) for q in (n, os.path.realpath(n))]
-        if not all(rs and all(platform_churn(r) for r in rs) for rs in rels):
+        real, seen = os.path.realpath(n), False
+        for b in dict.fromkeys((os.path.expanduser("~"), "/home/box")):
+            for base in {os.path.normpath(b), os.path.realpath(b)}:
+                if n.startswith(base + os.sep):
+                    rel = n[len(base) + 1:]
+                    if not platform_churn(rel) or real != os.path.join(os.path.realpath(base), rel):
+                        return False
+                    seen = True
+        if not seen:
             return False
         st = os.lstat(n)
-        return (stat.S_ISREG(st.st_mode) and not st.st_mode & 0o111
-                and not os.path.lexists(os.path.join(os.path.dirname(n), "SKILL.md")))
+        return stat.S_ISREG(st.st_mode) and not st.st_mode & 0o111 and st.st_nlink == 1
     except (OSError, ValueError):
         return False
 
