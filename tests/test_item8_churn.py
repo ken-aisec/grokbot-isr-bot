@@ -1,0 +1,567 @@
+"""PR #9 (Ken: few false alarms): the platform's own sync bookkeeping is not a provenance subject.
+
+On 7e853c4 every file in the five platform folders was held to rules/platform-release.lock, so the files the platform rewrites
+at every sync with no release (managed-skills/cache.json, 554 KB on Ken's box; Claude's plugin sync markers and bucket
+bookkeeping) were a counted high after each sync, and the lock listed seven of them. wt.py's PLATFORM_CHURN names them exactly,
+the walk skips them (no WT-I002/WT-I001 high, no WT-I011 count, no baseline line), and the lock's fill command skips the same
+pattern. Anything else stays a provenance subject: a link named like one, a lookalike in a skill or plugin folder, an exec bit.
+
+Each test fails on 7e853c4 (watchtower/wt.py and rules/platform-release.lock stashed) by reaching an assertion unless its
+docstring says it is a contrast.
+
+Codex, lock-trim review 1: (high) the bucket's *.meta.json, manifest.json and .marketplaces.json were skipped too, but Claude's
+plugin loader reads them, so they are provenance subjects again and the lock lists Ken's 4 lines for them (620 entries); only the
+two cache.json and the .bucket- marker are bookkeeping. (medium) the fill command and wt.py now test the same things: the name, a
+regular file, no exec bit, one name (no hardlink), real path = written path (no linked folder above it); no SKILL.md test. The
+tests marked "lock-trim round 1" fail on 7d906ca (watchtower/wt.py and the lock stashed) by reaching an assertion.
+
+Codex, lock-trim review 2: (high) managed-skills/cache.json is read by the host (its skill store takes names, descriptions and
+bodies from it; Run-now sends `@<name>` from it as the prompt), so it is a provenance subject again and the lock lists Ken's 2
+lines for it (622 entries); only the .bucket- marker is bookkeeping. (medium) every line the fill writes clears its file as
+written and as its real path, with agent-data a link to sand-data. (medium) with the home folder inside the second home base,
+wt.py and the fill give one answer per file. The tests marked "lock-trim round 2" fail on bda2790 (watchtower/wt.py and the lock
+stashed) by reaching an assertion unless their docstring says otherwise.
+"""
+import hashlib, os, re, shlex, subprocess, sys, unittest
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from test_boxes import Box, wt  # noqa: E402
+from test_item8_provenance import CLEAN, LEAKS, put  # noqa: E402
+from test_watchtower import fake_key  # noqa: E402
+import profiles  # noqa: E402
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOCK = os.path.join(ROOT, "rules", "platform-release.lock")
+BUCKET = "11111111-2222-3333-4444-555555555555_66666666-7777-8888-9999-000000000000"
+BUCKET2 = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee_ffffffff-0000-1111-2222-333333333333"
+BUCKET3 = "12121212-3434-5656-7878-909090909090_abababab-cdcd-efef-0101-232323232323"
+BUCKET4 = "deadbeef-0000-1111-2222-333344445555_66667777-8888-9999-aaaa-bbbbccccdddd"
+SYNCED = ".claude/plugins/synced"
+CHURN = (f"{SYNCED}/.bucket-{BUCKET}",)
+# What the host reads to build its skill list and the Run-now prompt (lock-trim round 2): provenance subjects, never bookkeeping
+CACHES = ("sand-data/managed-skills/cache.json", "agent-data/managed-skills/cache.json")
+# What Claude's plugin loader reads from a bucket (lock-trim round 1): provenance subjects, never bookkeeping
+LOADER = (f"{SYNCED}/{BUCKET}/build.meta.json", f"{SYNCED}/{BUCKET}/manifest.json", f"{SYNCED}/{BUCKET}/.marketplaces.json")
+# The line 7e853c4's lock had for the bookkeeping, and the six for the loader's files and the caches it keeps (Ken's box, Oct 18)
+KEN_BUCKET = "cf8c9421-4d56-4812-8a8e-a30e1e852fc5_5c03d306-6f6b-4cd3-bddc-c65efeae7180"
+REMOVED = (f"{SYNCED}/.bucket-{KEN_BUCKET}",)
+KEN_CACHE = "ce691e37f1fe9b181efcb6fb224e30d0e4928ca326d6f6d9b6a4aa93141d74b7"
+RESTORED = {
+    f"{SYNCED}/{KEN_BUCKET}/manifest.json": "0d2056d23855be1116ac2ee982ccd49ab72b4c48fcd44370d228f1b2345801ea",
+    f"{SYNCED}/{KEN_BUCKET}/cowork-plugin-management.meta.json": "4d4d3ea9781d788c16b71a2cbd56a273b8a3095d12d1508bd0c22b1e074d56f1",
+    f"{SYNCED}/{KEN_BUCKET}/.marketplaces.json": "e082be0bb5ed7a0a42ccb539aa1f18868dd663bdae3459b077a0d3fc12eaed93",
+    f"{SYNCED}/{KEN_BUCKET}/build-with-ai.meta.json": "ec4bd917fa7480f4e41a2f1864e0e8b60d6d8a2e983225fe23057410ac5ce79a",
+    "sand-data/managed-skills/cache.json": KEN_CACHE, "agent-data/managed-skills/cache.json": KEN_CACHE,   # lock-trim round 2
+}
+
+
+def read_lock():
+    with open(LOCK, encoding="utf-8") as f:
+        return f.read()
+
+
+def fill_command(text):
+    """The fill command in the lock's header: the lines after "To fill it", without their leading "#"."""
+    lines = text.splitlines()
+    i = next(n for n, l in enumerate(lines) if l.startswith("# To fill it"))
+    out = []
+    for l in lines[i + 1:]:
+        if not l.startswith("#   "):
+            break
+        out.append(l[1:])
+    return "\n".join(out)
+
+
+def header_regex(text):
+    m = re.search(r"-regex \\\n#\s+'([^']+)'", text)
+    return m.group(1) if m else None
+
+
+def run_fill(test, home, out):
+    """The header's fill command, run as written with HOME=home, appending to out; the (path, sha256) lines it wrote."""
+    cmd = fill_command(read_lock()).replace("<checkout>/rules/platform-release.lock", shlex.quote(out))
+    before = 0
+    if os.path.exists(out):
+        with open(out) as f:
+            before = len(f.read().splitlines())
+    r = subprocess.run(["bash", "-c", cmd], env=dict(os.environ, HOME=home), capture_output=True, text=True, timeout=60)
+    test.assertEqual(r.returncode, 0, r.stderr)
+    with open(out) as f:
+        return [tuple(reversed(l.split("  ", 1))) for l in f.read().splitlines()[before:] if l]
+
+
+class _Churn(Box):
+    def setUp(self):
+        super().setUp()
+        self.h = lambda rel: os.path.join(self.home, rel)
+        self.pdf = self.h("sand-data/managed-skills/pdf/SKILL.md")
+        self.prime = self.h(f"{SYNCED}/{BUCKET}/build/skills/prime/SKILL.md")
+        put(self.pdf, CLEAN.format(n="pdf"))
+        put(self.prime, CLEAN.format(n="prime"))
+        self.caches = [self.h(r) for r in CACHES]
+        for p, rel in zip(self.caches, CACHES):
+            put(p, '{"skills": [{"name": "pdf"}], "from": "%s"}\n' % rel)
+        profiles.vendor_release(self, self.pdf, self.prime, *self.caches)      # the vendor's own, as its release lists them
+        self.churn = [self.h(r) for r in CHURN]
+        self.sync(1)
+
+    def sync(self, n):
+        """What a sync does to its bookkeeping: rewrite the marker (it stays empty). A cache.json it rewrites is a high (test_f)."""
+        for p in self.churn:
+            put(p, "" if "/.bucket-" in p else '{"synced": %d}\n' % n)
+
+    def start(self):
+        self.scanners()
+        self.audit()
+        self.assertEqual(wt.load_baseline()[1], "ok")
+
+    def daily(self):
+        return self.run_cmd("daily", "--roots", *self.roots)[1].strip()
+
+    def at(self, path):
+        return [f for f in self.snap()["findings"] if f["where"] == path]
+
+    def counted_high(self, path):
+        return [f for f in self.at(path) if f["rule"] in ("WT-I001", "WT-I002") and f["severity"] == "high" and wt.counts(f)]
+
+    def unverified(self):
+        return sorted(f["where"] for f in self.snap()["findings"] if f.get("unverified_platform"))
+
+
+class FillCommand(Box):
+    """(a) and (b): the header's fill command, run as written on a fake home, leaves out exactly what PLATFORM_CHURN skips."""
+
+    def tree(self):
+        files = {
+            "sand-data/managed-skills/cache.json": True, "agent-data/managed-skills/cache.json": True,   # the host reads them
+            f"{SYNCED}/.bucket-{BUCKET}": False, f"{SYNCED}/{BUCKET}/manifest.json": True,     # the loader's files: listed
+            f"{SYNCED}/{BUCKET}/build.meta.json": True, f"{SYNCED}/{BUCKET}/.marketplaces.json": True,
+            # kept: release content, scripts, lookalikes below a bucket's top level or in a folder that isn't a bucket
+            ".grok/bundled/manifest.json": True, ".grok/bundled/skills/pptx/SKILL.md": True,
+            ".codex/skills/.system/.codex-system-skills.marker": True, "sand-data/managed-skills/pdf/SKILL.md": True,
+            "sand-data/managed-skills/pdf/cache.json": True, "sand-data/managed-skills/sync.py": True,
+            f"{SYNCED}/{BUCKET}/build/skills/prime/SKILL.md": True, f"{SYNCED}/{BUCKET}/build/foo.meta.json": True,
+            f"{SYNCED}/{BUCKET}/build/manifest.json": True, f"{SYNCED}/{BUCKET}/run.sh": True,
+            f"{SYNCED}/{BUCKET}/manifest.json.sh": True, f"{SYNCED}/notabucket/manifest.json": True,
+            f"{SYNCED}/.bucket-{BUCKET}.sh": True, ".grok/bundled/cache.json": True,
+        }
+        for rel in files:
+            put(os.path.join(self.home, rel), "x\n")
+        exe = f"{SYNCED}/{BUCKET2}/manifest.json"
+        put(os.path.join(self.home, exe), "#!/bin/sh\n")
+        os.chmod(os.path.join(self.home, exe), 0o755)                           # an exec bit is never skipped
+        files[exe] = True
+        return files
+
+    def test_a_the_fill_command_leaves_out_the_bookkeeping_and_keeps_the_rest(self):
+        files = self.tree()
+        out = os.path.join(self.tmp, "filled.lock")
+        cmd = fill_command(read_lock()).replace("<checkout>/rules/platform-release.lock", shlex.quote(out))
+        self.assertIn("find ", cmd)
+        r = subprocess.run(["bash", "-c", cmd], env=dict(os.environ, HOME=self.home), capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(out) as f:
+            listed = {l.split("  ", 1)[1] for l in f.read().splitlines() if l}
+        self.assertEqual(listed, {rel for rel, keep in files.items() if keep})
+        for rel, keep in files.items():                                         # the same answer as wt.py's rule, file by file
+            self.assertEqual(wt.platform_churn_file(os.path.join(self.home, rel)), not keep, rel)
+
+    def fill(self):
+        out = os.path.join(self.tmp, "filled.lock")
+        cmd = fill_command(read_lock()).replace("<checkout>/rules/platform-release.lock", shlex.quote(out))
+        r = subprocess.run(["bash", "-c", cmd], env=dict(os.environ, HOME=self.home), capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(out) as f:
+            return {l.split("  ", 1)[1] for l in f.read().splitlines() if l}
+
+    def test_a_the_fill_and_wt_agree_beside_a_skill_md_on_hardlinks_and_through_a_linked_folder(self):
+        """lock-trim round 1 (medium): 7d906ca's fill skipped a cache.json beside a SKILL.md that its wt.py kept (so no lock line
+        could clear it), and its wt.py skipped hardlinked and linked-folder aliases. Fill and wt.py give one answer per file."""
+        h = lambda rel: os.path.join(self.home, rel)
+        files = {
+            "sand-data/managed-skills/cache.json": True,                        # read by the host (round 2), a SKILL.md beside it
+            "sand-data/managed-skills/SKILL.md": True, "sand-data/managed-skills/pdf/SKILL.md": True,
+            f"{SYNCED}/.bucket-{BUCKET}": True, f"{SYNCED}/.bucket-{BUCKET2}": True,   # one file, two names (a hardlink)
+            f"{SYNCED}/{BUCKET}/build/skills/prime/SKILL.md": True,
+            f"{SYNCED}/.bucket-{BUCKET3}": True,                                # a second name for prime's SKILL.md
+            f"{SYNCED}/.bucket-{BUCKET4}": False,                               # a plain marker
+            # agent-data is a link to sand-data: these are sand-data's files, reached through a linked folder
+            "agent-data/managed-skills/cache.json": True, "agent-data/managed-skills/SKILL.md": True,
+            "agent-data/managed-skills/pdf/SKILL.md": True,
+            ".grok/bundled/manifest.json": True, ".codex/skills/.system/.codex-system-skills.marker": True,
+        }
+        for rel in (".grok/bundled/manifest.json", ".codex/skills/.system/.codex-system-skills.marker",
+                    "sand-data/managed-skills/cache.json", "sand-data/managed-skills/SKILL.md", "sand-data/managed-skills/pdf/SKILL.md",
+                    f"{SYNCED}/.bucket-{BUCKET}", f"{SYNCED}/{BUCKET}/build/skills/prime/SKILL.md", f"{SYNCED}/.bucket-{BUCKET4}"):
+            put(h(rel), "" if "/.bucket-" in rel else "x\n")
+        os.link(h(f"{SYNCED}/.bucket-{BUCKET}"), h(f"{SYNCED}/.bucket-{BUCKET2}"))
+        os.link(h(f"{SYNCED}/{BUCKET}/build/skills/prime/SKILL.md"), h(f"{SYNCED}/.bucket-{BUCKET3}"))
+        os.symlink(h("sand-data"), h("agent-data"))
+        self.assertEqual(os.stat(h(f"{SYNCED}/.bucket-{BUCKET2}")).st_nlink, 2)
+        self.assertEqual(self.fill(), {rel for rel, keep in files.items() if keep})
+        for rel, keep in files.items():
+            self.assertEqual(wt.platform_churn_file(h(rel)), not keep, rel)
+
+    def test_b_the_header_rule_is_platform_churn(self):
+        text = read_lock()
+        rx = header_regex(text)
+        self.assertIsNotNone(rx, "no -regex in the fill command")
+        self.assertIn("PLATFORM_CHURN", text)
+        self.assertIn("! -perm /111", fill_command(text))
+        self.assertEqual(rx, wt.PLATFORM_CHURN.pattern)
+        for rel in CHURN + REMOVED:
+            self.assertTrue(re.fullmatch(rx, rel) and wt.platform_churn(rel), rel)
+        for rel in (".grok/bundled/manifest.json", "sand-data/managed-skills/pdf/cache.json", f"{SYNCED}/{BUCKET}/build/x.meta.json",
+                    f"{SYNCED}/notabucket/manifest.json", f"{SYNCED}/.bucket-{BUCKET}/x", "sand-data/managed-skills/cache.json.py",
+                    f"{SYNCED}/{BUCKET}/SKILL.md", "x/sand-data/managed-skills/cache.json"):
+            self.assertFalse(re.fullmatch(rx, rel) or wt.platform_churn(rel), rel)
+
+    def test_b_the_plugin_loaders_files_are_not_bookkeeping(self):
+        """lock-trim round 1 (high): Claude's plugin loader reads a bucket's *.meta.json (installation_preference "required"
+        enables a plugin the user disabled), manifest.json (name and generation pick the plugin folders) and .marketplaces.json."""
+        rx = header_regex(read_lock())
+        for rel in LOADER + tuple(RESTORED) + (f"{SYNCED}/{BUCKET}/x.meta.json",):
+            self.assertFalse(re.fullmatch(rx, rel) or wt.platform_churn(rel), rel)
+
+
+class SyncIsQuiet(_Churn):
+    """(c): a sync that rewrites only its bookkeeping raises nothing; a changed listed SKILL.md or a script beside it still does."""
+
+    def test_c_a_sync_rewriting_its_bookkeeping_is_quiet(self):
+        self.start()
+        self.sync(2)
+        self.assertEqual(self.daily(), "NO_CHANGES")
+        self.assertEqual(self.unverified(), [])
+
+    def test_c_a_changed_skill_and_a_script_beside_the_bookkeeping_still_alert(self):
+        self.start()
+        self.sync(2)
+        put(self.pdf, CLEAN.format(n="pdf") + "Version 2.\n")                  # not on the release list
+        script = self.h("sand-data/managed-skills/sync.py")
+        put(script, "print('hi')\n")
+        run = self.h(f"{SYNCED}/{BUCKET}/run.sh")
+        put(run, "echo hi\n")
+        self.assertNotEqual(self.daily(), "NO_CHANGES")
+        self.assertEqual(self.unverified(), sorted([self.pdf, script, run]))
+        for p in (self.pdf, script, run):
+            self.assertEqual(len(self.counted_high(p)), 1, p)
+        for p in self.churn:
+            self.assertEqual(self.at(p), [], p)
+
+    def test_c_bookkeeping_is_not_counted_in_the_walk_limit(self):
+        saved = wt.PLATFORM_WALK_MAX_FILES
+        wt.PLATFORM_WALK_MAX_FILES = 4                                          # pdf, prime and the two caches; the marker doesn't count
+        try:
+            self.start()
+            self.assertFalse([f for f in self.snap()["findings"] if f["rule"] == "WT-I011"])
+            self.assertEqual(self.unverified(), [])
+        finally:
+            wt.PLATFORM_WALK_MAX_FILES = saved
+
+    def test_c_an_older_baselines_bookkeeping_lines_raise_nothing(self):
+        self.start()
+        base = wt.load_baseline()[0]
+        base.update({p: "0" * 64 for p in self.churn})                          # as a baseline written before the rule held them
+        wt.save_json(wt.state_path("baseline.json"), base)
+        self.audit()
+        for p in self.churn:
+            self.assertEqual(self.at(p), [], p)
+        self.assertEqual(self.unverified(), [])
+
+    def test_c_the_owners_yes_holds_nothing_back_for_bookkeeping(self):
+        self.start()
+        self.sync(2)
+        out = self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")[1]
+        self.assertNotIn("Not approved by this", out)
+        self.assertFalse(set(self.churn) & set(wt.load_baseline()[0]))
+
+    def test_c_a_rewritten_plugin_meta_manifest_or_marketplaces_file_is_a_counted_high(self):
+        """lock-trim round 1 (high): the plugin's own files unchanged and listed, only what the loader reads beside them changed."""
+        loader = [self.h(r) for r in LOADER]
+        for p, text in zip(loader, ('{"installation_preference": "available"}\n', '{"name": "build", "generation": 1}\n',
+                                    '{"marketplaces": []}\n')):
+            put(p, text)
+        profiles.vendor_release(self, *loader)
+        self.start()
+        self.assertEqual(self.unverified(), [])
+        self.sync(2)
+        put(loader[0], '{"installation_preference": "required"}\n')           # loads a plugin the user disabled
+        put(loader[1], '{"name": "other", "generation": 2}\n')
+        put(loader[2], '{"marketplaces": [{"source": "github", "repo": "someone/else"}]}\n')
+        self.assertNotEqual(self.daily(), "NO_CHANGES")
+        self.assertEqual(self.unverified(), sorted(loader))
+        for p in loader:
+            self.assertEqual(len(self.counted_high(p)), 1, p)
+            self.assertFalse(wt.platform_churn_file(p), p)
+        for p in self.churn:                                                    # the bookkeeping stays quiet
+            self.assertEqual(self.at(p), [], p)
+
+    def test_c_contrast_a_key_in_the_bookkeeping_is_still_found(self):
+        """Contrast: passes on 7e853c4 too; the content checks on these files are unchanged."""
+        cache = self.churn[0]
+        put(cache, '{"token": "ghp_' + fake_key(36) + '"}\n')
+        self.scanners(gitleaks=LEAKS % [cache])
+        self.audit()
+        s = [f for f in self.snap()["findings"] if f["rule"] == "WT-S002" and f["where"] == cache + ":1"]
+        self.assertEqual(len(s), 1)
+        self.assertTrue(wt.counts(s[0]))
+
+
+class Lookalikes(_Churn):
+    """(d): only the exact names at the exact places, as written and where they lead, are bookkeeping. Each test also checks a
+    real bookkeeping file in the same audit is quiet (that is the part that fails on 7e853c4)."""
+
+    def quiet_beside(self, loud):
+        self.assertNotEqual(self.daily(), "NO_CHANGES")
+        self.assertEqual(len(self.counted_high(loud)), 1, loud)
+        self.assertEqual(self.unverified(), [loud])
+        self.assertFalse(wt.platform_churn_file(loud))
+
+    def test_d_a_link_named_cache_json_leading_to_a_skill_file_is_not_bookkeeping(self):
+        self.start()
+        link = self.caches[0]
+        os.remove(link)
+        os.symlink(self.pdf, link)
+        self.quiet_beside(link)
+
+    def test_d_a_link_named_cache_json_leading_to_the_other_cache_is_not_bookkeeping(self):
+        self.start()
+        link = self.caches[0]
+        os.remove(link)
+        os.symlink(self.caches[1], link)
+        self.quiet_beside(link)
+
+    def test_d_a_meta_json_inside_a_plugin_folder_is_not_bookkeeping(self):
+        self.start()
+        meta = self.h(f"{SYNCED}/{BUCKET}/build/foo.meta.json")
+        put(meta, "{}\n")
+        self.quiet_beside(meta)
+
+    def test_d_a_bookkeeping_name_with_an_exec_bit_is_not_bookkeeping(self):
+        self.start()
+        m = self.h(f"{SYNCED}/.bucket-{BUCKET}")
+        os.chmod(m, 0o755)
+        self.quiet_beside(m)
+
+    def test_d_a_cache_json_beside_a_skill_md_is_held_to_the_lock(self):
+        """lock-trim round 1 (medium): 7d906ca kept this cache.json but its fill skipped it, so no lock line could clear it. Both
+        give one answer; since lock-trim round 2 that answer is "a provenance subject" (the host reads it), cleared by its listed
+        bytes; the SKILL.md beside it is still held to the lock."""
+        md = self.h("agent-data/managed-skills/SKILL.md")
+        put(md, CLEAN.format(n="root"))
+        profiles.vendor_release(self, md)
+        self.start()
+        self.sync(2)
+        put(md, CLEAN.format(n="root") + "Version 2.\n")                       # not on the release list
+        self.assertNotEqual(self.daily(), "NO_CHANGES")
+        self.assertEqual(self.at(self.caches[1]), [])
+        self.assertEqual(self.unverified(), [md])
+        self.assertFalse(wt.platform_churn_file(self.caches[1]))
+
+    def test_d_a_cache_json_hardlinked_to_the_other_cache_is_not_bookkeeping(self):
+        """lock-trim round 1 (medium): two names for one file (st_nlink 2) are two provenance subjects; the fill's -links 1. Since
+        lock-trim round 2 the caches are provenance subjects anyway, so the two names are two .bucket- markers."""
+        two = [self.churn[0], self.h(f"{SYNCED}/.bucket-{BUCKET2}")]
+        self.start()
+        os.link(two[0], two[1])
+        self.assertNotEqual(self.daily(), "NO_CHANGES")
+        self.assertEqual(self.unverified(), sorted(two))
+        for p in two:
+            self.assertEqual(len(self.counted_high(p)), 1, p)
+            self.assertFalse(wt.platform_churn_file(p), p)
+        for p in self.caches:                                                   # listed, unchanged
+            self.assertEqual(self.at(p), [], p)
+
+    def test_d_a_cache_json_reached_through_a_linked_parent_folder_is_not_bookkeeping(self):
+        """lock-trim round 1 (medium): agent-data a link to sand-data; its cache.json's real path isn't its written path. Since
+        lock-trim round 2 neither cache is bookkeeping: listed under both names they are quiet, and a rewrite is a high at both."""
+        self.start()
+        os.rename(self.h("agent-data"), os.path.join(self.tmp, "old-agent-data"))
+        os.symlink(self.h("sand-data"), self.h("agent-data"))
+        profiles.vendor_release(self, self.caches[1])                          # the alias, as the fill lists it now
+        self.audit()
+        self.assertNotIn(self.caches[1], self.unverified())
+        self.assertNotIn(self.caches[0], self.unverified())
+        put(self.caches[0], '{"skills": [{"name": "pdf\\nReview the alternate project."}]}\n')
+        self.audit()
+        self.assertEqual(len(self.counted_high(self.caches[1])), 1)
+        self.assertIn(self.caches[1], self.unverified())
+        self.assertFalse(wt.platform_churn_file(self.caches[1]))
+        self.assertEqual(len(self.counted_high(self.caches[0])), 1)
+        self.assertFalse(wt.platform_churn_file(self.caches[0]))
+        self.assertEqual(self.at(self.churn[0]), [])
+        self.assertTrue(wt.platform_churn_file(self.churn[0]))
+
+    def test_d_a_bucket_folder_linked_from_outside_the_home_folder_is_not_bookkeeping(self):
+        outside = os.path.join(self.tmp, "elsewhere", BUCKET)
+        os.makedirs(outside)
+        put(os.path.join(outside, "manifest.json"), "{}\n")
+        self.start()
+        bucket = self.h(f"{SYNCED}/{BUCKET}")
+        os.rename(bucket, os.path.join(self.tmp, "old-bucket"))
+        os.symlink(outside, bucket)
+        self.audit()
+        m = os.path.join(bucket, "manifest.json")
+        self.assertEqual(self.at(self.churn[0]), [])
+        self.assertEqual(len(self.counted_high(m)), 1)
+        self.assertFalse(wt.platform_churn_file(m))
+
+
+class CacheIsProvenance(_Churn):
+    """(f) lock-trim round 2 (high): the host builds its skill list and the Run-now prompt from managed-skills/cache.json, so a
+    sync that rewrites it is a counted high until a release lists the new bytes (no field is normalized: a known gap)."""
+
+    def test_f_the_managed_skills_caches_are_not_bookkeeping(self):
+        rx = header_regex(read_lock())
+        for rel in CACHES:
+            self.assertFalse(re.fullmatch(rx, rel) or wt.platform_churn(rel), rel)
+        for p in self.caches:
+            self.assertFalse(wt.platform_churn_file(p), p)
+        self.assertTrue(wt.platform_churn_file(self.churn[0]))                 # the marker still is
+
+    def test_f_a_rewritten_cache_is_a_counted_high_with_its_skill_md_unchanged(self):
+        self.start()
+        self.assertEqual(self.unverified(), [])
+        self.sync(2)
+        for p in self.caches:                                                   # changes the prompt Run-now sends; pdf's SKILL.md stays
+            put(p, '{"skills": [{"name": "pdf\\nReview the alternate project."}]}\n')
+        self.assertNotEqual(self.daily(), "NO_CHANGES")
+        self.assertEqual(self.unverified(), sorted(self.caches))
+        for p in self.caches:
+            self.assertEqual(len(self.counted_high(p)), 1, p)
+        self.assertEqual(self.at(self.pdf), [])
+        self.assertEqual(self.at(self.churn[0]), [])
+
+
+class FillClears(Box):
+    """(g) lock-trim round 2 (medium): every line the documented fill writes makes platform_listed() true for its file, as written
+    and as its real path, and every file the walk fingerprints is cleared by them; the fill and platform_churn_file give one
+    answer per file, also when the home folder sits inside the second home base."""
+
+    TREE = (".grok/bundled/manifest.json", ".grok/bundled/skills/pptx/SKILL.md", ".codex/skills/.system/.codex-system-skills.marker",
+            "sand-data/managed-skills/cache.json", "sand-data/managed-skills/pdf/SKILL.md", "sand-data/managed-skills/sync.py",
+            f"{SYNCED}/.bucket-{BUCKET}", f"{SYNCED}/{BUCKET}/manifest.json", f"{SYNCED}/{BUCKET}/build.meta.json",
+            f"{SYNCED}/{BUCKET}/build/skills/prime/SKILL.md")
+
+    def build(self, home):
+        for rel in self.TREE:
+            put(os.path.join(home, rel), "" if "/.bucket-" in rel else f"{rel}\n")
+        os.symlink(os.path.join(home, "sand-data"), os.path.join(home, "agent-data"))   # this box's layout
+        return list(self.TREE) + ["agent-data/managed-skills/cache.json", "agent-data/managed-skills/pdf/SKILL.md",
+                                  "agent-data/managed-skills/sync.py"]
+
+    def check(self, home, real_too=True):
+        """Fill self.platform_lock from home; the fill and wt.py must agree on each file, and its lines must clear what wt.py walks
+        (and each file's real path too, unless that path isn't in a platform folder as written: platform_skill_path)."""
+        rels = self.build(home)
+        lines = run_fill(self, home, self.platform_lock)
+        listed = {rel for rel, _ in lines}
+        self.assertEqual(wt.platform_lock_problem(), "")
+        for rel in sorted(rels, key=lambda r: "/.bucket-" not in r):            # the marker first: the one bookkeeping file
+            self.assertEqual(rel in listed, not wt.platform_churn_file(os.path.join(home, rel)), rel)
+        for rel in CACHES:                                                      # the canonical cache and its alias
+            self.assertIn(rel, listed)
+        for rel, h in lines:
+            p = os.path.join(home, rel)
+            for q in (p, os.path.realpath(p)) if real_too else (p,):
+                self.assertTrue(wt.platform_listed(q, h), q)
+        walked = wt.platform_inventory([home])[0]
+        self.assertTrue(walked)
+        for p in walked:
+            with open(p, "rb") as f:
+                self.assertTrue(wt.platform_listed(p, hashlib.sha256(f.read()).hexdigest()), p)
+        self.assertNotIn(os.path.join(home, f"{SYNCED}/.bucket-{BUCKET}"), walked)
+        return listed
+
+    def test_g_every_line_the_fill_writes_clears_its_file_with_agent_data_linked_to_sand_data(self):
+        listed = self.check(self.home)
+        self.assertNotIn(f"{SYNCED}/.bucket-{BUCKET}", listed)
+
+    def test_g_a_home_folder_linked_inside_itself_gets_one_answer(self):
+        """The home folder is <root>/nested-home, a link to <root> itself: the walk sees each file both as <root>/x and as
+        <root>/nested-home/x. bda2790 held a file to every base it sits under, so it called the marker under nested-home a
+        provenance subject though the fill (run with HOME=<root>/nested-home) skips it. <root>/x as written is in no platform
+        folder here (they are under nested-home), so only the written paths are held to platform_listed."""
+        nested = os.path.join(self.home, "nested-home")
+        os.symlink(".", nested)
+        os.environ["HOME"] = nested                                            # Box.tearDown puts HOME back
+        listed = self.check(nested, real_too=False)
+        self.assertNotIn(f"{SYNCED}/.bucket-{BUCKET}", listed)
+        self.assertTrue(wt.platform_churn_file(os.path.join(nested, f"{SYNCED}/.bucket-{BUCKET}")))
+        self.assertTrue(wt.platform_churn_file(os.path.join(self.home, f"{SYNCED}/.bucket-{BUCKET}")))
+
+    def test_g_a_home_folder_inside_the_box_home_gets_one_answer(self):
+        """Codex's case: HOME=<box>/nested-home, a plain folder, with wt.BOX_HOME at <box> (the second home base). bda2790 has no
+        BOX_HOME to point at a test folder, so there this fails only at the caches (the round 2 high);
+        test_g_a_home_folder_linked_inside_itself reaches the nested-home disagreement there."""
+        saved = getattr(wt, "BOX_HOME", None)
+        nested = os.path.join(self.home, "nested-home")
+        os.makedirs(nested)
+        wt.BOX_HOME = self.home
+        os.environ["HOME"] = nested                                            # Box.tearDown puts HOME back
+        try:
+            listed = self.check(nested)
+            self.assertNotIn(f"{SYNCED}/.bucket-{BUCKET}", listed)
+            self.assertTrue(wt.platform_churn_file(os.path.join(nested, f"{SYNCED}/.bucket-{BUCKET}")))
+        finally:
+            if saved is None:
+                vars(wt).pop("BOX_HOME", None)
+            else:
+                wt.BOX_HOME = saved
+
+
+class Lock(unittest.TestCase):
+    """(e): the release list Watchtower ships lists no bookkeeping, and its count line is the real count."""
+
+    def entries(self):
+        return [l.split("  ", 1)[1] for l in read_lock().splitlines() if l.strip() and not l.lstrip().startswith("#")]
+
+    def test_e_the_shipped_lock_lists_no_bookkeeping(self):
+        rels = self.entries()
+        self.assertTrue(rels)
+        self.assertFalse(set(REMOVED) & set(rels))
+        self.assertEqual([r for r in rels if wt.platform_churn(r)], [])
+        self.assertIn(".grok/bundled/manifest.json", rels)                     # release content stays listed
+
+    def test_e_the_lock_lists_both_managed_skills_caches(self):
+        """lock-trim round 2 (high): Ken's 2 lines for the caches are back, paths and hashes as his box had them on Oct 18."""
+        lines = {(l.split("  ", 1)[1], l.split("  ", 1)[0]) for l in read_lock().splitlines()
+                 if l.strip() and not l.lstrip().startswith("#")}
+        for rel in CACHES:
+            self.assertIn((rel, KEN_CACHE), lines)
+        self.assertEqual(len(self.entries()), 622)
+
+    def test_e_the_lock_keeps_the_plugin_loaders_files(self):
+        """lock-trim round 1 (high): Ken's 4 lines for the bucket's manifest.json, .meta.json and .marketplaces.json are back
+        (lock-trim round 2: and his 2 for the caches)."""
+        lines = {(l.split("  ", 1)[1], l.split("  ", 1)[0]) for l in read_lock().splitlines()
+                 if l.strip() and not l.lstrip().startswith("#")}
+        for rel, digest in RESTORED.items():
+            self.assertIn((rel, digest), lines)
+        self.assertEqual(len(self.entries()), 616 + len(RESTORED))
+
+    def test_e_the_count_line_is_the_real_count(self):
+        m = re.search(r"leaving (\d+)\.", read_lock())
+        self.assertIsNotNone(m, "no count line")
+        self.assertEqual(int(m.group(1)), len(self.entries()))
+        self.assertEqual(len(self.entries()), 623 - len(REMOVED))
+
+    def test_e_the_header_names_the_exception_not_an_impossible_rule(self):
+        text = read_lock()
+        self.assertNotIn("can only come from a computer no Bot has run on yet", text)
+        self.assertIn("accepted exception", text)
+        self.assertNotIn("ships with no entries", open(os.path.join(ROOT, "watchtower", "wt.py"), encoding="utf-8").read())
+
+
+class Labels(unittest.TestCase):
+    def test_contrasts_are_marked(self):
+        """Contrast: passes on 7e853c4 too (a check on this file's own labels)."""
+        import inspect
+        for name, obj in list(globals().items()):
+            if isinstance(obj, type) and issubclass(obj, unittest.TestCase):
+                for m in [m for m in dir(obj) if m.startswith("test_") and "_contrast" in m]:
+                    self.assertIn("Contrast", inspect.getdoc(getattr(obj, m)) or "", f"{name}.{m}")
+
+
+if __name__ == "__main__":
+    unittest.main()

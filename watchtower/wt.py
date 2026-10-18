@@ -2603,12 +2603,18 @@ PLATFORM_ROOT_SUBS = (
     ".claude/plugins/synced",
 )
 VENDOR_TEMPLATE_PATH = re.compile(r"(?i)/(templates|examples)/")
+BOX_HOME = "/home/box"   # where Grok Bot keeps its folders; the platform rules check it beside the home folder (tests point it at their box)
+
+
+def home_bases():
+    """The home folders the platform rules check: the home folder, and BOX_HOME when that isn't it. One may sit inside the other."""
+    return dict.fromkeys((os.path.expanduser("~"), BOX_HOME))
 
 
 def platform_roots():
     """The platform's real skill folders under the home folder(s)."""
     out = []
-    for base in dict.fromkeys((os.path.expanduser("~"), "/home/box")):
+    for base in home_bases():
         for sub in PLATFORM_ROOT_SUBS:
             out.append(os.path.normpath(os.path.join(base, sub)))
     return list(dict.fromkeys(out))
@@ -2753,7 +2759,8 @@ def _exactly_at(where, places):
 # like the scanner lock. Lines are `sha256sum` output run from the home folder: "<sha256>  <path under the home folder>". A new or
 # changed file in a platform folder is a platform update only when its path and its exact bytes are listed; anything else is a
 # counted high until a Watchtower release lists it. Ken's decision (Oct 18): release list only. Nothing on the computer approves a
-# platform file (no owner's yes, no record, no first-run trust): all of that is state the Bot can write. It ships with no entries.
+# platform file (no owner's yes, no record, no first-run trust): all of that is state the Bot can write. Filled Oct 18 from Ken's
+# box (see its header); the platform's sync bookkeeping (PLATFORM_CHURN) is never listed and never needs to be.
 PLATFORM_LOCK_REL = "rules/platform-release.lock"
 PLATFORM_LOCK = os.path.join(HERE, "..", PLATFORM_LOCK_REL)   # tests point this at a file in their box; never read from the environment
 PLATFORM_LOCK_MAX_BYTES = 4 * 1024 * 1024
@@ -2841,7 +2848,7 @@ def platform_lock_problem():
 def _home_rels(p):
     """p relative to each home base it sits under (the home folder and /home/box, as written and as their real folders)."""
     out = set()
-    for b in dict.fromkeys((os.path.expanduser("~"), "/home/box")):
+    for b in home_bases():
         for base in {os.path.normpath(b), os.path.realpath(b)}:
             if p.startswith(base + os.sep):
                 out.add(p[len(base) + 1:])
@@ -2888,7 +2895,7 @@ def platform_vendor(p):
     except OSError:
         places = (n,)
     for q in places:
-        for b in dict.fromkeys((os.path.expanduser("~"), "/home/box")):
+        for b in home_bases():
             if _under(q, {os.path.normpath(os.path.join(b, ".codex/skills/.system"))}, strict=True):
                 return "Codex"
             if _under(q, {os.path.normpath(os.path.join(b, ".claude/plugins/synced"))}, strict=True):
@@ -2929,7 +2936,52 @@ OLD_PLATFORM_APPROVALS = "platform_approved.json"   # written by earlier version
 
 def platform_unproven(manifest):
     """The files in this manifest that sit in a platform folder and aren't on the release list with these bytes (platform_listed)."""
-    return {p for p, h in manifest.items() if not p.startswith("persist:") and platform_ish(p) and not platform_listed(p, h)}
+    return {p for p, h in manifest.items() if not p.startswith("persist:") and platform_ish(p) and not platform_listed(p, h)
+            and not platform_churn_file(p)}
+
+
+# PR #9 (Ken: few false alarms): the platform's own sync bookkeeping, rewritten at every sync with no release (Ken's box, Oct 18:
+# the empty .bucket-<id> marker Claude's plugin sync writes). It is no provenance subject: not walked, fingerprinted or listed
+# (rules/platform-release.lock's fill command skips exactly the files platform_churn_file skips). Exact name at exact place only:
+# it sits at a platform folder's top, never in a skill folder.
+# Codex, lock-trim review 1 (high): the bucket's *.meta.json, manifest.json and .marketplaces.json were skipped too, but Claude's
+# plugin loader reads them (installation_preference "required" enables a plugin the user disabled; manifest name/generation pick
+# the plugin folders; .marketplaces.json builds the source choices), so they are provenance subjects again.
+# Codex, lock-trim review 2 (high): managed-skills/cache.json is read too (the host's skill store takes each skill's name,
+# description and body from it, and Run-now sends `@<name>` from it as the prompt), so it is a provenance subject again. Only the
+# .bucket-<id>_<id> marker is left: Claude's plugin discovery tests that it exists and never reads it.
+_SYNC_BUCKET = r"[0-9a-f-]{36}_[0-9a-f-]{36}"
+PLATFORM_CHURN = re.compile(r"\.claude/plugins/synced/\.bucket-" + _SYNC_BUCKET)
+
+
+def platform_churn(rel):
+    """True when a path under the home folder is one of the platform's sync bookkeeping files by name and place (PLATFORM_CHURN)."""
+    return isinstance(rel, str) and PLATFORM_CHURN.fullmatch(rel) is not None
+
+
+def platform_churn_file(p):
+    """platform_churn for a file on disk, exactly what the lock's fill command tests when it is run from a home base (Codex,
+    lock-trim reviews 1 and 2, medium): for some home base (home_bases, as written or real) the file sits under, its path relative
+    to that base is a churn name and its real path is that same path under the base's real folder (no link anywhere below that
+    home folder: not the file, not a folder above it); lstat says a regular file with no exec bit and one name (st_nlink 1: no
+    hardlink alias). One base is enough, as the fill from that base skips it: with HOME inside BOX_HOME (or a home linked into
+    itself) the same file is also under the outer base by a longer, non-churn path, which a fill from there lists at most as an
+    unused line. Anything else is a provenance subject."""
+    try:
+        n = os.path.normpath(os.path.abspath(str(p)))
+        real, seen = os.path.realpath(n), False
+        for b in home_bases():
+            for base in {os.path.normpath(b), os.path.realpath(b)}:
+                if n.startswith(base + os.sep):
+                    rel = n[len(base) + 1:]
+                    if platform_churn(rel) and real == os.path.join(os.path.realpath(base), rel):
+                        seen = True
+        if not seen:
+            return False
+        st = os.lstat(n)
+        return stat.S_ISREG(st.st_mode) and not st.st_mode & 0o111 and st.st_nlink == 1
+    except (OSError, ValueError):
+        return False
 
 
 # Codex, item 8 review 2 (high 1): the platform files were only what the scanner's inventory kept, so a baselined SKILL.md turned
@@ -2983,6 +3035,8 @@ def platform_inventory(roots):
                 continue
             for e in entries:
                 p = os.path.join(d, e.name)
+                if platform_churn_file(p):
+                    continue   # sync bookkeeping (PLATFORM_CHURN): not a provenance subject, not counted in the limits
                 if len(files) >= PLATFORM_WALK_MAX_FILES:
                     short.append((root, f"it holds more than {PLATFORM_WALK_MAX_FILES} files"))
                     stack = []
@@ -3515,6 +3569,8 @@ def audit(roots, exports, quick=False):
                 continue
             if p in moved_from:
                 continue   # moved, not removed
+            if platform_churn_file(p):
+                continue   # sync bookkeeping an older baseline listed (PLATFORM_CHURN): still there, just no longer fingerprinted
             if p not in manifest and not p.startswith("persist:") and out_of_scope_but_present(p):
                 continue
             if p not in manifest and not p.startswith("persist:") and not os.path.exists(p) and not is_live_skill_path(p):
