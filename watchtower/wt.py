@@ -2381,12 +2381,18 @@ PLATFORM_ROOT_SUBS = (
     ".claude/plugins/synced",
 )
 VENDOR_TEMPLATE_PATH = re.compile(r"(?i)/(templates|examples)/")
+BOX_HOME = "/home/box"   # where Grok Bot keeps its folders; the platform rules check it beside the home folder (tests point it at their box)
+
+
+def home_bases():
+    """The home folders the platform rules check: the home folder, and BOX_HOME when that isn't it. One may sit inside the other."""
+    return dict.fromkeys((os.path.expanduser("~"), BOX_HOME))
 
 
 def platform_roots():
     """The platform's real skill folders under the home folder(s)."""
     out = []
-    for base in dict.fromkeys((os.path.expanduser("~"), "/home/box")):
+    for base in home_bases():
         for sub in PLATFORM_ROOT_SUBS:
             out.append(os.path.normpath(os.path.join(base, sub)))
     return list(dict.fromkeys(out))
@@ -2620,7 +2626,7 @@ def platform_lock_problem():
 def _home_rels(p):
     """p relative to each home base it sits under (the home folder and /home/box, as written and as their real folders)."""
     out = set()
-    for b in dict.fromkeys((os.path.expanduser("~"), "/home/box")):
+    for b in home_bases():
         for base in {os.path.normpath(b), os.path.realpath(b)}:
             if p.startswith(base + os.sep):
                 out.add(p[len(base) + 1:])
@@ -2667,7 +2673,7 @@ def platform_vendor(p):
     except OSError:
         places = (n,)
     for q in places:
-        for b in dict.fromkeys((os.path.expanduser("~"), "/home/box")):
+        for b in home_bases():
             if _under(q, {os.path.normpath(os.path.join(b, ".codex/skills/.system"))}, strict=True):
                 return "Codex"
             if _under(q, {os.path.normpath(os.path.join(b, ".claude/plugins/synced"))}, strict=True):
@@ -2713,14 +2719,17 @@ def platform_unproven(manifest):
 
 
 # PR #9 (Ken: few false alarms): the platform's own sync bookkeeping, rewritten at every sync with no release (Ken's box, Oct 18:
-# managed-skills/cache.json, 554 KB, at each managed-skills sync; the empty .bucket-<id> marker Claude's plugin sync writes). They
-# are no provenance subject: not walked, fingerprinted or listed (rules/platform-release.lock's fill command skips exactly the
-# files platform_churn_file skips). Exact names at exact places only: both sit at a platform folder's top, never in a skill folder.
+# the empty .bucket-<id> marker Claude's plugin sync writes). It is no provenance subject: not walked, fingerprinted or listed
+# (rules/platform-release.lock's fill command skips exactly the files platform_churn_file skips). Exact name at exact place only:
+# it sits at a platform folder's top, never in a skill folder.
 # Codex, lock-trim review 1 (high): the bucket's *.meta.json, manifest.json and .marketplaces.json were skipped too, but Claude's
 # plugin loader reads them (installation_preference "required" enables a plugin the user disabled; manifest name/generation pick
 # the plugin folders; .marketplaces.json builds the source choices), so they are provenance subjects again.
+# Codex, lock-trim review 2 (high): managed-skills/cache.json is read too (the host's skill store takes each skill's name,
+# description and body from it, and Run-now sends `@<name>` from it as the prompt), so it is a provenance subject again. Only the
+# .bucket-<id>_<id> marker is left: Claude's plugin discovery tests that it exists and never reads it.
 _SYNC_BUCKET = r"[0-9a-f-]{36}_[0-9a-f-]{36}"
-PLATFORM_CHURN = re.compile(r"((sand-data|agent-data)/managed-skills/cache\.json|\.claude/plugins/synced/\.bucket-" + _SYNC_BUCKET + r")")
+PLATFORM_CHURN = re.compile(r"\.claude/plugins/synced/\.bucket-" + _SYNC_BUCKET)
 
 
 def platform_churn(rel):
@@ -2729,20 +2738,22 @@ def platform_churn(rel):
 
 
 def platform_churn_file(p):
-    """platform_churn for a file on disk, exactly what the lock's fill command can test (Codex, lock-trim review 1, medium): relative
-    to every home base it sits under, its path is a churn name and its real path is that same path under the real home (no link
-    anywhere below the home folder: not the file, not a folder above it); lstat says a regular file with no exec bit and one name
-    (st_nlink 1: no hardlink alias). Anything else is a provenance subject."""
+    """platform_churn for a file on disk, exactly what the lock's fill command tests when it is run from a home base (Codex,
+    lock-trim reviews 1 and 2, medium): for some home base (home_bases, as written or real) the file sits under, its path relative
+    to that base is a churn name and its real path is that same path under the base's real folder (no link anywhere below that
+    home folder: not the file, not a folder above it); lstat says a regular file with no exec bit and one name (st_nlink 1: no
+    hardlink alias). One base is enough, as the fill from that base skips it: with HOME inside BOX_HOME (or a home linked into
+    itself) the same file is also under the outer base by a longer, non-churn path, which a fill from there lists at most as an
+    unused line. Anything else is a provenance subject."""
     try:
         n = os.path.normpath(os.path.abspath(str(p)))
         real, seen = os.path.realpath(n), False
-        for b in dict.fromkeys((os.path.expanduser("~"), "/home/box")):
+        for b in home_bases():
             for base in {os.path.normpath(b), os.path.realpath(b)}:
                 if n.startswith(base + os.sep):
                     rel = n[len(base) + 1:]
-                    if not platform_churn(rel) or real != os.path.join(os.path.realpath(base), rel):
-                        return False
-                    seen = True
+                    if platform_churn(rel) and real == os.path.join(os.path.realpath(base), rel):
+                        seen = True
         if not seen:
             return False
         st = os.lstat(n)

@@ -10,13 +10,17 @@
 # home folder is the Bot's to write, so they should come from a freshly created computer no Bot has run on yet. The one
 # accepted exception is Ken's Oct 18 fill below; a clean computer is preferred for every later fill.
 #
-# The platform's own sync bookkeeping is never listed: it is rewritten at every sync with no release, and nothing loads it.
-# The rule is wt.py's platform_churn_file, and the fill command below tests exactly the same things: the path is one of
-# PLATFORM_CHURN's names (the -regex below is that same pattern: cache.json directly in sand-data/managed-skills or
-# agent-data/managed-skills, the .bucket-<id>_<id> marker directly in .claude/plugins/synced), a regular file, not a link,
-# no exec bit, one name (-links 1: no hardlink), and its real path is that same path under the real home folder (no link in
-# a folder above it). Anything else in those folders is listed: the plugin buckets' *.meta.json, manifest.json and
-# .marketplaces.json too (Claude's plugin loader reads them to decide what loads), and .grok/bundled/manifest.json.
+# The platform's own sync bookkeeping is never listed: it is rewritten at every sync with no release, and nothing reads it.
+# The rule is wt.py's platform_churn_file, and the fill command below tests exactly the same things: the path is
+# PLATFORM_CHURN's one name (the -regex below is that same pattern: the .bucket-<id>_<id> marker directly in
+# .claude/plugins/synced, whose existence Claude's plugin discovery tests and whose contents it never reads), a regular
+# file, not a link, no exec bit, one name (-links 1: no hardlink), and its real path is that same path under the real home
+# folder (no link in a folder above it). Anything else in those folders is listed: managed-skills/cache.json too (the host
+# builds its skill list and the Run-now prompt from it), the plugin buckets' *.meta.json, manifest.json and
+# .marketplaces.json (Claude's plugin loader reads them to decide what loads), and .grok/bundled/manifest.json.
+# Watchtower checks two home folders, the home folder and /home/box; when they differ, run the command from each (the
+# second with HOME=/home/box). A file is bookkeeping when the fill from one of them skips it, so a home folder inside
+# /home/box gets the same answer from wt.py as from the fill run in it.
 #
 # Format: `sha256sum` output, run from the home folder on relative paths:
 #   <sha256>  <path under the home folder>
@@ -27,16 +31,18 @@
 # To fill it, on a freshly created computer before any Bot runs:
 #   cd ~ && find .grok/bundled sand-data/managed-skills agent-data/managed-skills .codex/skills/.system \
 #     .claude/plugins/synced -regextype posix-extended -type f ! \( ! -perm /111 -links 1 -regex \
-#     '((sand-data|agent-data)/managed-skills/cache\.json|\.claude/plugins/synced/\.bucket-[0-9a-f-]{36}_[0-9a-f-]{36})' \
+#     '\.claude/plugins/synced/\.bucket-[0-9a-f-]{36}_[0-9a-f-]{36}' \
 #     -exec sh -c '[ "$(realpath "$1")" = "$(pwd -P)/$1" ]' _ {} \; \) -exec sha256sum {} + 2>/dev/null \
 #     >> <checkout>/rules/platform-release.lock
 # then run `bash scripts/make-manifest.sh` and publish a release. Several releases may list the same path.
 #
 # Filled Oct 18 from Ken's Grok Bot box with the command as it was then (no bookkeeping skip): 623 entries. PR #9 removed
-# its 3 bookkeeping lines (the two cache.json and the .bucket- marker), leaving 620. That box was not freshly created: Bots had already run on it, so these hashes are what was on it then, not
-# a clean vendor install; Ken accepted that (Oct 18).
+# its one bookkeeping line (the .bucket- marker), leaving 622. That box was not freshly created: Bots had already run on it,
+# so these hashes are what was on it then, not a clean vendor install; Ken accepted that (Oct 18).
 # A vendor update after Oct 18 is a high alert until a release lists it.
 2d515dbea30e0ae42e964d66e35a133c2890f153b1667d9fabd24c724fc3ca65  .grok/bundled/manifest.json
+ce691e37f1fe9b181efcb6fb224e30d0e4928ca326d6f6d9b6a4aa93141d74b7  sand-data/managed-skills/cache.json
+ce691e37f1fe9b181efcb6fb224e30d0e4928ca326d6f6d9b6a4aa93141d74b7  agent-data/managed-skills/cache.json
 4b857d61192f2fa2df02f1200356167abf381eb1080de74972acd52a365eefca  .codex/skills/.system/.codex-system-skills.marker
 4dd13869245e356246a5b770723247bbb80a8f07a181d1d3d873a1734297cdb9  .codex/skills/.system/imagegen/LICENSE.txt
 681ddb4ad6d06a2acc78a3535b583f8d0c1ea800ecda3d56370d3310fd2cd4ba  .codex/skills/.system/imagegen/SKILL.md
