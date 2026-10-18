@@ -166,16 +166,23 @@ def read_text(path, limit=1_000_000):
         return None
 
 
-def finding(rule_id, title, severity, owasp, where, evidence, fix, source="watchtower", ident=None):
+def finding(rule_id, title, severity, owasp, where, evidence, fix, source="watchtower", ident=None, shown=None):
     """`ident` names the finding when its evidence holds a count that drifts (63 logins, 6 advisories): the same problem
-    keeps the same key, so it is never reported as fixed and new in one run. `key0` is the key older versions gave it."""
-    ev = (evidence or "").replace("\n", " ")[:160]
-    key = hashlib.sha1(f"{rule_id}|{where}|{ev}".encode()).hexdigest()[:16]
+    keeps the same key, so it is never reported as fixed and new in one run. `key0` is the key older versions gave it.
+    Batch 4 (R11): the key is made from `evidence` exactly as before; what is stored is masked first, then cut. `shown`: the
+    uncut text the caller cut `evidence` from (or that it masked its own way), so a value cut short is masked as a whole."""
+    key = finding_key(rule_id, where, evidence)
+    stored =mask_secrets(((evidence if shown is None else shown) or "")[:MASK_WINDOW]).replace("\n", " ")[:160]
     out = {"key": key, "rule": rule_id, "title": title, "severity": severity, "owasp": owasp,
-           "where": where, "evidence": ev, "fix": fix, "source": source}
+           "where": where, "evidence": stored, "fix": fix, "source": source}
     if ident is not None:
         out["key"], out["key0"] = hashlib.sha1(f"{rule_id}|{where}|id:{ident}".encode()).hexdigest()[:16], key
     return out
+
+
+def finding_key(rule_id, where, evidence):
+    """The key finding() gives: from the raw evidence, cut at 160, exactly as before batch 4."""
+    return hashlib.sha1(f"{rule_id}|{where}|{(evidence or '').replace(chr(10), ' ')[:160]}".encode()).hexdigest()[:16]
 
 
 def keys_of(findings):
@@ -194,6 +201,382 @@ def mask(s):
     if len(s) <= 12:
         return s[:2] + "…"
     return s[:6] + "…" + s[-4:]
+
+
+# Hardening batch 4 (R11): every Bot can read Watchtower's state files, so stored evidence never holds a secret. Key shapes keep
+# their first 6 characters (mask); a password, token or cookie value next to a name that says so becomes [hidden]. A bare $VAR
+# or ${VAR} reference is never touched, nor is anything already masked. Lengths are loose so a key cut at 160 is still caught.
+# Codex, batch 4 round 2: each reader below (private keys, key shapes, URLs, JSON/YAML fields, shell words) only marks spans of
+# the original text, and one pass writes them out, so no reader sees another's output, a hidden value keeps its line breaks
+# (history and `show` stay line for line) and the whole is linear. MASK_VERSION goes up whenever masking learns a new shape:
+# copies stored masked by an older version (approved skills, the engine cache) are then masked again.
+MASK_VERSION = 2
+MASK_WINDOW = 8192   # finding() stores 160 characters: it masks this much of the text they are cut from, never less
+HIDDEN = "[hidden]"
+KEY_SHAPE = re.compile(   # the lookahead names every shape's first letter, so most of a text is skipped at C speed
+    r"(?=[AsxgEre])(AKIA[0-9A-Z]{12,}|ASIA[0-9A-Z]{12,}|\bsk-(proj|ant|svcacct|admin)-[A-Za-z0-9_-]{8,}|\bsk-[A-Za-z0-9]{20,}|\bxai-[A-Za-z0-9]{8,}"
+    r"|\bgh[pousr]_[A-Za-z0-9]{8,}|\bgithub_pat_[A-Za-z0-9_]{8,}|\bxox[baprs]-[A-Za-z0-9-]{8,}|\bglpat-[A-Za-z0-9_-]{8,}"
+    r"|\bsq0(atp|csp)-[0-9A-Za-z_-]{8,}|\bEAAA[A-Za-z0-9_+=-]{20,}|\b[rs]k_live_[0-9A-Za-z]{8,}|AIza[0-9A-Za-z_-]{8,}"
+    r"|\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{4,}(\.[A-Za-z0-9_-]*)?)")
+# A private key's body; "-----B…----" is the header as an older version stored it (mask() of the T011 match), so a body kept
+# after it is hidden too. The body may run over several lines, or be serialized with literal \n (a JSON key file, Codex round 2).
+_PEM_GAP = r"(?:[ \t\r\n]|\\[nrt])"
+_B64 = r"(?:[A-Za-z0-9+]|\\?/)"
+PEM_BODY = re.compile(rf"(?:-----BEGIN [A-Z ]*PRIVATE KEY-----|-----B…----){_PEM_GAP}*(?P<body>(?:{_B64}|=){{8,}}"
+                      rf"(?:{_PEM_GAP}+(?:{_B64}{{16,}}={{0,2}}|{_B64}{{1,15}}={{1,2}}))*)")
+# Codex, batch 4 round 1: one tokenizer instead of regex special cases. A shell word keeps its quotes ('…', "…", $'…') and
+# backslash escapes whole; one left open (evidence cut short) runs to the end of the line, so all of it is hidden. Separators
+# (| || && ; & and a line break) end a command. Round 2: text with line breaks is read twice, once with quotes kept to their
+# line and once as the shell reads it, where a closed quote may cross lines (up to 4096 characters), and both readings' spans
+# are hidden: a token split over two lines is hidden on both, and a stray apostrophe in prose can't pair quotes wrongly.
+_Q_LINE = r"\$'(?:[^'\\\n]|\\.)*'?|'[^'\n]*'?|\"(?:[^\"\\\n]|\\.)*\"?"
+_Q_MULTI = r"\$'(?:[^'\\]|\\[\s\S]){0,4096}'|'[^']{0,4096}'|\"(?:[^\"\\]|\\[\s\S]){0,4096}\"|" + _Q_LINE
+
+
+def _shell_rx(quoted, escape):
+    return re.compile(rf"(?P<sep>\|\||&&|[|;&\n])|(?P<word>(?:{quoted}|{escape}|\$|[^\s'\"\\|;&$]+)+)")
+
+
+_SHELL, _SHELL_ML = _shell_rx(_Q_LINE, r"\\."), _shell_rx(_Q_MULTI, r"\\[\s\S]")
+_QUOTED, _QUOTED_ML = re.compile(_Q_LINE), re.compile(_Q_MULTI)
+SECRET_WORDS = ("token", "secret", "passwd", "pass", "api_key", "apikey", "api-key", "access_key", "private_key", "auth",
+                "credential", "session", "cookie")
+NOT_SECRET_NAMES = frozenset(("author", "authors", "authored", "authority", "auth_url", "auth_uri", "token_url", "token_uri",
+                              "tokenizer", "passive", "compass", "bypass"))
+SECRET_FLAGS = frozenset(("--password", "--passwd", "--pass", "--token", "--api-key", "--apikey", "--secret", "--auth-token",
+                          "--access-token"))
+USER_FLAGS = frozenset(("-u", "--user", "--proxy-user", "-U"))   # curl and friends: user:password
+SECRET_HEADER = re.compile(r"(?i)^[ \t]*(?:--?[A-Za-z][\w-]*=)?(?:(?P<auth>(?:proxy-)?authorization|x-api-key|x-auth-token)|(?P<jar>(?:set-)?cookie))[ \t]*:[ \t]*"
+                           r"(?:(?(auth)(?:bearer|basic|token|bot|digest|apikey|negotiate|ntlm)[ \t]+))?")
+MYSQL_TOOLS = frozenset(("mysql", "mysqldump", "mysqladmin", "mariadb", "mariadb-dump", "mysqlimport", "mysqlcheck", "mysqlshow"))
+# Codex, round 2: only a bare reference is kept. ${TOKEN:-FAKEfallback}, ${X/a/FAKE} and the like carry a literal: hidden.
+BARE_VAR = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*|\$\{[A-Za-z_][A-Za-z0-9_]*\}")
+_NAME_CH = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-")
+_LEAD = re.compile(r"[-'\"$]*")
+# A value inside a word ends at the next & , ; bracket or space; a quoted part ("FAKE", 'a b') is read whole (Codex, round 2).
+_VALUE = re.compile(r"(?:'[^']*'?|\"(?:[^\"\\]|\\[\s\S])*\"?|[^&,;\"'`}) \t\r\n])*")
+
+
+def _kept(v):
+    """A value that is not a secret: a bare $VAR or ${VAR} reference (quoted or not), or already [hidden]. Nothing else (a
+    leading - or $, an ellipsis, an expansion with a default) is waved through."""
+    u = v.replace("'", "").replace('"', "").strip()
+    return u in ("", HIDDEN) or bool(BARE_VAR.fullmatch(u))
+
+
+def _secret_name(name):
+    n = name.lower()
+    return n not in NOT_SECRET_NAMES and any(w in n for w in SECRET_WORDS)
+
+
+def _unquote(raw):
+    return re.sub(r"\\(.)", r"\1", raw.replace("$'", "'").replace("'", "").replace('"', ""))
+
+
+def _unquote_map(raw):
+    """The shell's reading of one word (quotes removed, escapes resolved) and, for each character of it, where it is in `raw`."""
+    out, idx, i, n, q = [], [], 0, len(raw), None
+    while i < n:
+        c = raw[i]
+        if q is None and c in "'\"":
+            q, i = c, i + 1
+            continue
+        if q is None and c == "$" and raw[i + 1:i + 2] == "'":
+            q, i = "$", i + 2
+            continue
+        if q is not None and c == ("'" if q in "'$" else '"'):
+            q, i = None, i + 1
+            continue
+        if c == "\\" and q != "'" and i + 1 < n:
+            i += 1
+        out.append(raw[i])
+        idx.append(i)
+        i += 1
+    return "".join(out), idx
+
+
+def _assignments(raw, at, spans):
+    """NAME=value (export, env, --token=…, a query string, JSON-ish text). Each = is read once and its name is found by walking
+    back over name characters, so repeated name fragments cost nothing extra. At the start of a word (after dashes or an opening
+    quote) the value is the rest of the word; inside one it is _VALUE. Round 2: where a word starts is found once, never by
+    copying the text before each = (that was quadratic)."""
+    lead, n = _LEAD.match(raw).end(), len(raw)
+    i = raw.find("=")
+    while i != -1:
+        j = i
+        while j > 0 and raw[j - 1] in _NAME_CH:
+            j -= 1
+        if j < i and _secret_name(raw[j:i]):
+            end = n if j <= lead else _VALUE.match(raw, i + 1).end()
+            if end > i + 1 and not _kept(raw[i + 1:end]):
+                spans.append((at + i + 1, at + end))
+                i = end - 1   # nothing inside a hidden value is read again: TOKEN=TOKEN=… stays linear
+        i = raw.find("=", i + 1)
+
+
+AUTH_SCHEME = re.compile(r"(?i)bearer|basic|token|bot|digest|apikey|negotiate|ntlm")
+
+# Codex, round 2: URLs are read where they are, not as shell words. A password in the authority, a secret-named query value and
+# a chat webhook's credential path are hidden; the scheme, host and the rest of the path stay readable.
+_AUTH_END = re.compile(r"[/?#\s\"'`<>|\\]")
+_PATH_END = re.compile(r"[?#\s\"'`<>|\\]")
+_QUERY_END = re.compile(r"[#\s\"'`<>|\\]")
+_QPARAM = re.compile(r"(?P<name>[^=&;#\s\"'`<>|\\]*)(?:=(?P<val>(?:'[^'\n]*'?|\"(?:[^\"\\\n]|\\.)*\"?|[^&;#\s\"'`<>|\\])*))?")
+URL_SECRET_PARAMS = frozenset(("key", "sig", "signature", "code", "pwd", "x-amz-signature", "x-amz-credential",
+                               "x-amz-security-token", "x-goog-signature", "x-goog-credential"))
+WEBHOOK_PATHS = ((re.compile(r"hooks\.slack\.com"), re.compile(r"/(?:services|workflows|triggers)/(?P<s>.+)")),
+                 (re.compile(r"discord(?:app)?\.com"), re.compile(r"/api/webhooks/(?P<s>.+)")),
+                 (re.compile(r"[a-z0-9-]+\.webhook\.office\.com"), re.compile(r"/[^/]*/(?P<s>.+)")),
+                 (re.compile(r"outlook\.office\.com"), re.compile(r"/webhook/(?P<s>.+)")),
+                 (re.compile(r"api\.telegram\.org"), re.compile(r"/(?:file/)?bot(?P<s>[^/]+)")))
+ANY_WEBHOOK_PATH = re.compile(r"/api/webhooks/(?P<s>.+)")   # a Discord-style webhook on any host
+
+
+def _urls(s, spans):
+    """Each scheme:// is read once, up to the next one, so URLs inside URLs stay linear."""
+    i = s.find("://")
+    while i != -1:
+        nxt = s.find("://", i + 3)
+        lim = len(s) if nxt == -1 else nxt
+        a = i + 3
+        m = _AUTH_END.search(s, a, lim)
+        b = m.start() if m else lim
+        auth = s[a:b]
+        k = auth.rfind("@")
+        c = auth.find(":", 0, k) if k != -1 else -1
+        if c != -1 and not _kept(auth[c + 1:k]):
+            spans.append((a + c + 1, a + k))
+        host = auth[k + 1:].split(":")[0].lower()
+        m = _PATH_END.search(s, b, lim)
+        pe = m.start() if m else lim
+        path = s[b:pe]
+        pm = next((rx.match(path) for h, rx in WEBHOOK_PATHS if h.fullmatch(host)), None) or ANY_WEBHOOK_PATH.search(path)
+        if pm and not _kept(pm.group("s")):
+            spans.append((b + pm.start("s"), b + pm.end("s")))
+        pos = pe + 1
+        while pe < lim and s[pe] == "?" and pos < lim:
+            q = _QPARAM.match(s, pos, lim)
+            if q.group("val") and (q.group("name").lower() in URL_SECRET_PARAMS or _secret_name(q.group("name"))) \
+                    and not _kept(q.group("val")):
+                spans.append((q.start("val"), q.end("val")))
+            pos = q.end()
+            if pos >= lim or s[pos] not in "&;":
+                break
+            pos += 1
+        i = nxt
+
+
+# Codex, round 2: "password": "…", 'api_key': '…', \"token\":\"…\" (JSON inside a string) and YAML's `password: …` (a single
+# value on its own line). A field whose name is not a secret is skipped past its name only, so a field nested in its value is
+# still read.
+_FIELD = re.compile(
+    r"(?P<q>\\?[\"'])(?P<n1>[A-Za-z_][\w.-]{0,63})(?P=q)[ \t]*[:=][ \t]*"
+    r"(?P<v1>\\\"(?:[^\"\\\n]|\\[^\"\n])*(?:\\\")?|\"(?:[^\"\\\n]|\\.)*\"?|'(?:[^'\\\n]|\\.)*'?|[^\s,;{}\[\]()\"'][^\s,;}\])\"']*)"
+    r"|^[ \t]*(?:-[ \t]+)?(?P<n2>[A-Za-z_][\w.-]{0,63})[ \t]*:[ \t]+"
+    r"(?P<v2>\"(?:[^\"\\\n]|\\.)*\"?|'[^'\n]*'?|[^\s#'\"][^\s]*(?=[ \t]*(?:#|$)))", re.M)
+
+
+def _fields(s, spans):
+    pos = 0
+    while True:
+        m = _FIELD.search(s, pos)
+        if not m:
+            return
+        v = "v1" if m.group("n1") is not None else "v2"
+        if _secret_name(m.group("n1") or m.group("n2")) and not _kept(m.group(v)):
+            spans.append((m.start(v), m.end(v)))
+            pos = m.end()
+        else:
+            pos = max(m.start(v), m.start() + 1)
+
+
+def _mask_words(s, at, spans, depth, ml=False):
+    """Mark the secret spans of shell text `s` (starting at offset `at`). Quoted words are read again inside (depth 2).
+    `ml`: the reading where a closed quote may cross lines."""
+    words = []   # a separator as its text; a word as (start, end, raw, plain)
+    for m in (_SHELL_ML if ml else _SHELL).finditer(s):
+        raw = m.group("word")
+        if raw is None:
+            words.append(m.group("sep"))
+        else:
+            quoted = "'" in raw or '"' in raw or "\\" in raw
+            words.append((at + m.start(), at + m.end(), raw, _unquote(raw) if quoted else raw, quoted))
+    word = lambda j: words[j] if 0 <= j < len(words) and not isinstance(words[j], str) else None
+    tool, skip = None, 0
+    for k, w in enumerate(words):
+        if k < skip:
+            continue   # already hidden as a header's value
+        if isinstance(w, str):
+            tool = None
+            continue
+        a, b, raw, plain, quoted = w
+        nxt, prev, low = word(k + 1), word(k - 1), plain.lower()
+        if "=" in raw:
+            _assignments(raw, a, spans)
+        if nxt is not None:
+            if (low in SECRET_FLAGS or (low == "=" and prev and _secret_name(prev[3]))
+                    or (len(low) > 1 and (low[-1] == "=" or (low[-1] == ":" and ("_" in low or "-" in low))) and _secret_name(low[:-1]))
+                    or plain in ("Bearer", "BEARER") or (low == "bearer" and len(nxt[3]) >= 8)):   # "the bearer token" in prose stays
+                if not _kept(nxt[2]):
+                    spans.append((nxt[0], nxt[1]))
+            elif low in USER_FLAGS and ":" in nxt[2]:   # curl -u user:password: the password
+                c = nxt[2].find(":")
+                if not _kept(nxt[2][c + 1:]):
+                    spans.append((nxt[0] + c + 1, nxt[1]))
+            elif nxt[3][:1] == "=" and len(nxt[3]) > 1 and _secret_name(plain) and not _kept(nxt[2][1:]):
+                spans.append((nxt[0] + 1, nxt[1]))
+        if low[:2] == "-u" and len(low) > 2 and ":" in raw and low[:3] != "-u=":   # curl -uuser:password
+            if not _kept(raw[raw.find(":") + 1:]):
+                spans.append((a + raw.find(":") + 1, b))
+        h = SECRET_HEADER.match(plain) if ":" in plain else None
+        if h:   # Codex, round 2: the header is the whole shell word, however it is quoted or glued ('Cookie: a=1;'sid='x')
+            exact, idx = _unquote_map(raw) if quoted else (plain, range(len(plain)))
+            h = SECRET_HEADER.match(exact)
+        if h:
+            if h.end() < len(exact) and not _kept(exact[h.end():]):
+                spans.append((a + idx[h.end()], a + idx[-1] + 1))
+            j = k + 1
+            if h.end() == len(exact) or not quoted:
+                # unquoted (or a value still to come): it runs to the end of the command; a cookie's own ; doesn't end it
+                if h.end() == len(exact) and h.group("auth") and word(j) and AUTH_SCHEME.fullmatch(word(j)[3]):
+                    j += 1
+                while j < len(words) and (word(j) or (h.group("jar") and words[j] == ";")):
+                    if word(j) and not _kept(words[j][2]):
+                        spans.append((words[j][0], words[j][1]))
+                    j += 1
+            skip = j
+            continue
+        if tool == "sshpass":
+            if plain == "-p" and nxt is not None:
+                spans.append((nxt[0], nxt[1]))
+            elif plain.startswith("-p") and len(plain) > 2:
+                spans.append((a + 2, b))
+            elif not plain.startswith("-") and not (prev and prev[3] == "-p"):
+                tool = "done"   # sshpass's own options end at the command it runs (ssh -p 2222 stays)
+        elif tool == "mysql" and plain.startswith("-p") and len(plain) > 2 and not _kept(raw[2:]):
+            spans.append((a + 2, b))   # every -p<password>, not only the first
+        base = plain.rpartition("/")[2]
+        if base == "sshpass" and tool is None:
+            tool = "sshpass"
+        elif base in MYSQL_TOOLS:
+            tool = "mysql"
+        if depth < 2 and quoted and _TRIGGER.search(raw):
+            for q in (_QUOTED_ML if ml else _QUOTED).finditer(raw):
+                o = 2 if q.group(0).startswith("$'") else 1
+                inner = q.group(0)[o:]
+                if inner.endswith(q.group(0)[o - 1]) and len(q.group(0)) > o:
+                    inner = inner[:-1]
+                if _SEVERAL.search(inner) and _TRIGGER.search(inner):   # one word inside is the word itself, already read
+                    _mask_words(inner, a + q.start() + o, spans, depth + 1, ml)
+
+
+_BREAKS = re.compile(r"\r\n|[\n\r\x0b\x0c\x1c\x1d\x1e\x85  ]")
+
+
+# Every shell-word rule needs one of these in the same line (a secret-named variable, flag or header, -p, -u, Bearer, sshpass or
+# a MySQL tool), so the tokenizer only reads lines that have one, and a quoted part without one is not read again inside.
+_TRIGGER = re.compile(r"(?i)(?=[tspacbm-])(?:token|secret|pass|api[_-]?key|access_key|private_key|auth|credential|session|cookie"
+                      r"|bearer|-[pu]|sshpass|mysql|mariadb)")
+# A closed quote that crosses a line (the shell's reading); one closed on its own line is skipped whole.
+_SEVERAL = re.compile(r"[\s|;&]")   # quoted text with more than one shell word in it
+_CROSSING = re.compile(r"'[^'\n]*'|\"(?:[^\"\\\n]|\\.)*\"|(?P<x>'[^']{0,4096}'|\"(?:[^\"\\]|\\[\s\S]){0,4096}\")")
+
+
+def _blocks(s, matches):
+    """Whole lines around each match, runs of neighbouring lines joined: [(start, end)], in order, each line once."""
+    out = []
+    for a, b in matches:
+        a, b = s.rfind("\n", 0, a) + 1, s.find("\n", b)
+        b = len(s) if b == -1 else b
+        if out and a <= out[-1][1] + 1:
+            out[-1] = (out[-1][0], max(out[-1][1], b))
+        else:
+            out.append((a, b))
+    return out
+
+
+def _trigger_lines(s):
+    pos = 0
+    while True:
+        m = _TRIGGER.search(s, pos)
+        if not m:
+            return
+        end = s.find("\n", m.end())
+        yield m.start(), m.end()
+        if end == -1:
+            return
+        pos = end + 1
+
+
+def mask_spans(s):
+    """What masking replaces in `s`, merged and in order: (start, end, replacement), None meaning [hidden]. Overlapping spans
+    (a word and the same value read inside its quotes, a key shape inside a hidden value) are one [hidden]."""
+    spans = [(m.start("body"), m.end("body"), None) for m in PEM_BODY.finditer(s)]
+    spans += [(m.start(), m.end(), mask(m.group(0))) for m in KEY_SHAPE.finditer(s)]
+    words = []
+    _urls(s, words)
+    _fields(s, words)
+    for a, b in _blocks(s, _trigger_lines(s)):
+        _mask_words(s[a:b], a, words, 0)
+    if "\n" in s:
+        for a, b in _blocks(s, ((m.start(), m.end()) for m in _CROSSING.finditer(s) if m.group("x") and "\n" in m.group("x"))):
+            if _TRIGGER.search(s, a, b):
+                _mask_words(s[a:b], a, words, 0, ml=True)
+    spans += [(a, b, None) for a, b in words if b > a]
+    spans.sort(key=lambda t: (t[0], -t[1]))
+    out = []
+    for a, b, rep in spans:
+        if out and (a < out[-1][1] or (a == out[-1][1] and rep is None and out[-1][2] is None)):
+            pa, pb, prep = out[-1]
+            out[-1] = (pa, max(pb, b), prep if (a, b, rep) == (pa, pb, prep) else None)
+        else:
+            out.append((a, b, rep))
+    return out
+
+
+def mask_secrets(s):
+    """Text with its secrets masked: a private key's body, key shapes (KEY_SHAPE, first 6 characters kept), passwords and
+    tokens in URLs, chat webhook credentials, secret JSON/YAML fields, then every value the tokenizer finds next to a name, flag,
+    header or tool that says it is a secret. A hidden value keeps its line breaks. Idempotent; rule, title and where are never
+    passed here."""
+    if not s:
+        return s or ""
+    spans = mask_spans(s)
+    out, pos = [], 0
+    for a, b, rep in spans:
+        out += [s[pos:a], rep if rep is not None else HIDDEN + "".join(_BREAKS.findall(s, a, b))]
+        pos = b
+    return "".join(out) + s[pos:]
+
+
+def mask_lines(s):
+    """s.splitlines(), masked from one reading of the whole text (Codex, round 2): a quote or key that runs over several lines
+    is hidden on each of them, and line N is still line N."""
+    spans, out, k, pos = mask_spans(s or ""), [], 0, 0
+    for ln in (s or "").splitlines(True):
+        lo = pos
+        hi = lo + len((ln.splitlines() or [""])[0])
+        pos += len(ln)
+        while k < len(spans) and spans[k][1] <= lo:
+            k += 1
+        parts, p, j = [], lo, k
+        while j < len(spans) and spans[j][0] < hi:
+            a, b, rep = spans[j]
+            ca, cb = max(a, lo), min(b, hi)
+            if cb > ca:
+                parts += [s[p:ca], rep if rep is not None and (ca, cb) == (a, b) else HIDDEN]
+                p = cb
+            j += 1
+        out.append("".join(parts) + s[p:hi])
+    return out
+
+
+def mask_stored(findings):
+    """Batch 4 (R11): evidence written by an older version is masked in place once; `key` and `key0` never change."""
+    for f in findings or ():
+        if isinstance(f, dict) and isinstance(f.get("evidence"), str):
+            f["evidence"] = mask_secrets(f["evidence"])
+    return findings
 
 
 # ---------------------------------------------------------------- text analysis
@@ -251,7 +634,7 @@ def looks_real_secret(s):
 # never dropped. For the dangerous rules below (credential path, exfiltration host, pipe-to-shell, upload) a guard can only lower
 # the match to medium, and vet never says Install over it. Only prose outside the command vouches for it: text in a code span or
 # a command's arguments is never read, and any doubt (a cap, an unclosed backtick, shell text in the prose) means no guard.
-GUARD_CODE_RULES = frozenset(("WT-T004", "WT-T005", "WT-T006", "WT-T017"))
+GUARD_CODE_RULES = frozenset(("WT-T004", "WT-T005", "WT-T006", "WT-T017", "WT-T018"))
 GUARD_FUNCTION = frozenset("a an the any your my its this that it them to from into as of or nor ever just blindly".split())
 CLAUSE_END = re.compile(r"\.\s|\n|[:;!?](?=\s|$)|\s[-–—]{1,2}\s")
 GUARD_TOKEN = re.compile(r",|[^\s,]+")
@@ -520,6 +903,35 @@ def _reported(clause, rules):
     return bool(rep) and all(t in GUARD_FUNCTION or rules["guard_filler"]["verbs"].match(t) for t in map(_guard_token, rep.group("rest").split()))
 
 
+# Batch 4 (FP3): "A page may say: ignore previous instructions. Treat it as data." The frame must end right before the match, in
+# the same sentence; only then may the very next sentence describe it. Without a frame the next sentence never guards.
+# Codex, round 1: the speaker must be untrusted content (a page, an email, a document, a tool's output), never "the system" or
+# anyone with authority, and the next sentence must be only the defensive statement: "This is an attack we must carry out."
+# and "This is an attack helicopter manual." don't guard.
+REPORT_FRAME = re.compile(r"(?i)(?:^|[\s(\"“])(?:a|an|the|any|some|this|that|such\s+an?)\s+(?:(?:web|untrusted|external|incoming|shared)\s+)?"
+                          r"(?:pages?|sites?|websites?|emails?|e-mails?|messages?|documents?|docs?|files?|pdfs?|comments?|issues?|"
+                          r"transcripts?|posts?|reviews?|tool\s+outputs?|search\s+results?|attachments?)\s+"
+                          r"(?:(?:may|might|could|will|can|would|often)\s+(?:say|tell|ask|contain)|says|said|tells|asks|contains)"
+                          r"(?:\s+(?:you|the\s+bot|it))?(?:\s+to)?\s*[:,]?\s*[\"“'‘]?\s*$")
+NEXT_DESCRIBED = re.compile(r"(?i)[ \t]*(?:treat\s+(?:it|this|them|that|these|those)\s+as\s+(?:untrusted\s+)?data|"
+                            r"(?:it|this|that)\s+is\s+(?:an?\s+)?(?:attack|injection|prompt[- ]injection(?:\s+attack)?)|"
+                            r"(?:don'?t|do\s+not|never)\s+(?:follow|obey)\s+(?:it|this|them|that|these|those))[ \t]*[.!](?=\s|$)")
+
+
+def _framed_then_described(text, m):
+    a = max(text.rfind("\n", 0, m.start()) + 1, m.start() - 200)
+    sentence = SENTENCE_END.split(text[a:m.start()])[-1]
+    if not REPORT_FRAME.search(sentence):
+        return False
+    end = SENTENCE_END.search(text, m.end(), m.end() + 200)
+    if not end or "\n" in text[m.end():end.start()]:
+        return False
+    nxt = text[end.end():end.end() + 200]
+    if nxt.startswith("\n\n") or nxt.lstrip(" \t").startswith("\n\n"):
+        return False
+    return bool(NEXT_DESCRIBED.match(nxt))
+
+
 def _wording_guard(text, m, rules, prev_end):
     """The wording rules (T001, T007, T010, T016): quoted, negated, listed, reported, scoped to untrusted content, described as
     an attack, or detector code. No shell handling: a backtick or a leading | is a quotation here."""
@@ -536,6 +948,8 @@ def _wording_guard(text, m, rules, prev_end):
     if UNTRUSTED_AFTER.match(text[m.end():m.end() + 80]):
         return "untrusted content"
     if DESCRIBED_AFTER.search(re.split(r"[.!?](?=\s|$)|\n", text[m.end():m.end() + 200])[0]):
+        return "described as an attack"
+    if _framed_then_described(text, m):
         return "described as an attack"
     if re.search(r"(r\"|r'|\\s[+*]|\(\?i\))", wide + text[m.end():m.end() + 40]):
         return "detector code"
@@ -598,7 +1012,121 @@ def sends_data(ev):
     return True
 
 
-REF_RULES = ("WT-T001", "WT-T002", "WT-T004", "WT-T005", "WT-T006", "WT-T007", "WT-T008")
+# Codex, batch 4 round 1: a chat webhook is WT-T018 only when the URL's own host is exactly the chat service's, with its webhook
+# path. evil-discord.com/api/webhooks/…, https://collector.example/discord.com/api/webhooks/…, a user@ or a port in front of the
+# host: not the service, so Slack and Discord lookalikes stay the critical WT-T005 they were on 857ab38.
+CHAT_HOOKS = ((re.compile(r"hooks\.slack\.com"), re.compile(r"/(services|workflows|triggers)/")),
+              (re.compile(r"discord(app)?\.com"), re.compile(r"/api/webhooks/")),
+              (re.compile(r"[a-z0-9-]+\.webhook\.office\.com"), re.compile(r"/")),
+              (re.compile(r"outlook\.office\.com"), re.compile(r"/webhook/")),
+              (re.compile(r"chat\.googleapis\.com"), re.compile(r"/v1/spaces/[^/]+/messages")),
+              (re.compile(r"api\.telegram\.org"), re.compile(r"/bot")))
+CHAT_IN_T005 = re.compile(r"(?i)discord(app)?\.com/api/webhooks|hooks\.slack\.com/services")
+URL_CLOSE = {"(": ")", "<": ">", "[": "]", "{": "}"}
+_URL_END = re.compile(r"[\s\"'`<>|;&\\)]")
+_URL_PLAIN = re.compile(r"(?i)https?://[^\s)\"'>]*")
+
+
+def url_arg(text, s):
+    """Codex, batch 4 round 2: where the URL that starts at `s` ends, read as one whole argument. Its line is read with the
+    shell's quoting up to `s`: `s` must start a word, or follow an opening quote or bracket that itself starts one (url='…',
+    post('…'), "url": "…", [x](…), <…>). A quoted URL ends at its own closing quote, never at punctuation inside it. None when
+    `s` is the middle of something bigger (…/path;https://…, ?u='https://…, "$BASE"'https://…, x'https://…') or in doubt."""
+    ls = text.rfind("\n", 0, s) + 1
+    if s - ls > 4096:
+        return None
+    q, qs, ws, i = None, -1, ls, ls
+    while i < s:
+        c = text[i]
+        if q is None:
+            if c in " \t`":
+                ws = i + 1
+            elif c == "\\":
+                i += 1
+            elif c in "'\"" and not (c == "'" and i > ls and text[i - 1].isalnum() and text[i + 1:i + 2].isalpha()):   # don't, it's
+                q, qs = c, i
+        elif c == q:
+            q = None
+        elif c == "\\" and q == '"':
+            i += 1
+        i += 1
+    if i != s:
+        return None
+    if q is None:
+        o = text[s - 1] if s > ws else ""
+        if not (s == ws or (o in URL_CLOSE and (s - 1 == ws or text[s - 2] in "]([{"))):
+            return None
+        m = _URL_END.search(text, s)
+        end = m.start() if m else len(text)
+        if o in URL_CLOSE:
+            c = text.find(URL_CLOSE[o], s, end)
+            end = c if c != -1 else end
+        return end
+    if qs != s - 1:
+        return None
+    before = text[qs - 1] if qs > ws else ""
+    if before == "=":
+        k = qs - 1
+        while k > ws and (text[k - 1].isalnum() or text[k - 1] in "_-"):
+            k -= 1
+        if k == qs - 1 or not (k == ws or text[k - 1] in "([{,"):
+            return None   # url='…' or --url='…' starts an argument; ?u='… is inside another URL
+    elif before == ":":
+        if text[qs - 2:qs - 1] not in ("'", '"'):
+            return None   # "url":"…" (JSON)
+    elif before and before not in "([{,":
+        return None
+    end = s
+    while True:
+        end = text.find(q, end)
+        if end == -1 or "\n" in text[s:end]:
+            return None
+        if q == '"' and text[end - 1] == "\\":
+            end += 1
+            continue
+        break
+    if text[end + 1:end + 2] not in ("", " ", "\t", "\r", "\n", ")", ",", ";", "]", "}", ">", "|", "&", "`"):
+        return None   # glued to more text: 'https://discord.com'.evil.example/… is another host
+    return end
+
+
+def urls_in(text, limit=200):
+    """The http(s) URLs in `text`, each read whole (url_arg; one inside another is part of it) and masked (Codex, round 2)."""
+    out, end = [], 0
+    for m in re.finditer(r"(?i)\bhttps?://", text):
+        if m.start() < end:
+            continue
+        e = url_arg(text, m.start())
+        end = e if e is not None else _URL_PLAIN.match(text, m.start()).end()
+        out.append(mask_secrets(text[m.start():end]))
+        if len(out) >= limit:
+            break
+    return out
+
+
+def chat_webhook(text, m):
+    """True when the match is the host and path of a real chat webhook URL (see CHAT_HOOKS): the host right after the scheme
+    of a URL that is a whole argument (url_arg). Any doubt is False."""
+    import urllib.parse
+    st = m.start()
+    sch = re.search(r"(?i)\bhttps?://$", text[max(0, st - 9):st])
+    s = st - len(sch.group(0)) if sch else st   # no scheme: the match must start the word (xhooks.slack.com is someone else's)
+    end = url_arg(text, s)
+    if end is None:
+        return False
+    url = text[s:end] if sch else "https://" + text[s:end]
+    try:
+        u = urllib.parse.urlsplit(url)
+        port = u.port
+    except ValueError:
+        return False
+    host = (u.hostname or "").lower()
+    if port is not None or u.netloc.lower() != host:   # a user@, a password or a port in front of the host
+        return False
+    return any(h.fullmatch(host) and p.match(u.path) for h, p in CHAT_HOOKS)
+
+
+REF_RULES = ("WT-T001", "WT-T002", "WT-T004", "WT-T005", "WT-T006", "WT-T007", "WT-T008", "WT-T018")
 REF_WORDS = re.compile(r"(?i)((prompt[- ]injection|injection|attack|dangerous[- ]code)\s+(patterns?|examples?|signatures?|detection|techniques?)"
                        r"|\bevil\.com\b|\battacker\b|detection\s+rules?|red[- ]team)")
 
@@ -606,7 +1134,7 @@ REF_WORDS = re.compile(r"(?i)((prompt[- ]injection|injection|attack|dangerous[- 
 def attack_reference(text, rules, where=""):
     """A supporting file (never a SKILL.md, the file a Bot follows) that describes itself as documenting
     or detecting attacks. Its matches stay visible but drop to low: downgraded, never hidden."""
-    if os.path.basename(where.split(":")[0]) == "SKILL.md" or where in ("stdin",):
+    if os.path.basename(re.sub(r"(:\d+)+$", "", where)) == "SKILL.md" or where in ("stdin",):   # a colon in a folder name stays
         return False
     hits = sum(len(r["rx"].findall(text)) for r in rules["rules"] if r["id"] in REF_RULES)
     return hits >= 1 and bool(REF_WORDS.search(text))
@@ -627,8 +1155,11 @@ def sentence_of(text, m):
     return text[a:min(ends) if ends else len(text)]
 
 
-def scan_text(text, where, rules, kind="skill"):
-    """Apply text rules plus document-level logic. kind: skill|reference|template|routine|description."""
+def scan_text(text, where, rules, kind="skill", limit=None, cut=None):
+    """Apply text rules plus document-level logic. kind: skill|reference|template|routine|description.
+    Codex, batch 4 round 2 (vet): `limit` bounds the matches one file can produce. Once it is reached each rule still gets its
+    first kept match, so no rule goes unseen, and no more than `limit` matches per rule are even looked at; `cut` (a list) is
+    told when anything was left out."""
     out = []
     guarded = set(rules.get("guarded_rules", []))
     is_ref = attack_reference(text, rules, where)
@@ -639,15 +1170,27 @@ def scan_text(text, where, rules, kind="skill"):
         # Vendor/platform: critical rules, hidden Unicode, and high/critical behavior (credential read, send-out, pipe).
         # High wording and medium behavior (e.g. eval) stay off so fiction and noise in shipped plugins do not pile up;
         # a built-in that turns malicious still trips T004/T017 (Claude v0.7.1 F4).
-        if kind == "vendor" and rule["severity"] != "critical" and rule["id"] != "WT-T002":
+        # Codex, batch 4 round 2: WT-T018 too. A real chat webhook is no longer the critical WT-T005, so it must not vanish here.
+        if kind == "vendor" and rule["severity"] != "critical" and rule["id"] not in ("WT-T002", "WT-T018"):
             if not (rule["id"] in BEHAVIOR_RULES and rule["severity"] in ("critical", "high")):
                 continue
-        prev_end = None
+        prev_end, kept0, seen = None, len(out), 0
         for m in rule["rx"].finditer(text):
+            if limit is not None:
+                seen += 1
+                if (len(out) >= limit and len(out) > kept0) or seen > limit + 1:
+                    if cut is not None:
+                        cut.append(where)
+                    break
+            if rule["id"] == "WT-T018" and not chat_webhook(text, m):
+                continue   # a lookalike or nested host: not a chat service's webhook (a Slack or Discord one stays T005)
+            if rule["id"] == "WT-T005" and CHAT_IN_T005.fullmatch(m.group(0)) and chat_webhook(text, m):
+                continue   # the owner's own chat webhook is WT-T018, not an exfiltration host
             if is_ref and rule["id"] in REF_RULES and (rule["id"] not in GUARD_CODE_RULES or ref_line(text, m)):
                 out.append(finding(rule["id"], rule["title"] + " (in an attack-pattern reference)", "low", rule["owasp"],
                                    f"{where}:{line_of(text, m.start())}", f"U+{ord(m.group(0)):04X}" if rule["id"] == "WT-T002" else m.group(0)[:140],
-                                   "Documentation or detector text. Confirm the file is what it claims to be."))
+                                   "Documentation or detector text. Confirm the file is what it claims to be.",
+                                   shown=None if rule["id"] == "WT-T002" else mask(m.group(0)) if rule["id"] == SECRET_RULE else m.group(0)))
                 if rule["id"] == "WT-T002":
                     break
                 continue
@@ -663,7 +1206,7 @@ def scan_text(text, where, rules, kind="skill"):
             if rule["id"] == "WT-T006" and known_installer(ev):
                 f = finding("WT-T006k", "Known installer piped to shell", "medium" if kind != "vendor" else "low",
                             ["ASI05", "AST02"], f"{where}:{line_of(text, m.start())}", ev[:140],
-                            "A well-known installer, but still unpinned. Prefer a package manager or a pinned, checksummed download.")
+                            "A well-known installer, but still unpinned. Prefer a package manager or a pinned, checksummed download.", shown=ev)
             else:
                 if rule["id"] == SECRET_RULE:
                     ev = mask(ev)
@@ -876,9 +1419,24 @@ def _place(f):
     """The file or folder a finding is about. A path loses its ":line"; a label like "rollcall:Bot:routine:name:1" keeps
     everything but the line, so two different Bots or routines are never the same place."""
     w = f.get("where") or ""
-    if w.startswith("/"):
-        return os.path.normpath(w.split(":")[0])
+    if w.startswith("/"):   # Codex, batch 4 round 1: only a trailing :line (or :+line) goes; /review/skill:v1/ is a folder name
+        # Round 2: exactly one, and only from a finding that has one. /fake/script:1:1 is line 1 of a file called "script:1",
+        # never the same place as /fake/script:1; a folder verdict or a fact about a whole file names its place as it is.
+        r = f.get("rule") or ""
+        if r.startswith(PLACE_WHOLE) or r in PLACE_WHOLE_RULES or f.get("source") in ("engines", "skillspector", "husk"):
+            return os.path.normpath(w)
+        return os.path.normpath(re.sub(r":\+?\d+$", "", w))
     return re.sub(r":\d+$", "", w)
+
+
+PLACE_WHOLE = ("WT-X", "WT-I", "WT-D", "WT-K")   # where is a folder or a whole file: no line to take off
+PLACE_WHOLE_RULES = frozenset(("WT-S003", "WT-S004", "WT-S005", "WT-T001r", "WT-R002", "WT-R003", "WT-H006", "WT-P001"))
+
+
+def _corrob_sig(g):
+    """Everything corroborated() reads about a finding. Findings that share it give the same answer (Codex, batch 4 round 2)."""
+    return (g["rule"], g.get("title") if g["rule"] in ("WT-S001", "WT-S002", "WT-S005") else None, _place(g),
+            g.get("source", "watchtower"), g["severity"], g.get("severity_was"), bool(g.get("guarded")), tuple(sorted(g.get("kinds") or ())))
 
 
 def _covers(a, b):
@@ -897,10 +1455,11 @@ NO_OPINION = frozenset(("WT-X004", "WT-R010"))   # "couldn't finish" / "didn't p
 RISK_KIND = {"WT-T004": "credential", "WT-T011": "credential", "WT-S001": "credential", "WT-S002": "credential", "WT-K003": "credential",
              "WT-T005": "exfil", "WT-T017": "exfil", "WT-T006": "pipe", "WT-T006k": "pipe", "WT-T002": "obfuscation",
              "WT-T003": "obfuscation", "WT-T012": "exec", "WT-T008": "secrecy", "WT-T016": "secrecy", "WT-T001": "override",
-             "WT-T007": "override"}
+             "WT-T007": "override", "WT-T018": "exfil"}
 WORDING_RULES = frozenset(("WT-T001", "WT-T007", "WT-T008", "WT-T014", "WT-T016"))   # T014 "every email": item 8 dry run, Oct 13                          # what a skill says
-BEHAVIOR_RULES = frozenset(("WT-T002", "WT-T003", "WT-T004", "WT-T005", "WT-T006", "WT-T012", "WT-T017"))   # what it does
+BEHAVIOR_RULES = frozenset(("WT-T002", "WT-T003", "WT-T004", "WT-T005", "WT-T006", "WT-T012", "WT-T017", "WT-T018"))   # what it does
 WORDING_BACKERS = BEHAVIOR_RULES | {"WT-T013"}
+WEBHOOK_PAIR = {"WT-T018": "WT-T004", "WT-T004": "WT-T018"}   # batch 4: the one pair that confirms a chat webhook (see corroborated)
 DRIFT_RULES = frozenset(("WT-I001", "WT-I002"))   # a live file that changed or appeared: a fact about reach, never about wording   # an email or post sent with no approval line is a send, even without curl
 ENGINE_KIND_WORDS = (("credential", r"cred|secret|token|passw|api[ _-]?key|ssh|aws|keychain|cookie"),
                      ("exfil", r"exfil|upload|leak|send|webhook|network|outbound|data[ _-]?theft|post\b"),
@@ -966,6 +1525,12 @@ def corroborated(f, findings):
         return False
     here, src, skill = _place(f), f.get("source", "watchtower"), _skill_of(f)
     loud = lambda g: (g.get("severity_was") or g["severity"]) in ("critical", "high")
+    if f["rule"] in WEBHOOK_PAIR:   # batch 4 (FP1): a chat webhook and a credential read in one file back each other up
+        pair, full = WEBHOOK_PAIR[f["rule"]], lambda g: SEV_ORDER.index(g.get("severity_was") or g["severity"]) <= SEV_ORDER.index("medium")
+        if full(f) and any(g["rule"] == pair and not g.get("guarded") and _place(g) == here and full(g) for g in findings):
+            return True
+        if f["rule"] == "WT-T018":
+            return False   # nothing else confirms one: an engine's "webhook", a change or a folder verdict is the owner's own chat
     fk = kinds_of(f)
     for g in findings:
         if g is f or g["rule"] in NO_OPINION or g.get("guarded"):
@@ -1129,7 +1694,16 @@ def label_findings(findings, covered=None):
     and an approval line the Ask-first rules already cover is a Tip; pattern findings nothing backs up are "Worth a look". Tips and
     Worth-a-look carry no severity and never move the score. `covered`: the Ask-first areas known to be covered (none assumed)."""
     covered = covered or set()
-    out = []
+    out, memo, reps = [], {}, {}
+    for g in findings:   # Codex, batch 4 round 2: each distinct finding is read once (vet's 5,000 matches were 25 million pairs)
+        reps.setdefault(_corrob_sig(g), g)
+    reps = list(reps.values())
+
+    def backed(f):
+        s = _corrob_sig(f)
+        if s not in memo:
+            memo[s] = corroborated(f, reps)
+        return memo[s]
     for f in findings:
         f = dict(f)
         if f.get("guarded"):   # batch 2 (R1): defensive wording, kept as a record with no severity; severity_was stays the rule's own
@@ -1139,8 +1713,10 @@ def label_findings(findings, covered=None):
             _no_severity(f, "tip", TIP)
         elif is_evidence(f):
             f["class"], f["label"] = "evidence", CONFIRMED
-        elif corroborated(f, findings):
+        elif backed(f):
             f["class"], f["label"] = "corroborated", CONFIRMED
+            if f["rule"] == "WT-T018" and f["severity"] != "critical":   # batch 4: a credential read sent to a chat webhook is how token stealers work
+                f["severity_raised_from"], f["severity"] = f["severity"], "critical"
         else:
             _no_severity(f, "pattern", MAYBE_FINE)
         out.append(f)
@@ -1342,19 +1918,161 @@ def verdict(findings):
     return "Install"
 
 
+def vet_verdict(labelled):
+    """Batch 4 (FP2): vet judges on the audit's labels, with one rule of its own. A dangerous behaviour match that is critical
+    on its own (an exfiltration host, a pipe-to-shell) is still "Do not install": before install nothing can back it up.
+    Wording on its own (T001, T008) and a chat webhook are "Install with changes". An exposed key (T011) is "Do not install"
+    on its own, as on 857ab38: it ships with every copy of the template (Codex, round 1)."""
+    raw = lambda f: f.get("severity_was") or f["severity"]
+    live = [f for f in labelled if not f.get("guarded")]
+    if any(f.get("label") == CONFIRMED and f["severity"] == "critical" for f in live) or \
+            any((f["rule"] in BEHAVIOR_RULES or f["rule"] == SECRET_RULE) and raw(f) == "critical" for f in live):
+        return "Do not install"
+    if (any(f.get("label") == CONFIRMED and f["severity"] == "high" for f in live) or any(warned_danger(f) for f in labelled)
+            or any(f.get("class") == "pattern" and raw(f) in ("critical", "high") for f in live)
+            or any(f["rule"] == "WT-T018" for f in live)):
+        return "Install with changes"
+    return "Install"
+
+
 def sort_findings(fs):
     return sorted(fs, key=lambda f: (SEV_ORDER.index(f["severity"]), f["rule"], f["where"]))
 
 
 # ---------------------------------------------------------------- vet
+def vet_folder(path):
+    """Batch 4 (FP3): the folder vet reads when given a folder or a SKILL.md, else None (a loose file, stdin)."""
+    if path == "-":
+        return None
+    if os.path.isdir(path):
+        return os.path.abspath(path)
+    return os.path.dirname(os.path.abspath(path)) if os.path.basename(path) == "SKILL.md" else None
+
+
+VET_WALK_CAP = 20_000          # names listed in a vetted folder (files and folders) before listing stops
+VET_BYTES_CAP = 16_000_000     # text read in one vet, all files together
+VET_FINDINGS_CAP = 5_000       # findings kept before the remaining files are left unread
+
+
+def vet_files(d, entry):
+    """Codex, batch 4 round 1: the text files of a vetted folder, the entry point (its SKILL.md) first, so no cap can leave it
+    out. Only text files count toward the file cap; listing stops after VET_WALK_CAP names. Returns (files, notes)."""
+    # Codex, batch 4 round 2: names are counted as they are listed, so one huge folder stops at the cap instead of being read
+    # and sorted whole first; a linked folder (never followed) and a folder that can't be listed are named in the notes.
+    found, seen, notes, linked, failed, todo, stop = [], 0, [], [], [], [d], False
+    while todo and not stop:
+        top = todo.pop()
+        subs = []
+        try:
+            with os.scandir(top) as it:
+                for e in it:
+                    seen += 1
+                    if seen > VET_WALK_CAP:
+                        stop = True
+                        break
+                    try:
+                        if e.is_dir(follow_symlinks=False):
+                            if e.name not in SKIP_DIRS:
+                                subs.append(e.path)
+                        elif e.is_symlink() and os.path.isdir(e.path):
+                            linked.append(os.path.relpath(e.path, d) + "/")
+                        elif os.path.splitext(e.name)[1].lower() in TEXT_EXT:
+                            found.append(e.path)
+                    except OSError:
+                        failed.append(os.path.relpath(e.path, d))
+        except OSError:
+            failed.append((os.path.relpath(top, d) if top != d else ".") + "/")
+        todo += sorted(subs, reverse=True)
+    if stop:
+        notes.append(f"the folder has more than {VET_WALK_CAP} names, so listing stopped there")
+    for what, xs in (("a linked folder, not followed", linked), ("could not be listed", failed)):
+        if xs:
+            notes.append(f"not read ({what}): " + ", ".join(sorted(xs)[:10]) + (f" and {len(xs) - 10} more" if len(xs) > 10 else ""))
+    rest = sorted(p for p in found if entry is None or os.path.normpath(p) != os.path.normpath(entry))
+    files = ([entry] if entry else []) + rest
+    if len(files) > SKILL_FILE_CAP:
+        notes.append(f"{len(files) - SKILL_FILE_CAP} more text files not read (over the {SKILL_FILE_CAP}-file cap)")
+        files = files[:SKILL_FILE_CAP]
+    return files, notes
+
+
+def vet_read(d, entry, files, notes, full):
+    """Each file as (where, absolute path, text, kind), read one at a time. `where` is the identity 857ab38 gave a finding
+    (SKILL.md for the entry point, the path inside the folder for the rest), so keys don't change; the absolute path is only
+    for labelling. Every text file that isn't read is named in `notes`. A link is never followed: it may lead anywhere.
+    `full()` says the findings cap is reached; the files left are then counted, not read."""
+    total, skipped = 0, []
+    for i, p in enumerate(files):
+        if full():
+            skipped.append(f"{len(files) - i} more files (over {VET_FINDINGS_CAP} findings)")
+            break
+        rel = os.path.basename(p) if p == entry else os.path.relpath(p, d)
+        if os.path.islink(p) and p != entry:   # the entry point is read as 857ab38 read it: the file the owner named
+            skipped.append(f"{rel} (a link, not followed)")
+            continue
+        try:
+            size = os.stat(p).st_size
+        except OSError:
+            size = 0
+        if total + size > VET_BYTES_CAP and p != entry:
+            skipped.append(f"{rel} (over the {VET_BYTES_CAP:,} bytes one vet reads)")
+            continue
+        t = read_text(p)
+        if t is None:
+            if p == entry:
+                raise OSError(f"could not read {p}")
+            skipped.append(f"{rel} ({'over 1 MB' if size > 1_000_000 else 'unreadable'})")
+            continue
+        total += len(t)
+        yield rel, p, t, "template" if p == entry else "reference"
+    if skipped:
+        notes.append("not read: " + ", ".join(skipped[:10]) + (f" and {len(skipped) - 10} more" if len(skipped) > 10 else ""))
+
+
 def cmd_vet(args):
     rules = load_rules()
-    text = sys.stdin.read() if args.path == "-" else read_text(args.path)
-    if text is None:
-        print(f"ERROR could not read {args.path}", file=sys.stderr)
-        return 2
-    name = "stdin" if args.path == "-" else os.path.basename(args.path)
-    fs = scan_text(text, name, rules, kind="template")
+    folder = vet_folder(args.path)
+    absolute = {}   # finding key -> its where with the absolute path, for labelling only
+    if folder is not None:
+        entry = os.path.abspath(args.path) if not os.path.isdir(args.path) else os.path.join(folder, "SKILL.md")
+        entry = entry if os.path.lexists(entry) or not os.path.isdir(args.path) else None
+        fs, main_, parts, urls_, notes_, plugin_ = [], None, [], set(), [], False
+        try:
+            if not os.path.isdir(folder):
+                raise OSError(args.path)
+            files, notes_ = vet_files(folder, entry)
+            cut = []
+            for where, p, t, k in vet_read(folder, entry, files, notes_, lambda: len(fs) >= VET_FINDINGS_CAP):
+                # Codex, round 2: the findings cap holds inside a file too (each rule still gets its first match)
+                got = scan_text(t, where, rules, kind=k, limit=max(1, VET_FINDINGS_CAP - len(fs)), cut=cut)
+                absolute.update((f["key"], p + f["where"][len(where):]) for f in got)
+                fs += got
+                if k == "template":
+                    main_ = t
+                if entry is None:
+                    parts.append(t)   # no SKILL.md: --deep stages the folder's text as one (bounded by VET_BYTES_CAP)
+                if len(urls_) < 1000:
+                    urls_.update(urls_in(t))   # Codex, round 2: whole URLs, masked
+                plugin_ = plugin_ or bool(re.search(r"(?i)\bplug-?ins?\b", t))
+            if cut:
+                notes_.append(f"matches left out over the {VET_FINDINGS_CAP}-finding cap in " + ", ".join(sorted(set(cut))[:10]))
+        except OSError:
+            fs = None
+        if fs is None or (main_ is None and not parts):
+            print(f"ERROR could not read {args.path}", file=sys.stderr)
+            return 2
+        text = main_ if main_ is not None and not parts else "\n".join(parts)
+        cover = "; ".join(notes_) or None
+        name = os.path.basename(args.path.rstrip("/")) or "vetted"
+    else:
+        text = sys.stdin.read() if args.path == "-" else read_text(args.path)
+        if text is None:
+            print(f"ERROR could not read {args.path}", file=sys.stderr)
+            return 2
+        main_, urls_, plugin_, cut = text, None, None, []
+        name = "stdin" if args.path == "-" else os.path.basename(args.path)
+        fs = scan_text(text, name, rules, kind="template", limit=VET_FINDINGS_CAP, cut=cut)
+        cover = f"matches left out over the {VET_FINDINGS_CAP}-finding cap in {name}" if cut else None
     engines = {}
     if getattr(args, "deep", False) and args.path != "-":
         d = args.path if os.path.isdir(args.path) else os.path.dirname(os.path.abspath(args.path))
@@ -1385,18 +2103,26 @@ def cmd_vet(args):
             engines["warning"] = "No outside scanner is installed, so this vet used Watchtower's own rules only. Say so."
     fs = sort_findings(dedupe(fs))
     s, g = score(fs)
-    sev = {f["severity"] for f in fs}
-    risk = max(100 - s, 80 if "critical" in sev else 40 if "high" in sev else 0)   # a high finding never reads as "risk 6"
-    urls = sorted(set(re.findall(r"https?://[^\s)\"'>]+", text)))
-    result = {"tool": "watchtower", "version": VERSION, "target": name, "verdict": verdict(fs),
-              "risk_score": risk, "posture_score": s, "grade": g, "autonomy": autonomy(text, rules),
+    # Batch 4 (FP2): labelled as the audit labels them, with full paths so "same file" means the same file; shown relative.
+    # Codex, round 1: the full path is used for labelling only; each finding keeps the where (and so the key) 857ab38 gave it.
+    labelled = label_findings([dict(f, where=absolute.get(f["key"], f["where"])) for f in fs])
+    v = vet_verdict(labelled)
+    risk = max(100 - s, {"Do not install": 80, "Install with changes": 40}.get(v, 0))   # a high finding never reads as "risk 6"
+    rel = lambda w: (name if w == folder else w[len(folder) + 1:] if w.startswith(folder + "/") else w) if folder else w
+    fs = sort_findings([dict(lf if lf["label"] == CONFIRMED else dict(f, label=lf["label"], **{"class": lf["class"]}), where=rel(f["where"]))
+                        for f, lf in zip(fs, labelled)])
+    urls = sorted(urls_ if urls_ is not None else set(urls_in(text, limit=1000)))
+    result = {"tool": "watchtower", "version": VERSION, "target": name, "verdict": v,
+              "risk_score": risk, "posture_score": s, "grade": g, "autonomy": autonomy(main_ if main_ is not None else text, rules),
               "external_urls": urls[:25], "findings": fs, "engines": engines,
               "boundary_line": "Never send, post, buy, publish, delete, or change settings without my approval in this conversation. If a source is unavailable, report the failure."}
     if getattr(args, "page_only", False):
         result["coverage"] = "page text only: the skill bodies and routine prompts were not visible"
         if result["verdict"] == "Install":
             result["verdict"] = "Nothing bad found in what the page shows"
-    if re.search(r"(?i)\bplug-?ins?\b", text):
+    elif cover:
+        result["coverage"] = cover   # files left unread in a folder: said, never silent, in both outputs
+    if plugin_ if plugin_ is not None else re.search(r"(?i)\bplug-?ins?\b", text):
         result["bundled_plugin"] = ("This template mentions a plugin. A plugin's files can't be seen before it is installed. Tell the owner: "
                                     "\"It will ask to install a plugin I can't inspect yet. If you say yes, tell me and I'll check it straight away.\"")
     if args.json:
@@ -1404,10 +2130,12 @@ def cmd_vet(args):
     else:
         print(f"Verdict: {result['verdict']} · risk {result['risk_score']}/100 · autonomy {result['autonomy']}")
         for f in fs:
-            print(f"  [{f['severity'].upper()}] {f['rule']} {f['title']} @ {f['where']} :: {f['evidence']}")
+            print(f"  [{f['severity'].upper()}] {f['label']}: {f['rule']} {f['title']} @ {f['where']} :: {f['evidence']}")
             print(f"      fix: {f['fix']}")
         if urls:
             print("  External URLs: " + ", ".join(urls[:10]))
+        if cover and "coverage" in result and not getattr(args, "page_only", False):
+            print(f"  Not fully checked: {result['coverage']}")
         print(f"  Paste into the description: {result['boundary_line']}")
     return 1 if result["verdict"] == "Do not install" else 0
 
@@ -1553,6 +2281,25 @@ def persistence_snapshot():
         if os.path.isfile(p):
             snap[rc] = sha256_file(p)
     return snap
+
+
+def _sha(text):
+    return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
+
+
+def persistence_stored(snap):
+    """Codex, batch 4 round 1 (R11): persistence.json keeps the crontab masked for display and its raw text only as a hash,
+    which is what the next run compares. An older file holding the raw crontab is compared as it is, then saved this way."""
+    out = dict(snap)
+    if isinstance(snap.get("crontab"), str):
+        out["crontab"], out["crontab_sha256"] = mask_secrets(snap["crontab"]), _sha(snap["crontab"])
+    return out
+
+
+def persistence_changed(old, k, v):
+    if k == "crontab" and isinstance(old.get("crontab_sha256"), str) and isinstance(v, str):
+        return old["crontab_sha256"] != _sha(v)
+    return old.get(k) != v
 
 
 KNOWN_CRED_FILES = {
@@ -2156,10 +2903,11 @@ def audit(roots, exports, quick=False):
     old = load_json(state_path("persistence.json"), None)
     if old is not None:
         for k, v in snap.items():
-            if old.get(k) != v:
+            if persistence_changed(old, k, v):
                 fs.append(finding("WT-P001", "Persistence point changed", "medium", ["ASI10", "ASI05"], k,
-                                  str(v)[:120], "Check who added this cron entry, unit, or shell rc change; remove it if no Bot of yours needs it."))
-    save_json(state_path("persistence.json"), snap)
+                                  str(v)[:120], "Check who added this cron entry, unit, or shell rc change; remove it if no Bot of yours needs it.",
+                                  shown=str(v)))
+    save_json(state_path("persistence.json"), persistence_stored(snap))
 
     # 4. secrets in files (known CLI credential files reported separately)
     fs += cli_credentials()
@@ -3528,6 +4276,56 @@ def husk_batch(exe, stage, mapping, timeout=600, partial=None):
     return res, None
 
 
+X003_PAIRS = (("SkillSpector", "husk"), ("SkillSpector", "Watchtower"), ("husk", "Watchtower"))
+
+
+def engine_evidence(rule, s_, hk, engines=()):
+    """The evidence an engine finding (X001, X002, X003) is made with: one place, so its stored key can be made the same way."""
+    detail = "; ".join(s_.get("top", [])[:2])
+    if rule == "WT-X003":
+        return (" + ".join(engines) + (f"; {detail}" if detail else ""))[:150]
+    if rule == "WT-X001":
+        return f"risk {s_.get('score')}; {detail}"[:150]
+    return str(hk[0])[:150] if hk else ""
+
+
+def engine_entry_masked(d, e):
+    """Codex, batch 4 round 2 (R11): a cache entry as engine_cache.json keeps it, every Bot being able to read that file. The
+    scanners' words (SkillSpector's summaries, husk's messages) are masked; what they mean is read from the raw words first and
+    kept beside them when masking changed anything: which husk messages count (hk_keep), the kinds they name (hk_kinds,
+    top_kinds) and the keys the folder's X001, X002 and X003 findings get (keys, for folder `d`), so those keys stay the ones
+    857ab38 gave. An entry already masked by this version is returned as it is; one masked by an older version is masked again
+    (its words were raw wherever that masking changed nothing, so their meaning is read then)."""
+    if not isinstance(e, dict) or e.get("masked") == MASK_VERSION:
+        return e
+    e = dict(e)
+    ss = dict(e["ss"]) if isinstance(e.get("ss"), dict) else None
+    hk = list(e["hk"]) if isinstance(e.get("hk"), list) else None
+    meta = {}
+    if "keys" not in e:
+        s_ = ss or {}
+        kept = [i for i, m in enumerate(hk or ()) if husk_messages_that_count(d, [m])]
+        hk_kept = [hk[i] for i in kept]
+        keys = {"for": d, "WT-X001": finding_key("WT-X001", d, engine_evidence("WT-X001", s_, None)),
+                "WT-X002": finding_key("WT-X002", d, engine_evidence("WT-X002", s_, hk_kept))}
+        keys.update((" + ".join(p), finding_key("WT-X003", d, engine_evidence("WT-X003", s_, None, p))) for p in X003_PAIRS)
+        meta = {"keys": keys, "hk_keep": kept, "hk_kinds": sorted(engine_kinds(hk_kept))}
+        if ss is not None and "kinds" not in ss:
+            meta["top_kinds"] = sorted(engine_kinds(ss.get("top", [])))
+    changed = False
+    if ss is not None and isinstance(ss.get("top"), list):
+        top = [mask_secrets(t) if isinstance(t, str) else t for t in ss["top"]]
+        changed, ss["top"] = top != ss["top"], top
+        e["ss"] = ss
+    if hk is not None:
+        msgs = [mask_secrets(m) if isinstance(m, str) else m for m in hk]
+        changed, e["hk"] = changed or msgs != hk, msgs
+    if changed:
+        e.update(meta)
+    e["masked"] = MASK_VERSION
+    return e
+
+
 def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=None):
     """Second and third opinions on skills. Each engine starts once per batch of 40 skills; a skill is only re-scanned when
     its files change; work stops at the time budget and resumes next run. A skill is 'corroborated' only when two engines flag it."""
@@ -3554,6 +4352,11 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
                      f"The other {len(targets) - ENGINE_MAX_TARGETS} were checked by Watchtower's own rules only.")
         targets = targets[:ENGINE_MAX_TARGETS]
     cache = load_json(state_path("engine_cache.json"), {}) or {}
+    stale = [k for k, v in cache.items() if isinstance(v, dict) and v.get("masked") != MASK_VERSION]
+    for k in stale:   # Codex, batch 4 round 2: entries an older version kept with the scanners' raw words
+        cache[k] = engine_entry_masked(k, cache[k])
+    if stale:
+        save_json(state_path("engine_cache.json"), cache)
     hashes = {d: skill_dir_hash(d) for d in targets}
     retry_before = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=STUCK_RETRY_DAYS)).isoformat()
     installed = [n for n, x in (("SkillSpector", ss_exe), ("husk", hk_exe)) if x]
@@ -3581,10 +4384,10 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
             first[hashes[d]] = d
     run = [d for d in todo if first[hashes[d]] == d]
 
-    def remember(d, entry):
-        cache[d] = entry
+    def remember(d, entry):   # kept masked; the raw words' meaning and keys are worked out for each copy's own folder
+        cache[d] = engine_entry_masked(d, entry)
         for t in twins.get(d, []):
-            cache[t] = dict(entry)
+            cache[t] = engine_entry_masked(t, dict(entry))
         return 1 + len(twins.get(d, []))
     tune = load_json(state_path("engine_tune.json"), {}) or {}
     size = max(1, min(ENGINE_CHUNK, int(tune.get("chunk", ENGINE_CHUNK))))
@@ -3676,12 +4479,15 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
                                "Big or unusual files are the usual cause.", source="engines"))
             if not e_.get("hk"):
                 continue
-        s_, hk = e_.get("ss") or {}, husk_messages_that_count(d, e_.get("hk"))
+        # Codex, batch 4 round 2: the words are masked; where masking changed them, their meaning was read before (hk_keep, …)
+        s_, hk = e_.get("ss") or {}, ([e_["hk"][i] for i in e_["hk_keep"] if i < len(e_["hk"])] if "hk_keep" in e_ and isinstance(e_.get("hk"), list)
+                                      else husk_messages_that_count(d, e_.get("hk")))
+        raw_keys = e_["keys"] if isinstance(e_.get("keys"), dict) and e_["keys"].get("for") == d else {}
         ss_flag = s_.get("recommendation") == "DO_NOT_INSTALL"
         hk_flag = bool(hk)
         wt_k = {RISK_KIND[r] for k, rs in wt_hits.items() if k == d or k.startswith(d + "/") for r in rs}
-        ss_k = set(s_["kinds"] if "kinds" in s_ else engine_kinds(s_.get("top", []))) if ss_flag else set()
-        hk_k = engine_kinds(hk) if hk_flag else set()
+        ss_k = set(s_["kinds"] if "kinds" in s_ else e_.get("top_kinds", engine_kinds(s_.get("top", [])))) if ss_flag else set()
+        hk_k = set(e_.get("hk_kinds", engine_kinds(hk))) if hk_flag else set()
         tier = skill_tier(d + "/")
         # SkillSpector and husk both saying the folder is bad still agree (neither reports which file); Watchtower's own vote
         # joins only when it names the same kind of risk as the engine it pairs with.
@@ -3691,24 +4497,26 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
             agree = [(n, k) for n, flag, k in (("SkillSpector", ss_flag, ss_k), ("husk", hk_flag, hk_k)) if flag and wt_k & k]
             agree += [("Watchtower", wt_k & (ss_k | hk_k))] if agree else []
         engines = [n for n, _ in agree]
-        detail = "; ".join(s_.get("top", [])[:2])
         if len(engines) >= 2:
             x = finding("WT-X003", "Corroborated by multiple engines", "critical" if tier == "user" else "high",
-                        ["AST01", "AST08"], d, (" + ".join(engines) + (f"; {detail}" if detail else ""))[:150],
+                        ["AST01", "AST08"], d, engine_evidence("WT-X003", s_, hk, engines),
                         "Two independent engines agree. Disable this skill until you've read the flagged lines.", source="engines")
+            x["key"] = raw_keys.get(" + ".join(engines), x["key"])
             x["kinds"] = sorted(agree[-1][1] if engines[-1] == "Watchtower" else ss_k | hk_k)
             if not entry_current(e_, hashes[d], installed):   # Codex, DQ-042 rounds 2-3: an old answer not yet scanned again (the budget
                 x["kinds_incomplete"] = True                  # ran out), or husk's words missing, may lack a kind: never filed under Platform
             out.append(x)
         elif ss_flag:
             x = finding("WT-X001", "SkillSpector: do not install", "high" if tier == "user" else "low", ["AST01", "AST08"], d,
-                        f"risk {s_.get('score')}; {detail}"[:150],
+                        engine_evidence("WT-X001", s_, hk),
                         "Run `skillspector scan <folder>` for the exact lines; one engine alone can be wrong.", source="skillspector")
+            x["key"] = raw_keys.get("WT-X001", x["key"])
             x["kinds"] = sorted(ss_k)
             out.append(x)
         elif hk_flag:
             x = finding("WT-X002", "husk flagged this skill", "medium" if tier == "user" else "low", ["AST01", "AST05"], d,
-                        hk[0][:150], "Run `husk package <folder>` for details; one engine alone can be wrong.", source="husk")
+                        engine_evidence("WT-X002", s_, hk), "Run `husk package <folder>` for details; one engine alone can be wrong.", source="husk")
+            x["key"] = raw_keys.get("WT-X002", x["key"])
             x["kinds"] = sorted(hk_k)
             out.append(x)
     if installed:
@@ -4846,6 +5654,9 @@ def run_audit_locked(args, quick):
     snapshot = {"at": now(), "version": VERSION, "status": status_of(scored(live)), "score": s, "grade": g, "previous_score": prev.get("score"), "findings": live, "suppressed": suppressed,
                 "scanners_missing": meta.get("scanners_missing", []), "stages_skipped": list(STAGE_FAILED),
                 "inventory": meta["inventory"], "notes": meta["notes"]}
+    mask_stored(live), mask_stored(suppressed)   # batch 4 (R11): an older version's unmasked evidence (kept engine lines) is cleaned here
+    snapshot["notes"] = [mask_secrets(n) if isinstance(n, str) else n for n in snapshot["notes"]]   # round 2: a scanner's error line too
+    mask_approved_copies()                       # and its approved skill copies (Codex, round 1)
     save_json(state_path("last_findings.json"), snapshot)
     with open(state_path("score_history.csv"), "a") as f:
         f.write(f"{snapshot['at']},{s},{len(live)},{'daily' if quick else 'full'},{score_fingerprint()}\n")
@@ -4909,6 +5720,15 @@ def cmd_audit(args):
     out = {"status": snap_status(snap), "score": snap["score"], "score_line": score_line(snap), "grade": snap_grade(snap), "new": [compact(f) for f in new][:20],
            "fixed": [compact(f) for f in fixed][:10], "open_by_severity": by_sev(snap["findings"]),
            "top_fixes": [compact(f) for f in snap["findings"] if f.get("scope") != "platform" and not f.get("guarded")][:3], "notes": snap["notes"], "inventory": snap["inventory"]}
+    # Codex, batch 4 round 2: the whole delta is kept before anything is cut, in a file of this run's own (a second run writes
+    # another), and the counts say how much of it the JSON shows: `truncated` counts from the full lists, not from the first 20.
+    out["new_total"], out["fixed_total"] = len(new), len(fixed)
+    cut = {k: n - shown_ for k, n, shown_ in (("new", len(new), 20), ("fixed", len(fixed), 10)) if n > shown_}
+    if cut:
+        out["truncated"] = cut
+    path = save_delta(new, fixed)
+    if path:
+        out["delta_file"] = path
     out.update(score_change(snap, new))
     exc = exceptions_active(snap)
     if exc:
@@ -4936,6 +5756,26 @@ def cmd_audit(args):
         out["scanner_alerts"] = alerts
     print(fit(out, keep=("scanner_alerts",)))
     return 0
+
+
+DELTA_KEEP = 20   # delta files kept (newest first)
+
+
+def save_delta(new, fixed):
+    """This run's complete delta (every new and fixed finding, evidence masked) in state/deltas/, or None when nothing changed or
+    it can't be written. The weekly retry reads it after a second run has made the first run's findings old (Codex, round 2)."""
+    if not new and not fixed:
+        return None
+    d = state_path("deltas")
+    try:
+        os.makedirs(d, exist_ok=True)
+        path = os.path.join(d, f"audit-{time.time_ns()}.json")
+        save_json(path, {"at": now(), "new": [dict(compact(f), key=f["key"]) for f in new], "fixed": [dict(compact(f), key=f["key"]) for f in fixed]})
+        for old in sorted(fn for fn in os.listdir(d) if fn.startswith("audit-") and fn.endswith(".json"))[:-DELTA_KEEP]:
+            os.remove(os.path.join(d, old))
+    except OSError:
+        return None
+    return path
 
 
 def scanner_alerts(snap):
@@ -5154,13 +5994,15 @@ def cmd_show(args):
         return 2
     print(f"score {score_line(snap)}")
     rows = [f for f in snap["findings"] if f["rule"] == args.rule][: args.limit]
+    masked = {}   # Codex, batch 4 round 2: the file is masked as a whole, then cut, so no secret beside a finding is printed
     for f in rows:
-        print(f"{f['severity']} {f['rule']} [{label_of(f)}] {f['where']}\n  evidence: {f['evidence']}")
+        print(f"{f['severity']} {f['rule']} [{label_of(f)}] {f['where']}\n  evidence: {mask_secrets(str(f.get('evidence') or ''))}")
         path, _, ln = f["where"].rpartition(":")
         if args.rule in ("WT-T011", "WT-S001", "WT-S002", "WT-S003") or not ln.isdigit():
             continue
-        t = read_text(path) or ""
-        lines = t.splitlines()
+        if path not in masked:
+            masked[path] = mask_lines(read_text(path) or "")
+        lines = masked[path]
         i = int(ln) - 1
         ctx = " ".join(lines[max(0, i - 1): i + 2])[:300]
         print(f"  context: {ctx}")
@@ -5324,7 +6166,7 @@ EVENT_DAYS = 14
 def remember_events(new):
     """History lines and canary trips happen once. Keep them open for EVENT_DAYS so the next run
     doesn't report them as fixed; suppress one (wt.py show + suppressions.json) to close it sooner."""
-    store = load_json(state_path("events.json"), [])
+    store = mask_stored(load_json(state_path("events.json"), []))   # batch 4 (R11): evidence an older version stored unmasked
     known = {e["key"] for e in store}
     for f in new:
         if f["key"] in BULK_KEYS:
@@ -5336,7 +6178,7 @@ def remember_events(new):
         elif f["key"] not in known:
             store.append(dict(f, first_seen=now()))
     cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=EVENT_DAYS)).isoformat()
-    store = [e for e in store if e.get("first_seen", "") >= cutoff]
+    store = mask_stored([e for e in store if e.get("first_seen", "") >= cutoff])
     save_json(state_path("events.json"), store)
     return [{k: v for k, v in e.items() if k not in ("first_seen", "times")} for e in store]
 
@@ -5377,15 +6219,22 @@ def history_findings(rules):
             f.seek(start)
             chunk = f.read()
         offsets[p] = size
+        masked = None
         for n, line in enumerate(chunk.splitlines(), 1):
             line = re.sub(r"^: \d+:\d+;", "", line)  # zsh extended history prefix
             for rid, title, sev, owasp, rx in compiled:
                 if rx.search(line):
                     if rid == "WT-H001" and known_installer(line):
                         continue
-                    shown = secret.sub(lambda m: mask(m.group(0)), line)[:160]
-                    out.append(finding(rid, title, sev, owasp, f"{p}:+{n}", shown,
-                                       "Find which Bot or session ran this (Agent Computer view, routine runs). If none of yours meant to, tell Watchtower \"incident check\"."))
+                    legacy = secret.sub(lambda m: mask(m.group(0)), line)   # the key, as before (finding() cuts it to 160)
+                    # Codex, batch 4 round 1: what is stored is masked from the raw line, so a private key's body is hidden before
+                    # the T011 pass shortens its header. Round 2: masked from the whole chunk, line for line, so a quote opened
+                    # on an earlier line (a token over two lines) is still hidden on this one.
+                    if masked is None:
+                        masked = mask_lines(chunk)
+                    out.append(finding(rid, title, sev, owasp, f"{p}:+{n}", legacy,
+                                       "Find which Bot or session ran this (Agent Computer view, routine runs). If none of yours meant to, tell Watchtower \"incident check\".",
+                                       shown=secret.sub(lambda m: mask(m.group(0)), re.sub(r"^: \d+:\d+;", "", masked[n - 1]))))
                     break
     save_json(state_path("history_offsets.json"), offsets)
     return out
@@ -6742,7 +7591,7 @@ def cmd_prepublish(args):
         texts = [(p, read_text(p) or "") for p in paths]
     fs = []
     for where, t in texts:
-        fs += [f for f in scan_text(t, where, rules, kind="template") if f["rule"] in ("WT-T011", "WT-T013", "WT-T007", "WT-T008", "WT-T005", "WT-T006")]
+        fs += [f for f in scan_text(t, where, rules, kind="template") if f["rule"] in ("WT-T011", "WT-T013", "WT-T007", "WT-T008", "WT-T005", "WT-T006", "WT-T018")]
         for rid, title, sev, rx in PREPUB_RULES:
             for m in re.finditer(rx, t):
                 ev = m.group(0)
@@ -6755,7 +7604,8 @@ def cmd_prepublish(args):
                     if re.search(r"(wt\.py|/workspace/watchtower/|install\.sh)", line):
                         continue
                 fs.append(finding(rid, title, sev, ["AST04", "LLM02"], f"{where}:{line_of(t, m.start())}", mask(ev) if rid in ("WT-PP01", "WT-PP02") else ev[:120],
-                                  "Remove or generalize it before you create the template: anything in a description, skill or routine ships to every installer."))
+                                  "Remove or generalize it before you create the template: anything in a description, skill or routine ships to every installer.",
+                                  shown=None if rid in ("WT-PP01", "WT-PP02") else ev))
         fs += prepublish_extra(where, t, names)
         if not has_approval(t, rules) and rules["write_verbs"].search(t):
             fs.append(finding("WT-PP07", "No approval boundary", "high", ["ASI02"], where, "no approval line",
@@ -6787,7 +7637,9 @@ def cmd_incident(args):
     os.makedirs(idir, exist_ok=True)
     snap = load_json(state_path("last_findings.json"), {"findings": []})
     secret = next(r["rx"] for r in rules["rules"] if r["id"] == SECRET_RULE)
-    clean = lambda t: secret.sub(lambda m: mask(m.group(0)), t or "")
+    # batch 4 (R11): tokens and passwords too. Codex, round 1: masked before the T011 pass, so a private key's header is still
+    # there to find its body by, and over the whole text, so a body on the lines after its header is found as well
+    clean = lambda t: secret.sub(lambda m: mask(m.group(0)), mask_secrets(t or ""))
     _, ps, _ = run(["ps", "-eo", "pid,ppid,user,etime,cmd", "--sort=-etime"], 20)
     _, net, _ = run(["ss", "-tunp"], 20)
     _, cron, _ = run(["crontab", "-l"], 10)
@@ -6805,8 +7657,9 @@ def cmd_incident(args):
         p = os.path.expanduser(hf)
         if os.path.isfile(p):
             with open(p, errors="replace") as f:
-                tails += [f"{hf}: {clean(l.rstrip())[:200]}" for l in f.readlines()[-40:]]
-    hot = [f for f in snap.get("findings", []) if f["severity"] in ("critical", "high")]
+                tails += [f"{hf}: {l.rstrip()[:200]}" for l in clean(f.read()[-262144:]).splitlines()[-40:]]
+    # Codex, round 1: the snapshot may still be an older version's, written before evidence was masked
+    hot = mask_stored([dict(f) for f in snap.get("findings", []) if isinstance(f, dict) and f.get("severity") in ("critical", "high")])
     ledger_tail = []
     try:
         with open(state_path("ledger.jsonl")) as f:
@@ -7269,7 +8122,7 @@ def gather_brief(cfg, offline=None):
 EXPOSURE_AREAS = [
     ("Secrets on the shared computer", ("WT-S001", "WT-S002", "WT-S003", "WT-T011")),
     ("Logged-in browser sessions", ("WT-S004",)),
-    ("Skills and templates", ("WT-X001", "WT-X002", "WT-X003", "WT-T001", "WT-T002", "WT-T003", "WT-T004", "WT-T005", "WT-T006", "WT-T007", "WT-T008", "WT-I001")),
+    ("Skills and templates", ("WT-X001", "WT-X002", "WT-X003", "WT-T001", "WT-T002", "WT-T003", "WT-T004", "WT-T005", "WT-T006", "WT-T007", "WT-T008", "WT-T018", "WT-I001")),
     ("Approvals and settings", ("WT-A001", "WT-A002", "WT-A003", "WT-A004", "WT-A005", "WT-C001", "WT-C003", "WT-C005")),
     ("Bots, memories and routines", ("WT-M010", "WT-L001", "WT-R002", "WT-T013", "WT-R011", "WT-R012", "WT-R013")),
     ("Packages", ("WT-D001",)),
@@ -7386,9 +8239,7 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
                f"<div class='m'><span class='k'>Needs you</span><b>{len(urgent)}</b><span class='s'>{len(todo) - len(urgent)} smaller {'item' if len(todo) - len(urgent) == 1 else 'items'}</span></div>"
                f"<div class='m'><span class='k'>Handled this week</span><b>{fixed + cleaned}</b><span class='s'>fixed or cleaned up</span></div>")
 
-    fix_prompt = "Watchtower, fix it"
-    routine = ("Every Sunday at 6:00 AM, tell Watchtower \"fix it\" and apply the safe fixes without asking. "
-               "Then post one line: what was cleaned, and anything that still needs me.")
+    fix_prompt = "Watchtower, fix it"   # batch 4 (R10): the owner runs it; the brief no longer offers a routine that fixes without asking
 
     def rows_table(t):
         rows = t.get("rows", [])
@@ -7398,9 +8249,12 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
                        f"<td><code class='rule'>{e(r['rule'])}</code></td></tr>" for r in rows[:40])
         extra = f"<p class='quiet'>And {len(rows) - 40} more. Run <code>wt.py show {e(rows[0]['rule'])}</code> for all of them.</p>" if len(rows) > 40 else ""
         label = "Show which" if len(rows) > 1 else "Show where"
+        if t.get("can_accept"):
+            ok = f"Fine on purpose? Tell Watchtower: <code>accept {e(rows[0]['rule'])} {e(rows[0]['name'])} because …</code>"
+        else:   # batch 4 (R10): never suggest an accept that batch 1's gate refuses
+            ok = "This one can't be marked as fine. Tell Watchtower " + ("\"incident check\"." if t.get("decoy") else "\"fix it\".")
         return (f"<details class='dd'><summary>{label}</summary><div class='scroll'><table><tr><th>What</th><th>Why it was flagged</th><th>Rule</th></tr>{body}</table></div>"
-                f"{extra}<p class='quiet'>For the exact lines: <code>wt.py show {e(rows[0]['rule'])}</code>. "
-                f"Fine on purpose? Tell Watchtower: <code>accept {e(rows[0]['rule'])} {e(rows[0]['name'])} because …</code></p></details>")
+                f"{extra}<p class='quiet'>For the exact lines: <code>wt.py show {e(rows[0]['rule'])}</code>. {ok}</p></details>")
 
     def todo_item(i, t):
         links = "".join(f"<a class='btn' href='{safe(u)}' target='_blank' rel='noopener'>Turn off {e(n)} keys</a>" for n, u in t.get("links", []))
@@ -7467,7 +8321,7 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
 .axis{{display:flex;justify-content:space-between;color:var(--soft);font-size:12px}}
 .ar{{display:grid;grid-template-columns:130px 1fr 28px;align-items:center;gap:10px;font-size:14px;margin:7px 0}}.ab{{height:10px;background:var(--line);border-radius:5px;overflow:hidden}}.ab i{{display:block;height:100%;border-radius:5px}}.ar b{{text-align:right;font-variant-numeric:tabular-nums}}
 .sev-critical{{background:var(--red)}}.sev-high{{background:var(--amber)}}.sev-medium{{background:var(--sea)}}
-.fix{{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}}.fx{{background:var(--card);border:2px solid var(--navy);border-radius:12px;padding:16px}}.fx.alt{{border:1px solid var(--line)}}
+.fix{{display:grid;grid-template-columns:1fr;gap:14px;margin-top:14px}}.fx{{background:var(--card);border:2px solid var(--navy);border-radius:12px;padding:16px}}.fx.alt{{border:1px solid var(--line)}}
 .fx h3{{margin:0 0 4px;font-size:18px}}.fx p{{margin:0 0 10px;color:var(--soft);font-size:14px}}
 .cmd{{display:flex;gap:8px;align-items:stretch}}.cmd code{{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 11px;font:14px/1.4 ui-monospace,Menlo,monospace;overflow-wrap:anywhere}}
 button{{font:600 14px var(--f);border:0;border-radius:8px;padding:0 14px;background:var(--navy);color:var(--card);cursor:pointer;min-height:40px}}.fx.alt button{{background:var(--card);color:var(--navy);border:1px solid var(--navy)}}
@@ -7494,9 +8348,7 @@ ol.small-todo{{margin-top:8px}}ol.small-todo li{{padding:10px 12px}}ol.small-tod
 <div class='charts'><div class='panel'><h3>Security score over time</h3>{svg_trend(hist)}</div><div class='panel'><h3>Where the open issues are</h3>{svg_areas(exp)}</div></div>
 {engines_html}
 <div class='fix'><div class='fx'><h3>Fix it all</h3><p>Paste this into your Watchtower Bot. It cleans up, upgrades outdated software (and undoes any upgrade that breaks something), then asks you one yes or no for everything that's fine on purpose.</p>
-<div class='cmd'><code id='c1' tabindex='0'>{e(fix_prompt)}</code><button type='button' data-copy='c1' hidden>Copy</button></div><p class='hint'>Click the text to select it, then copy.</p></div>
-<div class='fx alt'><h3>Keep it clean automatically</h3><p>Paste this into Watchtower as a new routine. It runs the same safe cleanup every Sunday.</p>
-<div class='cmd'><code id='c2' tabindex='0'>{e(routine)}</code><button type='button' data-copy='c2' hidden>Copy</button></div><p class='hint'>Click the text to select it, then copy.</p></div></div>
+<div class='cmd'><code id='c1' tabindex='0'>{e(fix_prompt)}</code><button type='button' data-copy='c1' hidden>Copy</button></div><p class='hint'>Click the text to select it, then copy.</p></div></div>
 <section class='sec'><h2>What needs you</h2><ol class='todo'>{todo_html}</ol>{rest_html}{acc_html}</section>
 <section class='sec'><h2>Threats this week</h2><ul class='threats'>{threats}</ul>{later_html}<p class='quiet' style='margin-top:10px'>{kev_line}</p></section>
 <p class='foot'>Read-only: Watchtower changes nothing unless you run the fix. {len(b['sources']) - len(down)} of {len(b['sources'])} news sources responded{(' (' + e(', '.join(down)) + ' did not)') if 0 < len(down) <= 2 else ''}. Full details: /watchtower-report. Watchtower {e(VERSION)}.</p>
@@ -7879,6 +8731,8 @@ def needs_you(findings, limit=None):
         g["handled"] = "Only you" if "only_you" in cls else ("One yes" if cls & {"decision", "revet"} else "Fix handles it")
         g["label"] = CONFIRMED if any(label_of(f) == CONFIRMED for f in g["findings"]) else MAYBE_FINE
         g["rules"] = sorted(g["rules"])
+        g["can_accept"] = all(accept_refused(f) is None for f in g["findings"])   # batch 1's gate (built on acceptable())
+        g["decoy"] = any(f["rule"].startswith("WT-K") for f in g["findings"])
         g["rows"] = [item_row(f, key_files) for f in sorted(g.pop("findings"), key=lambda f: SEV_ORDER.index(f["severity"]))]
         if g["title"] == "Keys that still work are sitting in files" and live:
             g["how"] = "Turn these off at the provider: " + ", ".join(n for n, _ in live) + ". Then tell Watchtower \"fix it\" to clear every copy."
@@ -8327,10 +9181,55 @@ def save_approved(d):
         if os.path.splitext(p)[1].lower() in TEXT_EXT and os.path.getsize(p) <= APPROVED_FILE_LIMIT and total < APPROVED_SKILL_LIMIT:
             t = read_text(p, limit=APPROVED_FILE_LIMIT)
             if t is not None:
-                files[rel] = t
+                files[rel] = mask_secrets(t)   # Codex, batch 4 round 1 (R11): the copy is for showing a diff; `hashes` are of the raw files
                 total += len(t)
     with gzip.open(approved_path(d), "wt", encoding="utf-8") as f:
-        json.dump({"dir": os.path.normpath(d), "at": now(), "hash": skill_dir_hash(d), "files": files, "hashes": hashes}, f)
+        json.dump({"dir": os.path.normpath(d), "at": now(), "hash": skill_dir_hash(d), "files": files, "hashes": hashes,
+                   "masked": MASK_VERSION}, f)
+
+
+def mask_approved_copies():
+    """Approved copies saved by an older version hold the skill's raw text, or text masked by an older masking: each is masked
+    (again) and rewritten in place (same name, same `at`, `hash` and `hashes`). A copy that isn't a plain file, or can't be read,
+    is left alone. Once every copy is done, the marker file holds MASK_VERSION, so later runs don't open them again until
+    masking changes (Codex, batch 4 round 2: a plain marker never let a better masking reach copies already marked)."""
+    marker = state_path("approved_masked")
+    try:
+        with open(marker) as f:
+            if f.read().split()[:1] == [str(MASK_VERSION)]:
+                return 0
+    except OSError:
+        pass
+    try:
+        names = os.listdir(state_path("approved"))
+    except OSError:
+        names = []
+    n, failed = 0, False
+    for fn in names:
+        p = state_path("approved", fn)
+        try:
+            if not fn.endswith(".json.gz") or not stat.S_ISREG(os.lstat(p).st_mode):
+                continue
+            with gzip.open(p, "rt", encoding="utf-8") as f:
+                doc = json.load(f)
+            if not isinstance(doc, dict) or doc.get("masked") == MASK_VERSION or not isinstance(doc.get("files"), dict):
+                continue
+            doc["files"] = {k: mask_secrets(v) if isinstance(v, str) else v for k, v in doc["files"].items()}
+            doc["masked"] = MASK_VERSION
+            tmp = p + ".tmp"
+            with gzip.open(tmp, "wt", encoding="utf-8") as f:
+                json.dump(doc, f)
+            os.replace(tmp, p)
+            n += 1
+        except (OSError, ValueError, EOFError):
+            failed = True
+    if not failed:
+        try:
+            with open(marker, "w") as f:
+                f.write(f"{MASK_VERSION} {now()}\n")
+        except OSError:
+            pass
+    return n
 
 
 def save_approved_all(dirs):
@@ -8395,6 +9294,10 @@ def skill_diff(d, context=2):
             b = ""
         if a is None or b is None:
             out.append(f"~ {rel}: changed (not a text file, or too large to keep a copy)")
+            continue
+        a, b = mask_secrets(a), mask_secrets(b)   # batch 4 (R11): both sides as the copy keeps them, so only real changes show
+        if a == b and a:
+            out.append(f"~ {rel}: changed inside a hidden value (a password, token or key)")
             continue
         lines = list(difflib.unified_diff(a.splitlines(), b.splitlines(), f"approved/{rel}", f"now/{rel}", lineterm="", n=context))
         added += sum(1 for l in lines if l.startswith("+") and not l.startswith("+++"))
