@@ -522,9 +522,33 @@ class Docs(unittest.TestCase):
         with open(os.path.join(ROOT, rel), encoding="utf-8") as f:
             return f.read()
 
-    def test_the_release_list_ships_empty_and_is_in_the_manifest(self):
+    def test_the_release_list_is_well_formed_and_is_in_the_manifest(self):
+        """Filled from Ken's box (Oct 18): every line is `<sha256>  <path>` inside a platform folder, and wt reads it whole."""
+        import re
         t = self.read("rules/platform-release.lock")
-        self.assertFalse([l for l in t.splitlines() if l.strip() and not l.lstrip().startswith("#")])
+        lines = [l for l in t.splitlines() if l.strip() and not l.lstrip().startswith("#")]
+        self.assertTrue(lines)
+        roots = tuple(sub + "/" for sub in wt.PLATFORM_ROOT_SUBS)
+        self.assertEqual(len(roots), 5)
+        pairs = []
+        for l in lines:
+            m = re.fullmatch(r"([0-9a-f]{64})  (.+)", l)
+            self.assertTrue(m, l)
+            rel = m.group(2)
+            self.assertTrue(rel.startswith(roots), l)
+            self.assertNotIn("..", rel, l)
+            self.assertNotIn(":", rel, l)
+            self.assertFalse(rel.startswith("/"), l)
+            self.assertNotEqual(rel, ".grok/auth.json", l)
+            pairs.append((rel, m.group(1)))
+        self.assertEqual(len(pairs), len(set(pairs)))
+        saved = wt.PLATFORM_LOCK
+        wt.PLATFORM_LOCK = os.path.join(ROOT, "rules", "platform-release.lock")
+        try:
+            self.assertEqual(wt.platform_lock_problem(), "")
+            self.assertEqual({(p, h) for p, hs in wt.platform_lock().items() for h in hs}, set(pairs))
+        finally:
+            wt.PLATFORM_LOCK = saved
         self.assertIn("rules/platform-release.lock", self.read("MANIFEST.sha256"))
 
     def test_the_docs_name_the_release_list_and_the_yes(self):
