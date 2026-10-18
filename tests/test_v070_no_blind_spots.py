@@ -3,6 +3,7 @@ import os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, wt
 from test_watchtower import fake_key
+import profiles
 
 
 def put(path, text):
@@ -40,6 +41,7 @@ class NoBlindSpots(Box):
         put(os.path.join(d, "SKILL.md"), "---\nname: pptx\ndescription: decks\n---\nMake decks.\n")
         put(os.path.join(d, "templates", "tv_series_pitch_deck.js"),
             "const line = 'She secretly plans the heist.';\n")
+        profiles.vendor_release(self, os.path.join(d, "SKILL.md"), os.path.join(d, "templates", "tv_series_pitch_deck.js"))   # item 8: as shipped
         self.scanners(); self.audit()
         fs = [f for f in self.snap().get("findings", []) if "tv_series_pitch_deck.js" in f["where"]]
         self.assertFalse(any(wt.counts(f) for f in fs), fs)
