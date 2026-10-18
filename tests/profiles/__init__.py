@@ -117,6 +117,7 @@ def busy_clean_box(box):
        "Use the templates folder for layouts.\n")
     for i in range(12):
         _w(os.path.join(pptx, "templates", f"deck{i:02d}.js"), PPTX_FICTION)
+    vendor_release_tree(box, pptx)   # item 8: the vendor's own files, as its release lists them
     # 2. a cloned repo with old packages (osv reports them; owner's other project, not a live skill)
     clone = os.path.join(box.ws, "projects", "old-site")
     _w(os.path.join(clone, "package-lock.json"), json.dumps({"name": "old-site", "lockfileVersion": 3,
@@ -149,10 +150,32 @@ def busy_clean_box(box):
     return {"live": live, "pptx": pptx, "clone": clone, "plugins": plugins, "dev": dev}
 
 
+def vendor_release(box, *items):
+    """Item 8: list files in the box's vendor release list (box.platform_lock), as `sha256sum` run from the home folder prints
+    them. An item is a path (its bytes now) or (path, text or bytes) for bytes the vendor ships that aren't on disk yet."""
+    import hashlib
+    with open(box.platform_lock, "a") as f:
+        for it in items:
+            p, data = it if isinstance(it, tuple) else (it, None)
+            if data is None:
+                with open(p, "rb") as g:
+                    data = g.read()
+            data = data.encode() if isinstance(data, str) else data
+            f.write(f"{hashlib.sha256(data).hexdigest()}  {os.path.relpath(p, box.home)}\n")
+
+
+def vendor_release_tree(box, *folders):
+    """vendor_release for every file under each folder, by the name it has under that folder (a folder reached through a link
+    is listed under the link's name; list the real folder too when both names are in use)."""
+    vendor_release(box, *sorted(os.path.join(dp, fn) for d in folders for dp, _, fns in os.walk(d) for fn in fns))
+
+
 def platform_refresh(box, layout):
     """What a platform update does overnight: the bundled pptx skill and the catalog plugins get new versions."""
     _w(os.path.join(layout["pptx"], "SKILL.md"), "Also supports speaker notes.\n", "a")
     _w(os.path.join(layout["pptx"], "templates", "deck99.js"), PPTX_FICTION)
+    # Item 8: a real vendor update is on the vendor's release list
+    vendor_release(box, os.path.join(layout["pptx"], "SKILL.md"), os.path.join(layout["pptx"], "templates", "deck99.js"))
     for root in layout["plugins"]:
         for dp, _, fns in os.walk(root):
             for fn in fns:
