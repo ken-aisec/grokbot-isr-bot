@@ -1,0 +1,257 @@
+# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# ---------------------------------------------------------------- v0.6.8: the disprove step (Ken, Oct 10; after Cloudflare's MIT skill)
+DISMISS_LOG = "dismissed.jsonl"
+# Text that argues the content is safe. A scanner-facing reassurance is what an attacker would write, so it is a reason to KEEP.
+SAFE_CLAIM = re.compile(r"(?i)(\b(this|it)\s+is\s+(safe|fine|harmless|legit\w*|authori[sz]ed|approved|benign|trusted)\b|\bnot\s+(malicious|a\s+threat|dangerous|harmful)\b"
+                        r"|\bfalse\s+positive|\b(scanners?|watchtower|auditors?|reviewers?|security\s+(tools?|checks?))\s+(should|can|may|must|will)\s+(ignore|skip|allow|pass)"
+                        r"|\bignore\s+(this|the|any)\s+(warning|finding|alert|flag)|\bsafe\s+to\s+(run|install|ignore|use)\b|\bpre-?approved\b|\b(white|allow)-?listed\b"
+                        r"|\b(vetted|audited|reviewed)\s+(and|by)\b)")
+
+
+def dismiss_context(f):
+    """The full sentence around a finding: its line and the lines either side, or the evidence when there is no file line."""
+    path, _, ln = f["where"].rpartition(":")
+    text = f.get("evidence") or ""
+    if ln.isdigit() and os.path.isfile(path):
+        lines = (read_text(path) or "").splitlines()
+        i = int(ln) - 1
+        text = " ".join(lines[max(0, i - 2): i + 3]) + " " + text
+    return text
+
+
+def dismissed_keys():
+    out = {}
+    for l in (read_text(state_path(DISMISS_LOG)) or "").splitlines():
+        try:
+            e_ = json.loads(l)
+        except ValueError:
+            continue
+        if e_.get("action") == "dismissed":
+            out[e_["key"]] = e_.get("reason", "")
+    return out
+
+
+def dismiss(key, reason):
+    """Drop a Worth-a-look finding the Bot has shown is a false alarm, and log why. Never an evidence or Confirmed finding; never
+    when the content argues it is safe. Every decision, kept or dropped, goes to state/dismissed.jsonl."""
+    snap = load_json(state_path("last_findings.json"), {}) or {}
+    rc = load_json(state_path("rollcall_findings.json"), {}) or {}
+    fs = snap.get("findings", []) + label_findings(rc.get("findings", []))
+    f = next((x for x in fs if x.get("key") == key or x.get("key", "").startswith(key) and len(key) >= 8), None)
+    entry = {"at": now(), "key": key, "reason": (reason or "")[:300]}
+    if not f:
+        ok, why = False, "no such finding in the last audit or roll-call"
+    else:
+        entry.update(key=f["key"], rule=f["rule"], where=f["where"], cls=f.get("class") or ("evidence" if is_evidence(f) else "pattern"))
+        m = SAFE_CLAIM.search(dismiss_context(f))
+        if f.get("unverified_platform"):   # item 8 review 1; Ken's decision (Oct 18): only a release that lists it clears one
+            ok, why = False, "a platform file not on the vendor's release list: only a Watchtower release that lists it clears it"
+        elif is_evidence(f) or entry["cls"] != "pattern":
+            ok, why = False, f"{entry['cls']} finding: only Worth-a-look findings can be dropped"
+        elif not (reason or "").strip():
+            ok, why = False, "give the reason it is a false alarm"
+        elif m:
+            ok, why = False, f"the text argues it is safe ('{m.group(0)}'), which is a reason to keep it"
+        else:
+            ok, why = True, "dropped as a false alarm"
+    entry.update(action="dismissed" if ok else "kept", why=why)
+    os.makedirs(os.path.dirname(state_path(DISMISS_LOG)), exist_ok=True)
+    with open(state_path(DISMISS_LOG), "a") as fh:
+        fh.write(json.dumps(entry) + "\n")
+    return ok, why
+
+
+def dismissed_since(since):
+    out = []
+    for l in (read_text(state_path(DISMISS_LOG)) or "").splitlines():
+        try:
+            e_ = json.loads(l)
+        except ValueError:
+            continue
+        if e_.get("action") == "dismissed" and e_.get("at", "") >= since:
+            out.append({"rule": e_.get("rule"), "where": short_path(str(e_.get("where", "")).split(":")[0]) + (":" + e_["where"].rsplit(":", 1)[1] if re.search(r":\d+$", str(e_.get("where", ""))) else ""),
+                        "reason": e_.get("reason", "")})
+    return out
+
+
+def cmd_dismiss(args):
+    if args.list or not args.key:
+        since = args.since or (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=24)).isoformat()
+        rows = dismissed_since(since)
+        print(fit({"dismissed": rows}) if rows else "NONE_DISMISSED")
+        return 0
+    ok, why = dismiss(args.key, args.reason)
+    print(("DISMISSED " if ok else "KEPT ") + why)
+    return 0 if ok else 1
+
+
+def cmd_show(args):
+    snap = load_json(state_path("last_findings.json"), None)
+    if not snap:
+        print("ERROR no audit yet", file=sys.stderr)
+        return 2
+    print(f"score {score_line(snap)}")
+    rows = [f for f in snap["findings"] if f["rule"] == args.rule][: args.limit]
+    masked = {}   # Codex, batch 4 round 2: the file is masked as a whole, then cut, so no secret beside a finding is printed
+    for f in rows:
+        print(f"{f['severity']} {f['rule']} [{label_of(f)}] {f['where']}\n  evidence: {mask_secrets(str(f.get('evidence') or ''))}")
+        path, _, ln = f["where"].rpartition(":")
+        if args.rule in ("WT-T011", "WT-S001", "WT-S002", "WT-S003") or not ln.isdigit():
+            continue
+        if path not in masked:
+            masked[path] = mask_lines(read_text(path) or "")
+        lines = masked[path]
+        i = int(ln) - 1
+        ctx = " ".join(lines[max(0, i - 1): i + 2])[:300]
+        print(f"  context: {ctx}")
+    return 0
+
+
+def by_sev(fs):
+    c = {s: 0 for s in SEV_ORDER}
+    for f in fs:
+        c[f["severity"]] += 1
+    return c
+
+
+# ---------------------------------------------------------------- report
+def cmd_report(args):
+    snap = load_json(state_path("last_findings.json"), None)
+    if not snap:
+        print("ERROR no audit yet: run `wt audit` first", file=sys.stderr)
+        return 2
+    hist = load_history()
+    week = dt.date.today().isocalendar()
+    tag = f"{week[0]}-W{week[1]:02d}"
+    rdir = os.path.join(home(), "reports")
+    os.makedirs(rdir, exist_ok=True)
+    md = render_md(snap, hist, tag)
+    with open(os.path.join(rdir, f"{tag}.md"), "w") as f:
+        f.write(md)
+    with open(os.path.join(rdir, "dashboard.html"), "w") as f:
+        f.write(render_html(snap, hist, tag))
+    ledger({"event": "report", "week": tag, "score": snap["score"]})
+    try:
+        print("\n".join(md.splitlines()[:14]))
+    except BrokenPipeError:
+        pass
+    print(f"\nFull report: {rdir}/{tag}.md · Dashboard: {rdir}/dashboard.html")
+    return 0
+
+
+def trend(hist):
+    weekly = hist[-1:] if hist else []
+    if len(hist) >= 2:
+        prev = [h for h in hist if h[0][:10] <= (dt.date.today() - dt.timedelta(days=6)).isoformat()]
+        if prev:
+            d = hist[-1][1] - prev[-1][1]
+            return f"{'+' if d >= 0 else ''}{d} vs last week"
+    return "first week"
+
+
+def render_md(snap, hist, tag):
+    warn = [f for f in shown(snap["findings"]) if f.get("guarded")]   # batch 2 (R1): one count line, never a finding
+    plat = [f for f in shown(snap["findings"]) if f.get("scope") == "platform" and not f.get("guarded")]   # v0.7.1 item 4: their own section, never scored
+    fs = [f for f in shown(snap["findings"]) if f.get("scope") != "platform" and not f.get("guarded")]
+    c = by_sev(fs)
+    lines = [f"# Watchtower report {tag}", "", f"Status: {status_line(snap)}", "",
+             f"Score {score_line(snap)} (grade {snap_grade(snap)}), {trend(hist)}. Open findings: "
+             f"{c['critical']} critical, {c['high']} high, {c['medium']} medium, {c['low']} low.", "",
+             "## Top fixes", ""]
+    for i, f in enumerate(fs[:3], 1):
+        lines.append(f"{i}. **{f['title']}** ({label_of(f)}; {f['severity']}, {', '.join(f['owasp'])}) at `{f['where']}`. {f['fix']}")
+    if not fs:
+        lines.append("Nothing to fix this week.")
+    lines += ["", "## All open findings", "", "| Severity | Rule | Finding | Where | Evidence | OWASP |", "| --- | --- | --- | --- | --- | --- |"]
+    lines.insert(-3, f"Confirmed: something Watchtower saw happen, or two checks agree. {MAYBE_FINE}: a wording or pattern match that is often harmless.")
+    lines.insert(-3, "")
+    lows = [f for f in fs if f["severity"] in ("low", "info")]
+    for f in [f for f in fs if f["severity"] not in ("low", "info")]:
+        ev = f["evidence"].replace("|", "\\|")
+        lines.append(f"| {f['severity']} | {f['rule']} | {label_of(f)}: {f['title']} | `{f['where']}` | {ev} | {', '.join(f['owasp'])} |")
+    look = [f for f in fs if f.get("class") == "pattern"]
+    tips = [f for f in fs if f.get("class") == "tip"]
+    lows = [f for f in lows if f.get("class") not in ("pattern", "tip")]
+    if look:
+        lines += ["", f"## {MAYBE_FINE}", "", "Pattern matches nothing else backs up. No severity, not in the score."]
+        lines += [f"- {f['rule']} {f['title']} at `{f['where']}`: {f['evidence']}" for f in look[:40]]
+    if tips:
+        lines += ["", "## Tips", "", "Best practice, not problems. No severity, not in the score."]
+        lines += [f"- {f['title']} at `{f['where']}`. {f['fix']}" for f in tips[:40]]
+    if lows:
+        by_rule = {}
+        for f in lows:
+            by_rule[(f["rule"], f["title"])] = by_rule.get((f["rule"], f["title"]), 0) + 1
+        lines += ["", "Hygiene notes (low): " + "; ".join(f"{t} ×{n}" for (r, t), n in sorted(by_rule.items(), key=lambda x: -x[1]))]
+    if warn:
+        lines += ["", f"{GUARDED_LABEL}: {len(warn)} line{'' if len(warn) == 1 else 's'} that warn against a risky step or quote it as an "
+                  "example. Not findings, not in the score. `wt.py breakdown` lists them."]
+    if plat:
+        lines += ["", "## Platform", "", "Grok Bot's own files. Not in the score."]
+        lines += [f"- {f['rule']} {label_of(f)}: {f['title']} at `{f['where']}`. {f['fix']}" for f in plat[:40]]
+    inv = snap.get("inventory", {})
+    lines += ["", "## Inventory", "", f"Skills on disk: {inv.get('skills', 0)} · plugin files: {inv.get('plugin_files', 0)} · MCP configs: {inv.get('mcp_configs', 0)}"]
+    fyi = [f for f in shown(snap["findings"]) if not counts(f)]
+    if fyi:
+        lines += ["", "## Built-in plugins and skills (for your information, not counted in the score)", "",
+                  f"{len(fyi)} notes about software the platform or a plugin shipped. Nothing here needs you. `wt.py breakdown` lists them."]
+    if snap.get("stages_skipped"):
+        lines += ["", "## Skipped this run", ""] + [f"- {x}: did not finish, so its last results were kept." for x in snap["stages_skipped"]]
+    exc = exceptions_active(snap)
+    if exc:
+        lines += ["", "## Security-tool exceptions", ""] + [
+            f"- ⚠ `{x['skill']}` is flagged by two scanners. You confirmed it is a security tool. Exception ends {x['until']} ({x['days_left']} days) or when the skill changes." for x in exc]
+    if snap.get("suppressed"):
+        lines += ["", "## Accepted risks", ""] + [f"- {f['rule']} {f['title']} at `{f['where']}`" for f in snap["suppressed"] if not f.get("exception")]
+    lb = load_json(state_path("last_brief.json"), None)
+    if lb and lb.get("tag") == tag:
+        lines += ["", "## Threat brief", "", f"Open `{lb['path']}` in a browser: {len(lb.get('research', []))} research items, "
+                  f"{sum(1 for k in lb.get('kev', []) if k.get('relevant'))} relevant exploited vulnerabilities."]
+    if snap.get("notes"):
+        lines += ["", "## Coverage notes", ""] + [f"- {n}" for n in snap["notes"]]
+    lines += ["", f"_Watchtower {VERSION}, read-only. Scanners can be bypassed; this report is evidence, not proof._", ""]
+    return "\n".join(lines)
+
+
+def extra_sections(fs):
+    """Worth a look and Tips: listed below the findings, with no severity."""
+    out = ""
+    for cls, head, note in (("pattern", MAYBE_FINE, "Pattern matches nothing else backs up. No severity, not in the score."),
+                            ("tip", "Tips", "Best practice, not problems. No severity, not in the score."),
+                            ("guarded", GUARDED_LABEL, "Lines that warn against a risky step or quote it as an example. Not findings, not in the score.")):
+        items = [f for f in fs if f.get("class") == cls][:40]
+        if items:
+            out += (f"<details><summary>{html.escape(head)} ({len(items)})</summary><p class='mut'>{note}</p><ul>"
+                    + "".join(f"<li>{html.escape(f['title'])} <code>{html.escape(f['where'])}</code></li>" for f in items) + "</ul></details>")
+    return out
+
+
+def render_html(snap, hist, tag):
+    fs = shown(snap["findings"])
+    c = by_sev(fs)
+    pts = hist[-12:] or [(snap["at"], snap["score"], len(fs))]
+    w, h = 320, 70
+    step = w / max(1, len(pts) - 1)
+    poly = " ".join(f"{round(i * step, 1)},{round(h - p[1] / 100 * h, 1)}" for i, p in enumerate(pts))
+    colors = {"critical": "#c0392b", "high": "#d35400", "medium": "#b7950b", "low": "#2e86c1", "info": "#7f8c8d"}
+    rows = "".join(
+        f"<tr><td><span class='sev' style='background:{colors[f['severity']]}'>{f['severity']}</span></td>"
+        f"<td><small>{html.escape(label_of(f))}</small><br>{html.escape(f['title'])}</td><td><code>{html.escape(f['where'])}</code></td>"
+        f"<td>{html.escape(', '.join(f['owasp']))}</td><td>{html.escape(f['fix'])}</td></tr>" for f in [x for x in fs if x["severity"] not in ("low", "info")][:60])
+    tiles = "".join(f"<div class='tile'><b style='color:{colors[s]}'>{c[s]}</b><span>{s}</span></div>" for s in SEV_ORDER[:4])
+    return f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Watchtower {tag}</title><style>
+:root{{--bg:#fff;--fg:#1b1f24;--mut:#5b6470;--line:#e3e6ea}}@media(prefers-color-scheme:dark){{:root{{--bg:#111418;--fg:#e8eaed;--mut:#9aa3ad;--line:#2a3038}}}}
+body{{font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:24px;max-width:1100px}}
+h1{{font-size:20px;margin:0 0 4px}}.mut{{color:var(--mut)}}.row{{display:flex;gap:16px;flex-wrap:wrap;margin:20px 0}}
+.card{{border:1px solid var(--line);border-radius:10px;padding:16px}}.big{{font-size:44px;font-weight:700}}
+.tile{{border:1px solid var(--line);border-radius:10px;padding:12px 18px;text-align:center}}.tile b{{font-size:26px;display:block}}
+table{{border-collapse:collapse;width:100%;font-size:13px}}td,th{{border-bottom:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}}
+.sev{{color:#fff;border-radius:4px;padding:2px 6px;font-size:11px;text-transform:uppercase}}.wrap{{overflow-x:auto}}code{{font-size:12px}}
+</style></head><body><h1>Watchtower · {tag}</h1><div class='mut'>Generated {html.escape(snap['at'])} · read-only audit of this Grok Bot computer</div>
+<div class='row'><div class='card'><div class='mut'>Status</div><div style='font-size:24px;font-weight:700'>{html.escape(status_line(snap))}</div><div class='mut'>Posture score</div><div class='big'>{snap['score']}<span class='mut' style='font-size:18px'>/100 · {snap_grade(snap)}</span></div><div class='mut'>{html.escape(score_line(snap))}</div><div class='mut'>{trend(hist)}</div></div>
+<div class='card'><div class='mut'>Score, last {len(pts)} runs</div><svg width='{w}' height='{h}' viewBox='0 0 {w} {h}' role='img' aria-label='score trend'><polyline fill='none' stroke='#2e86c1' stroke-width='2' points='{poly}'/></svg></div>
+{tiles}</div><h2 style='font-size:16px'>Open findings</h2><div class='wrap'><table><tr><th>Severity</th><th>Finding</th><th>Where</th><th>OWASP</th><th>Fix</th></tr>{rows or "<tr><td colspan=5>Nothing open.</td></tr>"}</table></div>
+{extra_sections(fs)}
+<p style='margin-top:16px'>{f"<a href='threat-brief-{tag}.html'>Open this week's threat brief →</a>" if os.path.exists(os.path.join(home(), "reports", f"threat-brief-{tag}.html")) else ""}</p>
+<p class='mut' style='margin-top:20px'>Watchtower {VERSION}. Scanners can be bypassed; this is evidence, not proof.</p></body></html>"""
