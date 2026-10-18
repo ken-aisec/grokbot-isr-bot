@@ -171,6 +171,16 @@
    ],
    "pattern": "(?i)((curl|wget)\\b(?:[^\\n|;\\\"']|\\\"[^\\\"]*\\\"|'[^']*'){0,200}(-X\\s*POST\\b|--data(-binary|-raw|-urlencode)?\\b|-d([\\\"'\\s@$])|-F[\\\"'\\s]|--upload-file\\b|\\s-T\\s|--post-(data|file)\\b|--json\\b|--body-file\\b|--method=POST\\b)|\\b(upload|exfiltrate|forward)\\s+(the\\s+|all\\s+|your\\s+|every\\s+)?[\\w-]+(\\s+[\\w-]+){0,3}\\s+to\\s+https?://|\\b(send|post)\\s+(the\\s+|all\\s+|your\\s+|every\\s+)?([\\w-]+\\s+){0,3}(credentials?|keys?|tokens?|secrets?|passwords?|cookies?|files?|history|env|environment|output|contents?|wallets?|\\.?ssh)\\b(\\s+[\\w-]+){0,3}\\s+to\\s+https?://)",
    "fix": "Read what is sent and where. A skill that posts files or command output to an address it names is how data leaves the computer."
+  },
+  {
+   "id": "WT-T018",
+   "title": "Chat webhook (check it's yours)",
+   "severity": "medium",
+   "owasp": [
+    "ASI04"
+   ],
+   "pattern": "(?i)(hooks\\.slack\\.com/(services|workflows|triggers)/|discord(app)?\\.com/api/webhooks/|[\\w-]+\\.webhook\\.office\\.com/|outlook\\.office\\.com/webhook/|chat\\.googleapis\\.com/v1/spaces/[^/\\s]+/messages|api\\.telegram\\.org/bot)",
+   "fix": "Check this webhook is yours. If you don't recognise the workspace or channel, don't install it: anything sent here goes to whoever owns it."
   }
  ],
  "write_verbs": "(?i)\\b(send|sends|email|emails|post|posts|publish|publishes|purchase|buy|buys|pay|pays|delete|deletes|remove|removes|transfer|transfers|submit|submits|merge|deploy|invite|reply)\\b",
@@ -192,6 +202,7 @@
   "WT-T004",
   "WT-T010",
   "WT-T016",
-  "WT-T017"
+  "WT-T017",
+  "WT-T018"
  ]
 }

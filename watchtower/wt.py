@@ -2,7 +2,9 @@
 """Watchtower: read-only security watch for a Grok Bot cloud computer.
 
 Scripts find, the model judges, the human approves. Stdlib only; optional
-external scanners (skillspector, husk, gitleaks, pip-audit) are used when on PATH.
+external scanners (skillspector, husk, gitleaks, trufflehog, osv-scanner, pip-audit)
+run only from Watchtower's own scanners/bin folder, and only when each program's
+sha256 is in scripts/scanner-bins.lock. A scanner on PATH is never run.
 
 Commands
   vet FILE|-            score a template, skill, or routine text before install
@@ -21,7 +23,7 @@ import sys
 if sys.version_info < (3, 8):   # degrade with one plain line, not a traceback (v0.6.9 old-Python profile)
     print("Watchtower needs Python 3.8 or newer; this computer has " + ".".join(map(str, sys.version_info[:3])) + ". Nothing was run.")
     sys.exit(3)
-import argparse, concurrent.futures, datetime as dt, difflib, gzip, hashlib, html, json, math, os, platform, re, shutil, stat, subprocess, sys, tempfile, time, traceback
+import argparse, builtins, concurrent.futures, datetime as dt, difflib, errno, gzip, hashlib, html, json, math, os, platform, re, shutil, stat, subprocess, sys, tempfile, threading, time, traceback
 
 VERSION = "0.7.1"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -164,16 +166,23 @@ def read_text(path, limit=1_000_000):
         return None
 
 
-def finding(rule_id, title, severity, owasp, where, evidence, fix, source="watchtower", ident=None):
+def finding(rule_id, title, severity, owasp, where, evidence, fix, source="watchtower", ident=None, shown=None):
     """`ident` names the finding when its evidence holds a count that drifts (63 logins, 6 advisories): the same problem
-    keeps the same key, so it is never reported as fixed and new in one run. `key0` is the key older versions gave it."""
-    ev = (evidence or "").replace("\n", " ")[:160]
-    key = hashlib.sha1(f"{rule_id}|{where}|{ev}".encode()).hexdigest()[:16]
+    keeps the same key, so it is never reported as fixed and new in one run. `key0` is the key older versions gave it.
+    Batch 4 (R11): the key is made from `evidence` exactly as before; what is stored is masked first, then cut. `shown`: the
+    uncut text the caller cut `evidence` from (or that it masked its own way), so a value cut short is masked as a whole."""
+    key = finding_key(rule_id, where, evidence)
+    stored =mask_secrets(((evidence if shown is None else shown) or "")[:MASK_WINDOW]).replace("\n", " ")[:160]
     out = {"key": key, "rule": rule_id, "title": title, "severity": severity, "owasp": owasp,
-           "where": where, "evidence": ev, "fix": fix, "source": source}
+           "where": where, "evidence": stored, "fix": fix, "source": source}
     if ident is not None:
         out["key"], out["key0"] = hashlib.sha1(f"{rule_id}|{where}|id:{ident}".encode()).hexdigest()[:16], key
     return out
+
+
+def finding_key(rule_id, where, evidence):
+    """The key finding() gives: from the raw evidence, cut at 160, exactly as before batch 4."""
+    return hashlib.sha1(f"{rule_id}|{where}|{(evidence or '').replace(chr(10), ' ')[:160]}".encode()).hexdigest()[:16]
 
 
 def keys_of(findings):
@@ -192,6 +201,382 @@ def mask(s):
     if len(s) <= 12:
         return s[:2] + "…"
     return s[:6] + "…" + s[-4:]
+
+
+# Hardening batch 4 (R11): every Bot can read Watchtower's state files, so stored evidence never holds a secret. Key shapes keep
+# their first 6 characters (mask); a password, token or cookie value next to a name that says so becomes [hidden]. A bare $VAR
+# or ${VAR} reference is never touched, nor is anything already masked. Lengths are loose so a key cut at 160 is still caught.
+# Codex, batch 4 round 2: each reader below (private keys, key shapes, URLs, JSON/YAML fields, shell words) only marks spans of
+# the original text, and one pass writes them out, so no reader sees another's output, a hidden value keeps its line breaks
+# (history and `show` stay line for line) and the whole is linear. MASK_VERSION goes up whenever masking learns a new shape:
+# copies stored masked by an older version (approved skills, the engine cache) are then masked again.
+MASK_VERSION = 2
+MASK_WINDOW = 8192   # finding() stores 160 characters: it masks this much of the text they are cut from, never less
+HIDDEN = "[hidden]"
+KEY_SHAPE = re.compile(   # the lookahead names every shape's first letter, so most of a text is skipped at C speed
+    r"(?=[AsxgEre])(AKIA[0-9A-Z]{12,}|ASIA[0-9A-Z]{12,}|\bsk-(proj|ant|svcacct|admin)-[A-Za-z0-9_-]{8,}|\bsk-[A-Za-z0-9]{20,}|\bxai-[A-Za-z0-9]{8,}"
+    r"|\bgh[pousr]_[A-Za-z0-9]{8,}|\bgithub_pat_[A-Za-z0-9_]{8,}|\bxox[baprs]-[A-Za-z0-9-]{8,}|\bglpat-[A-Za-z0-9_-]{8,}"
+    r"|\bsq0(atp|csp)-[0-9A-Za-z_-]{8,}|\bEAAA[A-Za-z0-9_+=-]{20,}|\b[rs]k_live_[0-9A-Za-z]{8,}|AIza[0-9A-Za-z_-]{8,}"
+    r"|\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{4,}(\.[A-Za-z0-9_-]*)?)")
+# A private key's body; "-----B…----" is the header as an older version stored it (mask() of the T011 match), so a body kept
+# after it is hidden too. The body may run over several lines, or be serialized with literal \n (a JSON key file, Codex round 2).
+_PEM_GAP = r"(?:[ \t\r\n]|\\[nrt])"
+_B64 = r"(?:[A-Za-z0-9+]|\\?/)"
+PEM_BODY = re.compile(rf"(?:-----BEGIN [A-Z ]*PRIVATE KEY-----|-----B…----){_PEM_GAP}*(?P<body>(?:{_B64}|=){{8,}}"
+                      rf"(?:{_PEM_GAP}+(?:{_B64}{{16,}}={{0,2}}|{_B64}{{1,15}}={{1,2}}))*)")
+# Codex, batch 4 round 1: one tokenizer instead of regex special cases. A shell word keeps its quotes ('…', "…", $'…') and
+# backslash escapes whole; one left open (evidence cut short) runs to the end of the line, so all of it is hidden. Separators
+# (| || && ; & and a line break) end a command. Round 2: text with line breaks is read twice, once with quotes kept to their
+# line and once as the shell reads it, where a closed quote may cross lines (up to 4096 characters), and both readings' spans
+# are hidden: a token split over two lines is hidden on both, and a stray apostrophe in prose can't pair quotes wrongly.
+_Q_LINE = r"\$'(?:[^'\\\n]|\\.)*'?|'[^'\n]*'?|\"(?:[^\"\\\n]|\\.)*\"?"
+_Q_MULTI = r"\$'(?:[^'\\]|\\[\s\S]){0,4096}'|'[^']{0,4096}'|\"(?:[^\"\\]|\\[\s\S]){0,4096}\"|" + _Q_LINE
+
+
+def _shell_rx(quoted, escape):
+    return re.compile(rf"(?P<sep>\|\||&&|[|;&\n])|(?P<word>(?:{quoted}|{escape}|\$|[^\s'\"\\|;&$]+)+)")
+
+
+_SHELL, _SHELL_ML = _shell_rx(_Q_LINE, r"\\."), _shell_rx(_Q_MULTI, r"\\[\s\S]")
+_QUOTED, _QUOTED_ML = re.compile(_Q_LINE), re.compile(_Q_MULTI)
+SECRET_WORDS = ("token", "secret", "passwd", "pass", "api_key", "apikey", "api-key", "access_key", "private_key", "auth",
+                "credential", "session", "cookie")
+NOT_SECRET_NAMES = frozenset(("author", "authors", "authored", "authority", "auth_url", "auth_uri", "token_url", "token_uri",
+                              "tokenizer", "passive", "compass", "bypass"))
+SECRET_FLAGS = frozenset(("--password", "--passwd", "--pass", "--token", "--api-key", "--apikey", "--secret", "--auth-token",
+                          "--access-token"))
+USER_FLAGS = frozenset(("-u", "--user", "--proxy-user", "-U"))   # curl and friends: user:password
+SECRET_HEADER = re.compile(r"(?i)^[ \t]*(?:--?[A-Za-z][\w-]*=)?(?:(?P<auth>(?:proxy-)?authorization|x-api-key|x-auth-token)|(?P<jar>(?:set-)?cookie))[ \t]*:[ \t]*"
+                           r"(?:(?(auth)(?:bearer|basic|token|bot|digest|apikey|negotiate|ntlm)[ \t]+))?")
+MYSQL_TOOLS = frozenset(("mysql", "mysqldump", "mysqladmin", "mariadb", "mariadb-dump", "mysqlimport", "mysqlcheck", "mysqlshow"))
+# Codex, round 2: only a bare reference is kept. ${TOKEN:-FAKEfallback}, ${X/a/FAKE} and the like carry a literal: hidden.
+BARE_VAR = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*|\$\{[A-Za-z_][A-Za-z0-9_]*\}")
+_NAME_CH = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-")
+_LEAD = re.compile(r"[-'\"$]*")
+# A value inside a word ends at the next & , ; bracket or space; a quoted part ("FAKE", 'a b') is read whole (Codex, round 2).
+_VALUE = re.compile(r"(?:'[^']*'?|\"(?:[^\"\\]|\\[\s\S])*\"?|[^&,;\"'`}) \t\r\n])*")
+
+
+def _kept(v):
+    """A value that is not a secret: a bare $VAR or ${VAR} reference (quoted or not), or already [hidden]. Nothing else (a
+    leading - or $, an ellipsis, an expansion with a default) is waved through."""
+    u = v.replace("'", "").replace('"', "").strip()
+    return u in ("", HIDDEN) or bool(BARE_VAR.fullmatch(u))
+
+
+def _secret_name(name):
+    n = name.lower()
+    return n not in NOT_SECRET_NAMES and any(w in n for w in SECRET_WORDS)
+
+
+def _unquote(raw):
+    return re.sub(r"\\(.)", r"\1", raw.replace("$'", "'").replace("'", "").replace('"', ""))
+
+
+def _unquote_map(raw):
+    """The shell's reading of one word (quotes removed, escapes resolved) and, for each character of it, where it is in `raw`."""
+    out, idx, i, n, q = [], [], 0, len(raw), None
+    while i < n:
+        c = raw[i]
+        if q is None and c in "'\"":
+            q, i = c, i + 1
+            continue
+        if q is None and c == "$" and raw[i + 1:i + 2] == "'":
+            q, i = "$", i + 2
+            continue
+        if q is not None and c == ("'" if q in "'$" else '"'):
+            q, i = None, i + 1
+            continue
+        if c == "\\" and q != "'" and i + 1 < n:
+            i += 1
+        out.append(raw[i])
+        idx.append(i)
+        i += 1
+    return "".join(out), idx
+
+
+def _assignments(raw, at, spans):
+    """NAME=value (export, env, --token=…, a query string, JSON-ish text). Each = is read once and its name is found by walking
+    back over name characters, so repeated name fragments cost nothing extra. At the start of a word (after dashes or an opening
+    quote) the value is the rest of the word; inside one it is _VALUE. Round 2: where a word starts is found once, never by
+    copying the text before each = (that was quadratic)."""
+    lead, n = _LEAD.match(raw).end(), len(raw)
+    i = raw.find("=")
+    while i != -1:
+        j = i
+        while j > 0 and raw[j - 1] in _NAME_CH:
+            j -= 1
+        if j < i and _secret_name(raw[j:i]):
+            end = n if j <= lead else _VALUE.match(raw, i + 1).end()
+            if end > i + 1 and not _kept(raw[i + 1:end]):
+                spans.append((at + i + 1, at + end))
+                i = end - 1   # nothing inside a hidden value is read again: TOKEN=TOKEN=… stays linear
+        i = raw.find("=", i + 1)
+
+
+AUTH_SCHEME = re.compile(r"(?i)bearer|basic|token|bot|digest|apikey|negotiate|ntlm")
+
+# Codex, round 2: URLs are read where they are, not as shell words. A password in the authority, a secret-named query value and
+# a chat webhook's credential path are hidden; the scheme, host and the rest of the path stay readable.
+_AUTH_END = re.compile(r"[/?#\s\"'`<>|\\]")
+_PATH_END = re.compile(r"[?#\s\"'`<>|\\]")
+_QUERY_END = re.compile(r"[#\s\"'`<>|\\]")
+_QPARAM = re.compile(r"(?P<name>[^=&;#\s\"'`<>|\\]*)(?:=(?P<val>(?:'[^'\n]*'?|\"(?:[^\"\\\n]|\\.)*\"?|[^&;#\s\"'`<>|\\])*))?")
+URL_SECRET_PARAMS = frozenset(("key", "sig", "signature", "code", "pwd", "x-amz-signature", "x-amz-credential",
+                               "x-amz-security-token", "x-goog-signature", "x-goog-credential"))
+WEBHOOK_PATHS = ((re.compile(r"hooks\.slack\.com"), re.compile(r"/(?:services|workflows|triggers)/(?P<s>.+)")),
+                 (re.compile(r"discord(?:app)?\.com"), re.compile(r"/api/webhooks/(?P<s>.+)")),
+                 (re.compile(r"[a-z0-9-]+\.webhook\.office\.com"), re.compile(r"/[^/]*/(?P<s>.+)")),
+                 (re.compile(r"outlook\.office\.com"), re.compile(r"/webhook/(?P<s>.+)")),
+                 (re.compile(r"api\.telegram\.org"), re.compile(r"/(?:file/)?bot(?P<s>[^/]+)")))
+ANY_WEBHOOK_PATH = re.compile(r"/api/webhooks/(?P<s>.+)")   # a Discord-style webhook on any host
+
+
+def _urls(s, spans):
+    """Each scheme:// is read once, up to the next one, so URLs inside URLs stay linear."""
+    i = s.find("://")
+    while i != -1:
+        nxt = s.find("://", i + 3)
+        lim = len(s) if nxt == -1 else nxt
+        a = i + 3
+        m = _AUTH_END.search(s, a, lim)
+        b = m.start() if m else lim
+        auth = s[a:b]
+        k = auth.rfind("@")
+        c = auth.find(":", 0, k) if k != -1 else -1
+        if c != -1 and not _kept(auth[c + 1:k]):
+            spans.append((a + c + 1, a + k))
+        host = auth[k + 1:].split(":")[0].lower()
+        m = _PATH_END.search(s, b, lim)
+        pe = m.start() if m else lim
+        path = s[b:pe]
+        pm = next((rx.match(path) for h, rx in WEBHOOK_PATHS if h.fullmatch(host)), None) or ANY_WEBHOOK_PATH.search(path)
+        if pm and not _kept(pm.group("s")):
+            spans.append((b + pm.start("s"), b + pm.end("s")))
+        pos = pe + 1
+        while pe < lim and s[pe] == "?" and pos < lim:
+            q = _QPARAM.match(s, pos, lim)
+            if q.group("val") and (q.group("name").lower() in URL_SECRET_PARAMS or _secret_name(q.group("name"))) \
+                    and not _kept(q.group("val")):
+                spans.append((q.start("val"), q.end("val")))
+            pos = q.end()
+            if pos >= lim or s[pos] not in "&;":
+                break
+            pos += 1
+        i = nxt
+
+
+# Codex, round 2: "password": "…", 'api_key': '…', \"token\":\"…\" (JSON inside a string) and YAML's `password: …` (a single
+# value on its own line). A field whose name is not a secret is skipped past its name only, so a field nested in its value is
+# still read.
+_FIELD = re.compile(
+    r"(?P<q>\\?[\"'])(?P<n1>[A-Za-z_][\w.-]{0,63})(?P=q)[ \t]*[:=][ \t]*"
+    r"(?P<v1>\\\"(?:[^\"\\\n]|\\[^\"\n])*(?:\\\")?|\"(?:[^\"\\\n]|\\.)*\"?|'(?:[^'\\\n]|\\.)*'?|[^\s,;{}\[\]()\"'][^\s,;}\])\"']*)"
+    r"|^[ \t]*(?:-[ \t]+)?(?P<n2>[A-Za-z_][\w.-]{0,63})[ \t]*:[ \t]+"
+    r"(?P<v2>\"(?:[^\"\\\n]|\\.)*\"?|'[^'\n]*'?|[^\s#'\"][^\s]*(?=[ \t]*(?:#|$)))", re.M)
+
+
+def _fields(s, spans):
+    pos = 0
+    while True:
+        m = _FIELD.search(s, pos)
+        if not m:
+            return
+        v = "v1" if m.group("n1") is not None else "v2"
+        if _secret_name(m.group("n1") or m.group("n2")) and not _kept(m.group(v)):
+            spans.append((m.start(v), m.end(v)))
+            pos = m.end()
+        else:
+            pos = max(m.start(v), m.start() + 1)
+
+
+def _mask_words(s, at, spans, depth, ml=False):
+    """Mark the secret spans of shell text `s` (starting at offset `at`). Quoted words are read again inside (depth 2).
+    `ml`: the reading where a closed quote may cross lines."""
+    words = []   # a separator as its text; a word as (start, end, raw, plain)
+    for m in (_SHELL_ML if ml else _SHELL).finditer(s):
+        raw = m.group("word")
+        if raw is None:
+            words.append(m.group("sep"))
+        else:
+            quoted = "'" in raw or '"' in raw or "\\" in raw
+            words.append((at + m.start(), at + m.end(), raw, _unquote(raw) if quoted else raw, quoted))
+    word = lambda j: words[j] if 0 <= j < len(words) and not isinstance(words[j], str) else None
+    tool, skip = None, 0
+    for k, w in enumerate(words):
+        if k < skip:
+            continue   # already hidden as a header's value
+        if isinstance(w, str):
+            tool = None
+            continue
+        a, b, raw, plain, quoted = w
+        nxt, prev, low = word(k + 1), word(k - 1), plain.lower()
+        if "=" in raw:
+            _assignments(raw, a, spans)
+        if nxt is not None:
+            if (low in SECRET_FLAGS or (low == "=" and prev and _secret_name(prev[3]))
+                    or (len(low) > 1 and (low[-1] == "=" or (low[-1] == ":" and ("_" in low or "-" in low))) and _secret_name(low[:-1]))
+                    or plain in ("Bearer", "BEARER") or (low == "bearer" and len(nxt[3]) >= 8)):   # "the bearer token" in prose stays
+                if not _kept(nxt[2]):
+                    spans.append((nxt[0], nxt[1]))
+            elif low in USER_FLAGS and ":" in nxt[2]:   # curl -u user:password: the password
+                c = nxt[2].find(":")
+                if not _kept(nxt[2][c + 1:]):
+                    spans.append((nxt[0] + c + 1, nxt[1]))
+            elif nxt[3][:1] == "=" and len(nxt[3]) > 1 and _secret_name(plain) and not _kept(nxt[2][1:]):
+                spans.append((nxt[0] + 1, nxt[1]))
+        if low[:2] == "-u" and len(low) > 2 and ":" in raw and low[:3] != "-u=":   # curl -uuser:password
+            if not _kept(raw[raw.find(":") + 1:]):
+                spans.append((a + raw.find(":") + 1, b))
+        h = SECRET_HEADER.match(plain) if ":" in plain else None
+        if h:   # Codex, round 2: the header is the whole shell word, however it is quoted or glued ('Cookie: a=1;'sid='x')
+            exact, idx = _unquote_map(raw) if quoted else (plain, range(len(plain)))
+            h = SECRET_HEADER.match(exact)
+        if h:
+            if h.end() < len(exact) and not _kept(exact[h.end():]):
+                spans.append((a + idx[h.end()], a + idx[-1] + 1))
+            j = k + 1
+            if h.end() == len(exact) or not quoted:
+                # unquoted (or a value still to come): it runs to the end of the command; a cookie's own ; doesn't end it
+                if h.end() == len(exact) and h.group("auth") and word(j) and AUTH_SCHEME.fullmatch(word(j)[3]):
+                    j += 1
+                while j < len(words) and (word(j) or (h.group("jar") and words[j] == ";")):
+                    if word(j) and not _kept(words[j][2]):
+                        spans.append((words[j][0], words[j][1]))
+                    j += 1
+            skip = j
+            continue
+        if tool == "sshpass":
+            if plain == "-p" and nxt is not None:
+                spans.append((nxt[0], nxt[1]))
+            elif plain.startswith("-p") and len(plain) > 2:
+                spans.append((a + 2, b))
+            elif not plain.startswith("-") and not (prev and prev[3] == "-p"):
+                tool = "done"   # sshpass's own options end at the command it runs (ssh -p 2222 stays)
+        elif tool == "mysql" and plain.startswith("-p") and len(plain) > 2 and not _kept(raw[2:]):
+            spans.append((a + 2, b))   # every -p<password>, not only the first
+        base = plain.rpartition("/")[2]
+        if base == "sshpass" and tool is None:
+            tool = "sshpass"
+        elif base in MYSQL_TOOLS:
+            tool = "mysql"
+        if depth < 2 and quoted and _TRIGGER.search(raw):
+            for q in (_QUOTED_ML if ml else _QUOTED).finditer(raw):
+                o = 2 if q.group(0).startswith("$'") else 1
+                inner = q.group(0)[o:]
+                if inner.endswith(q.group(0)[o - 1]) and len(q.group(0)) > o:
+                    inner = inner[:-1]
+                if _SEVERAL.search(inner) and _TRIGGER.search(inner):   # one word inside is the word itself, already read
+                    _mask_words(inner, a + q.start() + o, spans, depth + 1, ml)
+
+
+_BREAKS = re.compile(r"\r\n|[\n\r\x0b\x0c\x1c\x1d\x1e\x85  ]")
+
+
+# Every shell-word rule needs one of these in the same line (a secret-named variable, flag or header, -p, -u, Bearer, sshpass or
+# a MySQL tool), so the tokenizer only reads lines that have one, and a quoted part without one is not read again inside.
+_TRIGGER = re.compile(r"(?i)(?=[tspacbm-])(?:token|secret|pass|api[_-]?key|access_key|private_key|auth|credential|session|cookie"
+                      r"|bearer|-[pu]|sshpass|mysql|mariadb)")
+# A closed quote that crosses a line (the shell's reading); one closed on its own line is skipped whole.
+_SEVERAL = re.compile(r"[\s|;&]")   # quoted text with more than one shell word in it
+_CROSSING = re.compile(r"'[^'\n]*'|\"(?:[^\"\\\n]|\\.)*\"|(?P<x>'[^']{0,4096}'|\"(?:[^\"\\]|\\[\s\S]){0,4096}\")")
+
+
+def _blocks(s, matches):
+    """Whole lines around each match, runs of neighbouring lines joined: [(start, end)], in order, each line once."""
+    out = []
+    for a, b in matches:
+        a, b = s.rfind("\n", 0, a) + 1, s.find("\n", b)
+        b = len(s) if b == -1 else b
+        if out and a <= out[-1][1] + 1:
+            out[-1] = (out[-1][0], max(out[-1][1], b))
+        else:
+            out.append((a, b))
+    return out
+
+
+def _trigger_lines(s):
+    pos = 0
+    while True:
+        m = _TRIGGER.search(s, pos)
+        if not m:
+            return
+        end = s.find("\n", m.end())
+        yield m.start(), m.end()
+        if end == -1:
+            return
+        pos = end + 1
+
+
+def mask_spans(s):
+    """What masking replaces in `s`, merged and in order: (start, end, replacement), None meaning [hidden]. Overlapping spans
+    (a word and the same value read inside its quotes, a key shape inside a hidden value) are one [hidden]."""
+    spans = [(m.start("body"), m.end("body"), None) for m in PEM_BODY.finditer(s)]
+    spans += [(m.start(), m.end(), mask(m.group(0))) for m in KEY_SHAPE.finditer(s)]
+    words = []
+    _urls(s, words)
+    _fields(s, words)
+    for a, b in _blocks(s, _trigger_lines(s)):
+        _mask_words(s[a:b], a, words, 0)
+    if "\n" in s:
+        for a, b in _blocks(s, ((m.start(), m.end()) for m in _CROSSING.finditer(s) if m.group("x") and "\n" in m.group("x"))):
+            if _TRIGGER.search(s, a, b):
+                _mask_words(s[a:b], a, words, 0, ml=True)
+    spans += [(a, b, None) for a, b in words if b > a]
+    spans.sort(key=lambda t: (t[0], -t[1]))
+    out = []
+    for a, b, rep in spans:
+        if out and (a < out[-1][1] or (a == out[-1][1] and rep is None and out[-1][2] is None)):
+            pa, pb, prep = out[-1]
+            out[-1] = (pa, max(pb, b), prep if (a, b, rep) == (pa, pb, prep) else None)
+        else:
+            out.append((a, b, rep))
+    return out
+
+
+def mask_secrets(s):
+    """Text with its secrets masked: a private key's body, key shapes (KEY_SHAPE, first 6 characters kept), passwords and
+    tokens in URLs, chat webhook credentials, secret JSON/YAML fields, then every value the tokenizer finds next to a name, flag,
+    header or tool that says it is a secret. A hidden value keeps its line breaks. Idempotent; rule, title and where are never
+    passed here."""
+    if not s:
+        return s or ""
+    spans = mask_spans(s)
+    out, pos = [], 0
+    for a, b, rep in spans:
+        out += [s[pos:a], rep if rep is not None else HIDDEN + "".join(_BREAKS.findall(s, a, b))]
+        pos = b
+    return "".join(out) + s[pos:]
+
+
+def mask_lines(s):
+    """s.splitlines(), masked from one reading of the whole text (Codex, round 2): a quote or key that runs over several lines
+    is hidden on each of them, and line N is still line N."""
+    spans, out, k, pos = mask_spans(s or ""), [], 0, 0
+    for ln in (s or "").splitlines(True):
+        lo = pos
+        hi = lo + len((ln.splitlines() or [""])[0])
+        pos += len(ln)
+        while k < len(spans) and spans[k][1] <= lo:
+            k += 1
+        parts, p, j = [], lo, k
+        while j < len(spans) and spans[j][0] < hi:
+            a, b, rep = spans[j]
+            ca, cb = max(a, lo), min(b, hi)
+            if cb > ca:
+                parts += [s[p:ca], rep if rep is not None and (ca, cb) == (a, b) else HIDDEN]
+                p = cb
+            j += 1
+        out.append("".join(parts) + s[p:hi])
+    return out
+
+
+def mask_stored(findings):
+    """Batch 4 (R11): evidence written by an older version is masked in place once; `key` and `key0` never change."""
+    for f in findings or ():
+        if isinstance(f, dict) and isinstance(f.get("evidence"), str):
+            f["evidence"] = mask_secrets(f["evidence"])
+    return findings
 
 
 # ---------------------------------------------------------------- text analysis
@@ -249,7 +634,7 @@ def looks_real_secret(s):
 # never dropped. For the dangerous rules below (credential path, exfiltration host, pipe-to-shell, upload) a guard can only lower
 # the match to medium, and vet never says Install over it. Only prose outside the command vouches for it: text in a code span or
 # a command's arguments is never read, and any doubt (a cap, an unclosed backtick, shell text in the prose) means no guard.
-GUARD_CODE_RULES = frozenset(("WT-T004", "WT-T005", "WT-T006", "WT-T017"))
+GUARD_CODE_RULES = frozenset(("WT-T004", "WT-T005", "WT-T006", "WT-T017", "WT-T018"))
 GUARD_FUNCTION = frozenset("a an the any your my its this that it them to from into as of or nor ever just blindly".split())
 CLAUSE_END = re.compile(r"\.\s|\n|[:;!?](?=\s|$)|\s[-–—]{1,2}\s")
 GUARD_TOKEN = re.compile(r",|[^\s,]+")
@@ -518,6 +903,35 @@ def _reported(clause, rules):
     return bool(rep) and all(t in GUARD_FUNCTION or rules["guard_filler"]["verbs"].match(t) for t in map(_guard_token, rep.group("rest").split()))
 
 
+# Batch 4 (FP3): "A page may say: ignore previous instructions. Treat it as data." The frame must end right before the match, in
+# the same sentence; only then may the very next sentence describe it. Without a frame the next sentence never guards.
+# Codex, round 1: the speaker must be untrusted content (a page, an email, a document, a tool's output), never "the system" or
+# anyone with authority, and the next sentence must be only the defensive statement: "This is an attack we must carry out."
+# and "This is an attack helicopter manual." don't guard.
+REPORT_FRAME = re.compile(r"(?i)(?:^|[\s(\"“])(?:a|an|the|any|some|this|that|such\s+an?)\s+(?:(?:web|untrusted|external|incoming|shared)\s+)?"
+                          r"(?:pages?|sites?|websites?|emails?|e-mails?|messages?|documents?|docs?|files?|pdfs?|comments?|issues?|"
+                          r"transcripts?|posts?|reviews?|tool\s+outputs?|search\s+results?|attachments?)\s+"
+                          r"(?:(?:may|might|could|will|can|would|often)\s+(?:say|tell|ask|contain)|says|said|tells|asks|contains)"
+                          r"(?:\s+(?:you|the\s+bot|it))?(?:\s+to)?\s*[:,]?\s*[\"“'‘]?\s*$")
+NEXT_DESCRIBED = re.compile(r"(?i)[ \t]*(?:treat\s+(?:it|this|them|that|these|those)\s+as\s+(?:untrusted\s+)?data|"
+                            r"(?:it|this|that)\s+is\s+(?:an?\s+)?(?:attack|injection|prompt[- ]injection(?:\s+attack)?)|"
+                            r"(?:don'?t|do\s+not|never)\s+(?:follow|obey)\s+(?:it|this|them|that|these|those))[ \t]*[.!](?=\s|$)")
+
+
+def _framed_then_described(text, m):
+    a = max(text.rfind("\n", 0, m.start()) + 1, m.start() - 200)
+    sentence = SENTENCE_END.split(text[a:m.start()])[-1]
+    if not REPORT_FRAME.search(sentence):
+        return False
+    end = SENTENCE_END.search(text, m.end(), m.end() + 200)
+    if not end or "\n" in text[m.end():end.start()]:
+        return False
+    nxt = text[end.end():end.end() + 200]
+    if nxt.startswith("\n\n") or nxt.lstrip(" \t").startswith("\n\n"):
+        return False
+    return bool(NEXT_DESCRIBED.match(nxt))
+
+
 def _wording_guard(text, m, rules, prev_end):
     """The wording rules (T001, T007, T010, T016): quoted, negated, listed, reported, scoped to untrusted content, described as
     an attack, or detector code. No shell handling: a backtick or a leading | is a quotation here."""
@@ -534,6 +948,8 @@ def _wording_guard(text, m, rules, prev_end):
     if UNTRUSTED_AFTER.match(text[m.end():m.end() + 80]):
         return "untrusted content"
     if DESCRIBED_AFTER.search(re.split(r"[.!?](?=\s|$)|\n", text[m.end():m.end() + 200])[0]):
+        return "described as an attack"
+    if _framed_then_described(text, m):
         return "described as an attack"
     if re.search(r"(r\"|r'|\\s[+*]|\(\?i\))", wide + text[m.end():m.end() + 40]):
         return "detector code"
@@ -596,7 +1012,121 @@ def sends_data(ev):
     return True
 
 
-REF_RULES = ("WT-T001", "WT-T002", "WT-T004", "WT-T005", "WT-T006", "WT-T007", "WT-T008")
+# Codex, batch 4 round 1: a chat webhook is WT-T018 only when the URL's own host is exactly the chat service's, with its webhook
+# path. evil-discord.com/api/webhooks/…, https://collector.example/discord.com/api/webhooks/…, a user@ or a port in front of the
+# host: not the service, so Slack and Discord lookalikes stay the critical WT-T005 they were on 857ab38.
+CHAT_HOOKS = ((re.compile(r"hooks\.slack\.com"), re.compile(r"/(services|workflows|triggers)/")),
+              (re.compile(r"discord(app)?\.com"), re.compile(r"/api/webhooks/")),
+              (re.compile(r"[a-z0-9-]+\.webhook\.office\.com"), re.compile(r"/")),
+              (re.compile(r"outlook\.office\.com"), re.compile(r"/webhook/")),
+              (re.compile(r"chat\.googleapis\.com"), re.compile(r"/v1/spaces/[^/]+/messages")),
+              (re.compile(r"api\.telegram\.org"), re.compile(r"/bot")))
+CHAT_IN_T005 = re.compile(r"(?i)discord(app)?\.com/api/webhooks|hooks\.slack\.com/services")
+URL_CLOSE = {"(": ")", "<": ">", "[": "]", "{": "}"}
+_URL_END = re.compile(r"[\s\"'`<>|;&\\)]")
+_URL_PLAIN = re.compile(r"(?i)https?://[^\s)\"'>]*")
+
+
+def url_arg(text, s):
+    """Codex, batch 4 round 2: where the URL that starts at `s` ends, read as one whole argument. Its line is read with the
+    shell's quoting up to `s`: `s` must start a word, or follow an opening quote or bracket that itself starts one (url='…',
+    post('…'), "url": "…", [x](…), <…>). A quoted URL ends at its own closing quote, never at punctuation inside it. None when
+    `s` is the middle of something bigger (…/path;https://…, ?u='https://…, "$BASE"'https://…, x'https://…') or in doubt."""
+    ls = text.rfind("\n", 0, s) + 1
+    if s - ls > 4096:
+        return None
+    q, qs, ws, i = None, -1, ls, ls
+    while i < s:
+        c = text[i]
+        if q is None:
+            if c in " \t`":
+                ws = i + 1
+            elif c == "\\":
+                i += 1
+            elif c in "'\"" and not (c == "'" and i > ls and text[i - 1].isalnum() and text[i + 1:i + 2].isalpha()):   # don't, it's
+                q, qs = c, i
+        elif c == q:
+            q = None
+        elif c == "\\" and q == '"':
+            i += 1
+        i += 1
+    if i != s:
+        return None
+    if q is None:
+        o = text[s - 1] if s > ws else ""
+        if not (s == ws or (o in URL_CLOSE and (s - 1 == ws or text[s - 2] in "]([{"))):
+            return None
+        m = _URL_END.search(text, s)
+        end = m.start() if m else len(text)
+        if o in URL_CLOSE:
+            c = text.find(URL_CLOSE[o], s, end)
+            end = c if c != -1 else end
+        return end
+    if qs != s - 1:
+        return None
+    before = text[qs - 1] if qs > ws else ""
+    if before == "=":
+        k = qs - 1
+        while k > ws and (text[k - 1].isalnum() or text[k - 1] in "_-"):
+            k -= 1
+        if k == qs - 1 or not (k == ws or text[k - 1] in "([{,"):
+            return None   # url='…' or --url='…' starts an argument; ?u='… is inside another URL
+    elif before == ":":
+        if text[qs - 2:qs - 1] not in ("'", '"'):
+            return None   # "url":"…" (JSON)
+    elif before and before not in "([{,":
+        return None
+    end = s
+    while True:
+        end = text.find(q, end)
+        if end == -1 or "\n" in text[s:end]:
+            return None
+        if q == '"' and text[end - 1] == "\\":
+            end += 1
+            continue
+        break
+    if text[end + 1:end + 2] not in ("", " ", "\t", "\r", "\n", ")", ",", ";", "]", "}", ">", "|", "&", "`"):
+        return None   # glued to more text: 'https://discord.com'.evil.example/… is another host
+    return end
+
+
+def urls_in(text, limit=200):
+    """The http(s) URLs in `text`, each read whole (url_arg; one inside another is part of it) and masked (Codex, round 2)."""
+    out, end = [], 0
+    for m in re.finditer(r"(?i)\bhttps?://", text):
+        if m.start() < end:
+            continue
+        e = url_arg(text, m.start())
+        end = e if e is not None else _URL_PLAIN.match(text, m.start()).end()
+        out.append(mask_secrets(text[m.start():end]))
+        if len(out) >= limit:
+            break
+    return out
+
+
+def chat_webhook(text, m):
+    """True when the match is the host and path of a real chat webhook URL (see CHAT_HOOKS): the host right after the scheme
+    of a URL that is a whole argument (url_arg). Any doubt is False."""
+    import urllib.parse
+    st = m.start()
+    sch = re.search(r"(?i)\bhttps?://$", text[max(0, st - 9):st])
+    s = st - len(sch.group(0)) if sch else st   # no scheme: the match must start the word (xhooks.slack.com is someone else's)
+    end = url_arg(text, s)
+    if end is None:
+        return False
+    url = text[s:end] if sch else "https://" + text[s:end]
+    try:
+        u = urllib.parse.urlsplit(url)
+        port = u.port
+    except ValueError:
+        return False
+    host = (u.hostname or "").lower()
+    if port is not None or u.netloc.lower() != host:   # a user@, a password or a port in front of the host
+        return False
+    return any(h.fullmatch(host) and p.match(u.path) for h, p in CHAT_HOOKS)
+
+
+REF_RULES = ("WT-T001", "WT-T002", "WT-T004", "WT-T005", "WT-T006", "WT-T007", "WT-T008", "WT-T018")
 REF_WORDS = re.compile(r"(?i)((prompt[- ]injection|injection|attack|dangerous[- ]code)\s+(patterns?|examples?|signatures?|detection|techniques?)"
                        r"|\bevil\.com\b|\battacker\b|detection\s+rules?|red[- ]team)")
 
@@ -604,7 +1134,7 @@ REF_WORDS = re.compile(r"(?i)((prompt[- ]injection|injection|attack|dangerous[- 
 def attack_reference(text, rules, where=""):
     """A supporting file (never a SKILL.md, the file a Bot follows) that describes itself as documenting
     or detecting attacks. Its matches stay visible but drop to low: downgraded, never hidden."""
-    if os.path.basename(where.split(":")[0]) == "SKILL.md" or where in ("stdin",):
+    if os.path.basename(re.sub(r"(:\d+)+$", "", where)) == "SKILL.md" or where in ("stdin",):   # a colon in a folder name stays
         return False
     hits = sum(len(r["rx"].findall(text)) for r in rules["rules"] if r["id"] in REF_RULES)
     return hits >= 1 and bool(REF_WORDS.search(text))
@@ -625,8 +1155,11 @@ def sentence_of(text, m):
     return text[a:min(ends) if ends else len(text)]
 
 
-def scan_text(text, where, rules, kind="skill"):
-    """Apply text rules plus document-level logic. kind: skill|reference|template|routine|description."""
+def scan_text(text, where, rules, kind="skill", limit=None, cut=None):
+    """Apply text rules plus document-level logic. kind: skill|reference|template|routine|description.
+    Codex, batch 4 round 2 (vet): `limit` bounds the matches one file can produce. Once it is reached each rule still gets its
+    first kept match, so no rule goes unseen, and no more than `limit` matches per rule are even looked at; `cut` (a list) is
+    told when anything was left out."""
     out = []
     guarded = set(rules.get("guarded_rules", []))
     is_ref = attack_reference(text, rules, where)
@@ -637,15 +1170,27 @@ def scan_text(text, where, rules, kind="skill"):
         # Vendor/platform: critical rules, hidden Unicode, and high/critical behavior (credential read, send-out, pipe).
         # High wording and medium behavior (e.g. eval) stay off so fiction and noise in shipped plugins do not pile up;
         # a built-in that turns malicious still trips T004/T017 (Claude v0.7.1 F4).
-        if kind == "vendor" and rule["severity"] != "critical" and rule["id"] != "WT-T002":
+        # Codex, batch 4 round 2: WT-T018 too. A real chat webhook is no longer the critical WT-T005, so it must not vanish here.
+        if kind == "vendor" and rule["severity"] != "critical" and rule["id"] not in ("WT-T002", "WT-T018"):
             if not (rule["id"] in BEHAVIOR_RULES and rule["severity"] in ("critical", "high")):
                 continue
-        prev_end = None
+        prev_end, kept0, seen = None, len(out), 0
         for m in rule["rx"].finditer(text):
+            if limit is not None:
+                seen += 1
+                if (len(out) >= limit and len(out) > kept0) or seen > limit + 1:
+                    if cut is not None:
+                        cut.append(where)
+                    break
+            if rule["id"] == "WT-T018" and not chat_webhook(text, m):
+                continue   # a lookalike or nested host: not a chat service's webhook (a Slack or Discord one stays T005)
+            if rule["id"] == "WT-T005" and CHAT_IN_T005.fullmatch(m.group(0)) and chat_webhook(text, m):
+                continue   # the owner's own chat webhook is WT-T018, not an exfiltration host
             if is_ref and rule["id"] in REF_RULES and (rule["id"] not in GUARD_CODE_RULES or ref_line(text, m)):
                 out.append(finding(rule["id"], rule["title"] + " (in an attack-pattern reference)", "low", rule["owasp"],
                                    f"{where}:{line_of(text, m.start())}", f"U+{ord(m.group(0)):04X}" if rule["id"] == "WT-T002" else m.group(0)[:140],
-                                   "Documentation or detector text. Confirm the file is what it claims to be."))
+                                   "Documentation or detector text. Confirm the file is what it claims to be.",
+                                   shown=None if rule["id"] == "WT-T002" else mask(m.group(0)) if rule["id"] == SECRET_RULE else m.group(0)))
                 if rule["id"] == "WT-T002":
                     break
                 continue
@@ -661,7 +1206,7 @@ def scan_text(text, where, rules, kind="skill"):
             if rule["id"] == "WT-T006" and known_installer(ev):
                 f = finding("WT-T006k", "Known installer piped to shell", "medium" if kind != "vendor" else "low",
                             ["ASI05", "AST02"], f"{where}:{line_of(text, m.start())}", ev[:140],
-                            "A well-known installer, but still unpinned. Prefer a package manager or a pinned, checksummed download.")
+                            "A well-known installer, but still unpinned. Prefer a package manager or a pinned, checksummed download.", shown=ev)
             else:
                 if rule["id"] == SECRET_RULE:
                     ev = mask(ev)
@@ -847,7 +1392,8 @@ EVIDENCE_RULES = frozenset((
     # Shell history: commands that actually ran on this computer, not wording (Ken, 2026-10-10). H007 is a file-mode fact.
     "WT-H001", "WT-H002", "WT-H003", "WT-H004", "WT-H005", "WT-H006", "WT-H007", "WT-H008", "WT-H009",
     "WT-K001", "WT-K002", "WT-K003", "WT-K004", "WT-K005", "WT-K006", "WT-M001", "WT-P001", "WT-R010",
-    "WT-S003", "WT-S004", "WT-S005", "WT-W001", "WT-W002", "WT-X003", "WT-X004"))
+    "WT-S003", "WT-S004", "WT-S005", "WT-W001", "WT-W002", "WT-X003", "WT-X004",
+    "WT-X005"))   # batch 3 (R7): Watchtower's copy of a scanner isn't the one it installed
 HISTORY_SHRANK = "Shell history shrank since last check"
 NEW_SIGN_IN = "New sign-in in the shared browser"
 CONFIRMED, MAYBE_FINE = "Confirmed", "Worth a look (might be fine)"
@@ -873,9 +1419,24 @@ def _place(f):
     """The file or folder a finding is about. A path loses its ":line"; a label like "rollcall:Bot:routine:name:1" keeps
     everything but the line, so two different Bots or routines are never the same place."""
     w = f.get("where") or ""
-    if w.startswith("/"):
-        return os.path.normpath(w.split(":")[0])
+    if w.startswith("/"):   # Codex, batch 4 round 1: only a trailing :line (or :+line) goes; /review/skill:v1/ is a folder name
+        # Round 2: exactly one, and only from a finding that has one. /fake/script:1:1 is line 1 of a file called "script:1",
+        # never the same place as /fake/script:1; a folder verdict or a fact about a whole file names its place as it is.
+        r = f.get("rule") or ""
+        if r.startswith(PLACE_WHOLE) or r in PLACE_WHOLE_RULES or f.get("source") in ("engines", "skillspector", "husk"):
+            return os.path.normpath(w)
+        return os.path.normpath(re.sub(r":\+?\d+$", "", w))
     return re.sub(r":\d+$", "", w)
+
+
+PLACE_WHOLE = ("WT-X", "WT-I", "WT-D", "WT-K")   # where is a folder or a whole file: no line to take off
+PLACE_WHOLE_RULES = frozenset(("WT-S003", "WT-S004", "WT-S005", "WT-T001r", "WT-R002", "WT-R003", "WT-H006", "WT-P001"))
+
+
+def _corrob_sig(g):
+    """Everything corroborated() reads about a finding. Findings that share it give the same answer (Codex, batch 4 round 2)."""
+    return (g["rule"], g.get("title") if g["rule"] in ("WT-S001", "WT-S002", "WT-S005") else None, _place(g),
+            g.get("source", "watchtower"), g["severity"], g.get("severity_was"), bool(g.get("guarded")), tuple(sorted(g.get("kinds") or ())))
 
 
 def _covers(a, b):
@@ -894,10 +1455,11 @@ NO_OPINION = frozenset(("WT-X004", "WT-R010"))   # "couldn't finish" / "didn't p
 RISK_KIND = {"WT-T004": "credential", "WT-T011": "credential", "WT-S001": "credential", "WT-S002": "credential", "WT-K003": "credential",
              "WT-T005": "exfil", "WT-T017": "exfil", "WT-T006": "pipe", "WT-T006k": "pipe", "WT-T002": "obfuscation",
              "WT-T003": "obfuscation", "WT-T012": "exec", "WT-T008": "secrecy", "WT-T016": "secrecy", "WT-T001": "override",
-             "WT-T007": "override"}
+             "WT-T007": "override", "WT-T018": "exfil"}
 WORDING_RULES = frozenset(("WT-T001", "WT-T007", "WT-T008", "WT-T014", "WT-T016"))   # T014 "every email": item 8 dry run, Oct 13                          # what a skill says
-BEHAVIOR_RULES = frozenset(("WT-T002", "WT-T003", "WT-T004", "WT-T005", "WT-T006", "WT-T012", "WT-T017"))   # what it does
+BEHAVIOR_RULES = frozenset(("WT-T002", "WT-T003", "WT-T004", "WT-T005", "WT-T006", "WT-T012", "WT-T017", "WT-T018"))   # what it does
 WORDING_BACKERS = BEHAVIOR_RULES | {"WT-T013"}
+WEBHOOK_PAIR = {"WT-T018": "WT-T004", "WT-T004": "WT-T018"}   # batch 4: the one pair that confirms a chat webhook (see corroborated)
 DRIFT_RULES = frozenset(("WT-I001", "WT-I002"))   # a live file that changed or appeared: a fact about reach, never about wording   # an email or post sent with no approval line is a send, even without curl
 ENGINE_KIND_WORDS = (("credential", r"cred|secret|token|passw|api[ _-]?key|ssh|aws|keychain|cookie"),
                      ("exfil", r"exfil|upload|leak|send|webhook|network|outbound|data[ _-]?theft|post\b"),
@@ -963,6 +1525,12 @@ def corroborated(f, findings):
         return False
     here, src, skill = _place(f), f.get("source", "watchtower"), _skill_of(f)
     loud = lambda g: (g.get("severity_was") or g["severity"]) in ("critical", "high")
+    if f["rule"] in WEBHOOK_PAIR:   # batch 4 (FP1): a chat webhook and a credential read in one file back each other up
+        pair, full = WEBHOOK_PAIR[f["rule"]], lambda g: SEV_ORDER.index(g.get("severity_was") or g["severity"]) <= SEV_ORDER.index("medium")
+        if full(f) and any(g["rule"] == pair and not g.get("guarded") and _place(g) == here and full(g) for g in findings):
+            return True
+        if f["rule"] == "WT-T018":
+            return False   # nothing else confirms one: an engine's "webhook", a change or a folder verdict is the owner's own chat
     fk = kinds_of(f)
     for g in findings:
         if g is f or g["rule"] in NO_OPINION or g.get("guarded"):
@@ -1126,7 +1694,16 @@ def label_findings(findings, covered=None):
     and an approval line the Ask-first rules already cover is a Tip; pattern findings nothing backs up are "Worth a look". Tips and
     Worth-a-look carry no severity and never move the score. `covered`: the Ask-first areas known to be covered (none assumed)."""
     covered = covered or set()
-    out = []
+    out, memo, reps = [], {}, {}
+    for g in findings:   # Codex, batch 4 round 2: each distinct finding is read once (vet's 5,000 matches were 25 million pairs)
+        reps.setdefault(_corrob_sig(g), g)
+    reps = list(reps.values())
+
+    def backed(f):
+        s = _corrob_sig(f)
+        if s not in memo:
+            memo[s] = corroborated(f, reps)
+        return memo[s]
     for f in findings:
         f = dict(f)
         if f.get("guarded"):   # batch 2 (R1): defensive wording, kept as a record with no severity; severity_was stays the rule's own
@@ -1136,8 +1713,10 @@ def label_findings(findings, covered=None):
             _no_severity(f, "tip", TIP)
         elif is_evidence(f):
             f["class"], f["label"] = "evidence", CONFIRMED
-        elif corroborated(f, findings):
+        elif backed(f):
             f["class"], f["label"] = "corroborated", CONFIRMED
+            if f["rule"] == "WT-T018" and f["severity"] != "critical":   # batch 4: a credential read sent to a chat webhook is how token stealers work
+                f["severity_raised_from"], f["severity"] = f["severity"], "critical"
         else:
             _no_severity(f, "pattern", MAYBE_FINE)
         out.append(f)
@@ -1339,19 +1918,161 @@ def verdict(findings):
     return "Install"
 
 
+def vet_verdict(labelled):
+    """Batch 4 (FP2): vet judges on the audit's labels, with one rule of its own. A dangerous behaviour match that is critical
+    on its own (an exfiltration host, a pipe-to-shell) is still "Do not install": before install nothing can back it up.
+    Wording on its own (T001, T008) and a chat webhook are "Install with changes". An exposed key (T011) is "Do not install"
+    on its own, as on 857ab38: it ships with every copy of the template (Codex, round 1)."""
+    raw = lambda f: f.get("severity_was") or f["severity"]
+    live = [f for f in labelled if not f.get("guarded")]
+    if any(f.get("label") == CONFIRMED and f["severity"] == "critical" for f in live) or \
+            any((f["rule"] in BEHAVIOR_RULES or f["rule"] == SECRET_RULE) and raw(f) == "critical" for f in live):
+        return "Do not install"
+    if (any(f.get("label") == CONFIRMED and f["severity"] == "high" for f in live) or any(warned_danger(f) for f in labelled)
+            or any(f.get("class") == "pattern" and raw(f) in ("critical", "high") for f in live)
+            or any(f["rule"] == "WT-T018" for f in live)):
+        return "Install with changes"
+    return "Install"
+
+
 def sort_findings(fs):
     return sorted(fs, key=lambda f: (SEV_ORDER.index(f["severity"]), f["rule"], f["where"]))
 
 
 # ---------------------------------------------------------------- vet
+def vet_folder(path):
+    """Batch 4 (FP3): the folder vet reads when given a folder or a SKILL.md, else None (a loose file, stdin)."""
+    if path == "-":
+        return None
+    if os.path.isdir(path):
+        return os.path.abspath(path)
+    return os.path.dirname(os.path.abspath(path)) if os.path.basename(path) == "SKILL.md" else None
+
+
+VET_WALK_CAP = 20_000          # names listed in a vetted folder (files and folders) before listing stops
+VET_BYTES_CAP = 16_000_000     # text read in one vet, all files together
+VET_FINDINGS_CAP = 5_000       # findings kept before the remaining files are left unread
+
+
+def vet_files(d, entry):
+    """Codex, batch 4 round 1: the text files of a vetted folder, the entry point (its SKILL.md) first, so no cap can leave it
+    out. Only text files count toward the file cap; listing stops after VET_WALK_CAP names. Returns (files, notes)."""
+    # Codex, batch 4 round 2: names are counted as they are listed, so one huge folder stops at the cap instead of being read
+    # and sorted whole first; a linked folder (never followed) and a folder that can't be listed are named in the notes.
+    found, seen, notes, linked, failed, todo, stop = [], 0, [], [], [], [d], False
+    while todo and not stop:
+        top = todo.pop()
+        subs = []
+        try:
+            with os.scandir(top) as it:
+                for e in it:
+                    seen += 1
+                    if seen > VET_WALK_CAP:
+                        stop = True
+                        break
+                    try:
+                        if e.is_dir(follow_symlinks=False):
+                            if e.name not in SKIP_DIRS:
+                                subs.append(e.path)
+                        elif e.is_symlink() and os.path.isdir(e.path):
+                            linked.append(os.path.relpath(e.path, d) + "/")
+                        elif os.path.splitext(e.name)[1].lower() in TEXT_EXT:
+                            found.append(e.path)
+                    except OSError:
+                        failed.append(os.path.relpath(e.path, d))
+        except OSError:
+            failed.append((os.path.relpath(top, d) if top != d else ".") + "/")
+        todo += sorted(subs, reverse=True)
+    if stop:
+        notes.append(f"the folder has more than {VET_WALK_CAP} names, so listing stopped there")
+    for what, xs in (("a linked folder, not followed", linked), ("could not be listed", failed)):
+        if xs:
+            notes.append(f"not read ({what}): " + ", ".join(sorted(xs)[:10]) + (f" and {len(xs) - 10} more" if len(xs) > 10 else ""))
+    rest = sorted(p for p in found if entry is None or os.path.normpath(p) != os.path.normpath(entry))
+    files = ([entry] if entry else []) + rest
+    if len(files) > SKILL_FILE_CAP:
+        notes.append(f"{len(files) - SKILL_FILE_CAP} more text files not read (over the {SKILL_FILE_CAP}-file cap)")
+        files = files[:SKILL_FILE_CAP]
+    return files, notes
+
+
+def vet_read(d, entry, files, notes, full):
+    """Each file as (where, absolute path, text, kind), read one at a time. `where` is the identity 857ab38 gave a finding
+    (SKILL.md for the entry point, the path inside the folder for the rest), so keys don't change; the absolute path is only
+    for labelling. Every text file that isn't read is named in `notes`. A link is never followed: it may lead anywhere.
+    `full()` says the findings cap is reached; the files left are then counted, not read."""
+    total, skipped = 0, []
+    for i, p in enumerate(files):
+        if full():
+            skipped.append(f"{len(files) - i} more files (over {VET_FINDINGS_CAP} findings)")
+            break
+        rel = os.path.basename(p) if p == entry else os.path.relpath(p, d)
+        if os.path.islink(p) and p != entry:   # the entry point is read as 857ab38 read it: the file the owner named
+            skipped.append(f"{rel} (a link, not followed)")
+            continue
+        try:
+            size = os.stat(p).st_size
+        except OSError:
+            size = 0
+        if total + size > VET_BYTES_CAP and p != entry:
+            skipped.append(f"{rel} (over the {VET_BYTES_CAP:,} bytes one vet reads)")
+            continue
+        t = read_text(p)
+        if t is None:
+            if p == entry:
+                raise OSError(f"could not read {p}")
+            skipped.append(f"{rel} ({'over 1 MB' if size > 1_000_000 else 'unreadable'})")
+            continue
+        total += len(t)
+        yield rel, p, t, "template" if p == entry else "reference"
+    if skipped:
+        notes.append("not read: " + ", ".join(skipped[:10]) + (f" and {len(skipped) - 10} more" if len(skipped) > 10 else ""))
+
+
 def cmd_vet(args):
     rules = load_rules()
-    text = sys.stdin.read() if args.path == "-" else read_text(args.path)
-    if text is None:
-        print(f"ERROR could not read {args.path}", file=sys.stderr)
-        return 2
-    name = "stdin" if args.path == "-" else os.path.basename(args.path)
-    fs = scan_text(text, name, rules, kind="template")
+    folder = vet_folder(args.path)
+    absolute = {}   # finding key -> its where with the absolute path, for labelling only
+    if folder is not None:
+        entry = os.path.abspath(args.path) if not os.path.isdir(args.path) else os.path.join(folder, "SKILL.md")
+        entry = entry if os.path.lexists(entry) or not os.path.isdir(args.path) else None
+        fs, main_, parts, urls_, notes_, plugin_ = [], None, [], set(), [], False
+        try:
+            if not os.path.isdir(folder):
+                raise OSError(args.path)
+            files, notes_ = vet_files(folder, entry)
+            cut = []
+            for where, p, t, k in vet_read(folder, entry, files, notes_, lambda: len(fs) >= VET_FINDINGS_CAP):
+                # Codex, round 2: the findings cap holds inside a file too (each rule still gets its first match)
+                got = scan_text(t, where, rules, kind=k, limit=max(1, VET_FINDINGS_CAP - len(fs)), cut=cut)
+                absolute.update((f["key"], p + f["where"][len(where):]) for f in got)
+                fs += got
+                if k == "template":
+                    main_ = t
+                if entry is None:
+                    parts.append(t)   # no SKILL.md: --deep stages the folder's text as one (bounded by VET_BYTES_CAP)
+                if len(urls_) < 1000:
+                    urls_.update(urls_in(t))   # Codex, round 2: whole URLs, masked
+                plugin_ = plugin_ or bool(re.search(r"(?i)\bplug-?ins?\b", t))
+            if cut:
+                notes_.append(f"matches left out over the {VET_FINDINGS_CAP}-finding cap in " + ", ".join(sorted(set(cut))[:10]))
+        except OSError:
+            fs = None
+        if fs is None or (main_ is None and not parts):
+            print(f"ERROR could not read {args.path}", file=sys.stderr)
+            return 2
+        text = main_ if main_ is not None and not parts else "\n".join(parts)
+        cover = "; ".join(notes_) or None
+        name = os.path.basename(args.path.rstrip("/")) or "vetted"
+    else:
+        text = sys.stdin.read() if args.path == "-" else read_text(args.path)
+        if text is None:
+            print(f"ERROR could not read {args.path}", file=sys.stderr)
+            return 2
+        main_, urls_, plugin_, cut = text, None, None, []
+        name = "stdin" if args.path == "-" else os.path.basename(args.path)
+        fs = scan_text(text, name, rules, kind="template", limit=VET_FINDINGS_CAP, cut=cut)
+        cover = f"matches left out over the {VET_FINDINGS_CAP}-finding cap in {name}" if cut else None
     engines = {}
     if getattr(args, "deep", False) and args.path != "-":
         d = args.path if os.path.isdir(args.path) else os.path.dirname(os.path.abspath(args.path))
@@ -1382,18 +2103,26 @@ def cmd_vet(args):
             engines["warning"] = "No outside scanner is installed, so this vet used Watchtower's own rules only. Say so."
     fs = sort_findings(dedupe(fs))
     s, g = score(fs)
-    sev = {f["severity"] for f in fs}
-    risk = max(100 - s, 80 if "critical" in sev else 40 if "high" in sev else 0)   # a high finding never reads as "risk 6"
-    urls = sorted(set(re.findall(r"https?://[^\s)\"'>]+", text)))
-    result = {"tool": "watchtower", "version": VERSION, "target": name, "verdict": verdict(fs),
-              "risk_score": risk, "posture_score": s, "grade": g, "autonomy": autonomy(text, rules),
+    # Batch 4 (FP2): labelled as the audit labels them, with full paths so "same file" means the same file; shown relative.
+    # Codex, round 1: the full path is used for labelling only; each finding keeps the where (and so the key) 857ab38 gave it.
+    labelled = label_findings([dict(f, where=absolute.get(f["key"], f["where"])) for f in fs])
+    v = vet_verdict(labelled)
+    risk = max(100 - s, {"Do not install": 80, "Install with changes": 40}.get(v, 0))   # a high finding never reads as "risk 6"
+    rel = lambda w: (name if w == folder else w[len(folder) + 1:] if w.startswith(folder + "/") else w) if folder else w
+    fs = sort_findings([dict(lf if lf["label"] == CONFIRMED else dict(f, label=lf["label"], **{"class": lf["class"]}), where=rel(f["where"]))
+                        for f, lf in zip(fs, labelled)])
+    urls = sorted(urls_ if urls_ is not None else set(urls_in(text, limit=1000)))
+    result = {"tool": "watchtower", "version": VERSION, "target": name, "verdict": v,
+              "risk_score": risk, "posture_score": s, "grade": g, "autonomy": autonomy(main_ if main_ is not None else text, rules),
               "external_urls": urls[:25], "findings": fs, "engines": engines,
               "boundary_line": "Never send, post, buy, publish, delete, or change settings without my approval in this conversation. If a source is unavailable, report the failure."}
     if getattr(args, "page_only", False):
         result["coverage"] = "page text only: the skill bodies and routine prompts were not visible"
         if result["verdict"] == "Install":
             result["verdict"] = "Nothing bad found in what the page shows"
-    if re.search(r"(?i)\bplug-?ins?\b", text):
+    elif cover:
+        result["coverage"] = cover   # files left unread in a folder: said, never silent, in both outputs
+    if plugin_ if plugin_ is not None else re.search(r"(?i)\bplug-?ins?\b", text):
         result["bundled_plugin"] = ("This template mentions a plugin. A plugin's files can't be seen before it is installed. Tell the owner: "
                                     "\"It will ask to install a plugin I can't inspect yet. If you say yes, tell me and I'll check it straight away.\"")
     if args.json:
@@ -1401,10 +2130,12 @@ def cmd_vet(args):
     else:
         print(f"Verdict: {result['verdict']} · risk {result['risk_score']}/100 · autonomy {result['autonomy']}")
         for f in fs:
-            print(f"  [{f['severity'].upper()}] {f['rule']} {f['title']} @ {f['where']} :: {f['evidence']}")
+            print(f"  [{f['severity'].upper()}] {f['label']}: {f['rule']} {f['title']} @ {f['where']} :: {f['evidence']}")
             print(f"      fix: {f['fix']}")
         if urls:
             print("  External URLs: " + ", ".join(urls[:10]))
+        if cover and "coverage" in result and not getattr(args, "page_only", False):
+            print(f"  Not fully checked: {result['coverage']}")
         print(f"  Paste into the description: {result['boundary_line']}")
     return 1 if result["verdict"] == "Do not install" else 0
 
@@ -1501,13 +2232,41 @@ def time_left(default=10 ** 6):
 
 def run(cmd, timeout=120, cwd=None):
     timeout = max(1, min(timeout, time_left()))
+    # Codex, batch 3 round 2: the program gets what is left of its time after the sealed copy was made. Final review: one
+    # absolute deadline for the whole launch. Waiting for another launch (_LAUNCH, taken twice), hashing and copying the
+    # program, and running it all come out of this one timeout; the lock waits had no limit and the copy had its own
+    # (SCANNER_HASH_SECONDS), so a 2-second call could take a minute while the other engine's copy was made.
+    deadline = time.monotonic() + timeout
+    timed_out = (124, "", f"timed out after {int(timeout)}s")
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=cwd)
-        return r.returncode, r.stdout, r.stderr
-    except subprocess.TimeoutExpired as e:
-        return 124, "", f"timed out after {int(timeout)}s"
+        launch = scanner_launch(cmd, deadline)   # batch 3: a program in Watchtower's scanner folder runs only from its checked, sealed copy
+    except LaunchTimedOut:
+        return timed_out
+    except ScannerUnusable as e:
+        return 126, "", f"not run: {e}"
+    argv, exe, fds = launch or (cmd, None, ())
+    try:
+        if not _launch_lock(deadline):
+            return timed_out
+        try:
+            if time.monotonic() >= deadline:
+                return timed_out
+            p = subprocess.Popen(argv, executable=exe, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=cwd, pass_fds=fds)
+        finally:
+            _LAUNCH.release()
+        with p:
+            try:
+                out, err = p.communicate(timeout=max(0, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                p.kill()
+                p.wait()
+                return timed_out
+        return p.returncode, out, err
     except OSError as e:
         return 127, "", str(e)
+    finally:
+        for fd in fds:
+            os.close(fd)
 
 
 def persistence_snapshot():
@@ -1522,6 +2281,25 @@ def persistence_snapshot():
         if os.path.isfile(p):
             snap[rc] = sha256_file(p)
     return snap
+
+
+def _sha(text):
+    return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
+
+
+def persistence_stored(snap):
+    """Codex, batch 4 round 1 (R11): persistence.json keeps the crontab masked for display and its raw text only as a hash,
+    which is what the next run compares. An older file holding the raw crontab is compared as it is, then saved this way."""
+    out = dict(snap)
+    if isinstance(snap.get("crontab"), str):
+        out["crontab"], out["crontab_sha256"] = mask_secrets(snap["crontab"]), _sha(snap["crontab"])
+    return out
+
+
+def persistence_changed(old, k, v):
+    if k == "crontab" and isinstance(old.get("crontab_sha256"), str) and isinstance(v, str):
+        return old["crontab_sha256"] != _sha(v)
+    return old.get(k) != v
 
 
 KNOWN_CRED_FILES = {
@@ -2017,6 +2795,7 @@ def audit(roots, exports, quick=False):
     fs, notes = [], []
     INCOMPLETE_SKILLS.clear()
     _RUNS_CODE.clear()
+    reset_scanner_checks()
     inv = collect_inventory(roots)
     manifest = {}
     # DQ-022/023, v0.7.1 item 1: SKILL.md outside loadable locations — one "Not scanned" line (a Tip), never scored as installed
@@ -2124,10 +2903,11 @@ def audit(roots, exports, quick=False):
     old = load_json(state_path("persistence.json"), None)
     if old is not None:
         for k, v in snap.items():
-            if old.get(k) != v:
+            if persistence_changed(old, k, v):
                 fs.append(finding("WT-P001", "Persistence point changed", "medium", ["ASI10", "ASI05"], k,
-                                  str(v)[:120], "Check who added this cron entry, unit, or shell rc change; remove it if no Bot of yours needs it."))
-    save_json(state_path("persistence.json"), snap)
+                                  str(v)[:120], "Check who added this cron entry, unit, or shell rc change; remove it if no Bot of yours needs it.",
+                                  shown=str(v)))
+    save_json(state_path("persistence.json"), persistence_stored(snap))
 
     # 4. secrets in files (known CLI credential files reported separately)
     fs += cli_credentials()
@@ -2251,16 +3031,21 @@ def audit(roots, exports, quick=False):
         ks = load_json(state_path("key_status.json"), {}) or {}
         fs = apply_key_status(fs, ks.get("files", {}), ran=bool(ks.get("ran")))
     prev_used = load_json(state_path("engines_used.json"), {}) or {}
-    before = prev_used.get("expected") or prev_used.get("engines", [])
-    save_json(state_path("engines_used.json"), {"at": now(), "engines": ["Watchtower rules"] + [n for n, t in (
+    prev_used = prev_used if isinstance(prev_used, dict) else {}
+    # Codex, batch 3 round 1: `expected` was only last run's expectation while one scanner was missing, so a scanner that first
+    # ran during that time was forgotten the second run after it went missing, and its findings read as fixed. Expected is now
+    # every scanner expected before plus every one that ran, until all of them are back.
+    before = list(dict.fromkeys(n for k in ("expected", "engines") for n in (prev_used.get(k) if isinstance(prev_used.get(k), list) else [])
+                                if isinstance(n, str)))
+    used_now = ["Watchtower rules"] + [n for n, t in (
         ("SkillSpector", "skillspector"), ("husk", "husk"), ("gitleaks", "gitleaks"), ("TruffleHog", "trufflehog"),
-        ("pip-audit", "pip-audit"), ("OSV-Scanner", "osv-scanner")) if tool(t)]})
-
-    gone = [n for n in before if n not in load_json(state_path("engines_used.json"), {})["engines"]]
+        ("pip-audit", "pip-audit"), ("OSV-Scanner", "osv-scanner")) if scanner_used(t)]   # Claude review 2 (3)
+    gone = [n for n in before if n not in used_now]
+    save_json(state_path("engines_used.json"), {"at": now(), "engines": used_now, **({"expected": list(dict.fromkeys(before + used_now))} if gone else {})})
     if gone:
-        notes.insert(0, f"SCANNERS MISSING: {', '.join(gone)} ran last time and are not installed now, so this is a partial scan and the score "
-                        "is not comparable with the last one. Run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, then audit again.")
-        save_json(state_path("engines_used.json"), {"at": now(), "engines": load_json(state_path("engines_used.json"), {})["engines"], "expected": before})
+        notes.insert(0, f"SCANNERS MISSING: {', '.join(gone)} ran last time and didn't run now (not installed, or not the copy Watchtower installed), "
+                        "so this is a partial scan and their last results are kept. Run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, then audit again.")
+    fs += scanner_x005()   # batch 3 (R7): every scanner was looked at just above, in audit and daily alike
     fs = sort_findings(dedupe(fs))
     meta = {"inventory": {k: len(v) for k, v in inv.items() if k != "non_live_skills"}, "notes": notes, "manifest": manifest, "persistence": snap, "scanners_missing": gone,
             "skill_dirs": [os.path.dirname(x) for x in inv["skills"]], "baseline_status": base_status}
@@ -2562,12 +3347,697 @@ def lint_settings(s, where):
     return out
 
 
-def tool(name):
-    """Find a scanner on PATH or in Watchtower's own venv/bin (where install.sh --scanners puts them)."""
-    for cand in (shutil.which(name), os.path.join(home(), "scanners", "bin", name), os.path.join(home(), ".venv", "bin", name), os.path.join(home(), "bin", name)):
-        if cand and os.path.isfile(cand) and os.access(cand, os.X_OK):
-            return cand
+# Hardening batch 3 (R7, Oct 16): tool() looked on PATH first, so any program a Bot named skillspector there was Watchtower's
+# second engine, and a copy in Watchtower's folder ran whatever it contained. Now the only candidate is Watchtower's own
+# scanners/bin/<name>, and only when its sha256 is in scripts/scanner-bins.lock for this computer's architecture.
+SCANNER_LOCK = os.path.join(HERE, "..", "scripts", "scanner-bins.lock")
+SCANNER_NAMES = {"skillspector": "SkillSpector", "husk": "husk", "gitleaks": "gitleaks", "trufflehog": "TruffleHog",
+                 "osv-scanner": "OSV-Scanner", "pip-audit": "pip-audit"}
+SCANNER_LOCK_EXTRA = {}   # tests only: name -> digest (or a set of them). An in-process dict, never fed by a file or the environment.
+SCANNER_PROBLEMS = {}     # name -> (kind, why) for this run: "changed", "unreadable", "unlisted" or "old-folder"; (kind, why, "launch") when refused at launch
+_SCANNER_OK = {}          # (path, size, mtime_ns, ctime_ns, inode) -> (digest, venv Python named on its first line or None)
+_SCANNER_LOCK_CACHE = {}
+# Codex, batch 3 round 1: hashing read the whole file into memory, so a huge or sparse "program" could exhaust memory or stall
+# the run outside every subprocess timeout. A program is now read in chunks, at most this much and for at most this long.
+SCANNER_MAX_BYTES = 512 * 1024 * 1024
+SCANNER_HASH_SECONDS = 60
+_LAUNCH = threading.Lock()   # a sealed copy is made, and every program started, one at a time (see scanner_launch)
+
+
+class ScannerUnusable(OSError):
+    """A scanner program Watchtower may not run; the message says why in plain words."""
+
+
+class ScannerUnreadable(ScannerUnusable):
+    """Claude review 1 (4): the program couldn't be read or copied right now (too slow, out of memory or file descriptors,
+    sealing refused, no /proc). Not run and its last results are kept, but this is no verdict on its contents, so no WT-X005."""
+
+
+class SealUnavailable(ScannerUnreadable):
+    """Claude review 2 (1): the sealed copy couldn't be made (memfd, sealing, writing the copy or /proc). Nothing runs, but the
+    program file itself is still hashed once for a verdict, so a swapped copy is a WT-X005 even then."""
+
+
+# Claude review 2 (1): every OSError was "unreadable", so a swapped copy chmod 0111 (or a link swapped in after the lstat) gave
+# EACCES or ELOOP at open, no WT-X005, every run. Only these say the computer is short of something; any other failure to open
+# or read the program file comes from the file itself, so it isn't the copy Watchtower installed.
+_PRESSURE_ERRNOS = {errno.ENOMEM, errno.EMFILE, errno.ENFILE, errno.EAGAIN, errno.EINTR}
+
+
+def _program_error(e):
+    """The ScannerUnusable for an error opening, reading or hashing a program file: ScannerUnreadable (no verdict) for memory
+    or file-descriptor pressure, otherwise the file itself is the problem."""
+    if isinstance(e, ScannerUnusable):
+        return e
+    if isinstance(e, MemoryError) or getattr(e, "errno", None) in _PRESSURE_ERRNOS:
+        return ScannerUnreadable(f"its program file can't be read right now ({errno.errorcode.get(getattr(e, 'errno', None), 'out of memory')})")
+    return ScannerUnusable(f"its program file can't be opened or read ({errno.errorcode.get(getattr(e, 'errno', None), type(e).__name__)})")
+
+
+def _problem_of(e):
+    """(kind, why) for an error from _program_error's family."""
+    e = _program_error(e)
+    return ("unreadable" if isinstance(e, ScannerUnreadable) else "changed"), str(e)
+
+
+class LaunchTimedOut(Exception):
+    """run()'s deadline passed before the program could start (waiting for another launch, or making its sealed copy). A time
+    out, as if it had run too long; not a verdict on the program, which is judged again at its next launch."""
+
+
+def _launch_lock(deadline):
+    """Take _LAUNCH, waiting until the deadline at most (None: as long as it takes). False when the deadline came first."""
+    if deadline is None:
+        return _LAUNCH.acquire()
+    return _LAUNCH.acquire(timeout=max(0, deadline - time.monotonic()))
+
+
+def scanner_arch():
+    m = platform.machine().lower()
+    return {"arm64": "aarch64", "amd64": "x86_64"}.get(m, m)
+
+
+def scanner_bin():
+    return os.path.join(home(), "scanners", "bin")
+
+
+def _venv_shebang(line):
+    """True when this first line names this install's venv Python (scanners/bin/python, python3, python3.12...)."""
+    for b in dict.fromkeys((scanner_bin(), os.path.join(os.path.realpath(home()), "scanners", "bin"))):
+        if re.fullmatch(re.escape(b) + r"/python[0-9.]*", line):
+            return True
+    return False
+
+
+def _read_program(fd, sink=None):
+    """(sha256, venv Python or None) of the open program file fd, read in chunks; sink(chunk) gets every byte as it is read.
+    A pip entry point's first line names the venv's Python by its full path, so it is hashed as "#!python": the lock's
+    checksum then doesn't depend on where Watchtower is installed. Raises ScannerUnusable for anything that isn't a plain
+    file, is over SCANNER_MAX_BYTES (checked before reading, so a sparse file costs nothing) or takes too long to read."""
+    st = os.fstat(fd)
+    if not stat.S_ISREG(st.st_mode):
+        raise ScannerUnusable("it isn't a plain program file")
+    if st.st_size > SCANNER_MAX_BYTES:
+        raise ScannerUnusable(f"its program file is too large to be a scanner ({st.st_size} bytes)")
+    deadline = time.monotonic() + max(1, min(SCANNER_HASH_SECONDS, time_left()))
+    head = b""
+    while len(head) <= 4096 and b"\n" not in head:
+        chunk = os.read(fd, 4097 - len(head))
+        if not chunk:
+            break
+        head += chunk
+    first, nl, rest = head.partition(b"\n")
+    shebang = first[2:].decode("utf-8", "replace").strip() if first.startswith(b"#!") else ""
+    # Claude review 1 (1): a file whose first line really is "#!python" hashed the same as a pip entry point, wasn't a venv
+    # entry point (so no interpreter check), and the kernel then ran "python" from the folder Watchtower was started in. A
+    # first line that names its program without a full path is never run, so the "#!python" form can't be met by a real file.
+    if first.startswith(b"#!") and not shebang.startswith("/"):
+        raise ScannerUnusable("its first line names the program it runs with without a full path")
+    venv = shebang if shebang and _venv_shebang(shebang) else None
+    h = hashlib.sha256(b"#!python" + nl + rest if venv else head)
+    total = len(head)
+    if sink:
+        sink(head)
+    while True:
+        chunk = os.read(fd, 1 << 20)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > SCANNER_MAX_BYTES:
+            raise ScannerUnusable(f"its program file is too large to be a scanner (over {SCANNER_MAX_BYTES} bytes)")
+        if time.monotonic() > deadline:
+            raise ScannerUnreadable("its program file took too long to read")
+        h.update(chunk)
+        if sink:
+            sink(chunk)
+    return h.hexdigest(), venv
+
+
+def _open_program(path):
+    # O_NONBLOCK: a FIFO swapped in after the lstat must not hang the run; _read_program then refuses it (not a plain file)
+    return os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+
+
+def _in_hash_time(fn, cleanup=None, deadline=None):
+    """fn() run in a worker thread, waited for at most SCANNER_HASH_SECONDS (or the run's time left). Codex, batch 3 round 2:
+    the deadline in _read_program was checked only between reads, and a read of a regular file can't be interrupted, so one
+    slow read (then EOF) took as long as it liked. The worker owns every fd it opens; when it is given up on, its result is
+    never used and cleanup(result) releases it whenever it does finish. Raises ScannerUnusable on time out, or LaunchTimedOut
+    when run()'s deadline (final review) comes before that limit and is what ran out."""
+    limit = max(1, min(SCANNER_HASH_SECONDS, time_left()))
+    launch_bound = deadline is not None and deadline - time.monotonic() < limit
+    if launch_bound:
+        limit = deadline - time.monotonic()
+        if limit <= 0:
+            raise LaunchTimedOut()
+    box, lock, done = {}, threading.Lock(), threading.Event()
+
+    def work():
+        try:
+            res, err = fn(), None
+        except BaseException as e:   # noqa: BLE001 - handed to the caller
+            res, err = None, e
+        with lock:
+            if box.get("abandoned"):
+                if cleanup and err is None:
+                    cleanup(res)
+                return
+            box.update(res=res, err=err)
+            done.set()
+    threading.Thread(target=work, name="watchtower-hash", daemon=True).start()
+    done.wait(limit)
+    with lock:
+        if not done.is_set():
+            box["abandoned"] = True
+            if launch_bound:
+                raise LaunchTimedOut()
+            raise ScannerUnreadable("its program file took too long to read")
+    if box["err"] is not None:
+        raise box["err"]
+    return box["res"]
+
+
+def _read_program_at(path):
+    try:
+        fd = _open_program(path)
+    except OSError as e:
+        raise _program_error(e)
+    try:
+        return _read_program(fd)
+    except OSError as e:
+        raise _program_error(e)
+    finally:
+        os.close(fd)
+
+
+def scanner_digest(path):
+    """sha256 of a scanner's program file, as the lock lists it (see _read_program), read within the hashing time limit."""
+    return _in_hash_time(lambda: _read_program_at(path))[0]
+
+
+def _sealed_copy(path, deadline=None):
+    """_seal_copy within the hashing time limit and run()'s deadline (see _in_hash_time); a copy finished after either is
+    closed unused."""
+    return _in_hash_time(lambda: _seal_copy(path), cleanup=lambda r: os.close(r[0]), deadline=deadline)
+
+
+def _seal_copy(path):
+    """(fd, sha256, venv Python or None) for the program at path. Its bytes are copied into a sealed in-memory file while they
+    are hashed, and the fd is read-only: nobody, this user included, can change what it holds. Running the program from this
+    fd runs exactly the bytes that were checked (Codex, batch 3 round 1: checking a path and then running the path let a
+    program swapped in between run unchecked)."""
+    import fcntl
+    try:
+        src = _open_program(path)
+    except OSError as e:
+        raise _program_error(e)
+    mfd = None
+    try:
+        # Claude review 2 (1): a failure of the copy (not of the program file) is SealUnavailable, never a verdict on the program.
+        # No memfd or sealing on this computer: nothing is run from a copy that could still change.
+        try:
+            mfd = os.memfd_create("watchtower-scanner", os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
+        except (AttributeError, OSError):
+            raise SealUnavailable("this computer can't keep a sealed copy of it to run")
+
+        def sink(b):
+            view = memoryview(b)
+            try:
+                while view:
+                    view = view[os.write(mfd, view):]
+            except OSError:
+                raise SealUnavailable("its sealed copy couldn't be written right now")
+        try:
+            digest, venv = _read_program(src, sink)
+        except OSError as e:
+            raise _program_error(e)
+        try:
+            fcntl.fcntl(mfd, fcntl.F_ADD_SEALS, fcntl.F_SEAL_WRITE | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SEAL)
+            ro = os.open(f"/proc/self/fd/{mfd}", os.O_RDONLY | os.O_CLOEXEC)   # the writable fd is closed before anything runs
+        except (AttributeError, OSError):
+            raise SealUnavailable("this computer can't keep a sealed copy of it to run")
+    finally:
+        os.close(src)
+        if mfd is not None:
+            os.close(mfd)
+    return ro, digest, venv
+
+
+LOCK_READER_REL = "scripts/scanner_lock.py"
+SCANNER_LOCK_REL = "scripts/scanner-bins.lock"
+LOCK_READER_MAX_BYTES = 256 * 1024
+
+
+_RELEASE = {}   # the MANIFEST.sha256 this process checked itself against: {"root": ..., "files": {rel: sha256}}
+
+
+def remember_manifest(root, text):
+    """Keep the manifest self_check is checking (or, when it didn't run, the first one read) for the rest of this process."""
+    files = {}
+    for line in (text or "").splitlines():
+        parts = line.split(None, 1)
+        if len(parts) == 2:
+            files.setdefault(parts[1].lstrip("*").strip(), parts[0])
+    _RELEASE.clear()
+    _RELEASE.update(root=root, files=files, at=(SELF_ROOT, os.path.join(home(), "app")))
+
+
+def release_manifest():
+    """{rel: sha256} for an installed copy (the folder self_check checks), None in a developer checkout. Claude review 1 (2):
+    this was read from disk again at each use, so a MANIFEST.sha256 rewritten after the self-check vouched for whatever it
+    listed. It is now the one self_check checked, read once per process.
+
+    Claude review 2 (2): it was read again whenever the real folder behind `app` changed, so `mv app app.real; ln -s evil app`
+    after the self-check had the Bot's manifest vouch for its own lock reader, which then ran inside Watchtower. Once one is
+    remembered it is never read again, and a different folder behind the same name lists nothing (the lock then reads as
+    changed: scanner_lock)."""
+    root = os.path.realpath(SELF_ROOT)
+    if _RELEASE.get("at") == (SELF_ROOT, os.path.join(home(), "app")):
+        return _RELEASE["files"] if root == _RELEASE["root"] else {}
+    if root != os.path.realpath(os.path.join(home(), "app")):
+        return None
+    remember_manifest(root, read_text(os.path.join(root, "MANIFEST.sha256")))
+    return _RELEASE["files"]
+
+
+def release_digest(rel):
+    """The sha256 MANIFEST.sha256 lists for rel when this is an installed copy, "" when an installed copy's manifest doesn't
+    list it, and None in a developer checkout (no manifest to hold it to)."""
+    files = release_manifest()
+    return None if files is None else files.get(rel, "")
+
+
+def _lock_reader():
+    """scripts/scanner_lock.py as a namespace, run from its source bytes. Codex, batch 3 round 2: importing it let Python load a
+    bytecode cache (scripts/__pycache__/scanner_lock.*.pyc) instead, which self_check never looks at, so a planted cache
+    replaced the scanner allowlist. Now the source is read once (a plain file, never a link), held to its MANIFEST.sha256 line
+    in an installed copy, compiled from those bytes and run; no cache is read or written. None when it can't be used."""
+    try:
+        src = _reader_source()
+        want = release_digest(LOCK_READER_REL)
+        if want is not None and hashlib.sha256(src).hexdigest() != want:
+            return None
+        return _reader_namespace(src)
+    except Exception:   # noqa: BLE001 - a reader that can't be read or run means no program is listed, never every program
+        return None
+
+
+def _reader_source():
+    """The bytes of scripts/scanner_lock.py: a plain file, never a link, at most LOCK_READER_MAX_BYTES. Raises OSError when it
+    can't be read, ValueError when it isn't a plain file or is too large."""
+    fd = os.open(os.path.join(HERE, "..", LOCK_READER_REL), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ValueError("not a plain file")
+        src = b""
+        while len(src) <= LOCK_READER_MAX_BYTES:
+            chunk = os.read(fd, LOCK_READER_MAX_BYTES + 1 - len(src))
+            if not chunk:
+                break
+            src += chunk
+    finally:
+        os.close(fd)
+    if len(src) > LOCK_READER_MAX_BYTES:
+        raise ValueError("too large")
+    return src
+
+
+def _reader_namespace(src):
+    path = os.path.join(HERE, "..", LOCK_READER_REL)
+    ns = {"__name__": "watchtower_scanner_lock", "__file__": path, "__builtins__": builtins}
+    exec(compile(src, path, "exec", dont_inherit=True), ns)   # noqa: S102 - Watchtower's own checked file, from its bytes
+    return ns
+
+
+def scanner_lock():
+    """{(name, arch): {sha256, ...}} from scripts/scanner-bins.lock, read by scripts/scanner_lock.py, the same reader publish.sh
+    uses (Codex, batch 3 round 1), with its file limits too (round 2). A line it doesn't accept is never used; if the reader
+    itself can't be loaded, or the lock can't be used whole, nothing is.
+
+    Claude review 1 (2): the lock was read at the first scanner, minutes after the self-check, and again whenever its size or
+    time changed, and never held to MANIFEST.sha256, so a line added during a run (and removed after) made any program a
+    verified scanner. In an installed copy the lock and its reader are now read once per process and used only when both
+    match the manifest the self-check checked. Claude review 2 (6): one that doesn't match lists nothing, as before, and is
+    remembered as changed (scanner_list_changed), never read as the "not listed yet" of an empty lock."""
+    want = release_digest(SCANNER_LOCK_REL)
+    if want is not None:
+        if _SCANNER_LOCK_CACHE.get("installed") is None:
+            lock = _installed_lock(want)
+            _SCANNER_LOCK_CACHE.update(installed=lock or {}, changed=lock is None)
+        return _SCANNER_LOCK_CACHE["installed"]
+    try:
+        st = os.stat(SCANNER_LOCK)
+        rst = os.stat(os.path.join(HERE, "..", LOCK_READER_REL))
+        key = (SCANNER_LOCK, st.st_size, st.st_mtime_ns, st.st_ino, HERE, rst.st_size, rst.st_mtime_ns, rst.st_ctime_ns, rst.st_ino)
+    except OSError:
+        return {}
+    if _SCANNER_LOCK_CACHE.get("key") != key:
+        out = {}
+        reader = _lock_reader()
+        try:
+            if reader:
+                text, why = reader["read_lock"](SCANNER_LOCK)
+                out = {} if why else reader["parse"](text)[0]
+        except Exception:   # noqa: BLE001
+            out = {}
+        _SCANNER_LOCK_CACHE.update(key=key, lock=out if isinstance(out, dict) else {})
+    return _SCANNER_LOCK_CACHE["lock"]
+
+
+def _installed_lock(want):
+    """The installed copy's lock, read once, when its bytes and its reader's both match the remembered manifest. None when
+    either isn't the file that manifest lists (changed, gone, a link, unreadable by permission, or no longer in the folder the
+    self-check checked); {} when it can't be read right now (no memory or file descriptors) or can't be used."""
+    reader_want = release_digest(LOCK_READER_REL)
+    if not want or not reader_want:
+        return None
+    try:
+        src = _reader_source()
+    except ValueError:
+        return None
+    except OSError as e:
+        return {} if e.errno in _PRESSURE_ERRNOS else None
+    if hashlib.sha256(src).hexdigest() != reader_want:
+        return None
+    try:
+        reader = _reader_namespace(src)
+        text, why = reader["read_lock"](SCANNER_LOCK)
+        if why:   # read_lock names the error type: a plain OSError on a plain file is pressure (EMFILE, ENOMEM), not a change
+            try:
+                plain = stat.S_ISREG(os.lstat(SCANNER_LOCK).st_mode)
+            except OSError:
+                plain = False
+            return {} if plain and why.endswith("(OSError)") else None
+        if not isinstance(text, str) or hashlib.sha256(text.encode("utf-8")).hexdigest() != want:
+            return None
+        out = reader["parse"](text)[0]
+        return out if isinstance(out, dict) else {}
+    except Exception:   # noqa: BLE001
+        return {}
+
+
+def scanner_list_changed():
+    """True when this installed copy's lock or its reader isn't what the self-check checked (scanner_lock read it so)."""
+    return bool(_SCANNER_LOCK_CACHE.get("changed")) and release_digest(SCANNER_LOCK_REL) is not None
+
+
+def _scanner_extra(name):
+    extra = SCANNER_LOCK_EXTRA.get(name)
+    return {extra} if isinstance(extra, str) else set(extra) if isinstance(extra, (set, frozenset, list, tuple)) else set()
+
+
+def _scanner_listed(name):
+    lock = scanner_lock()
+    return lock.get((name, scanner_arch()), set()) | lock.get((name, "any"), set())
+
+
+def _digest_problem(name, digest):
+    """None when this sha256 may run as `name`, else (kind, why)."""
+    if digest in _scanner_extra(name):
+        return None
+    want = _scanner_listed(name)
+    if not want and scanner_list_changed():
+        return "changed", "Watchtower's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run"
+    if not want:
+        return "unlisted", f"its checksum isn't in Watchtower's list for this computer ({scanner_arch()}) yet"
+    if digest not in want:
+        return "changed", "its program file isn't the one Watchtower installed"
     return None
+
+
+def running_interpreter():
+    """(path, (dev, inode)) of the program this process is running, from /proc/self/exe; None when that can't be read or no
+    longer names the same file. Codex, batch 3 round 2: realpath(sys.executable) follows the launcher name Watchtower was
+    started through, and a writable venv link retargeted after start made another program (perl) the "pinned" Python."""
+    try:
+        st = os.stat("/proc/self/exe")
+        path = os.readlink("/proc/self/exe")
+        here = os.stat(path)
+    except OSError:
+        return None
+    if not path.startswith("/") or (here.st_dev, here.st_ino) != (st.st_dev, st.st_ino) or not stat.S_ISREG(st.st_mode):
+        return None
+    return path, (st.st_dev, st.st_ino)
+
+
+def trusted_interpreter(path):
+    """The running interpreter's real path, when `path` (a venv Python link) leads to that very file (same device and inode as
+    /proc/self/exe, never a name) and that file and every folder above it belong to root with no group or other write; else
+    None. Codex, batch 3 round 1: a Python the Bot owned passed the old check once it was chmod 0555 (the Bot can chmod it
+    back), and so did one under a folder the Bot can write (it can be replaced). Round 2: pinned to /proc/self/exe."""
+    try:
+        me = running_interpreter()
+        st = os.stat(path)
+        if not me or (st.st_dev, st.st_ino) != me[1]:
+            return None
+        real = p = me[0]
+        while True:
+            st = os.lstat(p)
+            if st.st_uid != 0 or st.st_mode & 0o022 or stat.S_ISLNK(st.st_mode):
+                return None
+            up = os.path.dirname(p)
+            if up == p:
+                return real
+            p = up
+    except OSError:
+        return None
+
+
+def scanner_verdict(name):
+    """(path, None) for Watchtower's own checked copy, else (None, (kind, why)); kind None means simply not there."""
+    path = os.path.join(scanner_bin(), name)
+    try:
+        st = os.lstat(path)
+    except OSError:
+        if os.path.lexists(os.path.join(home(), "bin", name)):
+            return None, ("old-folder", "it is in Watchtower's old scanner folder")
+        return None, (None, "")
+    if not stat.S_ISREG(st.st_mode) or not os.access(path, os.X_OK):
+        return None, ("changed", "it isn't a plain program file")
+    if not st.st_mode & stat.S_IRUSR:   # Claude review 2 (1): Watchtower's own copy is always readable by its owner
+        return None, ("changed", "its program file can't be read (no read permission)")
+    if not _scanner_extra(name) and not _scanner_listed(name):   # nothing it could match: not read at all (Codex, round 1)
+        return None, _digest_problem(name, "")
+    key = (path, st.st_size, st.st_mtime_ns, st.st_ctime_ns, st.st_ino)
+    if key not in _SCANNER_OK:
+        try:
+            _SCANNER_OK[key] = _in_hash_time(lambda: _read_program_at(path))
+        except (OSError, MemoryError) as e:   # Claude review 2 (1): by errno; only memory or fd pressure is "unreadable"
+            return None, _problem_of(e)
+    digest, venv = _SCANNER_OK[key]
+    problem = _digest_problem(name, digest)
+    if problem:
+        return None, problem
+    if venv and not trusted_interpreter(venv):
+        return None, _interpreter_problem()
+    return path, None
+
+
+def _interpreter_problem():
+    """(kind, why) for a venv Python trusted_interpreter refused: "unreadable" when this computer can't say which Python
+    Watchtower runs (no /proc; Claude review 1, finding 4), else "changed"."""
+    if running_interpreter() is None:
+        return "unreadable", "this computer doesn't say which Python Watchtower runs with (/proc/self/exe)"
+    return "changed", "the Python it runs with isn't the computer's own"
+
+
+def _refuse(name, kind, why):
+    """A program in the scanner folder that may not run right now: remembered for the rest of this run (so swapping the
+    checked copy back afterwards hides nothing), its stage marked not checked, and nothing is started."""
+    SCANNER_PROBLEMS[name] = (kind, why, "launch")
+    SCANNERS_HELD.add(name)
+    STAGE_FAILS.append(f"{SCANNER_NAMES.get(name, name)} NOT run: {why}")
+    raise ScannerUnusable(why)
+
+
+def scanner_launch(cmd, deadline=None):
+    """How run() starts cmd when cmd[0] is in Watchtower's scanner folder: (argv, executable, fds), else None for any other
+    program. The program is checked again at launch from a sealed copy of its bytes and run from that copy; a venv Python
+    (an entry point's first line, or scanners/bin/python itself) is run as the pinned trusted_interpreter, never through the
+    link, which keeps only its name as argv[0] so the venv is found. Raises ScannerUnusable when it may not run, and
+    LaunchTimedOut when run()'s deadline passes while it waits for another launch or its copy is made."""
+    if not cmd or not isinstance(cmd[0], str):
+        return None
+    p = os.path.normpath(os.path.abspath(cmd[0]))
+    if os.path.dirname(p) not in {os.path.normpath(scanner_bin()), os.path.realpath(scanner_bin())}:
+        return None
+    name = os.path.basename(p)
+    if re.fullmatch(r"python[0-9.]*", name):
+        interp = trusted_interpreter(p)
+        if not interp:
+            kind, why = _interpreter_problem()
+            _refuse("python", kind, "Watchtower's scanner Python isn't the computer's own" if kind == "changed" else why)
+        return [p, "-I"] + list(cmd[1:]), interp, ()
+    try:
+        st = os.lstat(p)
+    except OSError:
+        _refuse(name, None, "it isn't there")
+    if not stat.S_ISREG(st.st_mode) or not os.access(p, os.X_OK):
+        _refuse(name, "changed", "it isn't a plain program file")
+    if not st.st_mode & stat.S_IRUSR:
+        _refuse(name, "changed", "its program file can't be read (no read permission)")
+    if not _scanner_extra(name) and not _scanner_listed(name):
+        _refuse(name, *_digest_problem(name, ""))
+    if not _launch_lock(deadline):
+        raise LaunchTimedOut()
+    no_copy = None
+    try:
+        fd, digest, venv = _sealed_copy(p, deadline)
+    except (SealUnavailable, MemoryError) as e:
+        no_copy = _program_error(e)
+    except OSError as e:   # Claude review 2 (1): by errno; out of memory or file descriptors is no verdict on the program
+        _refuse(name, *_problem_of(e))
+    finally:
+        _LAUNCH.release()
+    if no_copy:
+        # Claude review 2 (1): no sealed copy to run from, so nothing runs; the file is still hashed once (no copy) for a verdict
+        try:
+            digest = _in_hash_time(lambda: _read_program_at(p), deadline=deadline)[0]
+        except (OSError, MemoryError) as e:
+            _refuse(name, *_problem_of(e))
+        _refuse(name, *(_digest_problem(name, digest) or ("unreadable", str(no_copy))))
+    problem = _digest_problem(name, digest)
+    interp = trusted_interpreter(venv) if venv and not problem else None
+    if venv and not problem and not interp:
+        problem = _interpreter_problem()
+    if problem:
+        os.close(fd)
+        _refuse(name, *problem)
+    if venv:
+        return [venv, "-I", f"/proc/self/fd/{fd}"] + list(cmd[1:]), interp, (fd,)
+    return [p] + list(cmd[1:]), f"/proc/self/fd/{fd}", (fd,)
+
+
+def tool(name):
+    """Watchtower's own copy of a scanner (scanners/bin/<name>, where install.sh --scanners puts it), only when it is the
+    program the lock lists. Never PATH, .venv or the old bin folder. Why one isn't used is kept in SCANNER_PROBLEMS. One that
+    was refused at launch this run stays refused for the rest of it, whatever its file holds now. What runs is decided again
+    at launch (run(), scanner_launch).
+
+    Claude review 2 (3): only a refusal at launch was kept, so a swapped copy whose stage was skipped, put back before the end
+    of the run, read as verified at the last check: no WT-X005, and it counted as used. A copy found changed now stays changed
+    for the rest of the run too, and any scanner with a problem this run is in SCANNERS_HELD (not counted as used)."""
+    held = SCANNER_PROBLEMS.get(name, ())
+    if len(held) == 3 or held[:1] == ("changed",):
+        return None
+    path, problem = scanner_verdict(name)
+    if problem and problem[0]:
+        SCANNER_PROBLEMS[name] = problem
+        SCANNERS_HELD.add(name)
+    else:
+        SCANNER_PROBLEMS.pop(name, None)
+    return path
+
+
+SCANNERS_HELD = set()   # scanners that had a problem at some point this run (found by tool() or refused at launch)
+
+
+def scanner_used(name):
+    """Whether `name` counts as a scanner this run used: Watchtower's checked copy now, with no problem at any point this run."""
+    return bool(tool(name)) and name not in SCANNERS_HELD
+
+
+def reset_scanner_checks():
+    SCANNER_PROBLEMS.clear()
+    SCANNERS_HELD.clear()
+    _SCANNER_OK.clear()
+
+
+def scanner_ran_before(label):
+    used = load_json(state_path("engines_used.json"), {}) or {}
+    return any(label in (used.get(k) or []) for k in ("expected", "engines")) if isinstance(used, dict) else False
+
+
+def scanner_unavailable(name):
+    """(keep_last_results, plain line) for a scanner tool() didn't return. A copy that isn't the one installed, one not
+    listed yet, or one that ran last time and is gone now means "not checked", never "clean"; one that was never installed
+    is a plain note, as before. (False, None) means nothing to add beyond the caller's own note."""
+    label = SCANNER_NAMES.get(name, name)
+    kind, why = SCANNER_PROBLEMS.get(name, (None, ""))[:2]
+    ran = scanner_ran_before(label)
+    if kind == "changed":
+        line = f"{label} NOT run: {why}, so its checks weren't done this time and its last results are kept (WT-X005)."
+    elif kind == "unreadable":   # Claude review 1 (4): not checked, so kept and revet is blocked, but no verdict on the copy
+        line = f"{label} NOT run: {why}, so its checks weren't done this time and its last results are kept."
+    elif kind == "unlisted":
+        line = f"{label} not run: this copy is not listed in Watchtower's scanner checksums ({why}), so its last results are kept."
+    elif kind == "old-folder":
+        line = f"{label} is in Watchtower's old scanner folder; run install.sh --scanners once to move it."
+    elif ran:
+        line = f"{label} ran last time and is gone now, so its last results are kept. Run install.sh --scanners to put it back."
+    else:
+        line = None
+    return kind in ("changed", "unreadable", "unlisted") or ran, line
+
+
+def scanner_absent(notes, name, plain):
+    keep, line = scanner_unavailable(name)
+    if keep:
+        fail_note(notes, line)
+    elif line or plain:
+        notes.append(line or plain)
+
+
+def engines_blocked():
+    """Why SkillSpector and husk can't give a trusted answer this run (either changed, not listed, or gone after it ran), or None."""
+    whys = []
+    for name in ("skillspector", "husk"):
+        if not tool(name):
+            keep, line = scanner_unavailable(name)
+            if keep:
+                whys.append(line)
+    return " ".join(whys) or None
+
+
+# Codex, batch 3 final review: codescan's optional semgrep, refused at launch (exit 126) or changed, still said "semgrep
+# found and used too" and raised nothing, because only SCANNER_NAMES could be a WT-X005. It is X005-eligible too.
+X005_OPTIONAL = {"semgrep": "semgrep"}
+
+
+def scanner_x005():
+    """WT-X005, once per scanner whose copy isn't the one Watchtower installed."""
+    out = []
+    for name, problem in sorted(SCANNER_PROBLEMS.items()):
+        kind, why = problem[:2]
+        if kind != "changed" or name not in SCANNER_NAMES and name not in X005_OPTIONAL:
+            continue
+        label = SCANNER_NAMES.get(name) or X005_OPTIONAL[name]
+        put_back = (f"Put it back with `bash {home()}/app/scripts/install.sh --scanners`." if name in SCANNER_NAMES else
+                    f"install.sh doesn't install {label}: put back the copy scripts/scanner-bins.lock lists, or remove it from {scanner_bin()}.")
+        out.append(finding("WT-X005", f"Watchtower's copy of {label} isn't the one it installed", "high", ["ASI04", "AST02"],
+                           os.path.join(scanner_bin(), name), why,
+                           f"Watchtower didn't run {label}: its program file isn't the one Watchtower installed, so its checks weren't "
+                           f"done this time and its last results are kept. {put_back} "
+                           "If this comes back, something on this computer is changing Watchtower's files: tell the owner.",
+                           source="watchtower", ident=name))
+    return out
+
+
+def scanner_check():
+    """For `wt.py doctor`: what Watchtower makes of each scanner's copy, with the full sha256 to fill the lock from."""
+    out = {}
+    for name in SCANNER_NAMES:
+        path, problem = scanner_verdict(name)
+        p = os.path.join(scanner_bin(), name)
+
+        def digest():
+            try:
+                return scanner_digest(p)
+            except OSError:   # too large, too slow to read, a link or not readable (ScannerUnusable included)
+                return "unreadable"
+        if path:
+            out[name] = "verified"
+        elif problem[0] == "old-folder":
+            out[name] = "in the old folder"
+        elif problem[0] == "unlisted":
+            out[name] = f"not listed (sha256 {digest()})"
+        elif problem[0] == "unreadable":
+            out[name] = f"can't be checked now ({problem[1]})"
+        elif problem[0] == "changed":
+            out[name] = f"not the release's copy (sha256 {digest()})" if os.path.isfile(p) and not os.path.islink(p) else "not the release's copy (not a plain file)"
+        else:
+            out[name] = "missing"
+    return out
 
 
 ENGINE_BUDGET = int(os.environ.get("WT_ENGINE_BUDGET", "420"))   # seconds of engine time per run; the rest resumes next run
@@ -2806,6 +4276,56 @@ def husk_batch(exe, stage, mapping, timeout=600, partial=None):
     return res, None
 
 
+X003_PAIRS = (("SkillSpector", "husk"), ("SkillSpector", "Watchtower"), ("husk", "Watchtower"))
+
+
+def engine_evidence(rule, s_, hk, engines=()):
+    """The evidence an engine finding (X001, X002, X003) is made with: one place, so its stored key can be made the same way."""
+    detail = "; ".join(s_.get("top", [])[:2])
+    if rule == "WT-X003":
+        return (" + ".join(engines) + (f"; {detail}" if detail else ""))[:150]
+    if rule == "WT-X001":
+        return f"risk {s_.get('score')}; {detail}"[:150]
+    return str(hk[0])[:150] if hk else ""
+
+
+def engine_entry_masked(d, e):
+    """Codex, batch 4 round 2 (R11): a cache entry as engine_cache.json keeps it, every Bot being able to read that file. The
+    scanners' words (SkillSpector's summaries, husk's messages) are masked; what they mean is read from the raw words first and
+    kept beside them when masking changed anything: which husk messages count (hk_keep), the kinds they name (hk_kinds,
+    top_kinds) and the keys the folder's X001, X002 and X003 findings get (keys, for folder `d`), so those keys stay the ones
+    857ab38 gave. An entry already masked by this version is returned as it is; one masked by an older version is masked again
+    (its words were raw wherever that masking changed nothing, so their meaning is read then)."""
+    if not isinstance(e, dict) or e.get("masked") == MASK_VERSION:
+        return e
+    e = dict(e)
+    ss = dict(e["ss"]) if isinstance(e.get("ss"), dict) else None
+    hk = list(e["hk"]) if isinstance(e.get("hk"), list) else None
+    meta = {}
+    if "keys" not in e:
+        s_ = ss or {}
+        kept = [i for i, m in enumerate(hk or ()) if husk_messages_that_count(d, [m])]
+        hk_kept = [hk[i] for i in kept]
+        keys = {"for": d, "WT-X001": finding_key("WT-X001", d, engine_evidence("WT-X001", s_, None)),
+                "WT-X002": finding_key("WT-X002", d, engine_evidence("WT-X002", s_, hk_kept))}
+        keys.update((" + ".join(p), finding_key("WT-X003", d, engine_evidence("WT-X003", s_, None, p))) for p in X003_PAIRS)
+        meta = {"keys": keys, "hk_keep": kept, "hk_kinds": sorted(engine_kinds(hk_kept))}
+        if ss is not None and "kinds" not in ss:
+            meta["top_kinds"] = sorted(engine_kinds(ss.get("top", [])))
+    changed = False
+    if ss is not None and isinstance(ss.get("top"), list):
+        top = [mask_secrets(t) if isinstance(t, str) else t for t in ss["top"]]
+        changed, ss["top"] = top != ss["top"], top
+        e["ss"] = ss
+    if hk is not None:
+        msgs = [mask_secrets(m) if isinstance(m, str) else m for m in hk]
+        changed, e["hk"] = changed or msgs != hk, msgs
+    if changed:
+        e.update(meta)
+    e["masked"] = MASK_VERSION
+    return e
+
+
 def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=None):
     """Second and third opinions on skills. Each engine starts once per batch of 40 skills; a skill is only re-scanned when
     its files change; work stops at the time budget and resumes next run. A skill is 'corroborated' only when two engines flag it."""
@@ -2813,10 +4333,15 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
     budget = ENGINE_BUDGET if budget is None else budget
     ENGINE_CURRENT.clear()
     ss_exe, hk_exe = tool("skillspector"), tool("husk")
+    blocked = engines_blocked()
+    if blocked:   # batch 3 (R7): not checked is not clean. The stage is marked failed, so last run's scanner lines are kept whole
+        fail_note(notes, blocked + " SkillSpector and husk were not run this time.")
+        ENGINE_CURRENT.clear()
+        return []
     if not ss_exe:
-        notes.append("SkillSpector not installed: run install.sh --scanners for a second engine.")
+        scanner_absent(notes, "skillspector", "SkillSpector not installed: run install.sh --scanners for a second engine.")
     if not hk_exe:
-        notes.append("husk not installed: run install.sh --scanners for an obfuscation-focused engine.")
+        scanner_absent(notes, "husk", "husk not installed: run install.sh --scanners for an obfuscation-focused engine.")
     targets = []
     for d in skill_dirs:
         d = os.path.normpath(d)
@@ -2827,6 +4352,11 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
                      f"The other {len(targets) - ENGINE_MAX_TARGETS} were checked by Watchtower's own rules only.")
         targets = targets[:ENGINE_MAX_TARGETS]
     cache = load_json(state_path("engine_cache.json"), {}) or {}
+    stale = [k for k, v in cache.items() if isinstance(v, dict) and v.get("masked") != MASK_VERSION]
+    for k in stale:   # Codex, batch 4 round 2: entries an older version kept with the scanners' raw words
+        cache[k] = engine_entry_masked(k, cache[k])
+    if stale:
+        save_json(state_path("engine_cache.json"), cache)
     hashes = {d: skill_dir_hash(d) for d in targets}
     retry_before = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=STUCK_RETRY_DAYS)).isoformat()
     installed = [n for n, x in (("SkillSpector", ss_exe), ("husk", hk_exe)) if x]
@@ -2854,10 +4384,10 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
             first[hashes[d]] = d
     run = [d for d in todo if first[hashes[d]] == d]
 
-    def remember(d, entry):
-        cache[d] = entry
+    def remember(d, entry):   # kept masked; the raw words' meaning and keys are worked out for each copy's own folder
+        cache[d] = engine_entry_masked(d, entry)
         for t in twins.get(d, []):
-            cache[t] = dict(entry)
+            cache[t] = engine_entry_masked(t, dict(entry))
         return 1 + len(twins.get(d, []))
     tune = load_json(state_path("engine_tune.json"), {}) or {}
     size = max(1, min(ENGINE_CHUNK, int(tune.get("chunk", ENGINE_CHUNK))))
@@ -2949,12 +4479,15 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
                                "Big or unusual files are the usual cause.", source="engines"))
             if not e_.get("hk"):
                 continue
-        s_, hk = e_.get("ss") or {}, husk_messages_that_count(d, e_.get("hk"))
+        # Codex, batch 4 round 2: the words are masked; where masking changed them, their meaning was read before (hk_keep, …)
+        s_, hk = e_.get("ss") or {}, ([e_["hk"][i] for i in e_["hk_keep"] if i < len(e_["hk"])] if "hk_keep" in e_ and isinstance(e_.get("hk"), list)
+                                      else husk_messages_that_count(d, e_.get("hk")))
+        raw_keys = e_["keys"] if isinstance(e_.get("keys"), dict) and e_["keys"].get("for") == d else {}
         ss_flag = s_.get("recommendation") == "DO_NOT_INSTALL"
         hk_flag = bool(hk)
         wt_k = {RISK_KIND[r] for k, rs in wt_hits.items() if k == d or k.startswith(d + "/") for r in rs}
-        ss_k = set(s_["kinds"] if "kinds" in s_ else engine_kinds(s_.get("top", []))) if ss_flag else set()
-        hk_k = engine_kinds(hk) if hk_flag else set()
+        ss_k = set(s_["kinds"] if "kinds" in s_ else e_.get("top_kinds", engine_kinds(s_.get("top", [])))) if ss_flag else set()
+        hk_k = set(e_.get("hk_kinds", engine_kinds(hk))) if hk_flag else set()
         tier = skill_tier(d + "/")
         # SkillSpector and husk both saying the folder is bad still agree (neither reports which file); Watchtower's own vote
         # joins only when it names the same kind of risk as the engine it pairs with.
@@ -2964,24 +4497,26 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
             agree = [(n, k) for n, flag, k in (("SkillSpector", ss_flag, ss_k), ("husk", hk_flag, hk_k)) if flag and wt_k & k]
             agree += [("Watchtower", wt_k & (ss_k | hk_k))] if agree else []
         engines = [n for n, _ in agree]
-        detail = "; ".join(s_.get("top", [])[:2])
         if len(engines) >= 2:
             x = finding("WT-X003", "Corroborated by multiple engines", "critical" if tier == "user" else "high",
-                        ["AST01", "AST08"], d, (" + ".join(engines) + (f"; {detail}" if detail else ""))[:150],
+                        ["AST01", "AST08"], d, engine_evidence("WT-X003", s_, hk, engines),
                         "Two independent engines agree. Disable this skill until you've read the flagged lines.", source="engines")
+            x["key"] = raw_keys.get(" + ".join(engines), x["key"])
             x["kinds"] = sorted(agree[-1][1] if engines[-1] == "Watchtower" else ss_k | hk_k)
             if not entry_current(e_, hashes[d], installed):   # Codex, DQ-042 rounds 2-3: an old answer not yet scanned again (the budget
                 x["kinds_incomplete"] = True                  # ran out), or husk's words missing, may lack a kind: never filed under Platform
             out.append(x)
         elif ss_flag:
             x = finding("WT-X001", "SkillSpector: do not install", "high" if tier == "user" else "low", ["AST01", "AST08"], d,
-                        f"risk {s_.get('score')}; {detail}"[:150],
+                        engine_evidence("WT-X001", s_, hk),
                         "Run `skillspector scan <folder>` for the exact lines; one engine alone can be wrong.", source="skillspector")
+            x["key"] = raw_keys.get("WT-X001", x["key"])
             x["kinds"] = sorted(ss_k)
             out.append(x)
         elif hk_flag:
             x = finding("WT-X002", "husk flagged this skill", "medium" if tier == "user" else "low", ["AST01", "AST05"], d,
-                        hk[0][:150], "Run `husk package <folder>` for details; one engine alone can be wrong.", source="husk")
+                        engine_evidence("WT-X002", s_, hk), "Run `husk package <folder>` for details; one engine alone can be wrong.", source="husk")
+            x["key"] = raw_keys.get("WT-X002", x["key"])
             x["kinds"] = sorted(hk_k)
             out.append(x)
     if installed:
@@ -3075,7 +4610,7 @@ def group_dir(fpath):
 def gitleaks_findings(roots, notes):
     exe = tool("gitleaks")
     if not exe:
-        notes.append("gitleaks not installed: secrets checked with Watchtower's rules only.")
+        scanner_absent(notes, "gitleaks", "gitleaks not installed: secrets checked with Watchtower's rules only.")
         return []
     out = []
     cfg = state_path("gitleaks.toml")
@@ -3175,7 +4710,7 @@ def user_python_packages():
 def package_findings(notes):
     exe = tool("pip-audit")
     if not exe:
-        notes.append("pip-audit not installed: installed Python packages not checked for known vulnerabilities.")
+        scanner_absent(notes, "pip-audit", "pip-audit not installed: installed Python packages not checked for known vulnerabilities.")
         return []
     pkgs = installed_python_packages()
     if not pkgs:
@@ -3214,11 +4749,10 @@ def package_findings(notes):
 
 
 def scanners_python():
-    for d in ("scanners", ".venv"):
-        py = os.path.join(home(), d, "bin", "python")
-        if os.path.isfile(py):
-            return py
-    return None
+    """Watchtower's scanner venv Python (scanners/bin/python), only when it leads to the pinned, root-owned interpreter
+    (trusted_interpreter). run() starts it as that interpreter, never through the link."""
+    py = os.path.join(scanner_bin(), "python")
+    return py if os.path.lexists(py) and trusted_interpreter(py) else None
 
 
 def self_findings(notes):
@@ -3227,11 +4761,19 @@ def self_findings(notes):
     py, exe, out = scanners_python(), tool("pip-audit"), []
     update_notes(notes)
     if not py:
+        # Codex, batch 3 round 1: a missing or refused scanner Python returned here with the stage marked finished, so last
+        # run's WT-W001 lines read as fixed. When there is a Python that isn't trusted, or there were W001 results to keep,
+        # this is "not checked", never "clean". A computer that never had the scanners stays a plain skip, as before.
+        if os.path.lexists(os.path.join(scanner_bin(), "python")) or carry(("WT-W001",)):
+            fail_note(notes, "Watchtower's own tools were NOT checked for known holes this run (its scanner Python is missing or "
+                             "isn't the computer's own); the last results are kept.")
         return out
     if not os.path.isfile(os.path.join(os.path.dirname(os.path.dirname(py)), "LOCKED")):
         out.append(finding("WT-W002", "Watchtower's scanners were installed without the checksum lock", "low", ["ASI04", "AST02"], "watchtower scanners",
                            "no LOCKED marker", "Run `bash /workspace/watchtower/app/scripts/install.sh --scanners` again; it installs only from the lock, and stops and says why if this computer's Python doesn't fit it."))
     if not exe:
+        if scanner_unavailable("pip-audit")[0]:   # batch 3: pip-audit's own line says why; this stage's last results are kept too
+            fail_note(notes, "Watchtower's own tools were NOT checked for known holes this run (pip-audit didn't run); the last results are kept.")
         return out
     code, out_s, _ = run([py, "-m", "pip", "list", "--format", "json", "--disable-pip-version-check"], 60)
     try:
@@ -3858,6 +5400,8 @@ def roll_builtin(fs, meta, notes):
         return fs
     cache = load_json(state_path("engine_cache.json"), {}) or {}
     installed = [n for n, t in (("SkillSpector", "skillspector"), ("husk", "husk")) if tool(t)]
+    if engines_blocked():   # batch 3 (R7): an engine that's swapped, not listed or gone never lets a change roll in on rules alone
+        return fs
     flagged = set()
     for f in fs:
         if f["rule"].startswith("WT-I") or f["severity"] not in ("critical", "high", "medium"):
@@ -4110,6 +5654,9 @@ def run_audit_locked(args, quick):
     snapshot = {"at": now(), "version": VERSION, "status": status_of(scored(live)), "score": s, "grade": g, "previous_score": prev.get("score"), "findings": live, "suppressed": suppressed,
                 "scanners_missing": meta.get("scanners_missing", []), "stages_skipped": list(STAGE_FAILED),
                 "inventory": meta["inventory"], "notes": meta["notes"]}
+    mask_stored(live), mask_stored(suppressed)   # batch 4 (R11): an older version's unmasked evidence (kept engine lines) is cleaned here
+    snapshot["notes"] = [mask_secrets(n) if isinstance(n, str) else n for n in snapshot["notes"]]   # round 2: a scanner's error line too
+    mask_approved_copies()                       # and its approved skill copies (Codex, round 1)
     save_json(state_path("last_findings.json"), snapshot)
     with open(state_path("score_history.csv"), "a") as f:
         f.write(f"{snapshot['at']},{s},{len(live)},{'daily' if quick else 'full'},{score_fingerprint()}\n")
@@ -4173,6 +5720,15 @@ def cmd_audit(args):
     out = {"status": snap_status(snap), "score": snap["score"], "score_line": score_line(snap), "grade": snap_grade(snap), "new": [compact(f) for f in new][:20],
            "fixed": [compact(f) for f in fixed][:10], "open_by_severity": by_sev(snap["findings"]),
            "top_fixes": [compact(f) for f in snap["findings"] if f.get("scope") != "platform" and not f.get("guarded")][:3], "notes": snap["notes"], "inventory": snap["inventory"]}
+    # Codex, batch 4 round 2: the whole delta is kept before anything is cut, in a file of this run's own (a second run writes
+    # another), and the counts say how much of it the JSON shows: `truncated` counts from the full lists, not from the first 20.
+    out["new_total"], out["fixed_total"] = len(new), len(fixed)
+    cut = {k: n - shown_ for k, n, shown_ in (("new", len(new), 20), ("fixed", len(fixed), 10)) if n > shown_}
+    if cut:
+        out["truncated"] = cut
+    path = save_delta(new, fixed)
+    if path:
+        out["delta_file"] = path
     out.update(score_change(snap, new))
     exc = exceptions_active(snap)
     if exc:
@@ -4195,8 +5751,38 @@ def cmd_audit(args):
     plat = [f for f in snap["findings"] if f.get("scope") == "platform" and not f.get("guarded")]
     if plat:   # v0.7.1 item 4: Grok Bot's own files, one line each, never scored
         out["platform"] = [f"{f['rule']} {label_of(f)}: {f['title']} at {f['where']}" for f in plat][:8]
-    print(fit(out))
+    alerts = scanner_alerts(snap)
+    if alerts:
+        out["scanner_alerts"] = alerts
+    print(fit(out, keep=("scanner_alerts",)))
     return 0
+
+
+DELTA_KEEP = 20   # delta files kept (newest first)
+
+
+def save_delta(new, fixed):
+    """This run's complete delta (every new and fixed finding, evidence masked) in state/deltas/, or None when nothing changed or
+    it can't be written. The weekly retry reads it after a second run has made the first run's findings old (Codex, round 2)."""
+    if not new and not fixed:
+        return None
+    d = state_path("deltas")
+    try:
+        os.makedirs(d, exist_ok=True)
+        path = os.path.join(d, f"audit-{time.time_ns()}.json")
+        save_json(path, {"at": now(), "new": [dict(compact(f), key=f["key"]) for f in new], "fixed": [dict(compact(f), key=f["key"]) for f in fixed]})
+        for old in sorted(fn for fn in os.listdir(d) if fn.startswith("audit-") and fn.endswith(".json"))[:-DELTA_KEEP]:
+            os.remove(os.path.join(d, old))
+    except OSError:
+        return None
+    return path
+
+
+def scanner_alerts(snap):
+    """Claude review 2 (5): every open WT-X005 in its own list, which fit() never trims (like daily's decoys). Findings sort by
+    severity, then rule, so ten new critical or high findings pushed a swapped scanner's high X005 out of `new` and `top_fixes`;
+    from the next day it wasn't new, and daily never showed it again."""
+    return [compact(f) for f in snap.get("findings", []) if f.get("rule") == "WT-X005"]
 
 
 def score_change(snap, new):
@@ -4215,11 +5801,12 @@ def score_change(snap, new):
             + (f" and {len(names) - 6} more" if len(names) > 6 else "") + ". Dealing with those brings the score back."}
 
 
-def fit(obj, limit=4096):
-    """Keep the model handoff under `limit` bytes by trimming the longest list, never by cutting JSON."""
+def fit(obj, limit=4096, keep=()):
+    """Keep the model handoff under `limit` bytes by trimming the longest list, never by cutting JSON. Lists named in `keep`
+    are never trimmed."""
     obj = json.loads(json.dumps(obj))
     while len(json.dumps(obj, indent=1)) > limit:
-        lists = [(len(v), k) for k, v in obj.items() if isinstance(v, list) and v]
+        lists = [(len(v), k) for k, v in obj.items() if isinstance(v, list) and v and k not in keep]
         if not lists:
             break
         _, k = max(lists)
@@ -4236,7 +5823,7 @@ def cmd_daily(args):
     except Busy:
         print("BUSY another Watchtower run is in progress; this daily check was skipped")
         return 0
-    if snap.get("scanners_missing"):
+    if snap.get("scanners_missing") and not new and not fixed:
         print("SCANNERS_MISSING " + ", ".join(snap["scanners_missing"]) + ": run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, then `wt.py daily` again")
         return 0
     gap = list(snap.get("stages_skipped") or [])
@@ -4246,6 +5833,8 @@ def cmd_daily(args):
         return 0
     out = {"score": snap["score"], "score_line": score_line(snap)}
     out["status"] = snap_status(snap)
+    if snap.get("scanners_missing"):   # batch 3 (R7): said, but never in place of what is new (a decoy alarm included)
+        out["scanners_missing"] = snap["scanners_missing"]
     if gap:
         out["not_checked_this_run"] = gap
     out.update(score_change(snap, new))
@@ -4257,7 +5846,10 @@ def cmd_daily(args):
     if len(rest) > 10:
         out["more_new"] = f"{len(rest) - 10} more new findings not shown, none more severe than {rest[10]['severity']}. `wt.py breakdown` lists everything."
     out["fixed"] = [compact(f) for f in fixed][:10]
-    print(fit(out, limit=6000))
+    alerts = scanner_alerts(snap)
+    if alerts:
+        out["scanner_alerts"] = alerts
+    print(fit(out, limit=6000, keep=("decoys", "scanner_alerts")))
     return 0
 
 
@@ -4402,13 +5994,15 @@ def cmd_show(args):
         return 2
     print(f"score {score_line(snap)}")
     rows = [f for f in snap["findings"] if f["rule"] == args.rule][: args.limit]
+    masked = {}   # Codex, batch 4 round 2: the file is masked as a whole, then cut, so no secret beside a finding is printed
     for f in rows:
-        print(f"{f['severity']} {f['rule']} [{label_of(f)}] {f['where']}\n  evidence: {f['evidence']}")
+        print(f"{f['severity']} {f['rule']} [{label_of(f)}] {f['where']}\n  evidence: {mask_secrets(str(f.get('evidence') or ''))}")
         path, _, ln = f["where"].rpartition(":")
         if args.rule in ("WT-T011", "WT-S001", "WT-S002", "WT-S003") or not ln.isdigit():
             continue
-        t = read_text(path) or ""
-        lines = t.splitlines()
+        if path not in masked:
+            masked[path] = mask_lines(read_text(path) or "")
+        lines = masked[path]
         i = int(ln) - 1
         ctx = " ".join(lines[max(0, i - 1): i + 2])[:300]
         print(f"  context: {ctx}")
@@ -4572,7 +6166,7 @@ EVENT_DAYS = 14
 def remember_events(new):
     """History lines and canary trips happen once. Keep them open for EVENT_DAYS so the next run
     doesn't report them as fixed; suppress one (wt.py show + suppressions.json) to close it sooner."""
-    store = load_json(state_path("events.json"), [])
+    store = mask_stored(load_json(state_path("events.json"), []))   # batch 4 (R11): evidence an older version stored unmasked
     known = {e["key"] for e in store}
     for f in new:
         if f["key"] in BULK_KEYS:
@@ -4584,7 +6178,7 @@ def remember_events(new):
         elif f["key"] not in known:
             store.append(dict(f, first_seen=now()))
     cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=EVENT_DAYS)).isoformat()
-    store = [e for e in store if e.get("first_seen", "") >= cutoff]
+    store = mask_stored([e for e in store if e.get("first_seen", "") >= cutoff])
     save_json(state_path("events.json"), store)
     return [{k: v for k, v in e.items() if k not in ("first_seen", "times")} for e in store]
 
@@ -4625,15 +6219,22 @@ def history_findings(rules):
             f.seek(start)
             chunk = f.read()
         offsets[p] = size
+        masked = None
         for n, line in enumerate(chunk.splitlines(), 1):
             line = re.sub(r"^: \d+:\d+;", "", line)  # zsh extended history prefix
             for rid, title, sev, owasp, rx in compiled:
                 if rx.search(line):
                     if rid == "WT-H001" and known_installer(line):
                         continue
-                    shown = secret.sub(lambda m: mask(m.group(0)), line)[:160]
-                    out.append(finding(rid, title, sev, owasp, f"{p}:+{n}", shown,
-                                       "Find which Bot or session ran this (Agent Computer view, routine runs). If none of yours meant to, tell Watchtower \"incident check\"."))
+                    legacy = secret.sub(lambda m: mask(m.group(0)), line)   # the key, as before (finding() cuts it to 160)
+                    # Codex, batch 4 round 1: what is stored is masked from the raw line, so a private key's body is hidden before
+                    # the T011 pass shortens its header. Round 2: masked from the whole chunk, line for line, so a quote opened
+                    # on an earlier line (a token over two lines) is still hidden on this one.
+                    if masked is None:
+                        masked = mask_lines(chunk)
+                    out.append(finding(rid, title, sev, owasp, f"{p}:+{n}", legacy,
+                                       "Find which Bot or session ran this (Agent Computer view, routine runs). If none of yours meant to, tell Watchtower \"incident check\".",
+                                       shown=secret.sub(lambda m: mask(m.group(0)), re.sub(r"^: \d+:\d+;", "", masked[n - 1]))))
                     break
     save_json(state_path("history_offsets.json"), offsets)
     return out
@@ -5990,7 +7591,7 @@ def cmd_prepublish(args):
         texts = [(p, read_text(p) or "") for p in paths]
     fs = []
     for where, t in texts:
-        fs += [f for f in scan_text(t, where, rules, kind="template") if f["rule"] in ("WT-T011", "WT-T013", "WT-T007", "WT-T008", "WT-T005", "WT-T006")]
+        fs += [f for f in scan_text(t, where, rules, kind="template") if f["rule"] in ("WT-T011", "WT-T013", "WT-T007", "WT-T008", "WT-T005", "WT-T006", "WT-T018")]
         for rid, title, sev, rx in PREPUB_RULES:
             for m in re.finditer(rx, t):
                 ev = m.group(0)
@@ -6003,7 +7604,8 @@ def cmd_prepublish(args):
                     if re.search(r"(wt\.py|/workspace/watchtower/|install\.sh)", line):
                         continue
                 fs.append(finding(rid, title, sev, ["AST04", "LLM02"], f"{where}:{line_of(t, m.start())}", mask(ev) if rid in ("WT-PP01", "WT-PP02") else ev[:120],
-                                  "Remove or generalize it before you create the template: anything in a description, skill or routine ships to every installer."))
+                                  "Remove or generalize it before you create the template: anything in a description, skill or routine ships to every installer.",
+                                  shown=None if rid in ("WT-PP01", "WT-PP02") else ev))
         fs += prepublish_extra(where, t, names)
         if not has_approval(t, rules) and rules["write_verbs"].search(t):
             fs.append(finding("WT-PP07", "No approval boundary", "high", ["ASI02"], where, "no approval line",
@@ -6035,7 +7637,9 @@ def cmd_incident(args):
     os.makedirs(idir, exist_ok=True)
     snap = load_json(state_path("last_findings.json"), {"findings": []})
     secret = next(r["rx"] for r in rules["rules"] if r["id"] == SECRET_RULE)
-    clean = lambda t: secret.sub(lambda m: mask(m.group(0)), t or "")
+    # batch 4 (R11): tokens and passwords too. Codex, round 1: masked before the T011 pass, so a private key's header is still
+    # there to find its body by, and over the whole text, so a body on the lines after its header is found as well
+    clean = lambda t: secret.sub(lambda m: mask(m.group(0)), mask_secrets(t or ""))
     _, ps, _ = run(["ps", "-eo", "pid,ppid,user,etime,cmd", "--sort=-etime"], 20)
     _, net, _ = run(["ss", "-tunp"], 20)
     _, cron, _ = run(["crontab", "-l"], 10)
@@ -6053,8 +7657,9 @@ def cmd_incident(args):
         p = os.path.expanduser(hf)
         if os.path.isfile(p):
             with open(p, errors="replace") as f:
-                tails += [f"{hf}: {clean(l.rstrip())[:200]}" for l in f.readlines()[-40:]]
-    hot = [f for f in snap.get("findings", []) if f["severity"] in ("critical", "high")]
+                tails += [f"{hf}: {l.rstrip()[:200]}" for l in clean(f.read()[-262144:]).splitlines()[-40:]]
+    # Codex, round 1: the snapshot may still be an older version's, written before evidence was masked
+    hot = mask_stored([dict(f) for f in snap.get("findings", []) if isinstance(f, dict) and f.get("severity") in ("critical", "high")])
     ledger_tail = []
     try:
         with open(state_path("ledger.jsonl")) as f:
@@ -6117,18 +7722,57 @@ def cmd_codescan(args):
                 out.append(finding("WT-WA07s", "OWASP A07:2021 Hard-coded secret", "critical", ["A07:2021"], f"{p}:{line_of(t, m.start())}",
                                    mask(m.group(0)), "Move it to an environment variable or secret store and revoke the exposed one."))
     semgrep = tool("semgrep")
-    note = "semgrep found and used too" if semgrep else "Watchtower patterns only; install semgrep for deeper analysis"
+    note = "Watchtower patterns only (semgrep isn't one of Watchtower's checked scanners)"
+    # Codex, batch 3 final review: a semgrep refused at launch (exit 126), failed (non-zero exit, time out) or with no results
+    # in its output still said "semgrep found and used too". It is "used" only after a clean exit with a results list;
+    # anything else is "not checked" (its findings, if any, are still listed) and a refused or changed copy is a WT-X005.
+    gap = f"semgrep NOT run: {SCANNER_PROBLEMS['semgrep'][1]}" if SCANNER_PROBLEMS.get("semgrep", (None,))[0] in ("changed", "unreadable") else None
     if semgrep:
-        code, so, _ = run([semgrep, "--config", "p/owasp-top-ten", "--json", "--quiet", args.path], 900)
+        # Claude review 1 (7): semgrep sends usage metrics by default when its rules come from its registry; EGRESS says none.
+        # Claude review 2 (7): and it checks semgrep.dev for a newer version by default; --disable-version-check stops that.
+        code, so, _ = run([semgrep, "--config", "p/owasp-top-ten", "--metrics=off", "--disable-version-check", "--json", "--quiet", args.path], 900)
         try:
-            for r in json.loads(so).get("results", []):
+            res = json.loads(so)
+        except ValueError:
+            res = None
+        results = res.get("results") if isinstance(res, dict) else None
+        # Claude review 1 (5): files semgrep couldn't parse or that timed out are listed in "errors", with exit 0: not a full run
+        errors = res.get("errors") if isinstance(res, dict) else None
+        # Claude review 2 (8): semgrep lists warn-level partial parses there too, routine on real code; only the rest (error
+        # level, or no level given) mean it didn't finish. Partial parses are said in half a line.
+        partial = []
+        if isinstance(errors, list):
+            partial = [e for e in errors if isinstance(e, dict) and str(e.get("level", "")).lower() in ("warn", "warning", "info")]
+            errors = [e for e in errors if not any(e is w for w in partial)]
+        for r in results if isinstance(results, list) else []:
+            if isinstance(r, dict):
                 out.append(finding("WT-WSG", f"semgrep: {r.get('check_id', '').split('.')[-1]}", (r.get("extra", {}).get("severity") or "medium").lower().replace("error", "high").replace("warning", "medium").replace("info", "low"),
                                    ["OWASP"], f"{r.get('path')}:{r.get('start', {}).get('line')}", r.get("extra", {}).get("message", "")[:120],
                                    "See the semgrep rule for the fix.", source="semgrep"))
-        except ValueError:
-            pass
-    out = sort_findings(dedupe(out))
-    print(fit({"files": len(files), "engine": note, "by_severity": by_sev(out), "findings": [compact(f) for f in out][:40]}))
+        refused = SCANNER_PROBLEMS.get("semgrep", ())
+        if len(refused) == 3:
+            gap = f"semgrep NOT run: {refused[1]}"
+        elif code == 124:
+            gap = "semgrep did NOT finish: it timed out"
+        elif code != 0 or not isinstance(results, list):
+            gap = f"semgrep did NOT finish (exit {code}" + ("" if isinstance(results, list) else ", no results") + ")"
+        elif errors:
+            gap = (f"semgrep did NOT finish ({len(errors)} errors: files it couldn't read, parse or finish in time)" if isinstance(errors, list)
+                   else "semgrep did NOT finish (it reported errors)")
+        else:
+            note = "semgrep found and used too"
+            if partial:
+                n = len({str(e.get("path") or i) for i, e in enumerate(partial)})
+                note += f" ({n} file{'s' if n != 1 else ''} only partly parsed)"
+    if gap:
+        note = f"Watchtower patterns only: {gap}, so its checks weren't done this time"
+    x005 = scanner_x005()
+    out = sort_findings(dedupe(out + x005))
+    # Claude review 1 (5): criticals sort first and fit() trims the findings list, so a swapped semgrep's WT-X005 could be cut
+    # from the handoff. It is also given in its own list, which is never trimmed (like daily's decoys).
+    print(fit({"files": len(files), "engine": note, **({"not_checked_this_run": [gap]} if gap else {}),
+               **({"scanner_alerts": [compact(f) for f in x005]} if x005 else {}),
+               "by_severity": by_sev(out), "findings": [compact(f) for f in out][:40]}, keep=("scanner_alerts",)))
     ledger({"event": "codescan", "path": args.path, "findings": len(out)})
     return 0
 
@@ -6478,7 +8122,7 @@ def gather_brief(cfg, offline=None):
 EXPOSURE_AREAS = [
     ("Secrets on the shared computer", ("WT-S001", "WT-S002", "WT-S003", "WT-T011")),
     ("Logged-in browser sessions", ("WT-S004",)),
-    ("Skills and templates", ("WT-X001", "WT-X002", "WT-X003", "WT-T001", "WT-T002", "WT-T003", "WT-T004", "WT-T005", "WT-T006", "WT-T007", "WT-T008", "WT-I001")),
+    ("Skills and templates", ("WT-X001", "WT-X002", "WT-X003", "WT-T001", "WT-T002", "WT-T003", "WT-T004", "WT-T005", "WT-T006", "WT-T007", "WT-T008", "WT-T018", "WT-I001")),
     ("Approvals and settings", ("WT-A001", "WT-A002", "WT-A003", "WT-A004", "WT-A005", "WT-C001", "WT-C003", "WT-C005")),
     ("Bots, memories and routines", ("WT-M010", "WT-L001", "WT-R002", "WT-T013", "WT-R011", "WT-R012", "WT-R013")),
     ("Packages", ("WT-D001",)),
@@ -6595,9 +8239,7 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
                f"<div class='m'><span class='k'>Needs you</span><b>{len(urgent)}</b><span class='s'>{len(todo) - len(urgent)} smaller {'item' if len(todo) - len(urgent) == 1 else 'items'}</span></div>"
                f"<div class='m'><span class='k'>Handled this week</span><b>{fixed + cleaned}</b><span class='s'>fixed or cleaned up</span></div>")
 
-    fix_prompt = "Watchtower, fix it"
-    routine = ("Every Sunday at 6:00 AM, tell Watchtower \"fix it\" and apply the safe fixes without asking. "
-               "Then post one line: what was cleaned, and anything that still needs me.")
+    fix_prompt = "Watchtower, fix it"   # batch 4 (R10): the owner runs it; the brief no longer offers a routine that fixes without asking
 
     def rows_table(t):
         rows = t.get("rows", [])
@@ -6607,9 +8249,12 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
                        f"<td><code class='rule'>{e(r['rule'])}</code></td></tr>" for r in rows[:40])
         extra = f"<p class='quiet'>And {len(rows) - 40} more. Run <code>wt.py show {e(rows[0]['rule'])}</code> for all of them.</p>" if len(rows) > 40 else ""
         label = "Show which" if len(rows) > 1 else "Show where"
+        if t.get("can_accept"):
+            ok = f"Fine on purpose? Tell Watchtower: <code>accept {e(rows[0]['rule'])} {e(rows[0]['name'])} because …</code>"
+        else:   # batch 4 (R10): never suggest an accept that batch 1's gate refuses
+            ok = "This one can't be marked as fine. Tell Watchtower " + ("\"incident check\"." if t.get("decoy") else "\"fix it\".")
         return (f"<details class='dd'><summary>{label}</summary><div class='scroll'><table><tr><th>What</th><th>Why it was flagged</th><th>Rule</th></tr>{body}</table></div>"
-                f"{extra}<p class='quiet'>For the exact lines: <code>wt.py show {e(rows[0]['rule'])}</code>. "
-                f"Fine on purpose? Tell Watchtower: <code>accept {e(rows[0]['rule'])} {e(rows[0]['name'])} because …</code></p></details>")
+                f"{extra}<p class='quiet'>For the exact lines: <code>wt.py show {e(rows[0]['rule'])}</code>. {ok}</p></details>")
 
     def todo_item(i, t):
         links = "".join(f"<a class='btn' href='{safe(u)}' target='_blank' rel='noopener'>Turn off {e(n)} keys</a>" for n, u in t.get("links", []))
@@ -6676,7 +8321,7 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
 .axis{{display:flex;justify-content:space-between;color:var(--soft);font-size:12px}}
 .ar{{display:grid;grid-template-columns:130px 1fr 28px;align-items:center;gap:10px;font-size:14px;margin:7px 0}}.ab{{height:10px;background:var(--line);border-radius:5px;overflow:hidden}}.ab i{{display:block;height:100%;border-radius:5px}}.ar b{{text-align:right;font-variant-numeric:tabular-nums}}
 .sev-critical{{background:var(--red)}}.sev-high{{background:var(--amber)}}.sev-medium{{background:var(--sea)}}
-.fix{{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}}.fx{{background:var(--card);border:2px solid var(--navy);border-radius:12px;padding:16px}}.fx.alt{{border:1px solid var(--line)}}
+.fix{{display:grid;grid-template-columns:1fr;gap:14px;margin-top:14px}}.fx{{background:var(--card);border:2px solid var(--navy);border-radius:12px;padding:16px}}.fx.alt{{border:1px solid var(--line)}}
 .fx h3{{margin:0 0 4px;font-size:18px}}.fx p{{margin:0 0 10px;color:var(--soft);font-size:14px}}
 .cmd{{display:flex;gap:8px;align-items:stretch}}.cmd code{{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 11px;font:14px/1.4 ui-monospace,Menlo,monospace;overflow-wrap:anywhere}}
 button{{font:600 14px var(--f);border:0;border-radius:8px;padding:0 14px;background:var(--navy);color:var(--card);cursor:pointer;min-height:40px}}.fx.alt button{{background:var(--card);color:var(--navy);border:1px solid var(--navy)}}
@@ -6703,9 +8348,7 @@ ol.small-todo{{margin-top:8px}}ol.small-todo li{{padding:10px 12px}}ol.small-tod
 <div class='charts'><div class='panel'><h3>Security score over time</h3>{svg_trend(hist)}</div><div class='panel'><h3>Where the open issues are</h3>{svg_areas(exp)}</div></div>
 {engines_html}
 <div class='fix'><div class='fx'><h3>Fix it all</h3><p>Paste this into your Watchtower Bot. It cleans up, upgrades outdated software (and undoes any upgrade that breaks something), then asks you one yes or no for everything that's fine on purpose.</p>
-<div class='cmd'><code id='c1' tabindex='0'>{e(fix_prompt)}</code><button type='button' data-copy='c1' hidden>Copy</button></div><p class='hint'>Click the text to select it, then copy.</p></div>
-<div class='fx alt'><h3>Keep it clean automatically</h3><p>Paste this into Watchtower as a new routine. It runs the same safe cleanup every Sunday.</p>
-<div class='cmd'><code id='c2' tabindex='0'>{e(routine)}</code><button type='button' data-copy='c2' hidden>Copy</button></div><p class='hint'>Click the text to select it, then copy.</p></div></div>
+<div class='cmd'><code id='c1' tabindex='0'>{e(fix_prompt)}</code><button type='button' data-copy='c1' hidden>Copy</button></div><p class='hint'>Click the text to select it, then copy.</p></div></div>
 <section class='sec'><h2>What needs you</h2><ol class='todo'>{todo_html}</ol>{rest_html}{acc_html}</section>
 <section class='sec'><h2>Threats this week</h2><ul class='threats'>{threats}</ul>{later_html}<p class='quiet' style='margin-top:10px'>{kev_line}</p></section>
 <p class='foot'>Read-only: Watchtower changes nothing unless you run the fix. {len(b['sources']) - len(down)} of {len(b['sources'])} news sources responded{(' (' + e(', '.join(down)) + ' did not)') if 0 < len(down) <= 2 else ''}. Full details: /watchtower-report. Watchtower {e(VERSION)}.</p>
@@ -6812,6 +8455,8 @@ PLAIN = {
     "WT-X003": ("Two scanners agree a skill is dangerous", "This is rarely a false alarm.", "Tell Watchtower \"fix it\": one yes moves it out of use, and nothing is deleted. If it is a security tool of yours, the fix can keep it for 30 days.", "you"),
     "WT-W001": ("Watchtower's own tools need an update", "They live only in Watchtower's folder.", "Tell Watchtower \"update yourself\".", "auto"),
     "WT-X004": ("A scanner couldn't get through a skill", "Watchtower's own rules still checked it.", "Nothing to do; Watchtower retries it in a week.", "auto"),
+    "WT-X005": ("One of Watchtower's scanners was swapped", "Watchtower didn't run it, so its checks weren't done.",
+                "Reinstall the scanners (install.sh --scanners). If it comes back, tell the owner: something is changing Watchtower's files.", "you"),
     "WT-I004": ("A new plugin was installed", "It brought its own skills, and nothing could vet them before it arrived.",
                 "Tell Watchtower \"fix it\": one yes keeps it. If you didn't want it, remove it in the app.", "you"),
     "WT-I001": ("A skill you approved has changed", "Someone or something edited it.", "Tell Watchtower \"fix it\": it re-scans it with every engine and re-approves it if clean.", "you"),
@@ -7086,6 +8731,8 @@ def needs_you(findings, limit=None):
         g["handled"] = "Only you" if "only_you" in cls else ("One yes" if cls & {"decision", "revet"} else "Fix handles it")
         g["label"] = CONFIRMED if any(label_of(f) == CONFIRMED for f in g["findings"]) else MAYBE_FINE
         g["rules"] = sorted(g["rules"])
+        g["can_accept"] = all(accept_refused(f) is None for f in g["findings"])   # batch 1's gate (built on acceptable())
+        g["decoy"] = any(f["rule"].startswith("WT-K") for f in g["findings"])
         g["rows"] = [item_row(f, key_files) for f in sorted(g.pop("findings"), key=lambda f: SEV_ORDER.index(f["severity"]))]
         if g["title"] == "Keys that still work are sitting in files" and live:
             g["how"] = "Turn these off at the provider: " + ", ".join(n for n, _ in live) + ". Then tell Watchtower \"fix it\" to clear every copy."
@@ -7101,7 +8748,7 @@ def trufflehog_status(paths, notes):
     already flagged. Raw key values are dropped the moment they're read; only detector, file and status are kept."""
     exe = tool("trufflehog")
     if not exe:
-        notes.append("TruffleHog not installed: can't tell live keys from dead ones (install.sh --scanners).")
+        scanner_absent(notes, "trufflehog", "TruffleHog not installed: can't tell live keys from dead ones (install.sh --scanners).")
         return {}
     targets = sorted({p for p in paths if p and os.path.exists(p)})[:200]
     if not targets:
@@ -7215,7 +8862,7 @@ def osv_findings(roots, notes):
     a project actually uses the bad code path. High only when the worst advisory scores 7 or more."""
     exe = tool("osv-scanner")
     if not exe:
-        notes.append("OSV-Scanner not installed: Node, Go and other project dependencies not checked (install.sh --scanners).")
+        scanner_absent(notes, "osv-scanner", "OSV-Scanner not installed: Node, Go and other project dependencies not checked (install.sh --scanners).")
         return []
     pkgs, crates = {}, {}
     for r in roots:
@@ -7534,10 +9181,55 @@ def save_approved(d):
         if os.path.splitext(p)[1].lower() in TEXT_EXT and os.path.getsize(p) <= APPROVED_FILE_LIMIT and total < APPROVED_SKILL_LIMIT:
             t = read_text(p, limit=APPROVED_FILE_LIMIT)
             if t is not None:
-                files[rel] = t
+                files[rel] = mask_secrets(t)   # Codex, batch 4 round 1 (R11): the copy is for showing a diff; `hashes` are of the raw files
                 total += len(t)
     with gzip.open(approved_path(d), "wt", encoding="utf-8") as f:
-        json.dump({"dir": os.path.normpath(d), "at": now(), "hash": skill_dir_hash(d), "files": files, "hashes": hashes}, f)
+        json.dump({"dir": os.path.normpath(d), "at": now(), "hash": skill_dir_hash(d), "files": files, "hashes": hashes,
+                   "masked": MASK_VERSION}, f)
+
+
+def mask_approved_copies():
+    """Approved copies saved by an older version hold the skill's raw text, or text masked by an older masking: each is masked
+    (again) and rewritten in place (same name, same `at`, `hash` and `hashes`). A copy that isn't a plain file, or can't be read,
+    is left alone. Once every copy is done, the marker file holds MASK_VERSION, so later runs don't open them again until
+    masking changes (Codex, batch 4 round 2: a plain marker never let a better masking reach copies already marked)."""
+    marker = state_path("approved_masked")
+    try:
+        with open(marker) as f:
+            if f.read().split()[:1] == [str(MASK_VERSION)]:
+                return 0
+    except OSError:
+        pass
+    try:
+        names = os.listdir(state_path("approved"))
+    except OSError:
+        names = []
+    n, failed = 0, False
+    for fn in names:
+        p = state_path("approved", fn)
+        try:
+            if not fn.endswith(".json.gz") or not stat.S_ISREG(os.lstat(p).st_mode):
+                continue
+            with gzip.open(p, "rt", encoding="utf-8") as f:
+                doc = json.load(f)
+            if not isinstance(doc, dict) or doc.get("masked") == MASK_VERSION or not isinstance(doc.get("files"), dict):
+                continue
+            doc["files"] = {k: mask_secrets(v) if isinstance(v, str) else v for k, v in doc["files"].items()}
+            doc["masked"] = MASK_VERSION
+            tmp = p + ".tmp"
+            with gzip.open(tmp, "wt", encoding="utf-8") as f:
+                json.dump(doc, f)
+            os.replace(tmp, p)
+            n += 1
+        except (OSError, ValueError, EOFError):
+            failed = True
+    if not failed:
+        try:
+            with open(marker, "w") as f:
+                f.write(f"{MASK_VERSION} {now()}\n")
+        except OSError:
+            pass
+    return n
 
 
 def save_approved_all(dirs):
@@ -7603,6 +9295,10 @@ def skill_diff(d, context=2):
         if a is None or b is None:
             out.append(f"~ {rel}: changed (not a text file, or too large to keep a copy)")
             continue
+        a, b = mask_secrets(a), mask_secrets(b)   # batch 4 (R11): both sides as the copy keeps them, so only real changes show
+        if a == b and a:
+            out.append(f"~ {rel}: changed inside a hidden value (a password, token or key)")
+            continue
         lines = list(difflib.unified_diff(a.splitlines(), b.splitlines(), f"approved/{rel}", f"now/{rel}", lineterm="", n=context))
         added += sum(1 for l in lines if l.startswith("+") and not l.startswith("+++"))
         removed += sum(1 for l in lines if l.startswith("-") and not l.startswith("---"))
@@ -7660,6 +9356,7 @@ def revet(dirs, approve=False):
     With approve=True a clean skill is re-approved: its fingerprints go into the baseline and a fresh copy is kept."""
     rules = load_rules()
     dirs = [os.path.normpath(d) for d in dirs]
+    reset_scanner_checks()
     per, all_fs = {}, []
     for d in dirs:
         fs = []
@@ -7674,13 +9371,16 @@ def revet(dirs, approve=False):
     eng = engine_findings(dirs, all_fs, notes) if dirs else []
     cache = load_json(state_path("engine_cache.json"), {}) or {}
     installed = [n for n, t in (("SkillSpector", "skillspector"), ("husk", "husk")) if tool(t)]
+    blocked = engines_blocked()   # batch 3 (R7): never installed re-approves on the rules alone, as before; swapped or gone never does
     base, base_status, _ = load_baseline()
     out = []
     for d in dirs:
         h = skill_dir_hash(d)
         diff = skill_diff(d)
         r = {"name": skill_name(d), "path": d, "changed": diff["summary"], "checked_by": ["Watchtower rules"] + installed}
-        if base_status == "reset":   # R4: a one-skill baseline would turn every other changed skill into a "new file"
+        if blocked:
+            r.update(result="not finished", why=blocked)
+        elif base_status == "reset":   # R4: a one-skill baseline would turn every other changed skill into a "new file"
             r.update(result="not finished", why="Watchtower's memory of approved skills was reset; nothing is re-approved until the owner starts a new baseline")
         elif os.path.normpath(d) in INCOMPLETE_SKILLS:
             r.update(result="not finished", why=f"only {INCOMPLETE_SKILLS[os.path.normpath(d)][0]} of {INCOMPLETE_SKILLS[os.path.normpath(d)][1]} files can be checked, so it can't be re-approved automatically")
@@ -8306,6 +10006,7 @@ def cmd_doctor(args):
            "workspace_exists": os.path.isdir("/workspace"), "folders": folders,
            "scanners": {n: bool(tool(t)) for n, t in (("SkillSpector", "skillspector"), ("husk", "husk"), ("gitleaks", "gitleaks"),
                                                        ("TruffleHog", "trufflehog"), ("pip-audit", "pip-audit"), ("OSV-Scanner", "osv-scanner"))},
+           "scanner_check": scanner_check(),
            "scanners_from_checksum_lock": bool(scanners_python()) and os.path.isfile(os.path.join(os.path.dirname(os.path.dirname(scanners_python())), "LOCKED")),
            "tools": {t: bool(shutil.which(t)) for t in ("git", "curl", "npm", "pip3")},
            "state_files": {fn: state_of(fn) for fn in STATE_FILES},
@@ -8359,6 +10060,7 @@ def self_check():
         return None
     problems = []
     man = read_text(os.path.join(root, "MANIFEST.sha256"))
+    remember_manifest(root, man)   # Claude review 1 (2): what the run is held to later is what was checked now
     if not man:
         return ["MANIFEST.sha256 is missing"]
     for line in man.splitlines():
@@ -8421,9 +10123,52 @@ def main(argv=None):
             pass
 
 
-def main_inner(argv=None):
+_PROBLEM_NAMED = re.compile(r"(?s)(.*?)( is missing or not a plain file| changed since install| is not in the release)")
+
+
+def shown_problem(p):
+    """A self-check problem as SELF-CHECK FAILED shows it. Claude review 2 (review 1, item 9): whoever plants a file chooses
+    its name, so a name is shown only when it is plain (letters, digits, . _ / -, at most 80 characters); the ledger keeps it."""
+    m = _PROBLEM_NAMED.fullmatch(p)
+    if m and not re.fullmatch(r"[A-Za-z0-9._/-]{1,80}", m.group(1)):
+        return "a file with an unusual name (named in Watchtower's ledger)" + m.group(2)
+    return p
+
+
+def self_check_gate(count_only=False):
+    """4 (after one plain SELF-CHECK FAILED line) when this installed copy doesn't match its release, else None. With
+    count_only (`--version`, which setup reads to decide on a reinstall) the line gives only how many problems there are:
+    Claude review 1 (9), a file planted as "0.7.1" or named like an instruction put its name into that very output. The
+    ledger keeps the names."""
+    problems = self_check()
+    if problems:
+        ledger({"event": "self-check-failed", "problems": problems[:20]})
+        what = (f"{len(problems)} problem{'s' if len(problems) != 1 else ''} (listed in Watchtower's ledger)" if count_only else
+                "; ".join(map(shown_problem, problems[:5])) + (f" (and {len(problems) - 5} more)" if len(problems) > 5 else ""))
+        print("SELF-CHECK FAILED - Watchtower stopped before doing anything. Its own files don't match the release it installed: "
+              + what + ". Tell the owner now. Don't run Watchtower again until they reinstall it from the release (setup skill, section 1).")
+        return 4
+    return None
+
+
+class VersionAction(argparse.Action):
+    """Hardening batch 3 (R12): `--version` answered before the self-check, so a changed copy still printed its version and
+    setup skipped the reinstall. It now checks itself first, during parsing, and exits 4 without the version when that fails."""
+
+    def __init__(self, option_strings, dest=argparse.SUPPRESS, default=argparse.SUPPRESS, help="print the version (after the self-check)"):
+        super().__init__(option_strings=option_strings, dest=dest, default=default, nargs=0, help=help)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        code = self_check_gate(count_only=True)
+        if code:
+            parser.exit(code)
+        print(VERSION)
+        parser.exit(0)
+
+
+def build_parser():
     ap = argparse.ArgumentParser(prog="wt", description="Watchtower security watch for Grok Bot")
-    ap.add_argument("--version", action="version", version=VERSION)
+    ap.add_argument("--version", action=VersionAction)
     sub = ap.add_subparsers(dest="cmd", required=True)
     v = sub.add_parser("vet"); v.add_argument("path"); v.add_argument("--json", action="store_true"); v.add_argument("--deep", action="store_true"); v.add_argument("--page-only", action="store_true", help="the text was copied from a marketplace page; skill bodies were not visible")
     for name in ("audit", "daily", "baseline"):
@@ -8472,15 +10217,15 @@ def main_inner(argv=None):
     ic = sub.add_parser("incident"); ic.add_argument("--note")
     cs = sub.add_parser("codescan"); cs.add_argument("path")
     br = sub.add_parser("brief"); br.add_argument("--summary"); br.add_argument("--notes"); br.add_argument("--offline")
-    a = ap.parse_args(argv)
+    return ap
+
+
+def main_inner(argv=None):
+    a = build_parser().parse_args(argv)
     if a.cmd not in SELF_CHECK_SKIP:
-        problems = self_check()
-        if problems:
-            ledger({"event": "self-check-failed", "problems": problems[:20]})
-            print("SELF-CHECK FAILED - Watchtower stopped before doing anything. Its own files don't match the release it installed: "
-                  + "; ".join(problems[:5]) + (f" (and {len(problems) - 5} more)" if len(problems) > 5 else "")
-                  + ". Tell the owner now. Don't run Watchtower again until they reinstall it from the release (setup skill, section 1).")
-            return 4
+        code = self_check_gate()
+        if code:
+            return code
     if a.cmd not in SELF_CHECK_SKIP:
         migrate_rollcall_state()
     return {"vet": cmd_vet, "audit": cmd_audit, "daily": cmd_daily, "baseline": cmd_baseline, "report": cmd_report, "breakdown": cmd_breakdown, "show": cmd_show, "dismiss": cmd_dismiss,
