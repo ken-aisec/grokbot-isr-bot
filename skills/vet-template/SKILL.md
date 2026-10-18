@@ -34,6 +34,8 @@ Before enabling routines: run one Test run while watching the Agent Computer.
 
 For page text the best possible verdict is "Nothing bad found in what the page shows". Say that as it is; don't turn it into "Install with changes" just because the skill bodies are hidden.
 
+"Could not finish checking" means part of it wasn't read (a file too big, a link, a folder that couldn't be listed, or more matches than one vet reads; `coverage` says which). Say so with the `coverage` line and don't call it safe to install, or install with changes. Never vet what was left out from memory.
+
 ## After the owner installs it
 If the template asked to install a plugin and the owner said yes, run `wt.py audit` as soon as they tell you. A new plugin shows up as "New plugin installed" with its size and anything the scanners flag inside it, and it counts until the owner decides to keep it (the fix skill asks). Say what arrived in two lines.
 

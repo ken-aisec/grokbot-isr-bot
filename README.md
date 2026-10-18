@@ -8,7 +8,7 @@ Watchtower is a security officer for that setup. It is read-only until you say y
 
 | Skill | What you get |
 | --- | --- |
-| `vet-template` | Install / Install with changes / Do not install for any template, skill or plugin, with a risk score, evidence, its autonomy level (L0 observe → L3 unattended), and the boundary line to paste into its description |
+| `vet-template` | Install / Install with changes / Do not install (or Could not finish checking, when part of it couldn't be read) for any template, skill or plugin, with a risk score, evidence, its autonomy level (L0 observe → L3 unattended), and the boundary line to paste into its description |
 | `watchtower-audit` | A 0–100 posture score and the top three fixes across skills, plugins, MCP configs, Auto Review rules, local execution, logged-in browser sessions, CLI credentials, secrets, vulnerable packages, persistence, integrity drift, canaries and shell history |
 | `watchtower-brief` | The weekly report, one page you can read in a minute: status, score, threat level, trend charts, a one-click fix, what needs you, and the three threats that matter to your setup |
 | `watchtower-report` | Weekly Markdown report and a self-contained HTML dashboard |
@@ -83,7 +83,8 @@ Every computer is different, so Watchtower assumes things will go wrong and is t
 
 ```
 wt.py --version               the version, after the self-check (a changed copy exits 4 and prints no version)
-wt.py vet FILE|-|LINK [--json] [--deep] [--page-only]   vet before installing (exit 1 = Do not install); --page-only when
+wt.py vet FILE|-|LINK [--json] [--deep] [--page-only]   vet before installing (exit 1 = Do not install, or Could not
+                                         finish checking when part of it wasn't read); --page-only when
                                          the text was copied from a marketplace page and the skill bodies weren't visible
 wt.py audit | daily           full or quick audit (compact JSON for the Bot)
       [--roots DIR..] [--exports DIR] [--budget SECONDS] [--everything | --live-only]
@@ -146,7 +147,7 @@ Release drill, dev dry-run (precision plan item 8): before each release the dev 
 
 ## Tests
 
-`make test` runs more than 850 tests: seeded malicious skills must be caught, clean and defensive text must not be flagged, hostile feed content must not execute in the brief, and every feature has its own test.
+`make test` runs more than 900 tests: seeded malicious skills must be caught, clean and defensive text must not be flagged, hostile feed content must not execute in the brief, and every feature has its own test.
 
 ## License
 

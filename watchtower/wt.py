@@ -23,7 +23,7 @@ import sys
 if sys.version_info < (3, 8):   # degrade with one plain line, not a traceback (v0.6.9 old-Python profile)
     print("Watchtower needs Python 3.8 or newer; this computer has " + ".".join(map(str, sys.version_info[:3])) + ". Nothing was run.")
     sys.exit(3)
-import argparse, builtins, concurrent.futures, datetime as dt, difflib, errno, gzip, hashlib, html, json, math, os, platform, re, shutil, stat, subprocess, sys, tempfile, threading, time, traceback
+import argparse, builtins, concurrent.futures, datetime as dt, difflib, errno, gzip, hashlib, heapq, html, json, math, os, platform, re, shutil, stat, subprocess, sys, tempfile, threading, time, traceback
 
 VERSION = "0.7.1"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -214,7 +214,7 @@ def mask(s):
 # the original text, and one pass writes them out, so no reader sees another's output, a hidden value keeps its line breaks
 # (history and `show` stay line for line) and the whole is linear. MASK_VERSION goes up whenever masking learns a new shape:
 # copies stored masked by an older version (approved skills, the engine cache) are then masked again.
-MASK_VERSION = 2
+MASK_VERSION = 3   # round 3: whole YAML values and blocks, escaped quotes in serialized JSON, glued and escaped webhook URLs
 MASK_WINDOW = 8192   # finding() stores 160 characters: it masks this much of the text they are cut from, never less
 HIDDEN = "[hidden]"
 KEY_SHAPE = re.compile(   # the lookahead names every shape's first letter, so most of a text is skipped at C speed
@@ -237,11 +237,13 @@ _Q_LINE = r"\$'(?:[^'\\\n]|\\.)*'?|'[^'\n]*'?|\"(?:[^\"\\\n]|\\.)*\"?"
 _Q_MULTI = r"\$'(?:[^'\\]|\\[\s\S]){0,4096}'|'[^']{0,4096}'|\"(?:[^\"\\]|\\[\s\S]){0,4096}\"|" + _Q_LINE
 
 
-def _shell_rx(quoted, escape):
-    return re.compile(rf"(?P<sep>\|\||&&|[|;&\n])|(?P<word>(?:{quoted}|{escape}|\$|[^\s'\"\\|;&$]+)+)")
+def _shell_rx(quoted, escape, nl=r"\n"):
+    return re.compile(rf"(?P<sep>\|\||&&|[|;&]|{nl})|(?P<word>(?:{quoted}|{escape}|\$|[^\s'\"\\|;&$]+)+)")
 
 
-_SHELL, _SHELL_ML = _shell_rx(_Q_LINE, r"\\."), _shell_rx(_Q_MULTI, r"\\[\s\S]")
+# Round 3: in the shell's reading a backslash before a line break joins the lines. Inside a word (API_TOKEN=\ then FAKE) it is
+# part of the word; before spaces (--token \ then FAKE) it is only a space, and that line break never ends the command.
+_SHELL, _SHELL_ML = _shell_rx(_Q_LINE, r"\\."), _shell_rx(_Q_MULTI, r"\\(?:\r?\n(?![ \t\r\n])|(?!\r?\n)[\s\S])", r"(?<!\\)(?<!\\\r)\n")
 _QUOTED, _QUOTED_ML = re.compile(_Q_LINE), re.compile(_Q_MULTI)
 SECRET_WORDS = ("token", "secret", "passwd", "pass", "api_key", "apikey", "api-key", "access_key", "private_key", "auth",
                 "credential", "session", "cookie")
@@ -250,6 +252,7 @@ NOT_SECRET_NAMES = frozenset(("author", "authors", "authored", "authority", "aut
 SECRET_FLAGS = frozenset(("--password", "--passwd", "--pass", "--token", "--api-key", "--apikey", "--secret", "--auth-token",
                           "--access-token"))
 USER_FLAGS = frozenset(("-u", "--user", "--proxy-user", "-U"))   # curl and friends: user:password
+USER_EQ = ("--user=", "--proxy-user=")   # Codex, round 3: the long options' attached form
 SECRET_HEADER = re.compile(r"(?i)^[ \t]*(?:--?[A-Za-z][\w-]*=)?(?:(?P<auth>(?:proxy-)?authorization|x-api-key|x-auth-token)|(?P<jar>(?:set-)?cookie))[ \t]*:[ \t]*"
                            r"(?:(?(auth)(?:bearer|basic|token|bot|digest|apikey|negotiate|ntlm)[ \t]+))?")
 MYSQL_TOOLS = frozenset(("mysql", "mysqldump", "mysqladmin", "mariadb", "mariadb-dump", "mysqlimport", "mysqlcheck", "mysqlshow"))
@@ -370,14 +373,106 @@ def _urls(s, spans):
         i = nxt
 
 
+_URLISH = re.compile(r":(?:\\*/){2}")   # ://, and JSON's :\/\/ or :\\\/\\\/
+
+
+def _drop_slash_escapes(s):
+    """`s` with every backslash that escapes a / taken out (JSON's \\/, once or twice serialized), and where each kept
+    character came from."""
+    out, idx, n, i = [], [], len(s), 0
+    while i < n:
+        if s[i] == "\\":
+            j = i
+            while j < n and s[j] == "\\":
+                j += 1
+            if j < n and s[j] == "/":
+                i = j
+                continue
+            out.append(s[i:j])
+            idx += range(i, j)
+            i = j
+            continue
+        out.append(s[i])
+        idx.append(i)
+        i += 1
+    return "".join(out), idx
+
+
+def _word_urls(s, spans):
+    """Codex, round 3: a URL is also read as the shell reads its word, with JSON's escaped slashes as slashes, so a webhook
+    credential glued on after a quote ('https://hooks.slack.com/services/T0/B0/'FAKE) or written https:\\/\\/… is found. What
+    _urls finds in that reading is mapped back to the original characters. Each line with a URL and a quote or backslash in it
+    is read once."""
+    pos = 0
+    while True:
+        m = _URLISH.search(s, pos)
+        if not m:
+            return
+        a = s.rfind("\n", 0, m.start()) + 1
+        b = s.find("\n", m.end())
+        b = len(s) if b == -1 else b
+        pos = b + 1
+        line = s[a:b]
+        if not ("'" in line or '"' in line or "\\" in line):
+            continue   # the plain reading already saw it
+        for w in _SHELL.finditer(line):
+            raw = w.group("word")
+            if raw is None or not _URLISH.search(raw):
+                continue
+            plain, idx = _unquote_map(raw)
+            if "\\" in plain:
+                plain, idx2 = _drop_slash_escapes(plain)
+                idx = [idx[k] for k in idx2]
+            found = []
+            _urls(plain, found)
+            at = a + w.start()
+            spans += [(at + idx[x], at + idx[y - 1] + 1) for x, y in found if y > x]
+
+
 # Codex, round 2: "password": "…", 'api_key': '…', \"token\":\"…\" (JSON inside a string) and YAML's `password: …` (a single
 # value on its own line). A field whose name is not a secret is skipped past its name only, so a field nested in its value is
 # still read.
+# Round 3: serialized JSON (\"password\":\"…\") is read escape by escape: \\\" is a quote inside the value, not its end. A YAML
+# value is read whole by _yaml_value: words with spaces, and a `|` or `>` block or any line indented under the key.
 _FIELD = re.compile(
     r"(?P<q>\\?[\"'])(?P<n1>[A-Za-z_][\w.-]{0,63})(?P=q)[ \t]*[:=][ \t]*"
-    r"(?P<v1>\\\"(?:[^\"\\\n]|\\[^\"\n])*(?:\\\")?|\"(?:[^\"\\\n]|\\.)*\"?|'(?:[^'\\\n]|\\.)*'?|[^\s,;{}\[\]()\"'][^\s,;}\])\"']*)"
-    r"|^[ \t]*(?:-[ \t]+)?(?P<n2>[A-Za-z_][\w.-]{0,63})[ \t]*:[ \t]+"
-    r"(?P<v2>\"(?:[^\"\\\n]|\\.)*\"?|'[^'\n]*'?|[^\s#'\"][^\s]*(?=[ \t]*(?:#|$)))", re.M)
+    r"(?P<v1>\\\"(?:\\\\(?:\\[^\n]|[^\\\n])|\\[^\\\"\n]|[^\\\"\n])*(?:\\\")?|\"(?:[^\"\\\n]|\\.)*\"?|'(?:[^'\\\n]|\\.)*'?"
+    r"|[^\s,;{}\[\]()\"'][^\s,;}\])\"']*)"
+    r"|^(?P<ind>[ \t]*(?:-[ \t]+)?)(?P<n2>[A-Za-z_][\w.-]{0,63})[ \t]*:(?=[ \t]|$)", re.M)
+_YAML_COMMENT = re.compile(r"[ \t]#")
+
+
+def _yaml_value(s, m):
+    """Where a YAML key's value is: the rest of its line (up to a ` #` comment, unless quoted) and every line after it that is
+    blank or indented deeper than the key. (start, end); start == end when there is none. Each line is read once."""
+    col, n = len(m.group("ind").expandtabs()), len(s)
+    a = m.end()
+    while a < n and s[a] in " \t":
+        a += 1
+    eol = s.find("\n", a)
+    eol = n if eol == -1 else eol
+    end = eol
+    if a < eol and s[a] not in "'\"":
+        c = _YAML_COMMENT.search(s, a, eol) if s[a] != "#" else None
+        end = a if s[a] == "#" else (c.start() if c else eol)
+    if a < eol and s[a] in "|>" and re.fullmatch(r"[|>][-+0-9]*", s[a:end].rstrip()):
+        a = end = eol   # a block: only the lines under it
+    while end > a and s[end - 1] in " \t\r":
+        end -= 1
+    p = eol
+    while p < n:
+        q = s.find("\n", p + 1)
+        q = n if q == -1 else q
+        line = s[p + 1:q]
+        body = line.lstrip(" \t")
+        if body.strip():
+            if len(line[:len(line) - len(body)].expandtabs()) <= col:
+                break
+            end = q - (1 if line.endswith("\r") else 0)
+            if a == eol:
+                a = p + 1
+        p = q
+    return a, max(a, end)
 
 
 def _fields(s, spans):
@@ -386,12 +481,19 @@ def _fields(s, spans):
         m = _FIELD.search(s, pos)
         if not m:
             return
-        v = "v1" if m.group("n1") is not None else "v2"
-        if _secret_name(m.group("n1") or m.group("n2")) and not _kept(m.group(v)):
-            spans.append((m.start(v), m.end(v)))
-            pos = m.end()
+        if m.group("n1") is not None:
+            if _secret_name(m.group("n1")) and not _kept(m.group("v1")):
+                spans.append((m.start("v1"), m.end("v1")))
+                pos = m.end()
+            else:
+                pos = max(m.start("v1"), m.start() + 1)
+        elif _secret_name(m.group("n2")):
+            a, b = _yaml_value(s, m)
+            if b > a and not _kept(s[a:b]):
+                spans.append((a, b))
+            pos = max(b, m.end())
         else:
-            pos = max(m.start(v), m.start() + 1)
+            pos = m.end()
 
 
 def _mask_words(s, at, spans, depth, ml=False):
@@ -432,6 +534,11 @@ def _mask_words(s, at, spans, depth, ml=False):
         if low[:2] == "-u" and len(low) > 2 and ":" in raw and low[:3] != "-u=":   # curl -uuser:password
             if not _kept(raw[raw.find(":") + 1:]):
                 spans.append((a + raw.find(":") + 1, b))
+        if low.startswith(USER_EQ) and ":" in plain:   # --user=user:password, --proxy-user='user:password'
+            exact, idx = _unquote_map(raw) if quoted else (plain, range(len(plain)))
+            c = exact.find(":", exact.find("="))
+            if c != -1 and c + 1 < len(exact) and not _kept(exact[c + 1:]):
+                spans.append((a + idx[c + 1], a + idx[-1] + 1))
         h = SECRET_HEADER.match(plain) if ":" in plain else None
         if h:   # Codex, round 2: the header is the whole shell word, however it is quoted or glued ('Cookie: a=1;'sid='x')
             exact, idx = _unquote_map(raw) if quoted else (plain, range(len(plain)))
@@ -512,6 +619,40 @@ def _trigger_lines(s):
         pos = end + 1
 
 
+# Codex, round 3: a backslash at the end of a line joins the next line to the command (API_TOKEN=\ then FAKE on the next line).
+_CONTINUED = re.compile(r"(?<!\\)(?:\\\\)*\\\r?\n")
+_OPEN_VALUE = re.compile(r"(?<![\w.])(?P<n>[A-Za-z_][\w.-]{0,63})=(?P<q>\$'|'|\")")
+
+
+def _quoted_values(s, spans):
+    """Codex, round 3: NAME='…', NAME="…" and NAME=$'…' for a secret NAME are read to their closing quote however far away it
+    is, as the shell reads them, so a value longer than the 4096 characters a crossing quote is read for, or over many lines,
+    is hidden whole; one never closed runs to the end of the text. Each value is read once and the search goes on after it."""
+    pos, n = 0, len(s)
+    while True:
+        m = _OPEN_VALUE.search(s, pos)
+        if not m:
+            return
+        pos = m.end()
+        if not _secret_name(m.group("n")):
+            continue
+        a, q, e = m.end(), m.group("q")[-1], m.end()
+        while True:
+            e = s.find(q, e)
+            if e == -1 or m.group("q") == "'":
+                break
+            k = e
+            while k > a and s[k - 1] == "\\":
+                k -= 1
+            if (e - k) % 2 == 0:
+                break
+            e += 1
+        e = n if e == -1 else e
+        if e > a and not _kept(s[a:e]):
+            spans.append((a, e))
+        pos = max(pos, e + 1)
+
+
 def mask_spans(s):
     """What masking replaces in `s`, merged and in order: (start, end, replacement), None meaning [hidden]. Overlapping spans
     (a word and the same value read inside its quotes, a key shape inside a hidden value) are one [hidden]."""
@@ -519,11 +660,16 @@ def mask_spans(s):
     spans += [(m.start(), m.end(), mask(m.group(0))) for m in KEY_SHAPE.finditer(s)]
     words = []
     _urls(s, words)
+    _word_urls(s, words)
     _fields(s, words)
+    _quoted_values(s, words)
     for a, b in _blocks(s, _trigger_lines(s)):
         _mask_words(s[a:b], a, words, 0)
     if "\n" in s:
-        for a, b in _blocks(s, ((m.start(), m.end()) for m in _CROSSING.finditer(s) if m.group("x") and "\n" in m.group("x"))):
+        # the shell's reading: quotes that cross lines, and lines joined by a trailing backslash (Codex, round 3)
+        crossing = ((m.start(), m.end()) for m in _CROSSING.finditer(s) if m.group("x") and "\n" in m.group("x"))
+        joined = ((m.start(), m.end()) for m in _CONTINUED.finditer(s))
+        for a, b in _blocks(s, heapq.merge(crossing, joined)):
             if _TRIGGER.search(s, a, b):
                 _mask_words(s[a:b], a, words, 0, ml=True)
     spans += [(a, b, None) for a, b in words if b > a]
@@ -1108,15 +1254,56 @@ def urls_in(text, limit=200):
     return out
 
 
+# Codex, batch 4 round 3: a literal is one piece of a bigger string when something can be put in front of it in the same
+# expression: another literal next to it (Python joins 'a' 'b', also across lines), a + or %, or a join/format/urljoin call
+# whose arguments it is among; or something follows it (+, %, another literal, a .method). A destination can then come first.
+_JOIN_CALL = r"\b(?:join|format|format_map|concat\w*|reduce|sum|urljoin|Template|reversed|sorted)\b"
+_JOIN_BEFORE = re.compile(rf"(?:{_JOIN_CALL}|%)\s*[(\[{{\s]*$")
+_JOIN_NEAR = re.compile(rf"{_JOIN_CALL}\s*\(|%\s*[(\[{{]")
+_SKIP = " \t\r\n\\"
+
+
+def _standalone(text, a, b, quoted):
+    """True when text[a:b], a URL literal (with its quotes) or a whole URL argument, is the complete value: nothing can come
+    before it or after it in the same string expression. Any doubt is False."""
+    j, stop = a - 1, max(0, a - 4096)
+    while j >= stop and text[j] in _SKIP:
+        j -= 1
+    p = text[j] if j >= stop else " "
+    if p in "+%" or (quoted and p in "'\""):
+        return False
+    if p in "([{" and _JOIN_BEFORE.search(text, max(0, j - 200), j + 1):
+        return False
+    if p in ",:":   # one item among others: is it inside a join, a format or a % ?
+        w = text[max(0, j - 512):j]
+        w = w[max(w.rfind("\n\n"), w.rfind("```")) + 1:]
+        if _JOIN_NEAR.search(w):
+            return False
+    k, n = b, len(text)
+    while k < min(n, b + 4096) and text[k] in _SKIP:
+        k += 1
+    nx = text[k] if k < n else " "
+    if nx in "+%" or (quoted and (nx in "'\"" or re.match(r"\.\s*[A-Za-z_]", text[k:k + 64]))):
+        return False
+    return True
+
+
 def chat_webhook(text, m):
     """True when the match is the host and path of a real chat webhook URL (see CHAT_HOOKS): the host right after the scheme
-    of a URL that is a whole argument (url_arg). Any doubt is False."""
+    of a URL that is a whole argument (url_arg) and the whole value, not one piece of a string expression (_standalone).
+    Any doubt is False."""
     import urllib.parse
     st = m.start()
     sch = re.search(r"(?i)\bhttps?://$", text[max(0, st - 9):st])
     s = st - len(sch.group(0)) if sch else st   # no scheme: the match must start the word (xhooks.slack.com is someone else's)
     end = url_arg(text, s)
     if end is None:
+        return False
+    o = text[s - 1] if s else " "
+    quoted = o in "'\"" and text[end:end + 1] == o
+    a = s - 1 if quoted or o in "([{<`" else s
+    b = end + 1 if quoted or (end < len(text) and text[end] in ")]}>`") else end
+    if not _standalone(text, a, b, quoted):
         return False
     url = text[s:end] if sch else "https://" + text[s:end]
     try:
@@ -1159,12 +1346,17 @@ def sentence_of(text, m):
     return text[a:min(ends) if ends else len(text)]
 
 
-def scan_text(text, where, rules, kind="skill", limit=None, cut=None):
+VET_MATCH_CAP = 200_000   # matches of one rule in one file that vet looks at; past it the file is not fully checked
+
+
+def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None):
     """Apply text rules plus document-level logic. kind: skill|reference|template|routine|description.
-    Codex, batch 4 round 2 (vet): `limit` bounds the matches one file can produce. Once it is reached each rule still gets its
-    first kept match, so no rule goes unseen, and no more than `limit` matches per rule are even looked at; `cut` (a list) is
-    told when anything was left out."""
-    out = []
+    Codex, batch 4 round 3 (vet): `limit` bounds the findings one file keeps, never what is looked at. Every match is still
+    read; past the limit a match is kept only when it is a kind this file hasn't kept yet (rule, severity, warning or not), so
+    a dangerous match after thousands of harmless ones is never lost, and labels come out as they would with all of them.
+    `cut` (a list) is told when a repeat was left out. Detection has its own budget: past VET_MATCH_CAP matches of one rule
+    the file is not fully read, and `stop` (a list) is told, so vet says it couldn't finish instead of giving a verdict."""
+    out, kinds = [], set()
     guarded = set(rules.get("guarded_rules", []))
     is_ref = attack_reference(text, rules, where)
     if is_ref:
@@ -1178,19 +1370,24 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None):
         if kind == "vendor" and rule["severity"] != "critical" and rule["id"] not in ("WT-T002", "WT-T018"):
             if not (rule["id"] in BEHAVIOR_RULES and rule["severity"] in ("critical", "high")):
                 continue
-        prev_end, kept0, seen = None, len(out), 0
+        prev_end, seen = None, 0
         for m in rule["rx"].finditer(text):
             if limit is not None:
                 seen += 1
-                if (len(out) >= limit and len(out) > kept0) or seen > limit + 1:
-                    if cut is not None:
-                        cut.append(where)
+                if seen > VET_MATCH_CAP:
+                    if stop is not None:
+                        stop.append(where)
                     break
             if rule["id"] == "WT-T018" and not chat_webhook(text, m):
                 continue   # a lookalike or nested host: not a chat service's webhook (a Slack or Discord one stays T005)
             if rule["id"] == "WT-T005" and CHAT_IN_T005.fullmatch(m.group(0)) and chat_webhook(text, m):
                 continue   # the owner's own chat webhook is WT-T018, not an exfiltration host
             if is_ref and rule["id"] in REF_RULES and (rule["id"] not in GUARD_CODE_RULES or ref_line(text, m)):
+                if limit is not None and len(out) >= limit and (rule["id"], "ref") in kinds:
+                    if cut is not None:
+                        cut.append(where)
+                    continue
+                kinds.add((rule["id"], "ref"))
                 out.append(finding(rule["id"], rule["title"] + " (in an attack-pattern reference)", "low", rule["owasp"],
                                    f"{where}:{line_of(text, m.start())}", f"U+{ord(m.group(0)):04X}" if rule["id"] == "WT-T002" else m.group(0)[:140],
                                    "Documentation or detector text. Confirm the file is what it claims to be.",
@@ -1207,7 +1404,17 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None):
             if rule["id"] == "WT-T003" and is_document_blob(m.group(0)):
                 continue
             ev = m.group(0)
-            if rule["id"] == "WT-T006" and known_installer(ev):
+            installer = rule["id"] == "WT-T006" and known_installer(ev)
+            reason = in_warning(text, m, rules, rule["id"], prev_end) if rule["id"] in guarded else ""
+            if reason:
+                prev_end = m.end()
+            sig = ("WT-T006k" if installer else rule["id"], bool(reason))   # severity follows from these two
+            if limit is not None and len(out) >= limit and sig in kinds:
+                if cut is not None:
+                    cut.append(where)   # a repeat of a kind already kept: read, not stored
+                continue
+            kinds.add(sig)
+            if installer:
                 f = finding("WT-T006k", "Known installer piped to shell", "medium" if kind != "vendor" else "low",
                             ["ASI05", "AST02"], f"{where}:{line_of(text, m.start())}", ev[:140],
                             "A well-known installer, but still unpinned. Prefer a package manager or a pinned, checksummed download.", shown=ev)
@@ -1219,9 +1426,8 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None):
                 elif rule["id"] == "WT-T003":
                     ev = ev[:24] + f"… ({len(m.group(0))} chars)"
                 f = finding(rule["id"], rule["title"], rule["severity"], rule["owasp"], f"{where}:{line_of(text, m.start())}", ev, rule["fix"])
-            reason = in_warning(text, m, rules, rule["id"], prev_end) if rule["id"] in guarded else ""
             if reason:   # batch 2 (R1): downgraded to a record, never dropped
-                f, prev_end = guard_record(f, reason, danger=rule["id"] in GUARD_CODE_RULES), m.end()
+                f = guard_record(f, reason, danger=rule["id"] in GUARD_CODE_RULES)
             out.append(f)
             if rule["id"] in ("WT-T002",):
                 break  # one per file is enough for invisible chars
@@ -1956,12 +2162,15 @@ def vet_folder(path):
 
 VET_WALK_CAP = 20_000          # names listed in a vetted folder (files and folders) before listing stops
 VET_BYTES_CAP = 16_000_000     # text read in one vet, all files together
-VET_FINDINGS_CAP = 5_000       # findings kept before the remaining files are left unread
+VET_FINDINGS_CAP = 5_000       # findings kept; past it a file keeps only kinds it hasn't kept yet, and every file is still read
+NOT_FINISHED = "Could not finish checking"   # Codex, round 3: part of it wasn't read, so no installation verdict
 
 
-def vet_files(d, entry):
+def vet_files(d, entry, undone):
     """Codex, batch 4 round 1: the text files of a vetted folder, the entry point (its SKILL.md) first, so no cap can leave it
-    out. Only text files count toward the file cap; listing stops after VET_WALK_CAP names. Returns (files, notes)."""
+    out. Only text files count toward the file cap; listing stops after VET_WALK_CAP names. Returns (files, notes). Round 3:
+    what the skill holds but wasn't listed or read (listing stopped, a folder that can't be listed, the file cap) is put in
+    `undone`; a linked folder is not, as it is never followed."""
     # Codex, batch 4 round 2: names are counted as they are listed, so one huge folder stops at the cap instead of being read
     # and sorted whole first; a linked folder (never followed) and a folder that can't be listed are named in the notes.
     found, seen, notes, linked, failed, todo, stop = [], 0, [], [], [], [d], False
@@ -1990,27 +2199,29 @@ def vet_files(d, entry):
         todo += sorted(subs, reverse=True)
     if stop:
         notes.append(f"the folder has more than {VET_WALK_CAP} names, so listing stopped there")
+        undone.append("listing")
     for what, xs in (("a linked folder, not followed", linked), ("could not be listed", failed)):
         if xs:
             notes.append(f"not read ({what}): " + ", ".join(sorted(xs)[:10]) + (f" and {len(xs) - 10} more" if len(xs) > 10 else ""))
+    undone += failed
     rest = sorted(p for p in found if entry is None or os.path.normpath(p) != os.path.normpath(entry))
     files = ([entry] if entry else []) + rest
     if len(files) > SKILL_FILE_CAP:
         notes.append(f"{len(files) - SKILL_FILE_CAP} more text files not read (over the {SKILL_FILE_CAP}-file cap)")
+        undone.append("file cap")
         files = files[:SKILL_FILE_CAP]
     return files, notes
 
 
-def vet_read(d, entry, files, notes, full):
+def vet_read(d, entry, files, notes, undone):
     """Each file as (where, absolute path, text, kind), read one at a time. `where` is the identity 857ab38 gave a finding
     (SKILL.md for the entry point, the path inside the folder for the rest), so keys don't change; the absolute path is only
     for labelling. Every text file that isn't read is named in `notes`. A link is never followed: it may lead anywhere.
-    `full()` says the findings cap is reached; the files left are then counted, not read."""
+    Codex, round 3: the findings cap no longer stops reading (a later file's exfiltration host was never seen); past it each
+    file keeps only kinds of finding it hasn't kept yet (scan_text). A file of the skill's own that isn't read (too big,
+    unreadable) is also put in `undone`: the skill is then not fully checked. A link's target is not the skill's own."""
     total, skipped = 0, []
-    for i, p in enumerate(files):
-        if full():
-            skipped.append(f"{len(files) - i} more files (over {VET_FINDINGS_CAP} findings)")
-            break
+    for p in files:
         rel = os.path.basename(p) if p == entry else os.path.relpath(p, d)
         if os.path.islink(p) and p != entry:   # the entry point is read as 857ab38 read it: the file the owner named
             skipped.append(f"{rel} (a link, not followed)")
@@ -2021,12 +2232,14 @@ def vet_read(d, entry, files, notes, full):
             size = 0
         if total + size > VET_BYTES_CAP and p != entry:
             skipped.append(f"{rel} (over the {VET_BYTES_CAP:,} bytes one vet reads)")
+            undone.append(rel)
             continue
         t = read_text(p)
         if t is None:
             if p == entry:
                 raise OSError(f"could not read {p}")
             skipped.append(f"{rel} ({'over 1 MB' if size > 1_000_000 else 'unreadable'})")
+            undone.append(rel)
             continue
         total += len(t)
         yield rel, p, t, "template" if p == entry else "reference"
@@ -2045,11 +2258,11 @@ def cmd_vet(args):
         try:
             if not os.path.isdir(folder):
                 raise OSError(args.path)
-            files, notes_ = vet_files(folder, entry)
-            cut = []
-            for where, p, t, k in vet_read(folder, entry, files, notes_, lambda: len(fs) >= VET_FINDINGS_CAP):
-                # Codex, round 2: the findings cap holds inside a file too (each rule still gets its first match)
-                got = scan_text(t, where, rules, kind=k, limit=max(1, VET_FINDINGS_CAP - len(fs)), cut=cut)
+            cut, stop, undone = [], [], []
+            files, notes_ = vet_files(folder, entry, undone)
+            for where, p, t, k in vet_read(folder, entry, files, notes_, undone):
+                # Codex, round 2: the findings cap holds inside a file too; round 3: it limits what is kept, never what is read
+                got = scan_text(t, where, rules, kind=k, limit=max(0, VET_FINDINGS_CAP - len(fs)), cut=cut, stop=stop)
                 absolute.update((f["key"], p + f["where"][len(where):]) for f in got)
                 fs += got
                 if k == "template":
@@ -2059,25 +2272,31 @@ def cmd_vet(args):
                 if len(urls_) < 1000:
                     urls_.update(urls_in(t))   # Codex, round 2: whole URLs, masked
                 plugin_ = plugin_ or bool(re.search(r"(?i)\bplug-?ins?\b", t))
-            if cut:
-                notes_.append(f"matches left out over the {VET_FINDINGS_CAP}-finding cap in " + ", ".join(sorted(set(cut))[:10]))
+            unread = bool(undone)   # a file or folder of its own not read, listing stopped: not fully checked
         except OSError:
             fs = None
         if fs is None or (main_ is None and not parts):
             print(f"ERROR could not read {args.path}", file=sys.stderr)
             return 2
         text = main_ if main_ is not None and not parts else "\n".join(parts)
-        cover = "; ".join(notes_) or None
         name = os.path.basename(args.path.rstrip("/")) or "vetted"
     else:
         text = sys.stdin.read() if args.path == "-" else read_text(args.path)
         if text is None:
             print(f"ERROR could not read {args.path}", file=sys.stderr)
             return 2
-        main_, urls_, plugin_, cut = text, None, None, []
+        main_, urls_, plugin_, cut, stop, notes_, unread = text, None, None, [], [], [], False
         name = "stdin" if args.path == "-" else os.path.basename(args.path)
-        fs = scan_text(text, name, rules, kind="template", limit=VET_FINDINGS_CAP, cut=cut)
-        cover = f"matches left out over the {VET_FINDINGS_CAP}-finding cap in {name}" if cut else None
+        fs = scan_text(text, name, rules, kind="template", limit=VET_FINDINGS_CAP, cut=cut, stop=stop)
+    # Codex, round 3: what was kept and what was read are said apart. Past the findings cap repeats aren't kept, but every match
+    # was read; past the match budget a file was not read to its end, and then vet gives no installation verdict (below).
+    if stop:
+        notes_.append(f"not read to the end (over {VET_MATCH_CAP:,} matches of one rule): " + ", ".join(sorted(set(stop))[:10]))
+    if cut or len(fs) > VET_FINDINGS_CAP:
+        notes_.append(f"over {VET_FINDINGS_CAP} findings, so past the {VET_FINDINGS_CAP}-finding cap only the first match of each kind "
+                      f"is kept in a file (every match was read)" + (": " + ", ".join(sorted(set(cut))[:10]) if cut else ""))
+    cover = "; ".join(notes_) or None
+    incomplete = unread or bool(stop)
     engines = {}
     if getattr(args, "deep", False) and args.path != "-":
         d = args.path if os.path.isdir(args.path) else os.path.dirname(os.path.abspath(args.path))
@@ -2103,7 +2322,8 @@ def cmd_vet(args):
                 f["where"] = name
         fs += found
         ran = [n for n, t in (("SkillSpector", "skillspector"), ("husk", "husk")) if tool(t)]
-        engines = {"ran": ran, "notes": notes, "staged_as_skill": bool(staged)}
+        # Codex, round 3: a scanner's own error line can quote a secret; masked before it is shown
+        engines = {"ran": ran, "notes": [mask_secrets(n) if isinstance(n, str) else n for n in notes], "staged_as_skill": bool(staged)}
         if not ran:
             engines["warning"] = "No outside scanner is installed, so this vet used Watchtower's own rules only. Say so."
     fs = sort_findings(dedupe(fs))
@@ -2112,7 +2332,9 @@ def cmd_vet(args):
     # Codex, round 1: the full path is used for labelling only; each finding keeps the where (and so the key) 857ab38 gave it.
     labelled = label_findings([dict(f, where=absolute.get(f["key"], f["where"])) for f in fs])
     v = vet_verdict(labelled)
-    risk = max(100 - s, {"Do not install": 80, "Install with changes": 40}.get(v, 0))   # a high finding never reads as "risk 6"
+    if incomplete and v != "Do not install":
+        v = NOT_FINISHED   # Codex, round 3: what wasn't read can't be called safe to install
+    risk = max(100 - s, {"Do not install": 80, NOT_FINISHED: 50, "Install with changes": 40}.get(v, 0))   # a high finding never reads as "risk 6"
     rel = lambda w: (name if w == folder else w[len(folder) + 1:] if w.startswith(folder + "/") else w) if folder else w
     fs = sort_findings([dict(lf if lf["label"] == CONFIRMED else dict(f, label=lf["label"], **{"class": lf["class"]}), where=rel(f["where"]))
                         for f, lf in zip(fs, labelled)])
@@ -2142,7 +2364,7 @@ def cmd_vet(args):
         if cover and "coverage" in result and not getattr(args, "page_only", False):
             print(f"  Not fully checked: {result['coverage']}")
         print(f"  Paste into the description: {result['boundary_line']}")
-    return 1 if result["verdict"] == "Do not install" else 0
+    return 1 if result["verdict"] in ("Do not install", NOT_FINISHED) else 0
 
 
 # ---------------------------------------------------------------- collection
@@ -4510,7 +4732,9 @@ STAGE_FAILS = []   # R16: explicit failure markers set by the stages themselves,
 
 
 def fail_note(notes, text):
-    """A stage didn't finish (or part of it didn't): say so, and mark it failed so its previous results are kept."""
+    """A stage didn't finish (or part of it didn't): say so, and mark it failed so its previous results are kept. Masked first:
+    a scanner's error line is shown and stored (Codex, batch 4 round 3)."""
+    text = mask_secrets(text)
     notes.append(text)
     STAGE_FAILS.append(text)
 
@@ -4526,7 +4750,8 @@ def soft(stage, rules, notes, default, fn, *a, **k):
         failed = len(STAGE_FAILS) > fails_before or any(re.search(r"(?i)\bfailed\b", n) for n in notes[before:])
     except Exception as e:   # noqa: BLE001 - nothing a scanner or a strange file does may break the audit
         res, failed = default, True
-        notes.append(f"{stage} FAILED ({type(e).__name__}: {str(e)[:100]}): skipped, NOT checked this run; the last results are kept.")
+        notes.append(f"{stage} FAILED ({type(e).__name__}: {mask_secrets(str(e)[:MASK_WINDOW])[:100]}): skipped, NOT checked this run; "
+                     "the last results are kept.")
     if failed:
         STAGE_FAILED.append(stage)
         if isinstance(res, list):
@@ -6120,6 +6345,7 @@ def run_audit_locked(args, quick):
                 "scanners_missing": meta.get("scanners_missing", []), "stages_skipped": list(STAGE_FAILED),
                 "inventory": meta["inventory"], "notes": meta["notes"]}
     mask_stored(live), mask_stored(suppressed)   # batch 4 (R11): an older version's unmasked evidence (kept engine lines) is cleaned here
+    fixed = mask_stored([dict(f) for f in fixed])   # Codex, round 3: resolved ones come from the last snapshot, maybe an older version's
     snapshot["notes"] = [mask_secrets(n) if isinstance(n, str) else n for n in snapshot["notes"]]   # round 2: a scanner's error line too
     mask_approved_copies()                       # and its approved skill copies (Codex, round 1)
     save_json(state_path("last_findings.json"), snapshot)
@@ -6235,7 +6461,8 @@ def save_delta(new, fixed):
     try:
         os.makedirs(d, exist_ok=True)
         path = os.path.join(d, f"audit-{time.time_ns()}.json")
-        save_json(path, {"at": now(), "new": [dict(compact(f), key=f["key"]) for f in new], "fixed": [dict(compact(f), key=f["key"]) for f in fixed]})
+        rec = lambda f: mask_stored([dict(compact(f), key=f["key"])])[0]   # Codex, round 3: each record masked as it is written
+        save_json(path, {"at": now(), "new": [rec(f) for f in new], "fixed": [rec(f) for f in fixed]})
         for old in sorted(fn for fn in os.listdir(d) if fn.startswith("audit-") and fn.endswith(".json"))[:-DELTA_KEEP]:
             os.remove(os.path.join(d, old))
     except OSError:
