@@ -2531,7 +2531,8 @@ def _exactly_at(where, places):
 # like the scanner lock. Lines are `sha256sum` output run from the home folder: "<sha256>  <path under the home folder>". A new or
 # changed file in a platform folder is a platform update only when its path and its exact bytes are listed; anything else is a
 # counted high until a Watchtower release lists it. Ken's decision (Oct 18): release list only. Nothing on the computer approves a
-# platform file (no owner's yes, no record, no first-run trust): all of that is state the Bot can write. It ships with no entries.
+# platform file (no owner's yes, no record, no first-run trust): all of that is state the Bot can write. Filled Oct 18 from Ken's
+# box (see its header); the platform's sync bookkeeping (PLATFORM_CHURN) is never listed and never needs to be.
 PLATFORM_LOCK_REL = "rules/platform-release.lock"
 PLATFORM_LOCK = os.path.join(HERE, "..", PLATFORM_LOCK_REL)   # tests point this at a file in their box; never read from the environment
 PLATFORM_LOCK_MAX_BYTES = 4 * 1024 * 1024
@@ -2707,7 +2708,39 @@ OLD_PLATFORM_APPROVALS = "platform_approved.json"   # written by earlier version
 
 def platform_unproven(manifest):
     """The files in this manifest that sit in a platform folder and aren't on the release list with these bytes (platform_listed)."""
-    return {p for p, h in manifest.items() if not p.startswith("persist:") and platform_ish(p) and not platform_listed(p, h)}
+    return {p for p, h in manifest.items() if not p.startswith("persist:") and platform_ish(p) and not platform_listed(p, h)
+            and not platform_churn_file(p)}
+
+
+# PR #9 (Ken: few false alarms): the platform's own sync bookkeeping, rewritten at every sync with no release (Ken's box, Oct 18:
+# managed-skills/cache.json, 554 KB, at each managed-skills sync; the empty .bucket-<id> marker and the <bucket>/*.meta.json,
+# .marketplaces.json and manifest.json Claude's plugin sync writes). Nothing loads them as a skill, so they are no provenance
+# subject: not walked, fingerprinted or listed (rules/platform-release.lock's fill command skips this same pattern). Exact names at
+# exact places only: never a skill or plugin folder's file, never .grok/bundled (its manifest.json changes with each release).
+_SYNC_BUCKET = r"[0-9a-f-]{36}_[0-9a-f-]{36}"
+PLATFORM_CHURN = re.compile(r"((sand-data|agent-data)/managed-skills/cache\.json|\.claude/plugins/synced/(\.bucket-" + _SYNC_BUCKET
+                            + r"|" + _SYNC_BUCKET + r"/([^/]+\.meta\.json|\.marketplaces\.json|manifest\.json)))")
+
+
+def platform_churn(rel):
+    """True when a path under the home folder is one of the platform's sync bookkeeping files by name and place (PLATFORM_CHURN)."""
+    return isinstance(rel, str) and PLATFORM_CHURN.fullmatch(rel) is not None
+
+
+def platform_churn_file(p):
+    """platform_churn for a file on disk: a plain file (never a link), with no exec bit, in a folder with no SKILL.md, whose path as
+    written and its real path are each, relative to every home base they sit under, a churn name. Anything else is a provenance
+    subject: a link named cache.json, a cache.json in a skill folder, or one reached through a linked folder from elsewhere."""
+    try:
+        n = os.path.normpath(os.path.abspath(str(p)))
+        rels = [_home_rels(q) for q in (n, os.path.realpath(n))]
+        if not all(rs and all(platform_churn(r) for r in rs) for rs in rels):
+            return False
+        st = os.lstat(n)
+        return (stat.S_ISREG(st.st_mode) and not st.st_mode & 0o111
+                and not os.path.lexists(os.path.join(os.path.dirname(n), "SKILL.md")))
+    except (OSError, ValueError):
+        return False
 
 
 # Codex, item 8 review 2 (high 1): the platform files were only what the scanner's inventory kept, so a baselined SKILL.md turned
@@ -2761,6 +2794,8 @@ def platform_inventory(roots):
                 continue
             for e in entries:
                 p = os.path.join(d, e.name)
+                if platform_churn_file(p):
+                    continue   # sync bookkeeping (PLATFORM_CHURN): not a provenance subject, not counted in the limits
                 if len(files) >= PLATFORM_WALK_MAX_FILES:
                     short.append((root, f"it holds more than {PLATFORM_WALK_MAX_FILES} files"))
                     stack = []
@@ -3293,6 +3328,8 @@ def audit(roots, exports, quick=False):
                 continue
             if p in moved_from:
                 continue   # moved, not removed
+            if platform_churn_file(p):
+                continue   # sync bookkeeping an older baseline listed (PLATFORM_CHURN): still there, just no longer fingerprinted
             if p not in manifest and not p.startswith("persist:") and out_of_scope_but_present(p):
                 continue
             if p not in manifest and not p.startswith("persist:") and not os.path.exists(p) and not is_live_skill_path(p):

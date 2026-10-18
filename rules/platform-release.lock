@@ -7,7 +7,15 @@
 #
 # This file ships with Watchtower's release: it is listed in MANIFEST.sha256 and an installed copy is held to that line,
 # so it is exactly as trustworthy as wt.py itself. None of the vendors publishes these hashes, and anything inside the
-# home folder is the Bot's to write, so they can only come from a computer no Bot has run on yet.
+# home folder is the Bot's to write, so they should come from a freshly created computer no Bot has run on yet. The one
+# accepted exception is Ken's Oct 18 fill below; a clean computer is preferred for every later fill.
+#
+# The platform's own sync bookkeeping is never listed: it is rewritten at every sync with no release, and nothing loads it
+# as a skill. The rule lives in wt.py's PLATFORM_CHURN (the -regex below is that same pattern): cache.json directly in
+# sand-data/managed-skills or agent-data/managed-skills; the .bucket-<id>_<id> marker directly in .claude/plugins/synced;
+# and *.meta.json, .marketplaces.json and manifest.json directly in a .claude/plugins/synced/<id>_<id>/ folder. A file
+# with an exec bit is never skipped (wt.py also never skips a link or a file beside a SKILL.md). Anything else in those
+# folders is listed, .grok/bundled/manifest.json included.
 #
 # Format: `sha256sum` output, run from the home folder on relative paths:
 #   <sha256>  <path under the home folder>
@@ -17,15 +25,17 @@
 #
 # To fill it, on a freshly created computer before any Bot runs:
 #   cd ~ && find .grok/bundled sand-data/managed-skills agent-data/managed-skills .codex/skills/.system \
-#     .claude/plugins/synced -type f -exec sha256sum {} + 2>/dev/null >> <checkout>/rules/platform-release.lock
+#     .claude/plugins/synced -regextype posix-extended -type f ! \( ! -perm /111 -regex \
+#     '((sand-data|agent-data)/managed-skills/cache\.json|\.claude/plugins/synced/(\.bucket-[0-9a-f-]{36}_[0-9a-f-]{36}|[0-9a-f-]{36}_[0-9a-f-]{36}/([^/]+\.meta\.json|\.marketplaces\.json|manifest\.json)))' \
+#     \) -exec sha256sum {} + 2>/dev/null >> <checkout>/rules/platform-release.lock
 # then run `bash scripts/make-manifest.sh` and publish a release. Several releases may list the same path.
 #
-# Filled Oct 18 from Ken's Grok Bot box with the command above: 623 entries. That box was not freshly created: Bots had
-# already run on it, so these hashes are what was on it then, not a clean vendor install; Ken accepted that (Oct 18).
+# Filled Oct 18 from Ken's Grok Bot box with the command as it was then (no bookkeeping skip): 623 entries. PR #9 removed
+# its 7 bookkeeping lines (the two cache.json, the .bucket- marker, two .meta.json, .marketplaces.json, manifest.json),
+# leaving 616. That box was not freshly created: Bots had already run on it, so these hashes are what was on it then, not
+# a clean vendor install; Ken accepted that (Oct 18).
 # A vendor update after Oct 18 is a high alert until a release lists it.
 2d515dbea30e0ae42e964d66e35a133c2890f153b1667d9fabd24c724fc3ca65  .grok/bundled/manifest.json
-ce691e37f1fe9b181efcb6fb224e30d0e4928ca326d6f6d9b6a4aa93141d74b7  sand-data/managed-skills/cache.json
-ce691e37f1fe9b181efcb6fb224e30d0e4928ca326d6f6d9b6a4aa93141d74b7  agent-data/managed-skills/cache.json
 4b857d61192f2fa2df02f1200356167abf381eb1080de74972acd52a365eefca  .codex/skills/.system/.codex-system-skills.marker
 4dd13869245e356246a5b770723247bbb80a8f07a181d1d3d873a1734297cdb9  .codex/skills/.system/imagegen/LICENSE.txt
 681ddb4ad6d06a2acc78a3535b583f8d0c1ea800ecda3d56370d3310fd2cd4ba  .codex/skills/.system/imagegen/SKILL.md
@@ -36,7 +46,6 @@ d68b77e5bbb34dedab89d134da52855f140fc4b4299b80104f534e3b9e98f8ee  .codex/skills/
 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30  .codex/skills/.system/skill-creator/license.txt
 aa6829e21df2223167c85d2e49b6337a7345c84c1033f1ec10182c7882b36d45  .codex/skills/.system/openai-docs/SKILL.md
 4dd13869245e356246a5b770723247bbb80a8f07a181d1d3d873a1734297cdb9  .codex/skills/.system/openai-docs/LICENSE.txt
-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  .claude/plugins/synced/.bucket-cf8c9421-4d56-4812-8a8e-a30e1e852fc5_5c03d306-6f6b-4cd3-bddc-c65efeae7180
 9d1699f0f9bc570e33887d8d6eebb8b7d14421b5955dd683596a6c0797ac47b5  .grok/bundled/roles/design-doc-reviewer.toml
 06108d223934332241141785a1bc81c318b77066733deed60a973f5335af6013  .grok/bundled/roles/security-auditor.toml
 1394d8fda9e6cbada4cdf2164b543e1f99c234e347d63d82c20c6a11e13660ba  .grok/bundled/roles/implementer.toml
@@ -87,10 +96,6 @@ cff5f34f57ff60b3ee92eaedd17b15e96dd4b9e776df3e78936c9e00d42be294  .codex/skills/
 d0a230b1a79b71b858b7c215a0fbb0768d6459c14ea4ef80c61592629bf0e605  .codex/skills/.system/skill-installer/assets/skill-installer.png
 5ce223d8b1070b82c42298538f1b8d376f788eb9e7a42a987e8c094070d73f0e  .codex/skills/.system/skill-installer/agents/openai.yaml
 4d867a46d15e36ac880176484aae160f59855340c6059b2ea6ab9fbc9af084de  .codex/skills/.system/review-agent/agents/openai.yaml
-0d2056d23855be1116ac2ee982ccd49ab72b4c48fcd44370d228f1b2345801ea  .claude/plugins/synced/cf8c9421-4d56-4812-8a8e-a30e1e852fc5_5c03d306-6f6b-4cd3-bddc-c65efeae7180/manifest.json
-4d4d3ea9781d788c16b71a2cbd56a273b8a3095d12d1508bd0c22b1e074d56f1  .claude/plugins/synced/cf8c9421-4d56-4812-8a8e-a30e1e852fc5_5c03d306-6f6b-4cd3-bddc-c65efeae7180/cowork-plugin-management.meta.json
-e082be0bb5ed7a0a42ccb539aa1f18868dd663bdae3459b077a0d3fc12eaed93  .claude/plugins/synced/cf8c9421-4d56-4812-8a8e-a30e1e852fc5_5c03d306-6f6b-4cd3-bddc-c65efeae7180/.marketplaces.json
-ec4bd917fa7480f4e41a2f1864e0e8b60d6d8a2e983225fe23057410ac5ce79a  .claude/plugins/synced/cf8c9421-4d56-4812-8a8e-a30e1e852fc5_5c03d306-6f6b-4cd3-bddc-c65efeae7180/build-with-ai.meta.json
 5c196db0f0f2de20d58030107780b08ba1f7ed94cfc257fa78b70c9fca430985  .grok/bundled/skills/pptx/creating.md
 86283079d0209fd9d84fe02458a473b99ff7d5d73016442092f040a51983b439  .grok/bundled/skills/pptx/editing.md
 87217aea83aa7f9da994efa5d7acefa7e147e2da61140a0ae38fb427f5d55d0b  .grok/bundled/skills/pptx/template_taxonomy.json
