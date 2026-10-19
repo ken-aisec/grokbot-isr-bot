@@ -23,7 +23,7 @@ import sys
 if sys.version_info < (3, 8):   # degrade with one plain line, not a traceback (v0.6.9 old-Python profile)
     print("Watchtower needs Python 3.8 or newer; this computer has " + ".".join(map(str, sys.version_info[:3])) + ". Nothing was run.")
     sys.exit(3)
-import argparse, builtins, concurrent.futures, datetime as dt, difflib, errno, gzip, hashlib, heapq, html, json, math, os, platform, re, shutil, stat, subprocess, sys, tempfile, threading, time, traceback
+import argparse, bisect, builtins, concurrent.futures, datetime as dt, difflib, errno, functools, gzip, hashlib, heapq, html, json, math, os, platform, re, shutil, stat, subprocess, sys, tempfile, threading, time, traceback
 
 VERSION = "0.7.1"
 HERE = os.path.dirname(os.path.realpath(__file__))   # PR A, Codex round 2 (5): the file that runs, through any link to it
@@ -38,7 +38,8 @@ SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".cache", "
              "Service Worker", "IndexedDB", "WasmTtsEngine", "Crashpad", ".npm", ".pnpm-store", ".cargo", ".rustup"}
 SKIP_PREFIXES = ("scoped_dir", ".org.chromium", "tmp")
 SKIP_PATH_PARTS = ("/go/pkg/", "/pkg/mod/", "/.local/go/", "/.config/google-chrome", "/.config/chromium", "/chrome-profile/", "/.m2/", "/.gradle/", "/dist-packages/", "/.bun/install/", "/.local/share/pnpm/")
-TEXT_EXT = {".md", ".txt", ".json", ".jsonl", ".ndjson", ".log", ".yaml", ".yml", ".toml", ".py", ".sh", ".js", ".ts", ".env", ".cfg", ".ini", ""}
+TEXT_EXT = {".md", ".txt", ".json", ".jsonl", ".ndjson", ".log", ".yaml", ".yml", ".toml", ".py", ".sh", ".js", ".ts", ".env", ".cfg", ".ini", ".pem", ""}
+# (batch 6, B5: .pem, so a key file is read on a rules-only install too; .key stays out, it is often binary or a Keynote file)
 SECRET_RULE = "WT-T011"
 
 
@@ -545,7 +546,7 @@ def cmd_codescan(args):
                 out.append(finding(f"WT-W{cid}", f"OWASP {cid}:2021 {title}", sev, [f"{cid}:2021"], f"{p}:{line_of(t, m.start())}",
                                    m.group(0).strip()[:120], CODE_FIX[cid]))
         for m in secret["rx"].finditer(t):
-            if looks_real_secret(m.group(0)):
+            if real_secret_at(t, m):   # batch 6 (B5): the shared content check
                 out.append(finding("WT-WA07s", "OWASP A07:2021 Hard-coded secret", "critical", ["A07:2021"], f"{p}:{line_of(t, m.start())}",
                                    mask(m.group(0)), "Move it to an environment variable or secret store and revoke the exposed one."))
     semgrep = tool("semgrep")

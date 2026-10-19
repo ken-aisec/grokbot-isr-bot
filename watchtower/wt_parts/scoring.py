@@ -185,7 +185,7 @@ class CorrobIndex:
         return held[1]
 
 
-def corroborated(f, findings, index=None):
+def corroborated(f, findings, index=None, ignore_drift=False):
     """A pattern finding is backed up (v0.7.1 item 2: two votes about the same file and the same kind of risk) when
     - a wording hit (override, weaken approvals, secrecy, quiet action) has a behavior signal in the same file: a credential read,
       a send to an outside address, a pipe-to-shell, hidden Unicode, an encoded blob, dynamic code. Wording alone never is;
@@ -196,7 +196,8 @@ def corroborated(f, findings, index=None):
     - a rule with no kind of risk keeps the v0.6.8 test: evidence or another engine at the same place;
     - a behavior hit in a skill that changed after approval (WT-I001/I002) is backed up by the change; wording is not;
     - anything inside a new plugin the owner hasn't kept yet (WT-I004) counts until they decide, as before.
-    A WT-S005 cookie-only note stays Worth a look even when a real sign-in is at the same shared-browser place."""
+    A WT-S005 cookie-only note stays Worth a look even when a real sign-in is at the same shared-browser place.
+    `ignore_drift` (batch 6, B6): the change is not counted as a backer, so False means only the change backs f up."""
     if f["rule"] == "WT-S005" and f.get("title") != NEW_SIGN_IN:
         return False
     here, src, skill = _place(f), f.get("source", "watchtower"), (index.skill(f) if index is not None else _skill_of(f))
@@ -238,11 +239,21 @@ def corroborated(f, findings, index=None):
             return True
         if other and gp != here and _covers(gp, here) and fk & gk:
             return True                          # a verdict on the folder this file is in, about the same kind of risk
-        if is_evidence(g) and not gk and g["rule"] in DRIFT_RULES and _covers(gp, here):
+        if is_evidence(g) and not gk and g["rule"] in DRIFT_RULES and _covers(gp, here) and not ignore_drift:
             return True                          # the live skill changed after approval and now does this: reach plus behavior
         if not other and same_file and loud(f) and loud(g) and g["rule"] != f["rule"] and g["rule"] in RISK_KIND:
             return True
     return False
+
+
+def drift_only_keys(findings):
+    """Batch 6 (B6): the keys of labelled corroborated findings that only a change to their file (WT-I001/I002) backs up. Read
+    before findings are grouped, so a backer folded into another line is still seen."""
+    cands = [f for f in findings if f.get("class") == "corroborated"]
+    if not cands:
+        return set()
+    index = CorrobIndex(findings) if CORROB_INDEX else None
+    return {f["key"] for f in cands if not corroborated(f, findings, index, ignore_drift=True)}
 
 
 def ask_first_covered(findings):

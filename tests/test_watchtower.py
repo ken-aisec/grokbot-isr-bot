@@ -648,7 +648,7 @@ class Features(unittest.TestCase):
         out = {f["where"]: f for f in wt.apply_key_status([look, test, live], st, ran=True)}
         self.assertEqual(out["/ws/notes.txt:1"]["severity"], "critical")
         self.assertEqual(out["/ws/skills/a/SKILL.md:3"]["severity"], "medium")     # pattern only: never critical
-        self.assertEqual(out["/ws/app/helper.test.ts:1"]["severity"], "low")       # tests and docs
+        self.assertEqual(out["/ws/app/helper.test.ts:1"]["severity"], "medium")    # batch 6 (B5): a file's name no longer lowers a key
         # TruffleHog ran and found nothing: nothing is critical
         self.assertEqual({f["severity"] for f in wt.apply_key_status([look, live], {}, ran=True)}, {"medium"})
         # providers unreachable (every answer 'unknown'): don't guess, keep gitleaks' severity

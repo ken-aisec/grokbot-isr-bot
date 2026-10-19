@@ -70,7 +70,6 @@ PLAIN = {
 
 KEY_LIVE, KEY_DEAD, KEY_UNSURE, KEY_MAYBE = ("Live key in a file every Bot can read", "Copies of keys that no longer work",
                                              "Keys the provider didn't answer for", "Looks like a key (pattern match, not confirmed)")
-FIXTURE_PATH = re.compile(r"(?i)(\.test\.|\.spec\.|/tests?/|/__tests__/|/fixtures?/|/testdata/|/docs?/|/examples?/|/references?/|\.md$|\.h$|\.eml$)")
 
 
 PLAIN_BY_TITLE = {
@@ -404,7 +403,7 @@ def apply_key_status(findings, status, ran=None):
 def key_status_severity(findings, status, ran=None):
     """TruffleHog asks each key's own provider whether it works, so when it ran it is the authority:
     working key = critical. Provider said no = low (copies only). Provider didn't answer = medium.
-    Gitleaks matched a pattern but TruffleHog found no key = medium, low in tests and docs.
+    Gitleaks matched a pattern but TruffleHog found no key = medium, wherever the file is (batch 6: no file name lowers it).
     If every answer was 'didn't answer' (providers unreachable), don't guess: keep gitleaks' severity."""
     ran = bool(status) if ran is None else ran
     if not ran:
@@ -436,9 +435,11 @@ def key_status_severity(findings, status, ran=None):
                 f["evidence"] = f"{names(dead)} ({len(dead)} dead)"
                 f["fix"] = "Nothing to revoke. Tell Watchtower \"fix it\" to clear the copies."
             else:
-                f["severity"] = "low" if (FIXTURE_PATH.search(p) and os.path.basename(p) != "SKILL.md") else ("medium" if SEV_ORDER.index(f["severity"]) < SEV_ORDER.index("medium") else f["severity"])
+                # batch 6 (B5, Ken): a file's name no longer lowers a key (FIXTURE_PATH is gone): an example value was already
+                # left out by its content (secret_kind), so what is here is judged like a key anywhere else
+                f["severity"] = "medium" if SEV_ORDER.index(f["severity"]) < SEV_ORDER.index("medium") else f["severity"]
                 f["title"] = KEY_MAYBE
-                f["fix"] = "Pattern match only. If one is a real key, turn it off at its provider; test files and docs are usually safe."
+                f["fix"] = "Pattern match only. If one is a real key, turn it off at its provider; example values were already left out."
         out.append(f)
     return out
 

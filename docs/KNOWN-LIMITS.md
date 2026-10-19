@@ -32,7 +32,7 @@ Ken approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Codex hig
 
    **Fix:** establish receiver identity from bindings/API use; a variable-name suffix must not authorize a destination downgrade.
 
-3. **high — [mask.py:689](../watchtower/wt_parts/mask.py): Additional credential flags still leak.**
+3. **Fixed in batch 6 PR2 (fix/batch6b, "Fake keys and dismissals"), together with #15 medium 6 (masking idempotence; MASK_VERSION 8).** Replays: `tests/test_batch6_mask.py`. **high — [mask.py:689](../watchtower/wt_parts/mask.py): Additional credential flags still leak.**
 
    With `\<newline>` representing a continued shell word, these retain `FAKEz` through **`mask_secrets`, finding evidence and `save_approved()`**:
 
@@ -62,7 +62,7 @@ Ken approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Codex hig
 
    **Fix:** distinguish confirmed absence from failed lookup. Propagate permission and other lookup errors through root collection, browser/seed checks, CLI discovery and scheduled-directory coverage.
 
-6. **High — [access.py:136](../watchtower/wt_parts/access.py): Saved connector lists bypass malformed-answer validation.**
+6. **Fixed in batch 6 PR2 (fix/batch6b, "Fake keys and dismissals").** Replays: `tests/test_batch6_connectors.py`. **High — [access.py:136](../watchtower/wt_parts/access.py): Saved connector lists bypass malformed-answer validation.**
 
    A fresh reply with `connectors: [{"name":"Gmail"}]` becomes incomplete. The same value in saved `rollcall_findings.json` passes through `_ax_said()` as an empty, complete connector list.
 
@@ -75,3 +75,18 @@ Ken approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Codex hig
    Using the shipped item-a entries, I supplied one healthy audit and a second audit in the same scenario with its entire access addition omitted. The result remained **zero unexpected lines and zero unmet requirements**. The scenario sequences actually contain repeated audits.
 
    **Fix:** require each applicable `(scenario, output key/run)` independently, including outputs whose omission leaves them identical to baseline.
+
+## Batch 6 PR2 (fix/batch6b, "Fake keys and dismissals"): follow-ups
+
+KL3 and KL6 above are fixed in this PR; KL1, KL2, KL4, KL5 and KL7 are PR1's and PR3's. B5 removed the name-based secret skips Ken named (gitleaks' `tests/`, `fixtures/`, `testdata/`, `*.test.*` path skips, the whole-line `$VAR`/placeholder rule, and `fixplan.py`'s FIXTURE_PATH). These name- or line-based rules are still in place and are logged here to be replaced by content checks in a later batch (**status: open follow-ups, not release blockers on their own**):
+
+- **gitleaks path allowlist** ([secrets_pkgs.py](../watchtower/wt_parts/secrets_pkgs.py), `GITLEAKS_CONFIG`): package stores and caches (`node_modules`, `.cache`, `site-packages`, `go/pkg`, …), browser profiles, the named credential files, Watchtower's own folders, lockfiles and `marketplace.json`, and every `.h` file are never read by gitleaks.
+- **gitleaks whole-line rules**: a line with `x-amz-credential=` / `X-Amz-Signature=` or `?AWSAccessKeyId=` / `Signature=` / `Expires=` hides every other hit on that line.
+- **`in_toolchain_tree`** ([secrets_pkgs.py](../watchtower/wt_parts/secrets_pkgs.py)): gitleaks hits under Go, pnpm, rustup and cargo trees are counted, not listed.
+- **`SAMPLE_SKILL_PATH`** ([collect.py](../watchtower/wt_parts/collect.py), used by [scope.py](../watchtower/wt_parts/scope.py)): a skill under a `tests/`, `fixtures/`, `examples/`, `docs/` or `references/` segment outside the loadable locations isn't scored as installed (keys there are still reported: SECRET_RULES count wherever they sit).
+
+Limits of the new behavior, kept knowingly:
+
+- **B5:** a gitleaks hit is judged only when its secret is found again in exactly one place of the lines gitleaks named (and, when gitleaks gives it, with gitleaks' Entropy); anything else is kept as before. A Match that is the whole secret (`REDACTED` with no text around it) is judged only with gitleaks' Entropy. A key block with no END line within 16 KB is treated as a real key; a gitleaks hit is read as a key block only when it is gitleaks' `private-key` rule, so a BEGIN line beside another hit's secret never judges that secret. `sk_test_`-style keys and any value with a placeholder word (`test`, `example`, `1234`, …) count as examples, as `looks_real_secret` already did for WT-T011.
+- **B6:** a dismissal held across an unrelated edit is read from `state/dismissed.jsonl`, which a Bot can write: a Bot that reads a finding's key and `ev256` from `last_findings.json` can plant one for a non-critical finding that only the change backs up (the change's own WT-I001 still counts). Lines inserted above the dismissed match shift its `where`, so its key changes and it comes back once.
+- **KL3 test conflict:** `tests/test_batch5_codex_r3.py::ShortAfterJoins::test_in_an_approved_copy` asserts `masked == 7`; MASK_VERSION 8 makes it fail. It isn't on the plan's list of assertions this PR may change, so it is left for Ken's decision.

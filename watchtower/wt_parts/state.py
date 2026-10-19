@@ -168,6 +168,11 @@ def finding(rule_id, title, severity, owasp, where, evidence, fix, source="watch
            "where": where, "evidence": stored, "fix": fix, "source": source}
     if path is not None:
         out["path"] = path
+    full = (evidence or "") if shown is None else f"{evidence or ''}\x00{shown}"
+    if len((evidence or "").replace("\n", " ")) > 160 or (shown is not None and shown != evidence):
+        # batch 6 (B6): the key covers the first 160 characters of the evidence; ev256 (a digest, never the text) covers all
+        # of it, so a dismissal held across an unrelated edit is for exactly this text. Only kept where the key doesn't cover it.
+        out["ev256"] = hashlib.sha256(full.encode("utf-8", "replace")).hexdigest()
     if ident is not None:
         out["key"], out["key0"] = hashlib.sha1(f"{rule_id}|{where}|id:{ident}".encode()).hexdigest()[:16], key
     return out

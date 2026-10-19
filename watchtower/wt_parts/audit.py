@@ -197,7 +197,7 @@ def audit(roots, exports, quick=False):
             if cp:
                 fs.append(cp)
         rule = next(r for r in rules["rules"] if r["id"] == SECRET_RULE)
-        hits = [m for m in rule["rx"].finditer(t) if looks_real_secret(m.group(0))]
+        hits = [m for m in rule["rx"].finditer(t) if real_secret_at(t, m)]   # batch 6 (B5): the shared content check
         if hits:
             m = hits[0]
             fs.append(finding("WT-S001", "Secret stored in a file on the shared computer", secret_severity(p, False), ["ASI03", "LLM02"],

@@ -50,6 +50,114 @@ def looks_real_secret(s):
     return True
 
 
+# Batch 6 (B5, DQ-043/044): one content check for every secret hit (WT-T011, WT-S001 and each gitleaks hit), on the secret value
+# only, never its line or its file's name: an example value is never a secret, wherever it sits, and a real one is one anywhere.
+ENV_REF = re.compile(r"\$[A-Za-z_]\w*|\$\{[A-Za-z_]\w*\}|\$\{\{\s*(?:secrets|env|vars)\.[A-Za-z_][\w-]*\s*\}\}|%[A-Za-z_]\w*%"
+                     r"|process\.env\.[A-Za-z_]\w*|process\.env\[(['\"])[A-Za-z_]\w*\1\]|\*{3,}")
+PEM_HEAD = re.compile(r"-----BEGIN ([A-Z0-9 _-]*?)PRIVATE KEY( BLOCK)?-----")
+PEM_END = re.compile(r"-----END [A-Z0-9 _-]*PRIVATE KEY(?: BLOCK)?-----")
+PEM_CAP = 16384
+DIGEST_HEX = re.compile(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}|[0-9a-fA-F]{128}")
+EXAMPLE_WHY = {"placeholder": "FAKE or placeholder text", "env": "an environment variable name", "pem": "a key block that isn't a real key",
+               "digest": "a file's checksum"}
+
+
+def _der_whole(b):
+    """(True, header length) when b is exactly one DER SEQUENCE: its length field spans the rest of the bytes."""
+    if len(b) < 2 or b[0] != 0x30 or b[1] == 0x80:
+        return False, 0
+    if b[1] < 0x80:
+        n, h = b[1], 2
+    else:
+        k = b[1] & 0x7F
+        if k > 4 or len(b) < 2 + k:
+            return False, 0
+        n, h = int.from_bytes(b[2:2 + k], "big"), 2 + k
+    return h + n == len(b), h
+
+
+def pem_kind(label, tail):
+    """A private key block's kind from its structure alone (a FAKE word in it decides nothing): "real" or "example". `label` is
+    what the BEGIN line names (RSA, EC, OPENSSH, ENCRYPTED, PGP, or none), `tail` the text after the BEGIN line. The block is read
+    to its END line (at most PEM_CAP characters; no END there: real, it can't be read whole). Headers (RFC 7468 / RFC 1421, PGP
+    armor) are taken out, then the body must decode to at least 32 bytes and be: PKCS#1, PKCS#8 or SEC1, one DER SEQUENCE whose
+    first element is an INTEGER; encrypted PKCS#8, one DER SEQUENCE; OpenSSH, openssh-key-v1; PGP, a secret-key packet; an old
+    Proc-Type: 4,ENCRYPTED body, a multiple of 8 bytes. Any other label: real once it decodes to 32 bytes."""
+    import base64, binascii
+    end = PEM_END.search(tail, 0, PEM_CAP)
+    if not end:
+        return "real"
+    body = re.sub(r"\\+[nrt]", "\n", tail[:end.start()])   # a key kept in JSON or code, its line breaks written \n
+    lines, encrypted = [], False
+    for ln in body.split("\n"):
+        s = ln.strip()
+        if "'" in s or '"' in s:   # a key written in code ("MIIE…" + "…"): only what is inside the quotes
+            s = "".join(a or b for a, b in re.findall(r"\"([^\"]*)\"|'([^']*)'", s))
+        if not lines and re.match(r"[A-Za-z][A-Za-z0-9-]*:\s", s):   # Proc-Type:, DEK-Info:, Version:, Comment: (before the body)
+            encrypted |= bool(re.match(r"(?i)proc-type:\s*4\s*,\s*encrypted", s))
+            continue
+        if s:
+            lines.append(s)
+    if "PGP" in label and lines and re.fullmatch(r"=[A-Za-z0-9+/]{4}", lines[-1]):
+        lines.pop()   # the armor's checksum line
+    b64 = re.sub(r"[^A-Za-z0-9+/]", "", "".join(lines))
+    if len(b64) % 4 == 1:
+        return "example"
+    try:
+        raw = base64.b64decode(b64 + "=" * (-len(b64) % 4), validate=True)
+    except (binascii.Error, ValueError):
+        return "example"
+    if len(raw) < 32:
+        return "example"
+    kind = label.strip().upper()
+    if encrypted:
+        return "real" if len(raw) % 8 == 0 else "example"
+    if kind in ("", "RSA", "EC", "DSA"):
+        whole, h = _der_whole(raw)
+        return "real" if whole and raw[h:h + 1] == b"\x02" else "example"
+    if kind == "ENCRYPTED":
+        whole, h = _der_whole(raw)
+        return "real" if whole and raw[h:h + 1] == b"\x30" else "example"
+    if kind == "OPENSSH":
+        return "real" if raw.startswith(b"openssh-key-v1\x00") else "example"
+    if "PGP" in kind:
+        b = raw[0]
+        tag = (b & 0x3F) if b & 0x40 else ((b & 0x3C) >> 2)
+        return "real" if b & 0x80 and tag in (5, 7) else "example"
+    return "real"
+
+
+def _digest_key_is_file(match):
+    """gitleaks' Match for a digest-map entry: the name before the value is a file name (it has a / or an .ext)."""
+    pre = (match or "").split("REDACTED")[0]
+    m = re.search(r"([^\s\"'`=:,{}\[\]]+)[\"'`]?\s*(?::|=>|=)\s*[\"'`]?\s*$", pre)
+    return bool(m) and ("/" in m.group(1) or bool(re.search(r"\.[A-Za-z0-9]{1,10}$", m.group(1))))
+
+
+def secret_kind(value, rule=None, tail="", match=None):
+    """("real" | "example", why) for one secret value. Example: a key block whose structure isn't a key (pem_kind; FAKE in it is
+    ignored), a bare environment-variable reference ($X, ${X}, ${{ secrets.X }}, %X%, process.env.X, ***), a gitleaks
+    generic-api-key whose value is a 40/64/128-hex digest named by a file name (a checksum list), or FAKE/placeholder text and
+    low variety (looks_real_secret). Everything else is real. `tail`: the text after the value (a key block's body)."""
+    v = (value or "").strip()
+    h = PEM_HEAD.match(v)
+    if h:
+        return ("real", "") if pem_kind(h.group(1), tail or v[h.end():]) == "real" else ("example", EXAMPLE_WHY["pem"])
+    u = v.strip("\"'`")
+    if ENV_REF.fullmatch(u):
+        return "example", EXAMPLE_WHY["env"]
+    if rule == "generic-api-key" and DIGEST_HEX.fullmatch(u) and _digest_key_is_file(match):
+        return "example", EXAMPLE_WHY["digest"]
+    if not looks_real_secret(v):
+        return "example", EXAMPLE_WHY["placeholder"]
+    return "real", ""
+
+
+def real_secret_at(text, m):
+    """True when the T011 match m in text is a real secret (secret_kind, with the text after it for a key block)."""
+    return secret_kind(m.group(0), tail=text[m.end():m.end() + PEM_CAP])[0] == "real"
+
+
 # Hardening batch 2 (review R1; guard redesign after fix round 3): a guarded match is kept as a "Warning or example text" record,
 # never dropped. For the dangerous rules below (credential path, exfiltration host, pipe-to-shell, upload) a guard can only lower
 # the match to medium, and vet never says Install over it. Only prose outside the command vouches for it: text in a code span or
@@ -1073,8 +1181,8 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None)
                 continue   # look past the short regex match so -G with @ or $(...) still counts; later | tr -d stays out
             if rule["id"] == "WT-T016" and not rules["write_verbs"].search(sentence_of(text, m)):
                 continue   # "failed silently", "quietly refresh the cache": quiet wording only matters next to an outward action
-            if rule["id"] == SECRET_RULE and not looks_real_secret(m.group(0)):
-                continue
+            if rule["id"] == SECRET_RULE and not real_secret_at(text, m):
+                continue   # batch 6 (B5): an example value (secret_kind), judged on the value, never the line or the file name
             if rule["id"] == "WT-T003" and is_document_blob(m.group(0)):
                 continue
             ev = m.group(0)

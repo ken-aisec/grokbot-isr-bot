@@ -19,16 +19,21 @@ def dismiss_context(f):
     return text
 
 
-def dismissed_keys():
+def dismissed_records():
+    """Each dismissed key's last dismissal record (batch 6: its ev256 too)."""
     out = {}
     for l in (read_text(state_path(DISMISS_LOG)) or "").splitlines():
         try:
             e_ = json.loads(l)
         except ValueError:
             continue
-        if e_.get("action") == "dismissed":
-            out[e_["key"]] = e_.get("reason", "")
+        if isinstance(e_, dict) and e_.get("action") == "dismissed" and isinstance(e_.get("key"), str):
+            out[e_["key"]] = e_
     return out
+
+
+def dismissed_keys():
+    return {k: e_.get("reason", "") for k, e_ in dismissed_records().items()}
 
 
 def dismiss(key, reason):
@@ -43,6 +48,8 @@ def dismiss(key, reason):
         ok, why = False, "no such finding in the last audit or roll-call"
     else:
         entry.update(key=f["key"], rule=f["rule"], where=f["where"], cls=f.get("class") or ("evidence" if is_evidence(f) else "pattern"))
+        if f.get("ev256"):   # batch 6 (B6): the whole evidence's digest, for a dismissal held across an unrelated edit
+            entry["ev256"] = f["ev256"]
         m = SAFE_CLAIM.search(dismiss_context(f))
         if f.get("unverified_platform"):   # item 8 review 1; Ken's decision (Oct 18): only a release that lists it clears one
             ok, why = False, "a platform file not on the vendor's release list: only a Watchtower release that lists it clears it"

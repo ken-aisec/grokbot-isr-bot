@@ -164,14 +164,29 @@ def is_accepted(f, sup, today):
     return False
 
 
-def active(findings):
+def held_dismissal(f, rec, drift_only):
+    """Batch 6 (B6, Ken's decision): an owner's dismissal still holds for a finding that only a change to its file backs up
+    (drift_only: WT-I001/I002, the change, is reported on its own), while its text is the one dismissed (the key, and ev256 when
+    the key doesn't cover all of it; a record from before ev256 holds only where the key does), and never when it is critical.
+    state/dismissed.jsonl can be written by a Bot, so anything else backing it up brings it back."""
+    return (f.get("class") == "corroborated" and f.get("key") in drift_only and not is_evidence(f)
+            and "critical" not in (f.get("severity"), f.get("severity_was"), f.get("severity_raised_from"))
+            and rec.get("ev256") == f.get("ev256"))
+
+
+def active(findings, drift_only=frozenset()):
+    """(open, set aside): accepted risks and the owner's dismissals set aside. `drift_only`: keys of findings only a change backs
+    up (drift_only_keys); the audit passes them, so a dismissal holds over an unrelated edit (held_dismissal). Other callers (the
+    fix's re-approval) pass none: there a dismissal never sets a backed-up finding aside."""
     sup = load_json(state_path("suppressions.json"), [])
     today = dt.date.today().isoformat()
     flags = [is_accepted(f, sup, today) for f in findings]   # per finding, never by shared key
-    gone = dismissed_keys()
+    gone = dismissed_records()
     for i, f in enumerate(findings):
-        if not flags[i] and f.get("class") == "pattern" and f.get("key") in gone and not f.get("unverified_platform"):   # the disprove step; never evidence
-            f["dismissed"], flags[i] = gone[f["key"]], True
+        rec = gone.get(f.get("key"))
+        if (not flags[i] and rec is not None and not f.get("unverified_platform")
+                and (f.get("class") == "pattern" or held_dismissal(f, rec, drift_only))):   # the disprove step; never evidence
+            f["dismissed"], flags[i] = rec.get("reason", ""), True
     for f, a in zip(findings, flags):
         if isinstance(a, dict):
             f["exception"] = {"kind": "security tool", "until": a.get("expires"), "reason": a.get("reason", "")}
@@ -342,8 +357,9 @@ def run_audit_locked(args, quick):
             f["severity"] = "medium"   # one scanner flagging a skill in a plugin nobody has reviewed yet is worth a look
     # Label before platform-refresh summary so a built-in that turns Confirmed critical/high alerts (Claude v0.7.1 F4).
     fs = label_findings(fs, ask_first_covered(fs))
+    drift_only = drift_only_keys(fs)   # batch 6 (B6): read before grouping folds any backer into another line
     fs = sort_findings(group_changed_skills(group_root_causes(mark_platform(summarize_refresh(mark_reviewed(fs, meta.get("manifest")))))))
-    live, suppressed = active(fs)
+    live, suppressed = active(fs, drift_only)
     prev = load_json(state_path("last_findings.json"), {"findings": []})
     note_earlier_auto_allow(prev, live)
     prev_keys, cur_keys = keys_of(prev.get("findings", [])), keys_of(live)

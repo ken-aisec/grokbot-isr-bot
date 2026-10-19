@@ -132,9 +132,9 @@ def shape_reply(d):
     # for the vocabulary's labels before any limit, so a name too long to keep ("Gmail account for the operations department") is
     # still Gmail; only labels and a count of other connectors are kept (access_connectors), never the text. An answer without a
     # connector list, or with an item that isn't a name, leaves the Bot's connectors not known whole (rollcall_access).
-    items = raw if isinstance(raw, list) else [] if raw is None or (isinstance(raw, str) and not raw.strip()) else [raw]
-    out["connector_labels"], out["connectors_other"] = access_connectors([c for c in items if isinstance(c, str)])
-    out["connectors_known"] = None if not items and not isinstance(raw, list) else not any(not isinstance(c, str) for c in items)
+    # Batch 6 (KL6): the same reader as a kept answer's (connector_answer)
+    out["connector_labels"], out["connectors_other"], unknown = connector_answer(raw)
+    out["connectors_known"] = None if unknown == "unsaid" else unknown is None
     rts, raw = [], d.get("routines")
     if raw is not None and not isinstance(raw, list):
         extra.add("routines (not a list)")

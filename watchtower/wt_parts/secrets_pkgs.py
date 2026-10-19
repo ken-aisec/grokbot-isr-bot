@@ -3,7 +3,7 @@ GITLEAKS_CONFIG = r"""[extend]
 useDefault = true
 
 [[allowlists]]
-description = "Watchtower: package caches, tests, lockfiles, headers and its own state"
+description = "Watchtower: package caches, lockfiles, headers and its own state"
 paths = [
   '''(^|/)(go/pkg|pkg/mod|\.local/go|node_modules|\.cache|\.npm|\.venv|site-packages|dist-packages)/''',
   '''(^|/)\.config/(google-chrome[^/]*|chromium[^/]*|BraveSoftware)/''',
@@ -12,8 +12,6 @@ paths = [
   '''(^|/)(\.codex/auth\.json|\.claude/\.credentials\.json|\.config/gh/hosts\.yml|\.aws/credentials|\.git-credentials|\.netrc|\.docker/config\.json|\.npmrc)$''',
   '''(^|/)watchtower/(state|reports|app|\.venv|scanners|bin)/''',
   '''chrome-cookie-seed\.json$''',
-  '''\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs|py)$''',
-  '''(^|/)(tests?|__tests__|fixtures?|testdata)/''',
   '''\.h$''',
   '''(^|/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|go\.sum|Cargo\.lock|marketplace\.json)$''',
 ]
@@ -21,7 +19,6 @@ regexTarget = "line"
 regexes = [
   '''(?i)x-amz-(credential|signature|security-token)=''',
   '''(?i)[?&](AWSAccessKeyId|Signature|Expires)=''',
-  '''(?i)(authorization|x-api-key|api[_-]?key|token)[^\n]{0,30}(\$\{?[A-Za-z_]+\}?|<[^>]{1,40}>|your[_ -]?(token|key|api)|x{4,}|\*{3,}|\.\.\.)''',
 ]
 
 [[allowlists]]
@@ -42,6 +39,92 @@ targetRules = ["generic-api-key"]
 regexTarget = "match"
 regexes = ['''(?i)^["']?(next|prev|previous|page|pagination|continuation)_?(page_?)?(token|cursor)\b''']
 """
+
+
+# Batch 6 (B5, DQ-043/044): no name-based skips. The tests/, fixtures/ and *.test.* path skips and the line rule that hid a whole
+# line next to "token" and a $VAR, <...> or xxxx (so token=$X api_key=<a real key> was hidden) are gone; each hit's own secret is
+# judged by its content instead (gitleaks_example), the same check as Watchtower's own rule (secret_kind).
+GITLEAKS_READ_LIMIT = 5_000_000   # gitleaks reads files up to --max-target-megabytes 5
+_GL_TOKEN = r"[\w+/.~@-]"
+
+
+def gitleaks_secret(leak, text):
+    """(secret, the text after it) for one gitleaks hit, found again in the file without gitleaks storing it: gitleaks runs with
+    --redact, so its Match has REDACTED where the secret was. Lines StartLine..EndLine of the file as Watchtower read it are searched
+    with Match turned into a pattern (its text exact, each REDACTED the same secret); for a private-key hit, the one key block
+    (a BEGIN … PRIVATE KEY line in those lines) is the secret. None, and the hit is kept as it is, unless exactly one place fits, and (when gitleaks gave it) the
+    secret has gitleaks' Entropy: a file changed since gitleaks read it, or a Match that fits twice, is never judged."""
+    match = leak.get("Match")
+    if not isinstance(match, str) or "REDACTED" not in match or text is None:
+        return None
+    try:
+        sl = int(leak.get("StartLine"))
+        el = int(leak.get("EndLine") or sl)
+    except (TypeError, ValueError):
+        return None
+    lines = text.split("\n")
+    if sl < 1 or el < sl or el > len(lines):
+        return None
+    off = sum(len(x) + 1 for x in lines[:sl - 1])
+    region = "\n".join(lines[sl - 1:el])
+    # only gitleaks' private-key hit is a key block: a BEGIN line beside another hit's secret never judges that secret
+    heads = list(PEM_HEAD.finditer(region)) if leak.get("RuleID") == "private-key" else []
+    if heads:
+        if len(heads) != 1:
+            return None
+        return heads[0].group(0), text[off + heads[0].end():off + heads[0].end() + PEM_CAP]
+    parts = match.split("REDACTED")
+    want = leak.get("Entropy")
+    want = float(want) if isinstance(want, (int, float)) and not isinstance(want, bool) and want > 0 else None
+    word = rf"(?<!{_GL_TOKEN})(?P<s>{_GL_TOKEN}{{8,}}={{0,3}})(?!{_GL_TOKEN}|=)"   # a whole word; = only as base64's padding
+    if not any(p.strip() for p in parts):
+        if want is None:
+            return None   # the whole Match is the secret: only gitleaks' Entropy can say which word of the line it is
+        rxs = [word]
+    else:
+        rest = "".join(r"(?P=s)" + re.escape(p) for p in parts[2:])   # a secret named twice in one Match is the same both times
+        if not parts[0]:
+            firsts = [word.replace("{8,}", "+")]                        # nothing before it: a whole word
+        elif not parts[1]:   # nothing after it: up to the word's end, or (only gitleaks' Entropy can tell) the line's
+            firsts = [r"(?P<s>[^\s'\"`;,)}\]>]+)"] + ([r"(?P<s>[^\n]*[^\s'\"`;,])"] if want is not None else [])
+        else:
+            firsts = [r"(?P<s>.+?)"]
+        rxs = [re.escape(parts[0]) + f + re.escape(parts[1]) + rest for f in firsts]
+    seen, hits = set(), []
+    for rx in rxs:
+        for m in re.finditer(rx, region, re.S):
+            if (m.start("s"), m.end("s")) not in seen and (want is None or abs(shannon_entropy(m.group("s")) - want) < 1e-3):
+                seen.add((m.start("s"), m.end("s")))
+                hits.append(m)
+    if len(hits) != 1:
+        return None
+    return hits[0].group("s"), text[off + hits[0].end("s"):off + hits[0].end("s") + PEM_CAP]
+
+
+def shannon_entropy(s):
+    """Shannon entropy of s per byte of UTF-8, as gitleaks computes its Entropy."""
+    import math
+    if not s:
+        return 0.0
+    counts, n = {}, len(s.encode("utf-8"))
+    for c in s:
+        counts[c] = counts.get(c, 0) + 1
+    return -sum(k / n * math.log2(k / n) for k in counts.values())
+
+
+def gitleaks_example(leak, texts):
+    """True when a gitleaks hit's own secret is an example value (secret_kind): FAKE or placeholder text, an environment
+    variable name, a key block that isn't a key, a file's checksum. The file is read once per run (`texts`) with Watchtower's
+    reader (a plain file, at most GITLEAKS_READ_LIMIT); anything it can't find again is kept."""
+    p = leak.get("File")
+    if not isinstance(p, str) or not p:
+        return False
+    if p not in texts:
+        texts[p] = read_scanned(p, limit=GITLEAKS_READ_LIMIT)[0]
+    found = gitleaks_secret(leak, texts[p])
+    if not found:
+        return False
+    return secret_kind(found[0], str(leak.get("RuleID") or ""), found[1], leak.get("Match"))[0] == "example"
 
 
 GROUPED_DIRS = ("/agent-transcripts", "/agent-tools", "/.cursor/projects")
@@ -95,8 +178,10 @@ def gitleaks_findings(roots, notes):
             reason = next((l for l in re.sub(r"\x1b\[[0-9;]*m", "", err).splitlines() if "FTL" in l or "error" in l.lower()), err.strip()[:160] or "no report written")
             fail_note(notes, f"gitleaks FAILED on {r} ({reason.strip()[-160:]}): secrets there were NOT checked by gitleaks.")
             continue
-        per_file, decoys, skipped_tool = {}, canary_paths(), 0
+        per_file, decoys, skipped_tool, examples, texts = {}, canary_paths(), 0, 0, {}
         for leak in load_json(tmp, []) or []:
+            if not isinstance(leak, dict):
+                continue
             if os.path.abspath(str(leak.get("File") or "")) in decoys:
                 continue
             if is_platform_secret_store(str(leak.get("File") or "")):
@@ -104,7 +189,11 @@ def gitleaks_findings(roots, notes):
             if in_toolchain_tree(str(leak.get("File") or "")):
                 skipped_tool += 1
                 continue                                  # item 8 dry run: test vectors in a language toolchain or package store                                  # Watchtower's own decoys (their names are this install's, not in this config)
+            if gitleaks_example(leak, texts):
+                examples += 1
+                continue                                  # batch 6 (B5): before the per-file and folder grouping, so fakes never make a group
             per_file.setdefault(leak.get("File"), []).append(leak)
+        texts.clear()
         by_dir = {}
         for fpath in per_file:
             by_dir.setdefault(group_dir(fpath), []).append(fpath)
@@ -133,6 +222,9 @@ def gitleaks_findings(roots, notes):
                                f"{fpath}:{leaks[0].get('StartLine')}", f"{len(leaks)} hit(s): {', '.join(kinds)[:100]}",
                                "Check whether these are live credentials. Revoke live ones, then delete or scrub the file.", source="gitleaks",
                                path=fpath if isinstance(fpath, str) and fpath.startswith("/") else None))
+        if examples:
+            notes.append(f"gitleaks: {examples} hit(s) were example values (FAKE or placeholder text, an environment variable name, "
+                         "a key block that isn't a real key, or a file's checksum), not listed.")
         if skipped_tool:
             notes.append(f"gitleaks: {skipped_tool} hit(s) in language toolchains and package stores (Go, pnpm, ...) not listed: "
                          "those are the tools' own test keys. A key TruffleHog proves live is still reported wherever it is.")

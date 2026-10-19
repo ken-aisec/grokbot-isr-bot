@@ -12,9 +12,11 @@ def mask(s):
 # the original text, and one pass writes them out, so no reader sees another's output, a hidden value keeps its line breaks
 # (history and `show` stay line for line) and the whole is linear. MASK_VERSION goes up whenever masking learns a new shape:
 # copies stored masked by an older version (approved skills, the engine cache) are then masked again.
-MASK_VERSION = 7   # batch 5: whole logical shell words for credentials, quoted YAML keys, webhook URLs over joins and \u escapes
+MASK_VERSION = 8   # batch 5: whole logical shell words for credentials, quoted YAML keys, webhook URLs over joins and \u escapes
                    # (PR A, Codex round 2: 6, for long and joined tool and flag words, whole-value keep test, Bash $'…' and $"…";
                    # round 3: 7, for short values after a joined tool or flag)
+                   # batch 6 (KL3, #15 medium 6): 8, for curl's cookie and OAuth bearer values, and a hidden value that ends at its
+                   # last character, so its closing quote stays and masking is idempotent
 # (4); PR A, Codex round 1 (5): attached -u/-U/-p and the other line-reader forms in whole words, YAML quoted values over lines,
 # an escaped or joined scheme separator
 MASK_WINDOW = 8192   # finding() stores 160 characters: it masks this much of the text they are cut from, never less
@@ -52,7 +54,10 @@ SECRET_WORDS = ("token", "secret", "passwd", "pass", "api_key", "apikey", "api-k
 NOT_SECRET_NAMES = frozenset(("author", "authors", "authored", "authority", "auth_url", "auth_uri", "token_url", "token_uri",
                               "tokenizer", "passive", "compass", "bypass"))
 SECRET_FLAGS = frozenset(("--password", "--passwd", "--pass", "--token", "--api-key", "--apikey", "--secret", "--auth-token",
-                          "--access-token"))
+                          "--access-token", "--oauth2-bearer"))
+# Batch 6 (KL3): curl's cookie flags. Their value is a cookie only when it has an = in it (-b jar.txt names a cookie-jar file), and
+# only for curl (git checkout -b x is a branch name).
+COOKIE_FLAGS = frozenset(("-b", "--cookie"))
 USER_FLAGS = frozenset(("-u", "--user", "--proxy-user", "-U"))   # curl and friends: user:password
 USER_EQ = ("--user=", "--proxy-user=")   # Codex, round 3: the long options' attached form
 SECRET_HEADER = re.compile(r"(?i)^[ \t]*(?:--?[A-Za-z][\w-]*=)?(?:(?P<auth>(?:proxy-)?authorization|x-api-key|x-auth-token)|(?P<jar>(?:set-)?cookie))[ \t]*:[ \t]*"
@@ -80,6 +85,67 @@ def _secret_name(name):
 
 def _unquote(raw):
     return re.sub(r"\\(.)", r"\1", raw.replace("$'", "'").replace("'", "").replace('"', ""))
+
+
+@functools.lru_cache(maxsize=8)
+def _quote_pairs(raw):
+    """Batch 6 (#15 medium 6): each quote of one shell word as the shell reads it, in order: ([where each opens], [where each
+    closes or None]). '…' escapes nothing, "…" and $'…' take a backslash escape, outside quotes a backslash escapes the next
+    character. Read once per word (cached): a long word with many hidden values is not read again for each."""
+    out, i, n = [], 0, len(raw)
+    while i < n:
+        c = raw[i]
+        if c == "\\":
+            i += 2
+            continue
+        if c == "$" and raw[i + 1:i + 2] == "'":
+            o, q, esc, i = i + 1, "'", True, i + 2
+        elif c in "'\"":
+            o, q, esc, i = i, c, c == '"', i + 1
+        else:
+            i += 1
+            continue
+        while i < n and raw[i] != q:
+            i += 2 if esc and raw[i] == "\\" else 1
+        out.append((o, i if i < n else None))
+        i += 1
+    return [o for o, _ in out], [c for _, c in out]
+
+
+def _paired_spans(raw, s, e):
+    """Batch 6 (#15 medium 6): [s, e) of `raw` (one shell word) as spans that leave its quotes paired. A quote that opens inside and
+    closes past e is hidden whole (e moves past its close); a closing quote inside whose quote opened before s is kept, the span
+    split around it. So export "API_TOKEN=…" keeps its closing ", and masking the masked text again finds nothing new."""
+    if "'" not in raw and '"' not in raw:
+        return [(s, e)] if e > s else []
+    opens, closes = _quote_pairs(raw)
+    # quotes don't nest in one word, so only the last quote opened before e can close past it, and only the last one opened
+    # before s can close inside: two lookups, whatever the word's length
+    k = bisect.bisect_left(opens, e) - 1
+    if k >= 0 and opens[k] >= s and (closes[k] is None or closes[k] >= e):
+        e = len(raw) if closes[k] is None else closes[k] + 1
+    out, p = [], s
+    j = bisect.bisect_left(opens, s) - 1
+    if j >= 0 and closes[j] is not None and s <= closes[j] < e:
+        if closes[j] > p:
+            out.append((p, closes[j]))
+        p = closes[j] + 1
+    if e > p:
+        out.append((p, e))
+    return out
+
+
+def _word_span(spans, raw, at, s, e):
+    """Hide raw[s:e] (raw is a word at offset `at`), its quotes left paired (_paired_spans)."""
+    spans += [(at + a, at + b) for a, b in _paired_spans(raw, s, e)]
+
+
+def _raw_at(raw, quoted, k):
+    """Where the k-th character of a word's shell reading is in `raw` (its quotes and escapes counted); k when it isn't quoted."""
+    if not quoted:
+        return k
+    idx = _unquote_map(raw)[1]
+    return idx[k] if k < len(idx) else len(raw)
 
 
 def _unquote_map(raw):
@@ -118,7 +184,7 @@ def _assignments(raw, at, spans):
         if j < i and _secret_name(raw[j:i]):
             end = n if j <= lead else _VALUE.match(raw, i + 1).end()
             if end > i + 1 and not _kept(raw[i + 1:end]):
-                spans.append((at + i + 1, at + end))
+                _word_span(spans, raw, at, i + 1, end)   # batch 6: up to the value's last character, its closing quote kept
                 i = end - 1   # nothing inside a hidden value is read again: TOKEN=TOKEN=… stays linear
         i = raw.find("=", i + 1)
 
@@ -376,15 +442,22 @@ def _mask_words(s, at, spans, depth, ml=False):
                     or plain in ("Bearer", "BEARER") or (low == "bearer" and len(nxt[3]) >= 8)):   # "the bearer token" in prose stays
                 if not _kept(nxt[2]):
                     spans.append((nxt[0], nxt[1]))
+            elif tool == "curl" and low in COOKIE_FLAGS and "=" in nxt[3]:   # batch 6 (KL3): curl -b 'sid=…', --cookie 'sid=…'
+                if not _kept(nxt[2]):
+                    spans.append((nxt[0], nxt[1]))
             elif low in USER_FLAGS and ":" in nxt[2]:   # curl -u user:password: the password
                 c = nxt[2].find(":")
                 if not _kept(nxt[2][c + 1:]):
-                    spans.append((nxt[0] + c + 1, nxt[1]))
+                    _word_span(spans, nxt[2], nxt[0], c + 1, len(nxt[2]))
             elif nxt[3][:1] == "=" and len(nxt[3]) > 1 and _secret_name(plain) and not _kept(nxt[2][1:]):
-                spans.append((nxt[0] + 1, nxt[1]))
+                _word_span(spans, nxt[2], nxt[0], 1, len(nxt[2]))
         if low[:2] == "-u" and len(low) > 2 and ":" in raw and low[:3] != "-u=":   # curl -uuser:password
             if not _kept(raw[raw.find(":") + 1:]):
-                spans.append((a + raw.find(":") + 1, b))
+                _word_span(spans, raw, a, raw.find(":") + 1, len(raw))
+        if tool == "curl" and low[:2] == "-b" and len(low) > 2 and "=" in plain:   # batch 6 (KL3): curl -bsid=…, -b'sid=…'
+            exact = _unquote_map(raw)[0] if quoted else plain
+            if len(exact) > 2 and not _kept(exact[2:]):
+                _word_span(spans, raw, a, _raw_at(raw, quoted, 2), len(raw))
         if low.startswith(USER_EQ) and ":" in plain:   # --user=user:password, --proxy-user='user:password'
             exact, idx = _unquote_map(raw) if quoted else (plain, range(len(plain)))
             c = exact.find(":", exact.find("="))
@@ -412,16 +485,18 @@ def _mask_words(s, at, spans, depth, ml=False):
             if plain == "-p" and nxt is not None:
                 spans.append((nxt[0], nxt[1]))
             elif plain.startswith("-p") and len(plain) > 2:
-                spans.append((a + 2, b))
+                _word_span(spans, raw, a, _raw_at(raw, quoted, 2), len(raw))
             elif not plain.startswith("-") and not (prev and prev[3] == "-p"):
                 tool = "done"   # sshpass's own options end at the command it runs (ssh -p 2222 stays)
         elif tool == "mysql" and plain.startswith("-p") and len(plain) > 2 and not _kept(raw[2:]):
-            spans.append((a + 2, b))   # every -p<password>, not only the first
+            _word_span(spans, raw, a, _raw_at(raw, quoted, 2), len(raw))   # every -p<password>, not only the first
         base = plain.rpartition("/")[2]
         if base == "sshpass" and tool is None:
             tool = "sshpass"
         elif base in MYSQL_TOOLS:
             tool = "mysql"
+        elif base == "curl" and tool is None:
+            tool = "curl"
         if depth < 2 and quoted and _TRIGGER.search(raw):
             for q in (_QUOTED_ML if ml else _QUOTED).finditer(raw):
                 o = 2 if q.group(0).startswith("$'") else 1
@@ -438,7 +513,7 @@ _BREAKS = re.compile(r"\r\n|[\n\r\x0b\x0c\x1c\x1d\x1e\x85  ]")
 # Every shell-word rule needs one of these in the same line (a secret-named variable, flag or header, -p, -u, Bearer, sshpass or
 # a MySQL tool), so the tokenizer only reads lines that have one, and a quoted part without one is not read again inside.
 _TRIGGER = re.compile(r"(?i)(?=[tspacbm-])(?:token|secret|pass|api[_-]?key|access_key|private_key|auth|credential|session|cookie"
-                      r"|bearer|-[pu]|sshpass|mysql|mariadb)")
+                      r"|bearer|-[pu]|sshpass|mysql|mariadb|curl)")   # batch 6 (KL3): curl, for its -b
 # A closed quote that crosses a line (the shell's reading); one closed on its own line is skipped whole.
 _SEVERAL = re.compile(r"[\s|;&]")   # quoted text with more than one shell word in it
 _CROSSING = re.compile(r"'[^'\n]*'|\"(?:[^\"\\\n]|\\.)*\"|(?P<x>'[^']{0,4096}'|\"(?:[^\"\\]|\\[\s\S]){0,4096}\")")
@@ -682,11 +757,14 @@ def _credential_word_spans(s, spans):
             tool = "sshpass"
         elif base in MYSQL_TOOLS:
             tool = "mysql"
+        elif base == "curl" and tool is None:
+            tool = "curl"
         # PR A, Codex round 3 (2): every word, short ones too. A short value after a joined flag or tool (curl --us\ + a line
         # break + er 'admin:…', my\ + a line break + sql -p…) is on one line, but the line readers never see its flag or tool
         head = plain[:200]
         hl = head.lower()
         if (flag in SECRET_FLAGS or (was == "sshpass" and flag == "-p") or flag in ("bearer",)
+                or (was == "curl" and flag in COOKIE_FLAGS and "=" in plain)   # batch 6 (KL3): curl --coo\ + kie 'sid=…'
                 or (flag == "=" and flag2 is not None and _secret_name(flag2))
                 or (flag is not None and len(flag) > 1 and (flag[-1] == "=" or (flag[-1] == ":" and ("_" in flag or "-" in flag)))
                     and _secret_name(flag[:-1]))):
@@ -698,6 +776,8 @@ def _credential_word_spans(s, spans):
             hit = 2   # mysql -p'…', sshpass -p'…'
         elif hl[:2] == "-u" and len(hl) > 2 and hl[:3] != "-u=" and ":" in plain:
             hit = plain.find(":") + 1   # curl -uuser:'…', -Uuser:"…"
+        elif was == "curl" and hl[:2] == "-b" and len(hl) > 2 and "=" in plain:
+            hit = 2   # batch 6 (KL3): curl -bsid=…
         elif flag is not None and plain[:1] == "=" and len(plain) > 1 and _secret_name(flag):
             hit = 1   # TOKEN ='…'
         elif flag in USER_FLAGS or hl.startswith(USER_EQ):
@@ -722,7 +802,7 @@ def _credential_word_spans(s, spans):
                 if nm and _secret_name(nm.group(1)):
                     hit = nm.end()
         if hit is not None and hit < len(plain) and not _kept(plain[hit:]):
-            spans.append((a + (hit if lo is None else lo[hit]), b))
+            _word_span(spans, raw, a, hit if lo is None else lo[hit], b - a)   # batch 6: its closing quote kept
 
 
 def mask_spans(s):
