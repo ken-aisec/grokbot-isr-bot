@@ -114,6 +114,99 @@ def by_sev(fs):
     return c
 
 
+# Batch 5 (d1, Ken's decision 2, Oct 18): Grok Bot's own files (scope "platform") keep their severity, label and key inside, so a
+# vendor rug pull still alerts and stays Confirmed, but they are never one of the owner's problems: not in open_by_severity, not
+# in `new`, not in breakdown's Confirmed list, not in the report's counts or the dashboard's tiles. Each is one plain line in
+# "Platform notes" instead. Unverified platform files (WT-I001/I002/I011) are never platform scope and still count.
+# PR A, Codex round 1 (5, 7): a platform finding that counts (a real key outside Grok Bot's config: counts() keeps it) is the
+# owner's, with its own fix, in every channel; and only a place Watchtower itself vouches for (a platform root, Grok Bot's
+# config, its secret store, a system package, the platform's hook) makes a note. A plugin state/plugins.json files as "catalog"
+# (the Bot can write that file) stays in the owner's lists, as on 151e40c.
+def platform_scope(f):
+    return f.get("scope") == "platform" and not f.get("guarded") and not counts(f) and platform_file(f, catalog=False)
+
+
+def owners(fs):
+    """The findings that are the owner's to deal with: everything but platform notes (and platform warning-text records)."""
+    return [f for f in fs if not (platform_scope(f) or (f.get("scope") == "platform" and f.get("guarded")))]
+
+
+def _platform_place(where):
+    """(the path, under ~/ when it is in the home folder; the line or "")."""
+    path, _, ln = (where or "").rpartition(":")
+    if not (ln.isdigit() and path):
+        path, ln = where or "", ""
+    h = os.path.expanduser("~").rstrip("/") + "/"
+    return ("~/" + path[len(h):] if path.startswith(h) else path), ln
+
+
+def _unlisted(path, unlisted):
+    """True when the platform file at `path`, or one inside the folder `path`, is one the release list doesn't include."""
+    return path in unlisted or any(u.startswith(path.rstrip("/") + "/") for u in unlisted)
+
+
+def _note_kind(f, unlisted=()):
+    """Which line a platform note gets: "reviewed", "unlisted", "pattern" or "said" (Watchtower would call it <severity>)."""
+    if f.get("reviewed"):
+        return "reviewed"
+    if _unlisted(f["where"].split(":")[0], unlisted):
+        return "unlisted"
+    if f.get("class") == "platform" and not f.get("platform_hook"):
+        return "pattern"
+    return "said"
+
+
+def loud_note(f, unlisted=()):
+    """A note whose line says Watchtower would call it critical or high: the ones the daily routine names (Codex round 1, 10)."""
+    return _note_kind(f, unlisted) == "said" and (f.get("severity_was") or f["severity"]) in ("critical", "high")
+
+
+def platform_note_line(f, unlisted=()):
+    """One plain line for a platform note. `unlisted`: paths whose platform file the release list doesn't include."""
+    short, ln = _platform_place(f.get("where", ""))
+    line = f" (line {ln})" if ln else ""
+    v = platform_vendor(f["where"].split(":")[0]) if str(f.get("where", "")).startswith("/") else "Grok Bot"
+    kind = _note_kind(f, unlisted)
+    if kind == "reviewed":   # d2: an exact-bytes entry of rules/platform-reviewed.json; its note is the fix
+        return f"{f['fix']} Watchtower checked this exact text{' (line ' + ln + ')' if ln else ''}; nothing to do."
+    if kind == "unlisted":
+        return f"{v}'s own folder, {short}{line}: {f['title']}. Not on Watchtower's release list: its own alert counts, this line doesn't."
+    if kind == "pattern":
+        return f"{v}'s own file {short}{line}: {f['title']}. A pattern match nothing backs up; not counted."
+    sev = f.get("severity_was") or f["severity"]
+    said = f"would call {sev}" if sev in ("critical", "high", "medium", "low") else "would list"
+    return (f"{v}'s own file {short}{line}: has text Watchtower {said} in your own skill ({f['title']}). It isn't counted. "
+            f"If it worries you, tell {v} support; Watchtower keeps it listed.")
+
+
+def platform_notes(fs, limit):
+    """{"count", "loud", "lines"} for the platform notes among `fs`, or None when there are none: `loud` counts those Watchtower
+    would call critical or high, whose lines come first (Codex round 1, 10); `lines` holds at most `limit`. `loud` is for the
+    caller, which says what it leaves out (notes_more) and never prints it."""
+    unlisted, plat = platform_note_order(fs)
+    if not plat:
+        return None
+    return {"count": len(plat), "loud": sum(1 for f in plat if loud_note(f, unlisted)),
+            "lines": [platform_note_line(f, unlisted) for f in plat[:limit]]}
+
+
+def platform_note_order(fs):
+    """(the unlisted paths, the platform notes among `fs` in the order platform_notes gives their lines: the loud ones first)."""
+    unlisted = {f["where"].split(":")[0] for f in fs if f.get("unverified_platform")}
+    plat = [f for f in shown(fs) if platform_scope(f)]
+    return unlisted, [f for f in plat if loud_note(f, unlisted)] + [f for f in plat if not loud_note(f, unlisted)]
+
+
+PLATFORM_NOTES_MORE = "`wt.py breakdown` lists every one"
+
+
+def notes_more(count, loud, shown_):
+    """The `more` line of platform_notes when the first `shown_` of `count` lines (the `loud` ones first) are shown."""
+    left, loud = count - shown_, max(0, loud - shown_)
+    return (f"{left} more platform note{'' if left == 1 else 's'} not shown here"
+            + (f", {loud} of them Watchtower would call critical or high" if loud else "") + f": {PLATFORM_NOTES_MORE}.")
+
+
 # ---------------------------------------------------------------- report
 def cmd_report(args):
     snap = load_json(state_path("last_findings.json"), None)
@@ -151,8 +244,8 @@ def trend(hist):
 
 def render_md(snap, hist, tag):
     warn = [f for f in shown(snap["findings"]) if f.get("guarded")]   # batch 2 (R1): one count line, never a finding
-    plat = [f for f in shown(snap["findings"]) if f.get("scope") == "platform" and not f.get("guarded")]   # v0.7.1 item 4: their own section, never scored
-    fs = [f for f in shown(snap["findings"]) if f.get("scope") != "platform" and not f.get("guarded")]
+    plat = [f for f in shown(snap["findings"]) if platform_scope(f)]   # v0.7.1 item 4: their own section, never scored
+    fs = [f for f in shown(snap["findings"]) if not platform_scope(f) and not f.get("guarded")]   # Codex round 1 (5): a counted one is here
     c = by_sev(fs)
     lines = [f"# Watchtower report {tag}", "", f"Status: {status_line(snap)}", "",
              f"Score {score_line(snap)} (grade {snap_grade(snap)}), {trend(hist)}. Open findings: "
@@ -186,9 +279,17 @@ def render_md(snap, hist, tag):
     if warn:
         lines += ["", f"{GUARDED_LABEL}: {len(warn)} line{'' if len(warn) == 1 else 's'} that warn against a risky step or quote it as an "
                   "example. Not findings, not in the score. `wt.py breakdown` lists them."]
-    if plat:
-        lines += ["", "## Platform", "", "Grok Bot's own files. Not in the score."]
-        lines += [f"- {f['rule']} {label_of(f)}: {f['title']} at `{f['where']}`. {f['fix']}" for f in plat[:40]]
+    if plat:   # batch 5 (d1): one plain line each, outside every count
+        unlisted = {f["where"].split(":")[0] for f in snap["findings"] if f.get("unverified_platform")}
+        lead = ("Grok Bot's own files, exactly as Watchtower's release lists them. They don't count toward your problems or your status."
+                if not any(_unlisted(f["where"].split(":")[0], unlisted) for f in plat) else
+                "Grok Bot's own files. They don't count toward your problems or your status; a file Watchtower's release list doesn't "
+                "include has its own counted alert above.")
+        notes = platform_notes(snap["findings"], 40)
+        lines += ["", "## Platform notes", "", lead]
+        lines += [f"- {l}" for l in notes["lines"]]
+        if notes["count"] > len(notes["lines"]):
+            lines.append(f"- {notes_more(notes['count'], notes['loud'], len(notes['lines']))}")
     inv = snap.get("inventory", {})
     lines += ["", "## Inventory", "", f"Skills on disk: {inv.get('skills', 0)} · plugin files: {inv.get('plugin_files', 0)} · MCP configs: {inv.get('mcp_configs', 0)}"]
     fyi = [f for f in shown(snap["findings"]) if not counts(f)]
@@ -226,8 +327,18 @@ def extra_sections(fs):
     return out
 
 
+def platform_details(findings):
+    """The dashboard's "Platform notes (n)": Grok Bot's own files, one plain line each, outside the tiles and the table."""
+    notes = platform_notes(findings, 40)
+    if not notes:
+        return ""
+    more = [notes_more(notes["count"], notes["loud"], len(notes["lines"]))] if notes["count"] > len(notes["lines"]) else []
+    return (f"<details><summary>Platform notes ({notes['count']})</summary><p class='mut'>Grok Bot's own files. They don't count toward "
+            "your problems or your status.</p><ul>" + "".join(f"<li>{html.escape(l)}</li>" for l in notes["lines"] + more) + "</ul></details>")
+
+
 def render_html(snap, hist, tag):
-    fs = shown(snap["findings"])
+    fs = owners(shown(snap["findings"]))   # batch 5 (d1): tiles and table are the owner's findings; platform notes below
     c = by_sev(fs)
     pts = hist[-12:] or [(snap["at"], snap["score"], len(fs))]
     w, h = 320, 70
@@ -252,6 +363,6 @@ table{{border-collapse:collapse;width:100%;font-size:13px}}td,th{{border-bottom:
 <div class='row'><div class='card'><div class='mut'>Status</div><div style='font-size:24px;font-weight:700'>{html.escape(status_line(snap))}</div><div class='mut'>Posture score</div><div class='big'>{snap['score']}<span class='mut' style='font-size:18px'>/100 · {snap_grade(snap)}</span></div><div class='mut'>{html.escape(score_line(snap))}</div><div class='mut'>{trend(hist)}</div></div>
 <div class='card'><div class='mut'>Score, last {len(pts)} runs</div><svg width='{w}' height='{h}' viewBox='0 0 {w} {h}' role='img' aria-label='score trend'><polyline fill='none' stroke='#2e86c1' stroke-width='2' points='{poly}'/></svg></div>
 {tiles}</div><h2 style='font-size:16px'>Open findings</h2><div class='wrap'><table><tr><th>Severity</th><th>Finding</th><th>Where</th><th>OWASP</th><th>Fix</th></tr>{rows or "<tr><td colspan=5>Nothing open.</td></tr>"}</table></div>
-{extra_sections(fs)}
+{extra_sections(fs)}{platform_details(snap["findings"])}
 <p style='margin-top:16px'>{f"<a href='threat-brief-{tag}.html'>Open this week's threat brief →</a>" if os.path.exists(os.path.join(home(), "reports", f"threat-brief-{tag}.html")) else ""}</p>
 <p class='mut' style='margin-top:20px'>Watchtower {VERSION}. Scanners can be bypassed; this is evidence, not proof.</p></body></html>"""

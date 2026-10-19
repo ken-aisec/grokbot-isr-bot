@@ -12,7 +12,11 @@ def mask(s):
 # the original text, and one pass writes them out, so no reader sees another's output, a hidden value keeps its line breaks
 # (history and `show` stay line for line) and the whole is linear. MASK_VERSION goes up whenever masking learns a new shape:
 # copies stored masked by an older version (approved skills, the engine cache) are then masked again.
-MASK_VERSION = 3   # round 3: whole YAML values and blocks, escaped quotes in serialized JSON, glued and escaped webhook URLs
+MASK_VERSION = 7   # batch 5: whole logical shell words for credentials, quoted YAML keys, webhook URLs over joins and \u escapes
+                   # (PR A, Codex round 2: 6, for long and joined tool and flag words, whole-value keep test, Bash $'…' and $"…";
+                   # round 3: 7, for short values after a joined tool or flag)
+# (4); PR A, Codex round 1 (5): attached -u/-U/-p and the other line-reader forms in whole words, YAML quoted values over lines,
+# an escaped or joined scheme separator
 MASK_WINDOW = 8192   # finding() stores 160 characters: it masks this much of the text they are cut from, never less
 HIDDEN = "[hidden]"
 KEY_SHAPE = re.compile(   # the lookahead names every shape's first letter, so most of a text is skipped at C speed
@@ -171,60 +175,48 @@ def _urls(s, spans):
         i = nxt
 
 
-_URLISH = re.compile(r":(?:\\*/){2}")   # ://, and JSON's :\/\/ or :\\\/\\\/
+# ://, and JSON's :\/\/, :\\\/\\\/ or //. PR A, Codex round 1 (4): the colon written : too, and line joins
+# (backslash, line break) and quotes anywhere between the three, so the URL's word is read before it is searched (https:\ then
+# //…, 'https:/'\ then '/…').
+# Round 2 (4): Bash's $'…' and $"…" quotes between them too, and $'…''s escapes for the colon and the slash (\x2f, \057, \u2f,
+# \U0000002f), so https:$'//'… and https:$'\x2f\x2f'… are read as the shell reads them.
+_URLISH = re.compile(r"(?::|\\u0{0,2}3[aA]|\\x3[aA]|\\0?72|\\U0{0,6}3[aA])(?:\$?['\"]|\\\r?\n)*(?:\\*/|\\u0{0,2}2[fF]|\\x2[fF]|\\0?57|\\U0{0,6}2[fF])"
+                     r"(?:\$?['\"]|\\\r?\n)*(?:\\*/|\\u0{0,2}2[fF]|\\x2[fF]|\\0?57|\\U0{0,6}2[fF])")
 
 
-def _drop_slash_escapes(s):
-    """`s` with every backslash that escapes a / taken out (JSON's \\/, once or twice serialized), and where each kept
-    character came from."""
-    out, idx, n, i = [], [], len(s), 0
-    while i < n:
-        if s[i] == "\\":
-            j = i
-            while j < n and s[j] == "\\":
-                j += 1
-            if j < n and s[j] == "/":
-                i = j
-                continue
-            out.append(s[i:j])
-            idx += range(i, j)
-            i = j
-            continue
-        out.append(s[i])
-        idx.append(i)
-        i += 1
-    return "".join(out), idx
+_JOINED_LINE = re.compile(r"(?<!\\)(?:\\\\)*\\\r?$")
 
 
 def _word_urls(s, spans):
     """Codex, round 3: a URL is also read as the shell reads its word, with JSON's escaped slashes as slashes, so a webhook
     credential glued on after a quote ('https://hooks.slack.com/services/T0/B0/'FAKE) or written https:\\/\\/… is found. What
-    _urls finds in that reading is mapped back to the original characters. Each line with a URL and a quote or backslash in it
-    is read once."""
-    pos = 0
+    _urls finds in that reading is mapped back to the original characters.
+    Batch 5 (Codex review 4, c4): the word is the shell's logical word (_logical_words): a backslash at the end of a line joins
+    the next one into it (…/B0/\\ then FAKE on the next line, or the host on one line and the path on the next), and JSON's
+    \\uXXXX escapes are read too (_json_unescape). A quoted value closed before } ] ) > or , ends there, so a JSON "…FAKE"} keeps
+    its "}. The text is read from the start of each URL's logical line, never twice: reading resumes after the last word read."""
+    pos = done = 0
     while True:
         m = _URLISH.search(s, pos)
         if not m:
             return
         a = s.rfind("\n", 0, m.start()) + 1
-        b = s.find("\n", m.end())
-        b = len(s) if b == -1 else b
-        pos = b + 1
-        line = s[a:b]
-        if not ("'" in line or '"' in line or "\\" in line):
-            continue   # the plain reading already saw it
-        for w in _SHELL.finditer(line):
-            raw = w.group("word")
-            if raw is None or not _URLISH.search(raw):
-                continue
-            plain, idx = _unquote_map(raw)
-            if "\\" in plain:
-                plain, idx2 = _drop_slash_escapes(plain)
-                idx = [idx[k] for k in idx2]
-            found = []
-            _urls(plain, found)
-            at = a + w.start()
-            spans += [(at + idx[x], at + idx[y - 1] + 1) for x, y in found if y > x]
+        while a > done and a >= 2 and _JOINED_LINE.search(s, s.rfind("\n", 0, a - 1) + 1, a - 1):
+            a = s.rfind("\n", 0, a - 1) + 1   # the line before ends in a join: the logical line starts there
+        start, pos = max(a, done), m.end()
+        for wa, wb, _ in _logical_words(s, start):
+            done = pos = wb
+            raw = s[wa:wb]
+            if wb > m.start() and _URLISH.search(raw) and ("'" in raw or '"' in raw or "\\" in raw):   # else the plain reading saw it
+                plain, lo, hi = _shell_plain(raw, stop_at_close=True)
+                plain, lo, hi = _json_unescape(plain, lo, hi)
+                found = []
+                _urls(plain, found)
+                spans += [(wa + lo[x], wa + hi[y - 1]) for x, y in found if y > x]
+            if wb >= m.end():
+                break
+        else:
+            done = pos = max(pos, len(s))
 
 
 # Codex, round 2: "password": "…", 'api_key': '…', \"token\":\"…\" (JSON inside a string) and YAML's `password: …` (a single
@@ -273,22 +265,83 @@ def _yaml_value(s, m):
     return a, max(a, end)
 
 
+# Batch 5 (Codex review 4, c3): a quoted YAML key ("password": or 'token': at the start of a line, after its indentation and an
+# optional "- ", then a space or the line's end) has a YAML value: read whole by _yaml_value, like an unquoted key's.
+_YAML_QKEY = re.compile(r"^(?P<ind>[ \t]*(?:-[ \t]+)?)(?P<q>[\"'])(?P<n2>[A-Za-z_][\w.-]{0,63})(?P=q)[ \t]*:(?=[ \t]|\r?$)", re.M)
+
+
+def _yaml_quoted_keys(s, spans):
+    """A quoted YAML key's whole value: a | or > block, words up to a ` #` comment, or lines indented under it. A quoted value
+    ("password": "x") and a JSON or flow value ({…}, […]) keep _FIELD's reading, and so does a single word alone on its line
+    (`"token": 5,` in JSON): that reading already hides all of it. Each match is read once; the search goes on after the value."""
+    pos = 0
+    while True:
+        m = _YAML_QKEY.search(s, pos)
+        if not m:
+            return
+        pos = m.end()
+        if not _secret_name(m.group("n2")):
+            continue
+        eol = s.find("\n", m.end())
+        rest = s[m.end():eol if eol != -1 else len(s)].strip(" \t\r")
+        if rest[:1] in ("'", '"', "{", "["):
+            continue
+        a, b = _yaml_value(s, m)
+        one_word = (eol == -1 or b <= eol) and rest and not re.search(r"[ \t]", rest) and rest[0] not in "|>"
+        if b > a and not one_word and not _kept(s[a:b]):
+            spans.append((a, b))
+        pos = max(pos, b)
+
+
+def _quoted_scalar_end(s, a):
+    """PR A, Codex round 1 (3): where the YAML quoted scalar opened at s[a] ends (after its closing quote; the text's end when it
+    never closes). It may run over lines: in "…" a backslash escapes the next character (a line break too), in '…' '' is a quote."""
+    q, i, n = s[a], a + 1, len(s)
+    while i < n:
+        c = s[i]
+        if c == "\\" and q == '"':
+            i += 2
+            continue
+        if c == q:
+            if q == "'" and s[i + 1:i + 2] == "'":
+                i += 2
+                continue
+            return i + 1
+        i += 1
+    return n
+
+
+def _multiline_scalar(s, a):
+    """The end of the quoted value opened at s[a] when it runs past its line (_quoted_scalar_end), else None: a value closed on
+    its own line keeps the line readers' reading."""
+    if a >= len(s) or s[a] not in "'\"":
+        return None
+    e = _quoted_scalar_end(s, a)
+    eol = s.find("\n", a)
+    return e if eol != -1 and e > eol else None
+
+
 def _fields(s, spans):
+    _yaml_quoted_keys(s, spans)
     pos = 0
     while True:
         m = _FIELD.search(s, pos)
         if not m:
             return
         if m.group("n1") is not None:
-            if _secret_name(m.group("n1")) and not _kept(m.group("v1")):
-                spans.append((m.start("v1"), m.end("v1")))
-                pos = m.end()
+            # round 1 (3): "password": "FAKEa\n  FAKEz". Round 2 (3): the whole value is what may be kept, never its first line
+            # ("$TOKEN\n  FAKEz" is not a bare reference)
+            e = (_multiline_scalar(s, m.start("v1")) or m.end("v1")) if _secret_name(m.group("n1")) else None
+            if e is not None and not _kept(s[m.start("v1"):e]):
+                spans.append((m.start("v1"), e))
+                pos = m.end()   # never past e: a key on the next line of text that isn't YAML is still read
             else:
                 pos = max(m.start("v1"), m.start() + 1)
         elif _secret_name(m.group("n2")):
             a, b = _yaml_value(s, m)
-            if b > a and not _kept(s[a:b]):
-                spans.append((a, b))
+            e = max(b, _multiline_scalar(s, a) or b)   # password: 'FAKEa\nFAKEz', its next line not indented
+            if e > a and not _kept(s[a:e]):
+                spans.append((a, e))
             pos = max(b, m.end())
         else:
             pos = m.end()
@@ -451,6 +504,227 @@ def _quoted_values(s, spans):
         pos = max(pos, e + 1)
 
 
+# Batch 5 (Codex review 4, c2 and c4): the shell's own words over the whole text, read once and with no length cap. A word keeps
+# its quotes ('…', "…", $'…', one left open running to the end of the text), escapes and glued segments whole; a backslash before a
+# line break joins the lines (inside a word it is part of it, between words only space). | || && ; & and a line break end a
+# command. Every alternative eats at least one character and none can fail after it started, so finditer is linear.
+_LW = re.compile(r"(?P<sep>\|\||&&|[|;&]|\n)|(?P<word>(?:'[^']*'?|\$'(?:[^'\\]|\\[\s\S])*'?|\"(?:[^\"\\]|\\[\s\S])*\"?"
+                 r"|\\\r?\n|\\[\s\S]?|[^\s'\"\\|;&$]+|\$)+)")
+_JOINS = re.compile(r"(?:\\\r?\n)*")
+_DQ_RUN, _SQ_RUN, _UQ_RUN = re.compile(r"[^\"\\]+"), re.compile(r"[^'\\]+"), re.compile(r"[^'\"\\$]+")
+
+
+def _logical_words(s, pos=0):
+    """(start, end, first) for each shell word of s from `pos` (a word boundary), `first` when no word of the same command came
+    before it. Line joins in front of a word are not part of it; a word that is only joins is none."""
+    first = True
+    for m in _LW.finditer(s, pos):
+        if m.group("sep") is not None:
+            first = True
+            continue
+        a, b = _JOINS.match(s, m.start(), m.end()).end(), m.end()
+        if a < b:
+            yield a, b, first
+            first = False
+
+
+_ANSI_ESC = re.compile(r"\\(?:(?P<c>[abeEfnrtv\"?])|(?P<o>[0-7]{1,3})|x(?P<x>[0-9a-fA-F]{1,2})|u(?P<u>[0-9a-fA-F]{1,4})"
+                       r"|U(?P<U>[0-9a-fA-F]{1,8})|c(?P<ctl>[\s\S]))")
+_ANSI_CHARS = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "v": "\v", '"': '"', "?": "?"}
+
+
+def _ansi_char(m):
+    """The character a $'…' escape (_ANSI_ESC) stands for in Bash."""
+    if m.group("c"):
+        return _ANSI_CHARS[m.group("c")]
+    if m.group("ctl"):
+        return chr(ord(m.group("ctl")) & 0x1F)
+    cp = int(m.group("o"), 8) & 0xFF if m.group("o") else int(m.group("x") or m.group("u") or m.group("U"), 16)
+    return chr(cp) if cp < 0x110000 and not 0xD800 <= cp < 0xE000 else "\ufffd"
+
+
+def _shell_plain(raw, stop_at_close=False):
+    """The shell's reading of one word: (text, lo, hi), where text[k] came from raw[lo[k]:hi[k]] (an escape keeps its backslash
+    in its range). Line joins are dropped; inside "…" only \\$ \\` \\" \\\\ escape, inside $'…' Bash's escapes are read (PR A,
+    Codex round 2 (4): \\x2f, \\057, \\u2f, \\n, …; before it only \\' and \\\\), and $"…" is a "…". `stop_at_close`: the reading
+    ends at a closing quote followed by } ] ) > or , (a JSON value's end, not more URL)."""
+    out, lo, hi, i, n = [], [], [], 0, len(raw)
+
+    def put(c, a, b):
+        out.append(c)
+        lo.append(a)
+        hi.append(b)
+    while i < n:
+        c = raw[i]
+        if c == "'" or c == '"' or (c == "$" and raw[i + 1:i + 2] in ("'", '"')):
+            q, i = (raw[i + 1], i + 2) if c == "$" else (c, i + 1)   # round 2 (4): $"…" is a "…"
+            ansi = c == "$" and q == "'"
+            c = c if ansi else q
+            run = _SQ_RUN if ansi else _DQ_RUN
+            while i < n and raw[i] != q:
+                if c == "'":   # '…': nothing escapes
+                    e = raw.find("'", i)
+                    e = n if e == -1 else e
+                    out.append(raw[i:e])
+                    lo += range(i, e)
+                    hi += range(i + 1, e + 1)
+                    i = e
+                    break
+                m = run.match(raw, i)
+                if m:
+                    out.append(m.group(0))
+                    lo += range(i, m.end())
+                    hi += range(i + 1, m.end() + 1)
+                    i = m.end()
+                    continue
+                if raw[i] == "\\" and i + 1 < n:   # a backslash
+                    nx = raw[i + 1]
+                    if not ansi and nx == "\n":
+                        i += 2
+                        continue
+                    if not ansi and raw[i + 1:i + 3] == "\r\n":
+                        i += 3
+                        continue
+                    if nx in ("'\\" if ansi else "$`\"\\"):
+                        put(nx, i, i + 2)
+                        i += 2
+                        continue
+                    e = _ANSI_ESC.match(raw, i) if ansi else None
+                    if e:   # round 2 (4): $'…''s other escapes read as Bash does (\x2f is /)
+                        put(_ansi_char(e), i, e.end())
+                        i = e.end()
+                        continue
+                put(raw[i], i, i + 1)
+                i += 1
+            i += 1
+            if stop_at_close and i < n and raw[i] in "}])>,":
+                break
+            continue
+        if c == "\\":
+            if raw[i + 1:i + 2] == "\n":
+                i += 2
+                continue
+            if raw[i + 1:i + 3] == "\r\n":
+                i += 3
+                continue
+            if i + 1 < n:
+                put(raw[i + 1], i, i + 2)
+                i += 2
+                continue
+        m = _UQ_RUN.match(raw, i)
+        e = m.end() if m else i + 1
+        out.append(raw[i:e])
+        lo += range(i, e)
+        hi += range(i + 1, e + 1)
+        i = e
+    return "".join(out), lo, hi
+
+
+_JSON_ESC = re.compile(r"\\+/|\\u([0-9a-fA-F]{4})")
+
+
+def _json_unescape(text, lo, hi):
+    """`text` with JSON's escaped slashes (\\/, once or twice serialized) and \\uXXXX escapes (a surrogate pair is one character)
+    read as the characters they stand for; lo and hi carried along, so each covers every escape character it came from."""
+    if "\\" not in text:
+        return text, lo, hi
+    out, nlo, nhi, pos = [], [], [], 0
+    for m in _JSON_ESC.finditer(text):
+        a, b = m.start(), m.end()
+        if a < pos:
+            continue
+        out.append(text[pos:a])
+        nlo += lo[pos:a]
+        nhi += hi[pos:a]
+        if m.group(1) is None:
+            ch = "/"
+        else:
+            cp = int(m.group(1), 16)
+            pair = re.match(r"\\u([dD][c-fC-F][0-9a-fA-F]{2})", text[b:b + 6]) if 0xD800 <= cp < 0xDC00 else None
+            if pair:
+                cp, b = 0x10000 + ((cp - 0xD800) << 10) + (int(pair.group(1), 16) - 0xDC00), b + 6
+            ch = chr(cp) if not 0xD800 <= cp < 0xE000 else "\ufffd"
+        out.append(ch)
+        nlo.append(lo[a])
+        nhi.append(hi[b - 1])
+        pos = b
+    out.append(text[pos:])
+    return "".join(out), nlo + lo[pos:], nhi + hi[pos:]
+
+
+def _credential_word_spans(s, spans):
+    """Batch 5 (c2): a credential's whole shell word, however many lines and glued segments it has. PR A, Codex round 3 (2): every
+    word of a text that has a line break (or runs past the 4096 characters the older readers read a crossing quote for), whatever
+    its length: a short value on one line still has a flag or tool that a line join may have split. NAME=… with a secret NAME (export "NAME=…", 'NAME'='…', --token=… too) hides from after the = to the word's
+    end; --user=/--proxy-user= and -u/--user/--proxy-user's next word hide from after the first :; a secret flag (--token, …)
+    hides the whole next word; a credential header's word (after -H or not) hides from after its name and scheme; a -d/--data*
+    word hides from a secret name's = to its end. Bare $VAR references stay.
+    PR A, Codex round 1 (2): every form the line readers (_mask_words) know is read here too: an attached -uuser:… or -Uuser:…
+    (from after the first :), a MySQL tool's -p… and sshpass's -p… (after the -p) or the word after sshpass's -p, the word after
+    Bearer, after a secret name= or name: word (or a lone = after a secret name), and =… right after a secret name."""
+    prev = prev2 = tool = None   # the shell's reading, lowered, of the two words before, and the command's tool
+    for a, b, first in _logical_words(s):
+        raw = s[a:b]
+        if first:
+            prev = prev2 = tool = None
+        flag, flag2 = prev, prev2
+        # PR A, Codex round 2 (2): every word's whole reading, line joins removed, whatever its length: a long path to mysql
+        # is still mysql, and --user\ then a line break is still --user
+        long_ = "\n" in raw or b - a > 4096
+        quoted = "\\" in raw or "'" in raw or '"' in raw
+        plain, lo, hi = _shell_plain(raw) if long_ or quoted else (raw, None, None)   # round 3: no quote, no escape: as written
+        prev2, prev = prev, plain.lower()
+        was = tool
+        if tool == "sshpass" and not prev.startswith("-") and flag != "-p":   # _mask_words' tool reading: sshpass's own
+            tool = "done"                                                       # options end at the command it runs
+        base = prev.rpartition("/")[2]
+        if base == "sshpass" and tool is None:
+            tool = "sshpass"
+        elif base in MYSQL_TOOLS:
+            tool = "mysql"
+        # PR A, Codex round 3 (2): every word, short ones too. A short value after a joined flag or tool (curl --us\ + a line
+        # break + er 'admin:…', my\ + a line break + sql -p…) is on one line, but the line readers never see its flag or tool
+        head = plain[:200]
+        hl = head.lower()
+        if (flag in SECRET_FLAGS or (was == "sshpass" and flag == "-p") or flag in ("bearer",)
+                or (flag == "=" and flag2 is not None and _secret_name(flag2))
+                or (flag is not None and len(flag) > 1 and (flag[-1] == "=" or (flag[-1] == ":" and ("_" in flag or "-" in flag)))
+                    and _secret_name(flag[:-1]))):
+            if not _kept(raw):
+                spans.append((a, b))
+            continue
+        hit = None
+        if was in ("mysql", "sshpass") and head.startswith("-p") and len(plain) > 2:
+            hit = 2   # mysql -p'…', sshpass -p'…'
+        elif hl[:2] == "-u" and len(hl) > 2 and hl[:3] != "-u=" and ":" in plain:
+            hit = plain.find(":") + 1   # curl -uuser:'…', -Uuser:"…"
+        elif flag is not None and plain[:1] == "=" and len(plain) > 1 and _secret_name(flag):
+            hit = 1   # TOKEN ='…'
+        elif flag in USER_FLAGS or hl.startswith(USER_EQ):
+            c = plain.find(":", plain.find("=") + 1 if hl.startswith(USER_EQ) else 0)
+            hit = c + 1 if c != -1 else None
+        elif flag in ("-d", "--data", "--data-raw", "--data-binary", "--data-urlencode", "--data-ascii"):
+            i = plain.find("=")
+            while i != -1:
+                j = i
+                while j > 0 and plain[j - 1] in _NAME_CH:
+                    j -= 1
+                if j < i and _secret_name(plain[j:i]):
+                    hit = i + 1
+                    break
+                i = plain.find("=", i + 1)
+        if hit is None:
+            h = SECRET_HEADER.match(head) if ":" in head else None
+            if h:
+                hit = h.end()
+            else:
+                nm = re.match(r"-*([A-Za-z_][\w.-]{0,63})=", head)
+                if nm and _secret_name(nm.group(1)):
+                    hit = nm.end()
+        if hit is not None and hit < len(plain) and not _kept(plain[hit:]):
+            spans.append((a + (hit if lo is None else lo[hit]), b))
+
+
 def mask_spans(s):
     """What masking replaces in `s`, merged and in order: (start, end, replacement), None meaning [hidden]. Overlapping spans
     (a word and the same value read inside its quotes, a key shape inside a hidden value) are one [hidden]."""
@@ -461,6 +735,8 @@ def mask_spans(s):
     _word_urls(s, words)
     _fields(s, words)
     _quoted_values(s, words)
+    if "\n" in s or len(s) > 4096:
+        _credential_word_spans(s, words)   # batch 5 (c2): only words that cross a line or are longer than a crossing quote is read
     for a, b in _blocks(s, _trigger_lines(s)):
         _mask_words(s[a:b], a, words, 0)
     if "\n" in s:

@@ -15,7 +15,12 @@ Every tier run is sealed: `unshare -rmn` (no network), scratch folders mounted o
 /var/tmp and, last, this check's own folder over /tmp, a sentinel checked in each before Python starts, and an environment built
 from scratch (never inherited, never printed). The real home folder, /workspace/watchtower and the decoys are never visible.
 The check fails, and never prints its RESULT line, when the sandbox is unavailable (there is no unsealed fallback), when ONLY
-selects no scenario, and when no scenario was compared. Everything is written under one mkdtemp folder in /tmp, removed when the check passes and kept (path printed) when it fails."""
+selects no scenario, and when no scenario was compared. Everything is written under one mkdtemp folder in /tmp, removed when the check passes and kept (path printed) when it fails.
+
+Expect mode (batch 5: changes that alter behavior on purpose; `--expect FILE --items A,B` to golden-check.sh): step 0 only checks
+that the working tree's reassembled wt.py compiles and that PRE_REF's wt.py has the loader block. Calibration and N1-N9 are as
+above; then every line by which a post item differs from pre must match an entry of an enabled item in FILE (see parse_expect),
+and an enabled `must_see` entry that matched nothing, in a run where its scenarios ran, is a problem too."""
 import datetime as dt, difflib, hashlib, json, os, re, shutil, statistics, subprocess, sys, tempfile, unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -520,6 +525,167 @@ def short_diff(a, b, n=30):
     return "\n".join("    | " + x[:220] for x in d[:n]) + ("\n    | ..." if len(d) > n else "")
 
 
+# ------------------------------------------------------------------------------------------------ expected differences (batch 5)
+EXPECT_FIELDS = {"item": str, "scenario_rx": str, "key_rx": str, "lines_rx": list, "must_see": bool, "why": str}
+# PR A, Codex round 1 (11): instead of lines_rx, an entry may name the one JSON field whose value changes, from one exact value to
+# another ({"field", "from", "to"}): the item is expected only when post is pre with exactly that change (parsed, everything else
+# equal), never by its lines.
+JSON_CHANGE_FIELDS = {"field": str, "from": (int, str), "to": (int, str)}
+NEW_ITEM, GONE_ITEM = "+<new item>", "-<item gone>"   # the pseudo line for an item only post (or only pre) has
+# Lines no narrow pattern accepts all of: a pattern that accepts every added (or every removed) one is refused as too broad.
+BROAD_PROBES = (("+", "+zq 1", '+ "unrelated": [0]', "+<x>", NEW_ITEM, "+a", "+Z9 ~", '+   "k": "v",', "+\t#"),
+                ("-", "-QX {}", '- "other": null', "-<y>", GONE_ITEM, "-b", "-Y8 ^", '-   "j": 2,', "-\t;"))
+
+
+def _covers_a_side(compiled):
+    """True when these patterns together accept every added or every removed probe line."""
+    return any(all(any(c.search(p) for c in compiled) for p in probes) for probes in BROAD_PROBES)
+
+
+def too_broad(rx):
+    """True for a line pattern that is empty or accepts any added line or any removed line (.*, .+, ^[-+], ...)."""
+    if not isinstance(rx, str) or not rx.strip():
+        return True
+    return _covers_a_side([re.compile(rx)])
+
+
+def _entry_shape(e):
+    """The entry's fields are EXPECT_FIELDS, or the same with json_change in place of lines_rx, each with its type."""
+    if not isinstance(e, dict):
+        return False
+    want = dict(EXPECT_FIELDS)
+    if "json_change" in e:
+        del want["lines_rx"]
+        want["json_change"] = dict
+    if set(e) != set(want) or not all(isinstance(e[k], t) for k, t in want.items()):
+        return False
+    j = e.get("json_change")
+    return j is None or (set(j) == set(JSON_CHANGE_FIELDS) and j["field"].strip() != "" and j["from"] != j["to"]
+                         and all(isinstance(j[k], t) and not isinstance(j[k], bool) for k, t in JSON_CHANGE_FIELDS.items()))
+
+
+def parse_expect(doc, items):
+    """The entries of the enabled `items` in an expect file's JSON: {"entries": [{item, scenario_rx, key_rx, lines_rx[] or
+    json_change, must_see, why}]}. A line of a differing item ("+text" or "-text", diff_lines) is expected when an enabled entry's
+    scenario_rx and key_rx search the scenario id and item name and one of its lines_rx searches the line; a json_change entry
+    expects the whole item when only that field changed (json_only_change). ValueError for a malformed file, a pattern too_broad
+    refuses, an entry whose patterns together accept any line, or a file whose entries together do (Codex round 1, 11); entries
+    of other items are checked as strictly and then left out."""
+    entries = doc.get("entries") if isinstance(doc, dict) else None
+    if not isinstance(entries, list):
+        raise ValueError("the expect file has no entries list")
+    out, every = [], []
+    for n, e in enumerate(entries):
+        if not _entry_shape(e):
+            raise ValueError(f"entry {n}: needs exactly {sorted(EXPECT_FIELDS)} with those types (or json_change {{field, from, to}} "
+                             "in place of lines_rx)")
+        lines = e.get("lines_rx", [])
+        if not e["why"].strip() or ("json_change" not in e and not lines):
+            raise ValueError(f"entry {n} ({e['item']}): an empty why or lines_rx")
+        try:
+            rxs = [re.compile(x) for x in (e["scenario_rx"], e["key_rx"])] + [re.compile(x) if isinstance(x, str) else None for x in lines]
+        except re.error as err:
+            raise ValueError(f"entry {n} ({e['item']}): bad pattern: {err}")
+        broad = [x for x in lines if too_broad(x)]
+        if broad:
+            raise ValueError(f"entry {n} ({e['item']}): lines_rx {broad!r} would accept any line; write a narrow one")
+        if lines and _covers_a_side(rxs[2:]):
+            raise ValueError(f"entry {n} ({e['item']}): its lines_rx together would accept any line; write narrow ones")
+        every += rxs[2:]
+        if e["item"] in items:
+            out.append(dict(e, id=n, _s=rxs[0], _k=rxs[1], _l=rxs[2:], _j=e.get("json_change")))
+    if every and _covers_a_side(every):
+        raise ValueError("the entries' lines_rx together would accept any line; write narrow ones")
+    return out
+
+
+def _json_item(text):
+    """(the item's lines before its JSON document, the document) or None: a tree item is "file <mode>" and, for a .gz, "gzip mtime
+    <n>" lines, then the content."""
+    if text is None:
+        return None
+    i = 0 if text.startswith(("{", "[")) else text.find("\n{") + 1
+    if i == 0 and not text.startswith(("{", "[")):
+        return None
+    try:
+        return text[:i], json.loads(text[i:], object_pairs_hook=_unique_pairs, parse_constant=_no_constant)
+    except ValueError:
+        return None
+
+
+def _unique_pairs(pairs):
+    """PR A, Codex round 2 (8): an object with a key twice is refused (json.loads keeps the last, hiding the first)."""
+    out = {}
+    for k, v in pairs:
+        if k in out:
+            raise ValueError(f"duplicate key {k!r}")
+        out[k] = v
+    return out
+
+
+def _no_constant(name):
+    raise ValueError(f"not JSON: {name}")   # NaN, Infinity, -Infinity
+
+
+def _same(a, b):
+    """Equal with exact types all the way down (1 is not true or 1.0) and object keys in the same order."""
+    if type(a) is not type(b):
+        return False
+    if isinstance(a, dict):
+        return list(a) == list(b) and all(_same(a[k], b[k]) for k in a)
+    if isinstance(a, list):
+        return len(a) == len(b) and all(_same(x, y) for x, y in zip(a, b))
+    return a == b
+
+
+def json_only_change(pre, post, change):
+    """True when post is pre with exactly one change: the top-level field change["field"] is change["from"] in pre and
+    change["to"] in post, and everything else (the lines before the document included) is equal once parsed. PR A, Codex round
+    2 (8): both documents are strict JSON (no key twice, no NaN or Infinity) and equal with exact types (_same)."""
+    a, b = _json_item(pre), _json_item(post)
+    if a is None or b is None or a[0] != b[0] or not (isinstance(a[1], dict) and isinstance(b[1], dict)):
+        return False
+    f = change["field"]
+    if f not in a[1] or f not in b[1] or not _same(a[1][f], change["from"]) or not _same(b[1][f], change["to"]):
+        return False
+    return _same(dict(a[1], **{f: change["to"]}), b[1])
+
+
+def diff_lines(pre, post):
+    """The lines by which `post` differs from `pre` (an item's text; None when the run has no such item): "+text" or "-text", a
+    NEW_ITEM or GONE_ITEM line first when only one side has the item, and one "~" line when they differ in line ends only."""
+    out = [NEW_ITEM] if pre is None else [GONE_ITEM] if post is None else []
+    d = list(difflib.unified_diff((pre or "").splitlines(), (post or "").splitlines(), lineterm="", n=0))
+    out += [x for x in d[2:] if not x.startswith("@@")]
+    if not out and pre != post:
+        out.append("~line ends differ")
+    return out
+
+
+def unexpected_lines(sid, key, pre, post, entries, hits):
+    """The diff_lines of one differing item no entry expects; `hits` counts the lines each entry (by id) took."""
+    cand = [e for e in entries if e["_s"].search(sid) and e["_k"].search(key)]
+    lines = diff_lines(pre, post)
+    whole = next((e for e in cand if e["_j"] and json_only_change(pre, post, e["_j"])), None)
+    if whole is not None:   # exactly the one field changed: the whole item is expected
+        hits[whole["id"]] = hits.get(whole["id"], 0) + len(lines)
+        return []
+    cand = [e for e in cand if not e["_j"]]
+    bad = []
+    for line in lines:
+        e = next((e for e in cand if any(r.search(line) for r in e["_l"])), None)
+        if e is None:
+            bad.append(line)
+        else:
+            hits[e["id"]] = hits.get(e["id"], 0) + 1
+    return bad
+
+
+def unmet(entries, hits, sids):
+    """The must_see entries that matched no line although one of their scenarios (`sids`: those compared) ran."""
+    return [e for e in entries if e["must_see"] and not hits.get(e["id"]) and any(e["_s"].search(s) for s in sids)]
+
+
 # ------------------------------------------------------------------------------------------------ the check
 def git(*args, **kw):
     return subprocess.run(["git", "-C", ROOT] + list(args), capture_output=True, check=True, timeout=120, **kw).stdout
@@ -528,11 +694,21 @@ def git(*args, **kw):
 class GoldenSplit(unittest.TestCase):
     PRE = os.environ.get("WT_GOLDEN_PRE", "")
     MODE = os.environ.get("WT_GOLDEN_TIERS", "full")
+    EXPECT = os.environ.get("WT_GOLDEN_EXPECT", "")
+    ITEMS = [x for x in os.environ.get("WT_GOLDEN_ITEMS", "").split(",") if x]
+    expect = None   # expect mode: the enabled entries (parse_expect); None: post must equal pre
 
     @classmethod
     def setUpClass(cls):
         if not cls.PRE:
             raise RuntimeError("no baseline: run `bash scripts/golden-check.sh PRE_REF`, PRE_REF the commit before the split (9b106b9)")
+        if cls.EXPECT:
+            path = os.path.join(ROOT, cls.EXPECT)
+            try:
+                with open(path) as f:
+                    cls.expect = parse_expect(json.load(f), cls.ITEMS)
+            except (OSError, ValueError) as e:
+                raise RuntimeError(f"expect file {cls.EXPECT}: {e}")
         cls.report = []
         cls.B = tempfile.mkdtemp(prefix="wt-golden-", dir="/tmp")
         real = os.path.realpath(cls.B)
@@ -586,6 +762,16 @@ class GoldenSplit(unittest.TestCase):
         wt_post = read(os.path.join(self.post, "watchtower", "wt.py"))
         got, where = reassemble(wt_post, os.path.join(self.post, "watchtower", "wt_parts"))
         parts = len([w for w in where if w[1] != "wt.py"])
+        if self.expect is not None:   # behavior changes on purpose: the reassembled file can't equal PRE's
+            try:
+                compile(got, "wt.py (reassembled)", "exec", dont_inherit=True)
+            except SyntaxError as e:
+                self.fail_with(f"step 0: the reassembled wt.py does not compile: {e}")
+            if LOADER_BEGIN not in want:
+                self.fail_with(f"step 0: {self.PRE}:watchtower/wt.py has no wt_parts loader block (expect mode compares split trees)")
+            self.say(f"step 0: behavior-change mode, byte check not applicable (reassembled wt.py compiles: {len(got)} bytes, {parts} parts; "
+                     f"{self.PRE} has the loader block; items: {','.join(self.ITEMS) or 'none'})")
+            return
         if got != want:
             a, b = lines_of(want), lines_of(got)
             k = next((i for i, (x, y) in enumerate(zip(a, b)) if x != y), min(len(a), len(b)))
@@ -646,6 +832,7 @@ class GoldenSplit(unittest.TestCase):
         enabled = {"N1", "N2", "N3", "N4", "N5", "N6", "N9"}
         needed = set()
         compared = 0
+        hits, sids, expected_items = {}, [], 0
         for sid, plan in self.scenarios():
             res = {}
             for tag, tree in (("pre1", self.pre), ("pre2", self.pre), ("post", self.post)):
@@ -671,7 +858,16 @@ class GoldenSplit(unittest.TestCase):
             pa, pc = norm_items(a, apply, crash), norm_items(c, apply, crash)
             diff_post = differing(pa, pc)
             for k in diff_post:
-                problems.append(f"[{sid}] post differs from pre in {k!r}:\n{short_diff(pa.get(k, '<missing>'), pc.get(k, '<missing>'))}")
+                if self.expect is None:
+                    problems.append(f"[{sid}] post differs from pre in {k!r}:\n{short_diff(pa.get(k, '<missing>'), pc.get(k, '<missing>'))}")
+                    continue
+                bad = unexpected_lines(sid, k, pa.get(k), pc.get(k), self.expect, hits)
+                if bad:
+                    problems.append(f"[{sid}] post differs from pre in {k!r} by {len(bad)} line(s) no enabled entry expects:\n"
+                                    + "\n".join("    | " + x[:220] for x in bad[:60]) + ("\n    | ..." if len(bad) > 60 else ""))
+                else:
+                    expected_items += 1
+            sids.append(sid)
             for r in sorted(apply | ({"N8"} if crash else set())):
                 extra = len(differing(norm_items(a, apply - {r}, crash and r != "N8"), norm_items(c, apply - {r}, crash and r != "N8"))) - len(diff_post)
                 if extra > 0:
@@ -688,16 +884,29 @@ class GoldenSplit(unittest.TestCase):
             self.timing()
         self.say("normalizations needed by calibration (items): " + (", ".join(f"{r} ({n})" for r, n in sorted(used_cal.items())) or "none"))
         self.say("normalizations applied where pre and post differed raw (items; N4 is always on): " + (", ".join(f"{r} ({n})" for r, n in sorted(used_post.items())) or "none"))
+        if self.expect is not None:
+            for e in unmet(self.expect, hits, sids):
+                problems.append(f"[{e['item']}] must_see entry {e['id']} matched nothing (the intended change didn't happen): {e['why']}")
+            per = {}
+            for e in self.expect:
+                n, k = per.get(e["item"], (0, 0))
+                per[e["item"]] = (n + hits.get(e["id"], 0), k + (1 if hits.get(e["id"]) else 0))
+            self.say(f"expected differences ({expected_items} items fully expected), lines matched per item: "
+                     + (", ".join(f"{i} {per.get(i, (0, 0))[0]} lines by {per.get(i, (0, 0))[1]} entries" for i in self.ITEMS) or "no items enabled"))
         if problems:
             self.say(f"PROBLEMS ({len(problems)}), one line each:")
             for p in problems:
                 self.say("  - " + p.split("\n", 1)[0][:240])
-            for p in problems[:40]:
+            for p in problems[:40 if self.expect is None else 400]:   # expect mode: the list an allowlist is written from
                 self.say(p)
             self.fail_with(f"{len(problems)} problems")
         if not compared:
             self.say("FAILED: no scenario was compared")
             self.fail_with("no scenario was compared, so nothing shows post == pre")
+        if self.expect is not None:
+            self.say(f"RESULT: post == pre on every tier run except the expected differences of {','.join(self.ITEMS) or 'no item'} "
+                     f"({compared} scenarios compared)")
+            return
         self.say(f"RESULT: post == pre on every tier run ({compared} scenarios compared)")
 
     def timing(self):

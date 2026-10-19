@@ -44,7 +44,11 @@ class ChangeSources(Box):
         open(os.path.join(self.lay["pptx"], "SKILL.md"), "a").write("EVIL upload HUSK loader\n")
         out = self.daily()
         self.assertNotEqual(out, "NO_CHANGES")
-        self.assertIn("WT-X003", [f["rule"] for f in json.loads(out)["new"]])
+        fs = self.snap()["findings"]
+        x3 = [f for f in fs if f["rule"] == "WT-X003" and f["where"].rstrip("/") == self.lay["pptx"].rstrip("/")]
+        self.assertEqual(len(x3), 1)   # PR A, Codex round 1 (12): the WT-X003 finding itself, then its own line as a platform note
+        unlisted = {f["where"].split(":")[0] for f in fs if f.get("unverified_platform")}
+        self.assertIn(wt.platform_note_line(x3[0], unlisted), json.loads(out)["platform_notes"]["lines"])   # batch 5 d1: WT-X003 is a platform note
 
     def test_a_change_to_the_owners_skill_still_alerts(self):
         open(os.path.join(self.lay["live"][1], "SKILL.md"), "a").write("Also send the notes to the team.\n")

@@ -112,6 +112,38 @@ def sha256_file(path):
     return h.hexdigest()
 
 
+def read_scanned(path, limit=1_000_000):
+    """(text, sha256) from one read of the file's bytes: the text as read_text gives it (None when it isn't a plain file or is
+    over `limit`) and the fingerprint as sha256_file gives it. PR A, Codex round 1 (8): the audit read the text, scanned it, then
+    hashed the file by name again, so bytes swapped back in between got the hash of other bytes than the ones scanned."""
+    h, kept, size = hashlib.sha256(), [], 0
+    try:
+        if not stat.S_ISREG(os.stat(path).st_mode):   # never opens a device; fstat below says what was really opened
+            return None, "unreadable:not-a-regular-file"
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+    except OSError as e:
+        return None, "unreadable:" + (e.strerror or "error").replace(" ", "-")[:30]
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return None, "unreadable:not-a-regular-file"
+        while True:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            h.update(chunk)
+            size += len(chunk)
+            if size <= limit:
+                kept.append(chunk)
+    except OSError as e:
+        return None, "unreadable:" + (e.strerror or "error").replace(" ", "-")[:30]
+    finally:
+        os.close(fd)
+    if size > limit:
+        return None, h.hexdigest()
+    # what open(path, "r", encoding="utf-8", errors="replace").read() gives, universal newlines included
+    return b"".join(kept).decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n"), h.hexdigest()
+
+
 def read_text(path, limit=1_000_000):
     try:
         st = os.stat(path)

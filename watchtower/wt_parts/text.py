@@ -533,9 +533,413 @@ _JOIN_NEAR = re.compile(rf"{_JOIN_CALL}\s*\(|%\s*[(\[{{]")
 _SKIP = " \t\r\n\\"
 
 
+# Batch 5 (Codex review 4, c1): the expression around a quoted URL is read, not one character on each side. A shell line (in an
+# sh/bash/shell/console block, or a logical line or `inline code` starting with curl, wget, http, https or xh, after an optional
+# $ prompt, sudo and VAR=value words) is read as shell words: the URL is the whole value when its word is exactly the quoted URL,
+# so 'Content-Type: application/json' 'URL' are two arguments, and 'a''URL' or "$B"'URL' one glued word. Anything else is read as
+# code (the stricter reading): a small tokenizer (string literals with Python/JS quotes, triple quotes and template backticks,
+# # and // and /* */ comments, brackets) climbs from the literal through redundant ( ) groups, wrapper calls and the
+# collections it is an element of, up to a sender call (post, request, fetch, axios, urlopen, Request, get, put, send), an
+# assignment, a keyword argument, a dict value at the top, a markdown link or the statement start. A +, % or * next to it, a
+# literal next to it (comments in between included), a join/format/urljoin/concat call, an f-string, or an index or attribute
+# after it at any level: not the whole value. Unbalanced brackets, an unterminated string or comment, or anything else in
+# doubt: not the whole value, so the URL stays WT-T005.
+_SHELL_FENCES = frozenset(("sh", "bash", "shell", "console"))
+_SHELL_TOOL = re.compile(r"[ \t]*(?:\$[ \t]+)?(?:sudo[ \t]+)?(?:[A-Za-z_][A-Za-z0-9_]*=\S*[ \t]+)*(?:curl|wget|https?|xh)[ \t]")
+_FENCE_LINE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})[ \t]*([^\s`]*)[^\n]*", re.M)
+_SENDERS = frozenset(("post", "request", "fetch", "urlopen", "Request", "get", "put", "send"))
+_JOINERS = frozenset(("join", "format", "format_map", "reduce", "sum", "urljoin", "Template", "reversed", "sorted"))
+_URL_KEYS = frozenset(("url", "uri", "endpoint"))   # PR A, Codex round 1 (1): the keyword or dict key a sender's destination is under
+# PR A, Codex round 2 (1, 7): calls that look something up. What they return is the value found under the key, or the default
+# when nothing is there: a URL as the key is never where it goes; a URL as the default is, when the key is a plain name.
+_LOOKUPS = frozenset(("getattr", "getenv", "setdefault", "pop", "getOrDefault", "get_or", "getdefault"))
+_LOOKUP_DEFAULTS = frozenset(("default", "fallback"))
+_BOOL_OPS = frozenset(("or", "and", "if", "else", "not", "||", "&&", "?"))
+# PR A, Codex round 3 (5): the receivers `get` is an HTTP GET on (requests.get, httpx.get, session.get, self.client.get, https.get,
+# axios.get, $.get, …); on any other receiver it is a lookup (round 3 (1))
+_HTTP_CLIENT = re.compile(r"(?i)requests|httpx|aiohttp|urllib3|https?|axios|got|ky|needle|superagent|\$|jquery|\$http|[\w$]*(?:session|client)")
+_CONFIG_PARSER = re.compile(r"(?i)configparser")
+_ANY_URL = re.compile(r"(?i)\b[a-z][a-z0-9+.\-]*://[^\s'\"`<>()\[\]{}|\\,]*|(?<=['\"`])//[^\s'\"`<>()\[\]{}|\\,]+")
+
+
+def _other_urls(text):
+    """PR A, Codex round 3 (1): where each URL of `text` that isn't a chat webhook (CHAT_HOOKS) starts, read once per text."""
+    import urllib.parse
+    memo = _memo(text)
+    if "other_urls" not in memo:
+        out = []
+        for m in _ANY_URL.finditer(text):
+            try:
+                u = urllib.parse.urlsplit(m.group(0) if "://" in m.group(0) else "https:" + m.group(0))
+                host, port = (u.hostname or "").lower(), u.port
+            except ValueError:
+                host, port = "", None
+            if not (port is None and host and u.netloc.lower() == host and any(h.fullmatch(host) and p.match(u.path) for h, p in CHAT_HOOKS)):
+                out.append(m.start())
+        memo["other_urls"] = out
+    return memo["other_urls"]
+_CRED_WORD = re.compile(r"(?i)token|secret|passw(?:or)?d|api_?key|private_?key|credential|cookie|(?<![\w$])\.(?:ssh|aws|netrc|env)\b"
+                        r"|\bid_(?:rsa|ed25519)\b")
+_STR_RX = (r"[rRbBuUfF]{0,2}(?:'''[\s\S]*?(?:'''|\Z)|\"\"\"[\s\S]*?(?:\"\"\"|\Z)|'(?:[^'\\\n]|\\.)*'|\"(?:[^\"\\\n]|\\.)*\"%s)")
+_TOK_TAIL = (r"|(?P<name>[A-Za-z_$][\w$]*(?:'[A-Za-z]+)*)|(?P<num>\d[\w.]*)|(?P<open>[(\[{])|(?P<close>[)\]}])"
+             r"|(?P<op>\*\*|&&|\|\||==|!=|<=|>=|[-+*/%=<>!&|^~?:;,.@])|(?P<bad>[\s\S])")
+_CODE_TOK = re.compile(r"(?P<nl>\n)|(?P<ws>[ \t\r\f\v]+|\\\r?\n)|(?P<com>(?<![^\s])#[^\n]*|(?<![:/])//[^\n]*|/\*[\s\S]*?\*/)"
+                       r"|(?P<ucom>/\*)|(?P<str>" + _STR_RX % r"|`(?:[^`\\]|\\[\s\S])*(?:`|\Z)" + r")" + _TOK_TAIL)
+_PROSE_TOK = re.compile(r"(?P<nl>\n)|(?P<ws>[ \t\r\f\v`]+|\\\r?\n)|(?P<str>" + _STR_RX % "" + r")" + _TOK_TAIL)   # markdown: ` is inline code
+_REGION_MEMO = []   # [text, {(start, end, prose): parsed region}]: every match of one text shares one reading
+
+
+def _fences(text):
+    """[(body start, body end, tag)] of the fenced code blocks of `text`, read once per text."""
+    if _REGION_MEMO and _REGION_MEMO[0] is text and "fences" in _REGION_MEMO[1]:
+        return _REGION_MEMO[1]["fences"]
+    out, open_ = [], None
+    for m in _FENCE_LINE.finditer(text):
+        if open_ is None:
+            open_ = (min(len(text), m.end() + 1), m.group(2).lower(), m.group(1)[0], len(m.group(1)))
+        elif m.group(1)[0] == open_[2] and len(m.group(1)) >= open_[3] and m.group(0).strip() == m.group(1):
+            out.append((open_[0], m.start(), open_[1]))
+            open_ = None
+    if open_:
+        out.append((open_[0], len(text), open_[1]))
+    memo = _memo(text)
+    memo["fences"], memo["fence_starts"] = out, [f[0] for f in out]
+    return out
+
+
+def _memo(text):
+    if not (_REGION_MEMO and _REGION_MEMO[0] is text):
+        _REGION_MEMO[:] = [text, {}]
+    return _REGION_MEMO[1]
+
+
+def _region(text, start, end, prose):
+    """The tokens of text[start:end]: kinds, starts, ends, `nl` (a line break before the token), the bracket each token is in
+    (`parent`) and each bracket's partner (`match`), and where the reading broke (an unterminated string or comment), if it did."""
+    key = (start, end, prose)
+    memo = _memo(text)
+    if key in memo:
+        return memo[key]
+    kinds, starts, ends, nl, comments, broke, pending = [], [], [], [], [], None, False
+    for m in (_PROSE_TOK if prose else _CODE_TOK).finditer(text, start, end):
+        k = m.lastgroup
+        if k == "nl" or (k == "com" and "\n" in m.group(0)):
+            pending = True
+        if k in ("nl", "ws"):
+            continue
+        if k == "com":
+            comments.append((m.start(), m.end()))
+            continue
+        body = m.group(0).lstrip("rRbBuUfF") if k == "str" else ""
+        if k == "ucom" or (m.end() == end and (body[:3] in ("'''", '"""') and (len(body) < 6 or not body.endswith(body[:3]))
+                                               or body[:1] == "`" and (len(body) < 2 or not body.endswith("`")))):
+            broke = m.start()   # a string or comment that never ends
+            break
+        kinds.append(k)
+        starts.append(m.start())
+        ends.append(m.end())
+        nl.append(pending)
+        pending = False
+    n, match, parent, stack = len(kinds), {}, [None] * len(kinds), []
+    for i in range(n):
+        parent[i] = stack[-1] if stack else None
+        if kinds[i] == "open":
+            stack.append(i)
+        elif kinds[i] == "close":
+            if stack and text[starts[stack[-1]]] + text[starts[i]] in ("()", "[]", "{}"):
+                j = stack.pop()
+                match[j], match[i], parent[i] = i, j, parent[j]
+    memo[key] = r = {"kinds": kinds, "starts": starts, "ends": ends, "nl": nl, "parent": parent, "match": match, "broke": broke,
+                     "comments": comments}
+    return r
+
+
+def _code_standalone(text, a, b, start, end, prose, natural=True):
+    """The code reading (see above) of the literal text[a:b] in the region text[start:end]."""
+    import bisect
+    r = _region(text, start, end, prose)
+    kinds, starts, ends, nl, parent, match = r["kinds"], r["starts"], r["ends"], r["nl"], r["parent"], r["match"]
+    if r["broke"] is not None and r["broke"] < b:
+        return False   # an unterminated string or comment before the end of the URL: nothing is certain
+    c = bisect.bisect_right(r["comments"], (a, len(text))) - 1
+    if c >= 0 and r["comments"][c][1] > a:   # in a comment: nothing there runs, but its words are read as prose
+        ca, cb = r["comments"][c]
+        return cb >= b and _code_standalone(text, a, b, ca + (1 if text[ca] == "#" else 2), cb - (2 if text.startswith("/*", ca) else 0), True)
+    li = bisect.bisect_right(starts, a) - 1
+    if li < 0 or ends[li] <= a:
+        return False
+    if kinds[li] != "str" or ends[li] != b or not re.fullmatch(r"[rRbBuU]{0,2}", text[starts[li]:a]):
+        return False   # the URL is inside another token (an f-string, a comment the tokenizer saw, a longer literal)
+    n = len(kinds)
+    tok = lambda i: text[starts[i]:ends[i]] if 0 <= i < n else None
+    first = lambda i: nl[i] or (i == 0 and natural)
+
+    def edge_line(i, step):
+        """Prose: the nearest non-blank line before (step -1) or after (+1) the region continues an expression with the URL."""
+        if not prose:
+            return False
+        if step < 0:
+            j = text.rfind("\n", 0, start)
+            while j > 0:
+                k = text.rfind("\n", 0, j)
+                line = text[k + 1:j].strip()
+                if line:
+                    return line[-1] in "'\"`+%([{,=\\*"
+                j = k
+            return False
+        j = text.find("\n", end)
+        while j != -1:
+            k = text.find("\n", j + 1)
+            line = text[j + 1:k if k != -1 else len(text)].strip()
+            if line:
+                return line[0] in "'\"`+%.[(*"
+            j = k
+        return False
+    def destination(o, p, pt, bt, keys):
+        """PR A, Codex round 1 (1): the operand ending at p + 1 is where the call opened at o sends: its first argument, a url=
+        keyword, or request's second after an HTTP method; reached through dict values only under a url key."""
+        if any(k.strip("'\"`") not in _URL_KEYS for k in keys):
+            return False
+        if p == o:
+            return True
+        if pt == "=" and p - 1 > o and kinds[p - 1] == "name" and tok(p - 1) in _URL_KEYS and (p - 2 == o or tok(p - 2) == ","):
+            return True
+        return (bt == "request" and p == o + 2 and pt == "," and kinds[o + 1] == "str"
+                and re.fullmatch(r"[rRbBuU]{0,2}(['\"`])(?i:get|post|put|patch|delete|head|options)\1", tok(o + 1) or "") is not None)
+
+    def args(o):
+        """The arguments of the call opened at o: [(first token, last token, keyword or None)]."""
+        out, s, i = [], o + 1, o + 1
+        while i < match[o]:
+            if kinds[i] == "op" and tok(i) == ",":
+                out.append((s, i - 1))
+                s = i + 1
+            elif kinds[i] == "open" and i in match:
+                i = match[i]
+            i += 1
+        if s < match[o]:
+            out.append((s, match[o] - 1))
+        return [(s, e, tok(s) if e > s and kinds[s] == "name" and tok(s + 1) == "=" else None) for s, e in out]
+
+    def calls_out(c):
+        """The call whose name starts at c is an argument of a call that sends."""
+        o = parent[c]
+        if o is None or text[starts[o]] != "(" or o < 1 or kinds[o - 1] != "name":
+            return False
+        b = o - 1
+        while b >= 2 and tok(b - 1) == "." and kinds[b - 2] == "name":
+            b -= 2
+        return tok(o - 1) in _SENDERS or tok(b) == "axios"
+
+    def lookup(o, c, bt, lo):
+        """PR A, Codex round 2 (1, 7): None when the call at o (its name starting at c) sends or wraps; else the role of the
+        argument at lo in the lookup: "default" (a default= or fallback= keyword, or the last positional argument after the key)
+        or "key". `get` is both a lookup and an HTTP GET: an HTTP GET on an HTTP client (_HTTP_CLIENT) or bare with the URL
+        first, unless another sender sends to what it returns (round 3; it was read from its arguments before)."""
+        al = args(o)
+        pos = [a for a in al if a[2] is None]
+        mine = next((a for a in al if a[0] <= lo <= a[1]), None)
+        if mine is None:
+            return None
+        if bt == "get":
+            # PR A, Codex round 3 (1, 5): `get` is an HTTP GET only on an HTTP client (requests.get, session.get, https.get,
+            # self.client.get, …, whatever its other arguments: params, a named callback) or as a bare get(url, …) with the URL
+            # first; on anything else (config.get, os.environ.get, cfg.get) it is a lookup, its arguments keys and a default
+            recv = tok(o - 3) if o - 3 >= c else None
+            http = _HTTP_CLIENT.fullmatch(recv) is not None if recv is not None else bool(pos) and mine is pos[0]
+            if http and not calls_out(c):
+                return None
+        elif bt not in _LOOKUPS:
+            return None
+        if mine[2] in _LOOKUP_DEFAULTS:
+            return "default"
+        first = 1 if bt == "getattr" else 0   # getattr(object, name, default)
+        if mine[2] is None and pos.index(mine) > first and mine is pos[-1]:
+            return "default"
+        return "key"
+
+    def statement(lo, hi):
+        """The tokens of the statement the operand lo..hi is in: (first, last)."""
+        a = lo
+        while parent[a] is not None:
+            a = parent[a]
+        b = match.get(a, a) if kinds[a] == "open" else a
+        b = max(b, hi)
+        cont = lambda j: (kinds[j] == "op" and tok(j) != ";") or (kinds[j - 1] == "op" and tok(j - 1) != ";")
+        while a > 0 and tok(a - 1) != ";" and not (nl[a] and not cont(a)):
+            a -= 1
+            if kinds[a] == "close" and a in match:
+                a = match[a]
+        while b + 1 < n and tok(b + 1) != ";" and not (nl[b + 1] and not cont(b + 1)):
+            b += 1
+            if kinds[b] == "open" and b in match:
+                b = match[b]
+        return a, b
+
+    def quiet():
+        """PR A, Codex round 2 (1): a destination that is only maybe the chat webhook (a lookup's default, a helper's argument,
+        one side of an or, an element of a dict or list) can't be a way to send something somewhere else. Round 3 (1): what
+        overrides it may be anywhere (config = {'hook': 'https://collector…'} two lines up), so nothing in the whole text is
+        another URL (_other_urls), and no string or name in the whole region is a credential's."""
+        memo = _memo(text)
+        ck = ("cred", start, end, prose)
+        if ck not in memo:
+            memo[ck] = [i for i in range(n) if kinds[i] in ("str", "name") and _CRED_WORD.search(tok(i))]
+        return all(i == li for i in memo[ck]) and all(a <= s < b for s in _other_urls(text))
+
+    def sent(lo, hi):
+        """The call text[lo..hi] sends to the URL: true when nothing makes its result one piece of something else, up to the
+        statement (its result used, .json() or [0], is fine; an operator or a literal beside it, a join, or another sender that
+        sends somewhere else, isn't)."""
+        used = False
+        for _ in range(n + 1):
+            while True:   # its result used: .name, a call, an index
+                q = hi + 1
+                if q + 1 < n and tok(q) == "." and kinds[q + 1] == "name":
+                    hi, used = q + 1, True
+                elif q < n and kinds[q] == "open" and text[starts[q]] in "([" and q in match:
+                    hi, used = match[q], True
+                else:
+                    break
+            p, q = lo - 1, hi + 1
+            pk, pt = (kinds[p], tok(p)) if p >= 0 else (None, None)
+            qk, qt = (kinds[q], tok(q)) if q < n else (None, None)
+            if pk in ("str", "bad") or (pt in ("+", "%") or (pt == "*" and not first(p))):
+                return False
+            if qk in ("str", "bad") or qt in ("+", "%", "*"):
+                return False
+            if pk is None and edge_line(lo, -1) or qk is None and edge_line(hi, 1):
+                return False
+            o = parent[lo]
+            if o is None:
+                return not (qk == "close" or (qk is None and r["broke"] is not None))
+            if o not in match:
+                return False
+            ob, bb = text[starts[o]], o - 1
+            bk, bt = (kinds[bb], tok(bb)) if bb >= 0 else (None, None)
+            if ob == "(" and (bk == "name" or bt in (")", "]")):
+                if bk != "name":
+                    return False
+                c = bb
+                while c >= 2 and tok(c - 1) == "." and kinds[c - 2] == "name":
+                    c -= 2
+                if bt in _JOINERS or bt.startswith("concat"):
+                    return False
+                if (bt in _SENDERS or tok(c) == "axios") and (used or not destination(o, p, pt, bt, ())):
+                    return False   # inside another call that sends: urlopen(Request(url)) only
+                lo, hi = c, match[o]
+                continue
+            if ob == "[" and (bk in ("name", "str") or bt in (")", "]", "}")):
+                return False
+            lo, hi = o, match[o]
+        return False
+
+    lo = hi = li
+    keys = []   # the dict keys it is the value of, on the way up
+    maybe = False   # PR A, Codex round 2 (1): only maybe where it goes (a lookup's default, one of a call's arguments, round 3: a collection's element)
+    for _ in range(n + 1):
+        p, q = lo - 1, hi + 1
+        pk, pt = (kinds[p], tok(p)) if p >= 0 else (None, None)
+        qk, qt = (kinds[q], tok(q)) if q < n else (None, None)
+        if pk in ("str", "bad") or (pt in ("+", "%") or (pt == "*" and not first(p))):
+            return False   # a literal or an operator in front of it: one piece of a bigger string
+        if qk in ("str", "bad") or qt in ("+", "%", "*", ".", "[", "("):
+            return False   # a literal, an operator, an index, an attribute or a call after it
+        if pk is None and edge_line(lo, -1) or qk is None and edge_line(hi, 1):
+            return False
+        o = parent[lo]
+        if o is None:   # at the top of the region
+            if qk == "close" or (qk is None and r["broke"] is not None):
+                return False   # it closes a bracket opened before the region, or the reading broke after it
+            if not prose:   # code: one side of an or, an and or a conditional (prose reads these words as English)
+                a, b = statement(lo, hi)
+                maybe = maybe or any(parent[i] is None and tok(i) in _BOOL_OPS for i in range(a, b + 1))
+            if pk is None:
+                return natural and (not maybe or quiet())
+            return not (pt == "," or pk == "close" or pt == ".") and (not maybe or quiet())
+        if o not in match:
+            return False   # a bracket that never closes
+        if not (p == o or pt in (",", ":", "=")) or not (qt == "," or q == match[o]):
+            return False   # more than this operand in its argument
+        ob, bb = text[starts[o]], o - 1
+        bk, bt = (kinds[bb], tok(bb)) if bb >= 0 else (None, None)
+        if pt == ":":
+            if ob != "{":
+                return False   # a slice, a lambda or an annotation
+            keys.append(tok(p - 1) or "")
+            maybe = True   # PR A, Codex round 3 (1): a dict's value; the code may use another one ({'hook': …, 'api': 'https://…'})
+            lo, hi = o, match[o]   # a dict value: the dict is the operand now
+            continue
+        if pt == "=" and not (ob == "(" and p - 1 > o and kinds[p - 1] == "name" and (p - 2 == o or tok(p - 2) == ",")):
+            return False
+        if ob == "(" and (bk == "name" or bt in (")", "]")):
+            if bk != "name":
+                return False   # a call on the result of an expression
+            c = bb
+            while c >= 2 and tok(c - 1) == "." and kinds[c - 2] == "name":
+                c -= 2
+            if bt in _JOINERS or bt.startswith("concat"):
+                return False
+            role = lookup(o, c, bt, lo)
+            if role == "key" or (role and keys):
+                return False   # PR A, Codex round 2 (1): a lookup's key: what is found under it is where it goes, not this URL
+            if role and _CONFIG_PARSER.search(text):
+                return False   # PR A, Codex round 3 (1): a ConfigParser reads its options from a file (cfg.get(section, option))
+            if role:
+                # PR A, Codex round 2 (7): a lookup's default is what it returns when the key isn't there, followed outward to the
+                # sender like any operand. Round 3 (1): only maybe (the key may be there: config = {'hook': …} above), whatever
+                # the key is
+                maybe = True
+                lo, hi = c, match[o]
+                continue
+            if bt in _SENDERS or tok(c) == "axios":
+                # PR A, Codex round 1 (1): a call named like a sender sends to one argument (config.get('hook', URL) is a lookup's
+                # default); the URL must be that argument, and the call itself must be the whole statement's sending
+                return destination(o, p, pt, bt, keys) and sent(c, match[o]) and (not maybe or quiet())
+            maybe = maybe or len(args(o)) > 1   # PR A, Codex round 2 (1): a helper's argument: it may send to another one
+            lo, hi = c, match[o]   # a wrapper call: the call is the operand now
+            continue
+        if ob == "[" and (bk in ("name", "str") or bt in (")", "]", "}")):
+            return False   # a subscript, not a list
+        # PR A, Codex round 3 (1): one element of a list, a set or a tuple is only maybe where the code sends; ( URL ) is the URL
+        maybe = maybe or ob in "[{" or pt == "," or qt == ","
+        lo, hi = o, match[o]   # a group, a tuple, a list or a set: the whole is the operand now
+    return False
+
+
 def _standalone(text, a, b, quoted):
     """True when text[a:b], a URL literal (with its quotes) or a whole URL argument, is the complete value: nothing can come
-    before it or after it in the same string expression. Any doubt is False."""
+    before it or after it in the same string expression. Any doubt is False. Batch 5 (c1): read as shell words on a shell line,
+    else (quoted) as code; an unquoted URL off a shell line keeps the neighbour test below."""
+    import bisect
+    fences = _fences(text)
+    k = bisect.bisect_right(_memo(text)["fence_starts"], a) - 1
+    fence = fences[k] if k >= 0 and fences[k][0] <= a < fences[k][1] else None
+    floor = max(0, a - 4096, fence[0] if fence else 0)
+    ls = text.rfind("\n", 0, a) + 1
+    while ls > floor and ls >= 2 and _JOINED_LINE.search(text, text.rfind("\n", 0, ls - 1) + 1, ls - 1):
+        ls = text.rfind("\n", 0, ls - 1) + 1   # the line before ends in a join: the logical line starts there
+    tick = text.rfind("`", ls, a)
+    cs = tick + 1 if tick != -1 and not (fence and fence[2] in _SHELL_FENCES) else ls
+    if (fence and fence[2] in _SHELL_FENCES) or _SHELL_TOOL.match(text, cs) or _SHELL_TOOL.match(text, ls):
+        inline = cs != ls and _SHELL_TOOL.match(text, cs)
+        for wa, wb, _ in _logical_words(text, cs if inline else ls):
+            if wb > a:   # `inline code` ends at its closing backtick
+                return wa == a and (wb == b or (inline and wb == b + 1 and text[b] == "`"))
+        return False
+    if not quoted:
+        return _standalone_plain(text, a, b, quoted)
+    if fence:
+        return _code_standalone(text, a, b, fence[0], fence[1], False)
+    if not fences:
+        return _code_standalone(text, a, b, 0, len(text), False)
+    le = text.find("\n", a)
+    return _code_standalone(text, a, b, text.rfind("\n", 0, a) + 1, len(text) if le == -1 else le, True)   # markdown prose: its line
+
+
+def _standalone_plain(text, a, b, quoted):
+    """Before batch 5 (and still for an unquoted URL off a shell line): one character on each side, past spaces, line breaks and
+    backslashes. Any doubt is False."""
     j, stop = a - 1, max(0, a - 4096)
     while j >= stop and text[j] in _SKIP:
         j -= 1

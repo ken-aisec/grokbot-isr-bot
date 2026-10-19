@@ -251,7 +251,37 @@ def remember_manifest(root, text):
         if len(parts) == 2:
             files.setdefault(parts[1].lstrip("*").strip(), parts[0])
     _RELEASE.clear()
-    _RELEASE.update(root=root, files=files, at=(SELF_ROOT, os.path.join(home(), "app")))
+    _RELEASE.update(root=root, files=files, at=SELF_ROOT)
+
+
+def installed_root():
+    """The real folder of the installed copy this wt.py runs from, or None in a developer checkout. PR A, Codex round 1 (6): it
+    was an installed copy only while WATCHTOWER_HOME/app led to it, so changing that variable made one a developer checkout, whose
+    rules files (the reviewed list, the normalization spec, the locks) are never held to MANIFEST.sha256. An installed copy is the
+    `app` folder install.sh makes, whatever WATCHTOWER_HOME says now.
+    PR A, Codex round 2 (5): SELF_ROOT is the real folder of the wt.py that runs (wt.py follows links to itself), so a folder
+    holding only a `watchtower` link to the installed copy runs it as the installed copy; and only that real folder's name
+    counts, never a WATCHTOWER_HOME whose app leads somewhere.
+    PR A, Codex round 3 (3): the name alone made `mv app app.real` (with or without `ln -s app.real app`) a developer checkout:
+    no self-check, and planted rules files accepted. It is also an installed copy when it has what install.sh leaves: its
+    MANIFEST.sha256 and the commit record in the folder holding it (state/installed_commit), or when it is anywhere under
+    install.sh's default home. A developer checkout is a folder with none of these."""
+    root = os.path.realpath(SELF_ROOT)
+    if os.path.basename(root) == "app" or (root + "/").startswith(os.path.realpath(DEFAULT_INSTALL_HOME) + "/"):
+        return root
+    if os.path.isfile(os.path.join(root, "MANIFEST.sha256")) and os.path.lexists(os.path.join(install_home(root), "state", COMMIT_FILE)):
+        return root
+    return None
+
+
+DEFAULT_INSTALL_HOME = "/workspace/watchtower"   # install.sh's WT_HOME when WATCHTOWER_HOME isn't set
+
+
+def install_home(root):
+    """The Watchtower folder the installed copy at `root` (its real folder) was installed into: install.sh's WT_HOME, the real
+    folder holding `app`. PR A, Codex round 2 (5): never WATCHTOWER_HOME, whose `app` may be a link to the installed copy while
+    its state/installed_commit says what someone wants."""
+    return os.path.dirname(root)
 
 
 def release_manifest():
@@ -264,9 +294,9 @@ def release_manifest():
     remembered it is never read again, and a different folder behind the same name lists nothing (the lock then reads as
     changed: scanner_lock)."""
     root = os.path.realpath(SELF_ROOT)
-    if _RELEASE.get("at") == (SELF_ROOT, os.path.join(home(), "app")):
+    if _RELEASE.get("at") == SELF_ROOT:
         return _RELEASE["files"] if root == _RELEASE["root"] else {}
-    if root != os.path.realpath(os.path.join(home(), "app")):
+    if installed_root() is None:   # PR A, Codex round 1 (6): the copy this runs from, never what WATCHTOWER_HOME says
         return None
     remember_manifest(root, read_text(os.path.join(root, "MANIFEST.sha256")))
     return _RELEASE["files"]
