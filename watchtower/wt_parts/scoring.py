@@ -130,7 +130,62 @@ def kinds_of(f):
     return set(f.get("kinds") or ()) or ({RISK_KIND[f["rule"]]} if f["rule"] in RISK_KIND else set())
 
 
-def corroborated(f, findings):
+CORROB_INDEX = True   # batch 5 (c5): False makes corroborated() read every finding again, as before (the tests' reference)
+
+
+class CorrobIndex:
+    """Batch 5 (Codex medium, c5): which findings could back up a finding, found without reading all of them. Every branch of
+    corroborated() needs g at the same place, at a place that covers it or that it covers (_covers), or a skill folder related
+    the same way (WT-I004, the drift rules and the folder verdicts included), so candidates() is a superset of every g that can
+    answer yes, and the loop over it gives the same answer as the loop over all. Places and skills are looked up with their
+    trailing / taken off (_covers ignores it): the same one, each ancestor (cut at a /) and, by a sorted list, every
+    descendant. _skill_of (a filesystem look) runs once per finding, and only once a skill is asked about."""
+    def __init__(self, findings):
+        import bisect
+        self._bisect = bisect.bisect_left
+        self.findings, self.skill_of, by_place, self.i004 = findings, {}, {}, []
+        for g in findings:
+            by_place.setdefault(_place(g).rstrip("/"), []).append(g)
+            if g["rule"] == "WT-I004":
+                self.i004.append(g)
+        self.by = [(by_place, sorted(by_place)), None]
+
+    def _related(self, which, key):
+        if self.by[which] is None:
+            by_skill = {}
+            for g in self.findings:
+                by_skill.setdefault(self.skill(g).rstrip("/"), []).append(g)
+            self.by[which] = (by_skill, sorted(by_skill))
+        table, keys = self.by[which]
+        k = key.rstrip("/")
+        out = list(table.get(k, ()))
+        for i, c in enumerate(key):
+            if c == "/" and key[:i] != k:
+                out += table.get(key[:i], ())
+        pre = k + "/"
+        j = self._bisect(keys, pre)
+        while j < len(keys) and keys[j].startswith(pre):
+            out += table[keys[j]]
+            j += 1
+        return out
+
+    def candidates(self, here, skill=None):
+        """Every finding at a place related to `here` or (unless None) whose skill is related to `skill`, and every WT-I004."""
+        seen, out = set(), []
+        for g in self._related(0, here) + (self._related(1, skill) if skill is not None else []) + self.i004:
+            if id(g) not in seen:
+                seen.add(id(g))
+                out.append(g)
+        return out
+
+    def skill(self, g):
+        held = self.skill_of.get(id(g))
+        if held is None:
+            held = self.skill_of[id(g)] = (g, _skill_of(g))   # g is kept, so its id can't be reused while the index lives
+        return held[1]
+
+
+def corroborated(f, findings, index=None):
     """A pattern finding is backed up (v0.7.1 item 2: two votes about the same file and the same kind of risk) when
     - a wording hit (override, weaken approvals, secrecy, quiet action) has a behavior signal in the same file: a credential read,
       a send to an outside address, a pipe-to-shell, hidden Unicode, an encoded blob, dynamic code. Wording alone never is;
@@ -144,8 +199,12 @@ def corroborated(f, findings):
     A WT-S005 cookie-only note stays Worth a look even when a real sign-in is at the same shared-browser place."""
     if f["rule"] == "WT-S005" and f.get("title") != NEW_SIGN_IN:
         return False
-    here, src, skill = _place(f), f.get("source", "watchtower"), _skill_of(f)
+    here, src, skill = _place(f), f.get("source", "watchtower"), (index.skill(f) if index is not None else _skill_of(f))
+    skill_of = index.skill if index is not None else _skill_of
     loud = lambda g: (g.get("severity_was") or g["severity"]) in ("critical", "high")
+    if index is not None:   # c5: only those that can answer yes, so the same answer (CorrobIndex); the skill folder is asked
+        # about only where its branch below can be reached: no kind of risk, not wording, and f loud
+        findings = index.candidates(here, skill if not kinds_of(f) and f["rule"] not in WORDING_RULES and loud(f) else None)
     if f["rule"] in WEBHOOK_PAIR:   # batch 4 (FP1): a chat webhook and a credential read in one file back each other up
         pair, full = WEBHOOK_PAIR[f["rule"]], lambda g: SEV_ORDER.index(g.get("severity_was") or g["severity"]) <= SEV_ORDER.index("medium")
         if full(f) and any(g["rule"] == pair and not g.get("guarded") and _place(g) == here and full(g) for g in findings):
@@ -167,7 +226,7 @@ def corroborated(f, findings):
         if not fk:                               # no kind of risk to match: the v0.6.8 rule, unchanged
             if _covers(here, gp) and other:
                 return True
-            if loud(f) and loud(g) and g["rule"] != f["rule"] and not is_evidence(g) and _covers(skill, _skill_of(g)):
+            if loud(f) and loud(g) and g["rule"] != f["rule"] and not is_evidence(g) and _covers(skill, skill_of(g)):
                 return True
             continue
         same_file = gp == here
@@ -319,11 +378,15 @@ def label_findings(findings, covered=None):
     for g in findings:   # Codex, batch 4 round 2: each distinct finding is read once (vet's 5,000 matches were 25 million pairs)
         reps.setdefault(_corrob_sig(g), g)
     reps = list(reps.values())
+    index = None   # batch 5 (c5): built on the first pattern finding that needs it, once per call
 
     def backed(f):
+        nonlocal index
         s = _corrob_sig(f)
         if s not in memo:
-            memo[s] = corroborated(f, reps)
+            if CORROB_INDEX and index is None:
+                index = CorrobIndex(reps)
+            memo[s] = corroborated(f, reps, index)
         return memo[s]
     for f in findings:
         f = dict(f)

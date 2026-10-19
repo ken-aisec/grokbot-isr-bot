@@ -117,6 +117,9 @@ def audit(roots, exports, quick=False):
     if platform_lock_problem():
         notes.append(f"The platform release list ({PLATFORM_LOCK_REL}) can't be used: {platform_lock_problem()}. So no file in a platform "
                      "folder is verified by it: every new or changed one is a high alert until a Watchtower release lists it.")
+    for rel, problem in ((PLATFORM_REVIEWED_REL, platform_reviewed_problem()), (PLATFORM_NORMALIZE_REL, platform_normalize_problem())):
+        if problem:   # batch 5 (d2, d3b): ignored whole, so nothing in a platform file is checked or normalized by it
+            notes.append(f"Watchtower's {rel} can't be used: {problem}. It is ignored, so nothing it lists applies this run.")
     if os.path.lexists(state_path(OLD_PLATFORM_APPROVALS)):
         notes.append(f"state/{OLD_PLATFORM_APPROVALS} is left from an earlier Watchtower and is no longer read: platform files it listed are "
                      "alerts again unless the release list includes them. You can delete it.")

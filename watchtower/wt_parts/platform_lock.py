@@ -149,6 +149,12 @@ def platform_vendor(p):
     return "Grok Bot"
 
 
+# Batch 5 (d3a): the platform's own metadata JSON (what a platform folder loads and how). The vendor rewrites it when it updates
+# itself, so "treat it like a file someone added" and "remove it" are the wrong advice; it is still a counted high, as any file
+# the release list doesn't include.
+PLATFORM_METADATA = re.compile(r"(?:manifest|cache|\.marketplaces|.+\.meta)\.json")
+
+
 def unverified_platform_finding(p, h, was=None):
     """A new or changed file in a platform folder that the vendor release list doesn't include, with these bytes at this path:
     a counted high. No `refresh` key, so it never goes into the Platform refresh Tip and an audit never rolls it into the
@@ -158,6 +164,17 @@ def unverified_platform_finding(p, h, was=None):
     fix = (f"Nothing shows {v} made this change, so treat it like a file someone added. Don't use this skill until you've looked. "
            "Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its "
            "platform list. If you didn't expect it, remove it.")
+    if PLATFORM_METADATA.fullmatch(os.path.basename(_path_part(p, line=False))):
+        f = finding("WT-I002" if was is None or was == h else "WT-I001",
+                    f"{v}'s list of what it loads {'changed' if was is not None and was != h else 'is new here'}, and Watchtower's "
+                    "release list doesn't have this version yet", "high", ["AST07"] if was is not None and was != h else ["AST09", "AST07"], p,
+                    f"sha256 {was[:12]}→{h[:12]}" if was is not None and was != h else f"sha256 {h[:12]}, not on the release list",
+                    f"{v} rewrites this file when it updates itself, but the file also decides which skills and plugins load, so "
+                    f"Watchtower can't tell an update from a change someone else made. Don't delete it ({v} needs it). It stays on "
+                    "this list until a Watchtower release includes this version. If it's still here after the next Watchtower update, "
+                    "tell Watchtower support.")
+        f["unverified_platform"] = True
+        return f
     if was is None:
         f = finding("WT-I002", f"A new file appeared in {v}'s own skill folder, and {v}'s release list doesn't include it", "high",
                     ["AST09", "AST07"], p, h[:12], fix)
@@ -181,9 +198,248 @@ OLD_PLATFORM_APPROVALS = "platform_approved.json"   # written by earlier version
 
 
 def platform_unproven(manifest):
-    """The files in this manifest that sit in a platform folder and aren't on the release list with these bytes (platform_listed)."""
+    """The files in this manifest that sit in a platform folder and aren't on the release list with these bytes (platform_listed),
+    nor with the digest of their canonical form where the release's normalization spec names them (platform_listed_normalized)."""
     return {p for p, h in manifest.items() if not p.startswith("persist:") and platform_ish(p) and not platform_listed(p, h)
-            and not platform_churn_file(p)}
+            and not platform_churn_file(p) and not platform_listed_normalized(p)}
+
+
+def _release_file(path, rel, max_bytes):
+    """(bytes, why it can't be used or "") of one of Watchtower's own rules files: a plain file (never a link), at most max_bytes,
+    and in an installed copy exactly the bytes MANIFEST.sha256 lists for it."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    except OSError as e:
+        return b"", f"it can't be opened as a plain file ({errno.errorcode.get(e.errno, 'error')})"
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return b"", "it isn't a plain file"
+        data = b""
+        while len(data) <= max_bytes:
+            chunk = os.read(fd, max_bytes + 1 - len(data))
+            if not chunk:
+                break
+            data += chunk
+    except OSError as e:
+        return b"", f"it can't be read ({errno.errorcode.get(e.errno, 'error')})"
+    finally:
+        os.close(fd)
+    if len(data) > max_bytes:
+        return b"", f"it is larger than {max_bytes // 1024} KB"
+    want = release_digest(rel)
+    if want is not None and hashlib.sha256(data).hexdigest() != want:
+        return b"", "it isn't the file this release of Watchtower shipped (MANIFEST.sha256)"
+    return data, ""
+
+
+def _stat_key(path):
+    """What says a rules file is unchanged since it was last read (its path, size, change time and inode), or None."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return None
+    return (path, st.st_size, st.st_mtime_ns, st.st_ino, st.st_mode)
+
+
+def _plain_rel(rel):
+    return (isinstance(rel, str) and rel and not rel.startswith("/") and ":" not in rel and ".." not in rel.split("/")
+            and os.path.normpath(rel) == rel and not any(ord(c) < 32 or 127 <= ord(c) < 160 for c in rel)
+            and rel.startswith(tuple(sub + "/" for sub in PLATFORM_ROOT_SUBS)))
+
+
+# Batch 5 (d2, Ken's decision 1, Oct 18): findings Watchtower's team read in exact versions of the platform's own files. One entry
+# names the paths (under the home folder), the file's sha256, the rule and the line; it applies only to those bytes there, so any
+# change to the file (another sha256) ends it. The list ships in Watchtower's release and is held to MANIFEST.sha256 like the
+# release lock; its path is a constant tests point at their own file, never read from the environment or from state/. Nothing on
+# the computer can add an entry.
+PLATFORM_REVIEWED_REL = "rules/platform-reviewed.json"
+PLATFORM_REVIEWED = os.path.join(HERE, "..", PLATFORM_REVIEWED_REL)
+PLATFORM_REVIEWED_MAX_BYTES = 256 * 1024
+_PLATFORM_REVIEWED_CACHE = {}
+
+
+def _platform_reviewed_state():
+    """([entries], why the list can't be used or ""). One malformed entry makes the whole list unusable."""
+    key = _stat_key(PLATFORM_REVIEWED)
+    if key is not None and _PLATFORM_REVIEWED_CACHE.get("key") == key:
+        return _PLATFORM_REVIEWED_CACHE["state"]
+    data, why = _release_file(PLATFORM_REVIEWED, PLATFORM_REVIEWED_REL, PLATFORM_REVIEWED_MAX_BYTES)
+    if why:
+        _PLATFORM_REVIEWED_CACHE.update(key=key, state=([], why))
+        return [], why
+    try:
+        doc = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        doc = None
+    entries = doc.get("entries") if isinstance(doc, dict) else None
+    out, why = [], "" if isinstance(entries, list) else "it isn't a JSON object with an entries list"
+    for n, e in enumerate(entries if isinstance(entries, list) else [], 1):
+        ok = (isinstance(e, dict) and set(e) == {"paths", "sha256", "rule", "line", "note"} and isinstance(e["paths"], list) and e["paths"]
+              and all(_plain_rel(r) for r in e["paths"]) and isinstance(e["sha256"], str) and re.fullmatch(r"[0-9a-f]{64}", e["sha256"])
+              and isinstance(e["rule"], str) and re.fullmatch(r"WT-[A-Z]\d{3}", e["rule"]) and type(e["line"]) is int and e["line"] >= 1
+              and isinstance(e["note"], str) and 0 < len(e["note"]) <= 400 and not any(ord(c) < 32 for c in e["note"]))
+        if not ok:
+            out, why = [], f"entry {n} isn't {{paths, sha256, rule, line, note}} with plain platform paths"
+            break
+        out.append(e)
+    _PLATFORM_REVIEWED_CACHE.update(key=key, state=(out, why))
+    return out, why
+
+
+def platform_reviewed_problem():
+    """Why rules/platform-reviewed.json can't be used, or ""."""
+    return _platform_reviewed_state()[1]
+
+
+def platform_reviewed(f, manifest):
+    """The reviewed-list entry for a platform finding, or None. It applies only when the finding is platform scope, its file is on
+    the release list with the sha256 this run's manifest holds for it (platform_listed), that sha256 is the entry's, the file's
+    path under the home folder (as written and where it really leads) is one of the entry's paths, and rule and line are the
+    entry's."""
+    w = f.get("where") or ""
+    path, _, ln = w.rpartition(":")
+    if f.get("scope") != "platform" or f.get("guarded") or not ln.isdigit() or not path.startswith("/"):
+        return None
+    entries = [e for e in _platform_reviewed_state()[0] if e["rule"] == f["rule"] and e["line"] == int(ln)]
+    if not entries:
+        return None
+    h = (manifest or {}).get(path)
+    if not isinstance(h, str) or not platform_listed(path, h):
+        return None
+    try:
+        n = os.path.normpath(path)
+        rels = (_home_rels(n), _home_rels(os.path.realpath(n)))
+    except OSError:
+        return None
+    return next((e for e in entries if e["sha256"] == h and all(r & set(e["paths"]) for r in rels)), None)
+
+
+# Batch 5 (d3b, Ken's decision 3, Oct 18): a release-shipped normalization spec for the platform's metadata JSON. An entry names a
+# path under the home folder and the exact key paths whose values the platform's own sync rewrites, each with a type. The file is
+# read strictly (a plain file of at most 1 MB, UTF-8 without a BOM, no duplicate keys, no NaN or Infinity, at most 64 deep); each
+# named value present must have exactly its type, or nothing is normalized; those values are dropped and the rest is written
+# compactly in its own key order. The release list then holds the sha256 of that canonical form for the path, like any other
+# line. Any other difference gives another digest, so it stays a counted WT-I001. The spec ships EMPTY: nothing is normalized until
+# a spike (Ken's shape diff with scripts/platform-json-shape.py, then a check of the host loader) proves which fields are unused.
+PLATFORM_NORMALIZE_REL = "rules/platform-normalize.json"
+PLATFORM_NORMALIZE = os.path.join(HERE, "..", PLATFORM_NORMALIZE_REL)
+PLATFORM_NORMALIZE_MAX_BYTES = 64 * 1024
+NORMALIZE_FILE_MAX = 1024 * 1024
+NORMALIZE_TYPES = {"iso8601": re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})"),
+                   "epoch_ms": re.compile(r"1\d{12}"), "hex_digest": re.compile(r"[0-9a-f]{12,128}")}
+_PLATFORM_NORMALIZE_CACHE = {}
+
+
+def _platform_normalize_state():
+    """({path under the home folder: [(key path tuple, type)]}, why the spec can't be used or "")."""
+    key = _stat_key(PLATFORM_NORMALIZE)
+    if key is not None and _PLATFORM_NORMALIZE_CACHE.get("key") == key:
+        return _PLATFORM_NORMALIZE_CACHE["state"]
+    data, why = _release_file(PLATFORM_NORMALIZE, PLATFORM_NORMALIZE_REL, PLATFORM_NORMALIZE_MAX_BYTES)
+    if why:
+        _PLATFORM_NORMALIZE_CACHE.update(key=key, state=({}, why))
+        return {}, why
+    try:
+        doc = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        doc = None
+    entries = doc.get("entries") if isinstance(doc, dict) else None
+    out, why = {}, "" if isinstance(entries, list) else "it isn't a JSON object with an entries list"
+    for n, e in enumerate(entries if isinstance(entries, list) else [], 1):
+        fields = e.get("fields") if isinstance(e, dict) else None
+        ok = (isinstance(e, dict) and set(e) == {"path", "fields"} and _plain_rel(e["path"]) and isinstance(fields, list) and fields
+              and all(isinstance(x, dict) and set(x) == {"key", "type"} and isinstance(x["key"], list) and x["key"]
+                      and all(isinstance(k, str) and k for k in x["key"]) and x["type"] in NORMALIZE_TYPES for x in fields))
+        if not ok:
+            out, why = {}, f"entry {n} isn't {{path, fields: [{{key: [...], type}}]}} with a plain platform path and a known type"
+            break
+        out[e["path"]] = [(tuple(x["key"]), x["type"]) for x in fields]
+    _PLATFORM_NORMALIZE_CACHE.update(key=key, state=(out, why))
+    return out, why
+
+
+def platform_normalize_problem():
+    """Why rules/platform-normalize.json can't be used, or ""."""
+    return _platform_normalize_state()[1]
+
+
+class _Refused(ValueError):
+    pass
+
+
+def _strict_pairs(pairs):
+    seen = set()
+    for k, _ in pairs:
+        if k in seen:
+            raise _Refused("duplicate key")
+        seen.add(k)
+    return dict(pairs)
+
+
+def _refuse_constant(name):
+    raise _Refused(name)
+
+
+def canonical_platform_json(data, fields):
+    """The sha256 of `data` (a platform metadata file's bytes) with the spec's `fields` dropped, or None when it can't be read
+    strictly or a named value hasn't exactly its type."""
+    if len(data) > NORMALIZE_FILE_MAX or data[:3] == b"\xef\xbb\xbf":
+        return None
+    try:
+        doc = json.loads(data.decode("utf-8"), object_pairs_hook=_strict_pairs, parse_constant=_refuse_constant)
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return None
+
+    def depth(x, d=0):
+        if d > 64:
+            raise _Refused("too deep")
+        for v in (x.values() if isinstance(x, dict) else x if isinstance(x, list) else ()):
+            depth(v, d + 1)
+    try:
+        depth(doc)
+    except (_Refused, RecursionError):
+        return None
+    for key, typ in fields:
+        node = doc
+        for k in key[:-1]:
+            node = node.get(k) if isinstance(node, dict) else None
+        if not isinstance(node, dict) or key[-1] not in node:
+            continue
+        v = node[key[-1]]
+        if not (isinstance(v, str) and NORMALIZE_TYPES[typ].fullmatch(v)):
+            return None   # a named field holding anything but its type: nothing is normalized, the file stays counted
+        del node[key[-1]]
+    return hashlib.sha256(json.dumps(doc, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def platform_listed_normalized(p):
+    """True when the spec names p (under the home folder, as written and where it really leads), p is a plain file (never a
+    link), and the release list holds the digest of its canonical form for it (platform_listed)."""
+    spec = _platform_normalize_state()[0]
+    if not spec:
+        return False
+    try:
+        n = os.path.normpath(str(p))
+        rels = _home_rels(n) & _home_rels(os.path.realpath(n))
+        fields = next((spec[r] for r in sorted(rels) if r in spec), None)
+        if fields is None:
+            return False
+        fd = os.open(n, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                return False
+            data = b""
+            while len(data) <= NORMALIZE_FILE_MAX:
+                chunk = os.read(fd, NORMALIZE_FILE_MAX + 1 - len(data))
+                if not chunk:
+                    break
+                data += chunk
+        finally:
+            os.close(fd)
+    except (OSError, ValueError):
+        return False
+    h = canonical_platform_json(data, fields)
+    return h is not None and platform_listed(n, h)
 
 
 # PR #9 (Ken: few false alarms): the platform's own sync bookkeeping, rewritten at every sync with no release (Ken's box, Oct 18:

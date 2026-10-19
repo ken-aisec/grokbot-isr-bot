@@ -342,7 +342,7 @@ def run_audit_locked(args, quick):
             f["severity"] = "medium"   # one scanner flagging a skill in a plugin nobody has reviewed yet is worth a look
     # Label before platform-refresh summary so a built-in that turns Confirmed critical/high alerts (Claude v0.7.1 F4).
     fs = label_findings(fs, ask_first_covered(fs))
-    fs = sort_findings(group_changed_skills(group_root_causes(mark_platform(summarize_refresh(fs)))))
+    fs = sort_findings(group_changed_skills(group_root_causes(mark_platform(summarize_refresh(mark_reviewed(fs, meta.get("manifest")))))))
     live, suppressed = active(fs)
     prev = load_json(state_path("last_findings.json"), {"findings": []})
     note_earlier_auto_allow(prev, live)

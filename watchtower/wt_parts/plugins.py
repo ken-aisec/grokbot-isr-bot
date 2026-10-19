@@ -301,13 +301,15 @@ def summarize_refresh(fs):
     if not ref:
         return fs
     # Confirmed critical/high on a platform path (label may already be set; else evidence/corroboration still counts).
-    bad = []
+    bad, index = [], None
     for f in fs:
         if f in ref or f["severity"] not in ("critical", "high"):
             continue
         if not (f.get("scope") == "platform" or platform_file(f)) or unconfirmed_platform_vote(f, fs):   # DQ-042
             continue
-        if f.get("label") == CONFIRMED or is_evidence(f) or corroborated(f, fs):
+        if not (f.get("label") == CONFIRMED or is_evidence(f)) and CORROB_INDEX and index is None:
+            index = CorrobIndex(fs)   # batch 5 (c5): one index for every finding here, not a read of all of them per finding
+        if f.get("label") == CONFIRMED or is_evidence(f) or corroborated(f, fs, index):
             bad.append(f)
 
     def skill_of_path(w):
@@ -467,12 +469,27 @@ def platform_file(f):
     return bool(path.startswith("/")) and under_platform_root(path)
 
 
+REVIEWED_LABEL = "Platform note (checked)"
+
+
+def mark_reviewed(fs, manifest):
+    """Batch 5 (d2): a platform finding an entry of rules/platform-reviewed.json covers (platform_reviewed: that file's exact bytes,
+    that rule and line) is a checked platform note: severity info (the rule's own kept as severity_was), the entry's note as its fix,
+    never new and never a rug-pull alert. Run before summarize_refresh and mark_platform."""
+    for f in fs:
+        e = platform_reviewed(f, manifest)
+        if e is not None:
+            f.update({"class": "platform", "label": REVIEWED_LABEL, "severity_was": f.get("severity_was") or f["severity"], "severity": "info",
+                      "fix": e["note"], "reviewed": True})
+    return fs
+
+
 def mark_platform(fs):
     """Label Grok Bot's own findings. Worth-a-look and Tips there become one Platform line each; a Confirmed one stays
     Confirmed (it is still shown and still alerts when new) but never counts. Two engines agreeing on a platform skill in words
-    that name no dangerous behavior is a Platform line too (DQ-042)."""
+    that name no dangerous behavior is a Platform line too (DQ-042). A checked one (mark_reviewed) stays as it is."""
     for f in fs:
-        if f.get("scope") != "platform" or f.get("guarded"):
+        if f.get("scope") != "platform" or f.get("guarded") or f.get("reviewed"):
             continue
         if f.get("class") in ("pattern", "tip") or f.get("platform_hook") or unconfirmed_platform_vote(f, fs):   # Ken, Oct 13: the platform's hook is a Platform line
             f["class"], f["label"] = "platform", PLATFORM

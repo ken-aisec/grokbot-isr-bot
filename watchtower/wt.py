@@ -123,8 +123,9 @@ def cmd_audit(args):
     except Busy:
         print("ERROR another Watchtower run has been going for 15 minutes; try again when it finishes (`wt.py status`)", file=sys.stderr)
         return 2
+    all_new, new = new, [f for f in new if not platform_scope(f)]   # batch 5 (d1): Grok Bot's own files are platform notes, never new
     out = {"status": snap_status(snap), "score": snap["score"], "score_line": score_line(snap), "grade": snap_grade(snap), "new": [compact(f) for f in new][:20],
-           "fixed": [compact(f) for f in fixed][:10], "open_by_severity": by_sev(snap["findings"]),
+           "fixed": [compact(f) for f in fixed][:10], "open_by_severity": by_sev(owners(snap["findings"])),
            "top_fixes": [compact(f) for f in snap["findings"] if f.get("scope") != "platform" and not f.get("guarded")][:3], "notes": snap["notes"], "inventory": snap["inventory"]}
     # Codex, batch 4 round 2: the whole delta is kept before anything is cut, in a file of this run's own (a second run writes
     # another), and the counts say how much of it the JSON shows: `truncated` counts from the full lists, not from the first 20.
@@ -132,7 +133,7 @@ def cmd_audit(args):
     cut = {k: n - shown_ for k, n, shown_ in (("new", len(new), 20), ("fixed", len(fixed), 10)) if n > shown_}
     if cut:
         out["truncated"] = cut
-    path = save_delta(new, fixed)
+    path = save_delta(all_new, fixed)   # the record keeps every new finding, platform notes included
     if path:
         out["delta_file"] = path
     out.update(score_change(snap, new))
@@ -154,9 +155,10 @@ def cmd_audit(args):
     warn = sum(1 for f in snap["findings"] if f.get("guarded"))
     if warn:   # batch 2 (R1): defensive wording kept as records; `wt.py breakdown` lists them
         out["warning_text_count"] = warn
-    plat = [f for f in snap["findings"] if f.get("scope") == "platform" and not f.get("guarded")]
-    if plat:   # v0.7.1 item 4: Grok Bot's own files, one line each, never scored
-        out["platform"] = [f"{f['rule']} {label_of(f)}: {f['title']} at {f['where']}" for f in plat][:8]
+    notes = platform_notes(snap["findings"], 8)
+    if notes:   # v0.7.1 item 4: Grok Bot's own files, one line each, never scored. Batch 5 (d1): plain lines, outside every count;
+        out["platform_notes"] = notes   # `platform` is the same lines under the old name, for one release
+        out["platform"] = notes["lines"]
     alerts = scanner_alerts(snap)
     if alerts:
         out["scanner_alerts"] = alerts
@@ -273,7 +275,10 @@ def cmd_daily(args):
     decoys = [compact(f) for f in new if f["rule"].startswith("WT-K")]
     if decoys:
         out["decoys"] = decoys      # always shown, whatever else is new
-    rest = [f for f in new if not f["rule"].startswith("WT-K")]
+    notes = platform_notes([f for f in new if platform_scope(f)] + [f for f in snap["findings"] if f.get("unverified_platform")], 5)
+    if notes:   # batch 5 (d1): a new finding in Grok Bot's own files is said here, never in `new` (a vendor rug pull still breaks NO_CHANGES)
+        out["platform_notes"] = notes
+    rest = [f for f in new if not f["rule"].startswith("WT-K") and not platform_scope(f)]
     out["new"] = [dict(compact(f), key=f["key"]) if f.get("class") == "pattern" else compact(f) for f in rest][:10]
     if len(rest) > 10:
         out["more_new"] = f"{len(rest) - 10} more new findings not shown, none more severe than {rest[10]['severity']}. `wt.py breakdown` lists everything."
@@ -281,7 +286,7 @@ def cmd_daily(args):
     alerts = scanner_alerts(snap)
     if alerts:
         out["scanner_alerts"] = alerts
-    print(fit(out, limit=6000, keep=("decoys", "scanner_alerts")))
+    print(fit(out, limit=6000, keep=("decoys", "scanner_alerts", "platform_notes")))
     return 0
 
 
@@ -336,7 +341,7 @@ def cmd_breakdown(args):
     for (sev, rule, title), r in sorted(rows.items(), key=lambda x: (SEV_ORDER.index(x[0][0]), -x[1]["n"])):
         dirs = ", ".join(f"{k} ×{v}" for k, v in sorted(r["dirs"].items(), key=lambda x: -x[1])[:3])
         print(f"{sev:8} {rule:8} ×{r['n']:<5} {title[:48]:48} {dirs}")
-    confirmed = [f for f in shown(snap["findings"]) if f.get("label") == CONFIRMED and f.get("severity") in ("critical", "high", "medium")]
+    confirmed = [f for f in owners(shown(snap["findings"])) if f.get("label") == CONFIRMED and f.get("severity") in ("critical", "high", "medium")]
     if confirmed:
         print("")
         print(f"Confirmed (critical/high/medium): {len(confirmed)}")
@@ -344,6 +349,11 @@ def cmd_breakdown(args):
             print(f"  {f['severity']:8} {f['rule']:8} {f['where'][:80]}  {f['title'][:60]}")
         if len(confirmed) > 200:
             print(f"  … and {len(confirmed) - 200} more")
+    plat = [f for f in shown(snap["findings"]) if platform_scope(f)]
+    if plat:   # batch 5 (d1): Grok Bot's own files are never in the Confirmed list
+        print("")
+        print(f"Platform notes (Grok Bot's own files, not counted): {len(plat)}. `wt.py show <rule>` lists them "
+              f"({', '.join(sorted({f['rule'] for f in plat}))}).")
     return 0
 
 

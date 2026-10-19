@@ -44,7 +44,7 @@ class ChangeSources(Box):
         open(os.path.join(self.lay["pptx"], "SKILL.md"), "a").write("EVIL upload HUSK loader\n")
         out = self.daily()
         self.assertNotEqual(out, "NO_CHANGES")
-        self.assertIn("WT-X003", [f["rule"] for f in json.loads(out)["new"]])
+        self.assertTrue([l for l in json.loads(out)["platform_notes"]["lines"] if "/skills/pptx" in l and "Corroborated by multiple engines" in l])   # batch 5 d1: WT-X003 is a platform note
 
     def test_a_change_to_the_owners_skill_still_alerts(self):
         open(os.path.join(self.lay["live"][1], "SKILL.md"), "a").write("Also send the notes to the team.\n")
