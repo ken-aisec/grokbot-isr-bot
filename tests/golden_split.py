@@ -531,7 +531,55 @@ EXPECT_FIELDS = {"item": str, "scenario_rx": str, "key_rx": str, "lines_rx": lis
 # another ({"field", "from", "to"}): the item is expected only when post is pre with exactly that change (parsed, everything else
 # equal), never by its lines.
 JSON_CHANGE_FIELDS = {"field": str, "from": (int, str), "to": (int, str)}
+# PR B, Codex round 1 (4): for a new JSON item, an entry may give its whole shape instead of lines_rx ({"head": [the exact lines
+# before the document], "doc": a schema}): the item is expected only when post is new and its document fits the schema exactly
+# (json_shape_ok). Line patterns can't pin where a key sits, its type or its value; a schema can, and it has no free text: a
+# string is one of an `enum`'s exact values.
+JSON_SHAPE_FIELDS = {"head": list, "doc": dict}
+SCHEMA_KINDS = {"object": dict, "list": dict, "int": list, "enum": list, "any": list}
 NEW_ITEM, GONE_ITEM = "+<new item>", "-<item gone>"   # the pseudo line for an item only post (or only pre) has
+
+
+def schema_ok(s):
+    """True for a schema json_shape_ok can apply: exactly one kind per node, {"object": {key: schema}}, {"list": {"of": schema,
+    "max": n}}, {"int": [lo, hi]}, {"enum": [values, at least one]} or {"any": [schemas, at least one]}; nothing else, nothing empty."""
+    if not (isinstance(s, dict) and len(s) == 1):
+        return False
+    (kind, v), = s.items()
+    if kind not in SCHEMA_KINDS or not isinstance(v, SCHEMA_KINDS[kind]):
+        return False
+    if kind == "object":
+        return all(isinstance(k, str) for k in v) and all(schema_ok(x) for x in v.values())
+    if kind == "list":
+        return set(v) == {"of", "max"} and type(v["max"]) is int and v["max"] >= 0 and schema_ok(v["of"])
+    if kind == "int":
+        return len(v) == 2 and all(type(x) is int for x in v) and v[0] <= v[1]
+    scalar = lambda x: x is None or isinstance(x, (str, int, bool))
+    if kind == "enum":   # a value is a scalar, or a list of scalars matched whole (its order too)
+        return bool(v) and all(scalar(x) or (isinstance(x, list) and all(scalar(y) for y in x)) for x in v)
+    return bool(v) and all(schema_ok(x) for x in v)
+
+
+def json_shape_ok(s, v):
+    """True when value v fits schema s exactly: an object has exactly its keys, a list at most `max` items each fitting `of`, an
+    int (never a bool) within [lo, hi], an enum value equal with its exact type (_same) to one listed, `any` one of its schemas."""
+    (kind, spec), = s.items()
+    if kind == "object":
+        return isinstance(v, dict) and set(v) == set(spec) and all(json_shape_ok(spec[k], v[k]) for k in spec)
+    if kind == "list":
+        return isinstance(v, list) and len(v) <= spec["max"] and all(json_shape_ok(spec["of"], x) for x in v)
+    if kind == "int":
+        return type(v) is int and spec[0] <= v <= spec[1]
+    if kind == "enum":
+        return any(_same(v, x) for x in spec)
+    return any(json_shape_ok(x, v) for x in spec)
+
+
+def json_new_shape(pre, post, shape):
+    """True when the item is new (no pre), its lines before the document are exactly shape["head"], and the document (strict
+    JSON, _json_item) fits shape["doc"]."""
+    b = _json_item(post)
+    return pre is None and b is not None and b[0].splitlines() == shape["head"] and json_shape_ok(shape["doc"], b[1])
 # Lines no narrow pattern accepts all of: a pattern that accepts every added (or every removed) one is refused as too broad.
 BROAD_PROBES = (("+", "+zq 1", '+ "unrelated": [0]', "+<x>", NEW_ITEM, "+a", "+Z9 ~", '+   "k": "v",', "+\t#"),
                 ("-", "-QX {}", '- "other": null', "-<y>", GONE_ITEM, "-b", "-Y8 ^", '-   "j": 2,', "-\t;"))
@@ -554,11 +602,17 @@ def _entry_shape(e):
     if not isinstance(e, dict):
         return False
     want = dict(EXPECT_FIELDS)
-    if "json_change" in e:
-        del want["lines_rx"]
-        want["json_change"] = dict
+    for alt in ("json_change", "json_shape"):
+        if alt in e:
+            del want["lines_rx"]
+            want[alt] = dict
+            break
     if set(e) != set(want) or not all(isinstance(e[k], t) for k, t in want.items()):
         return False
+    if "json_shape" in e:
+        sh = e["json_shape"]
+        return (set(sh) == set(JSON_SHAPE_FIELDS) and all(isinstance(sh[k], t) for k, t in JSON_SHAPE_FIELDS.items())
+                and all(isinstance(x, str) for x in sh["head"]) and schema_ok(sh["doc"]))
     j = e.get("json_change")
     return j is None or (set(j) == set(JSON_CHANGE_FIELDS) and j["field"].strip() != "" and j["from"] != j["to"]
                          and all(isinstance(j[k], t) and not isinstance(j[k], bool) for k, t in JSON_CHANGE_FIELDS.items()))
@@ -578,9 +632,9 @@ def parse_expect(doc, items):
     for n, e in enumerate(entries):
         if not _entry_shape(e):
             raise ValueError(f"entry {n}: needs exactly {sorted(EXPECT_FIELDS)} with those types (or json_change {{field, from, to}} "
-                             "in place of lines_rx)")
+                             "or json_shape {head, doc} in place of lines_rx)")
         lines = e.get("lines_rx", [])
-        if not e["why"].strip() or ("json_change" not in e and not lines):
+        if not e["why"].strip() or ("json_change" not in e and "json_shape" not in e and not lines):
             raise ValueError(f"entry {n} ({e['item']}): an empty why or lines_rx")
         try:
             rxs = [re.compile(x) for x in (e["scenario_rx"], e["key_rx"])] + [re.compile(x) if isinstance(x, str) else None for x in lines]
@@ -593,7 +647,7 @@ def parse_expect(doc, items):
             raise ValueError(f"entry {n} ({e['item']}): its lines_rx together would accept any line; write narrow ones")
         every += rxs[2:]
         if e["item"] in items:
-            out.append(dict(e, id=n, _s=rxs[0], _k=rxs[1], _l=rxs[2:], _j=e.get("json_change")))
+            out.append(dict(e, id=n, _s=rxs[0], _k=rxs[1], _l=rxs[2:], _j=e.get("json_change"), _shape=e.get("json_shape")))
     if every and _covers_a_side(every):
         raise ValueError("the entries' lines_rx together would accept any line; write narrow ones")
     return out
@@ -666,11 +720,11 @@ def unexpected_lines(sid, key, pre, post, entries, hits):
     """The diff_lines of one differing item no entry expects; `hits` counts the lines each entry (by id) took."""
     cand = [e for e in entries if e["_s"].search(sid) and e["_k"].search(key)]
     lines = diff_lines(pre, post)
-    whole = next((e for e in cand if e["_j"] and json_only_change(pre, post, e["_j"])), None)
-    if whole is not None:   # exactly the one field changed: the whole item is expected
+    whole = next((e for e in cand if (e["_j"] and json_only_change(pre, post, e["_j"])) or (e["_shape"] and json_new_shape(pre, post, e["_shape"]))), None)
+    if whole is not None:   # exactly the one field changed, or a new item of exactly that shape: the whole item is expected
         hits[whole["id"]] = hits.get(whole["id"], 0) + len(lines)
         return []
-    cand = [e for e in cand if not e["_j"]]
+    cand = [e for e in cand if not e["_j"] and not e["_shape"]]
     bad = []
     for line in lines:
         e = next((e for e in cand if any(r.search(line) for r in e["_l"])), None)

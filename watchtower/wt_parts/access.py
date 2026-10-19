@@ -4,7 +4,9 @@
 # from memories, messages, transcripts or credential files, and no value is taken from them. Ken's decisions (Oct 18): MCP configs
 # give server names, transport and URL host only, never env, args, headers or a URL's path (4); each Bot's part is what it said in
 # the roll-call, labelled "what the Bot said; not checked" (5). Every map passes through access_record() before it is kept or
-# shown, including one read back from state/ (the Bot can write that folder).
+# shown. PR B, Codex round 1 (2): the map shown is always built by the command that shows it (the audit's own, or one built from
+# this computer just then); state/access_map.json (the Bot can write that folder) is only a fallback, and then nothing in it is
+# taken as "there is none".
 ACCESS_MAP_FILE = "access_map.json"
 ACCESS_MAX_BOTS = 40
 ACCESS_AREAS = ("everything", "pays", "deletes", "permissions", "sends", "installs", "runs code", "other")
@@ -19,9 +21,16 @@ ACCESS_CHAT = (("Slack", re.compile(r"(?i)(?<![\w.-])hooks\.slack\.com")), ("Dis
                ("Teams", re.compile(r"(?i)(?<![\w.-])([a-z0-9-]+\.webhook\.office\.com|outlook\.office\.com/webhook)")),
                ("Google Chat", re.compile(r"(?i)(?<![\w.-])chat\.googleapis\.com")), ("Telegram", re.compile(r"(?i)(?<![\w.-])api\.telegram\.org/bot")))
 ACCESS_UNKNOWN = ("connectors", "routines_on_box", "secrets_content", "approvals")
+# What the shared part of a map says, field by field. A field is "checked" only when this command observed it (the audit's own
+# collection, or this computer just now); only a checked field may say there is none (PR B, Codex round 1, 2).
+ACCESS_SHARED = ("browser", "cli_logins", "settings", "mcp", "plugins", "webhooks", "scheduled", "hooks", "key_files")
+ACCESS_SOURCES = ("audit", "now", "last-audit")
 _AX_HOST = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)*")
 _AX_AGENT_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f-]{27,}")
+_AX_ID = re.compile(r"[a-z0-9-]{1,30}")
+_AX_NO_CONNECTOR = re.compile(r"(?i)\s*(none|nothing|n/?a|-+|no connectors?( yet)?|not (yet )?(connected|installed|set up))?\s*")
 ACCESS_JSON_MAX_BYTES = 1024 * 1024
+_ACCESS_RUN = {}   # {"home", "map"}: the map this command built; main_inner empties it before each command
 
 
 def _ax_text(v, n):
@@ -55,6 +64,10 @@ def _ax_list(v, cap):
     return (v if isinstance(v, list) else [])[:cap]
 
 
+def _ax_len(v):
+    return len(v) if isinstance(v, list) else 0
+
+
 def _ax_strs(v, cap, n):
     out = []
     for x in _ax_list(v, cap):
@@ -64,64 +77,193 @@ def _ax_strs(v, cap, n):
     return out
 
 
+def access_connectors(names, other=0):
+    """(the rules/access_vocab.json labels these connector names stand for, in the vocabulary's order; how many other connectors).
+    PR B, Codex round 1 (1): a connector is only ever kept as one of the vocabulary's own labels. Anything else a Bot wrote there
+    (a key, "password=...", a sentence about a client) is counted, never kept. "none" and the like are no connector."""
+    vocab = [e_ for e_ in access_vocab() if "connector_rx" in e_["_rx"]]
+    found, n = set(), _ax_count(other)
+    for c in names if isinstance(names, list) else []:
+        if not isinstance(c, str) or _AX_NO_CONNECTOR.fullmatch(c):
+            continue
+        e_ = next((e_ for e_ in vocab if c.strip() in (e_["label"], e_["id"]) or e_["_rx"]["connector_rx"].search(c)), None)
+        if e_ is None:
+            n += 1
+        else:
+            found.add(e_["label"])
+    return [e_["label"] for e_ in vocab if e_["label"] in found], n
+
+
+def _ax_said(x):
+    """What one Bot said it can reach, as kept: vocabulary labels and a count of other connectors, each routine's trigger and
+    flags (never its name), the memory count, two yes/no answers and the reply's date."""
+    labels, other = access_connectors(x.get("connectors"), x.get("connectors_other"))
+    rts = [{"trigger": r.get("trigger") if r.get("trigger") in ROLLCALL_TRIGGERS else "other",   # never a routine's name
+            "sends_without_asking": r.get("sends_without_asking") is True, "asks_first": _ax_flag(r.get("asks_first"))}
+           for r in _ax_list(x.get("routines"), 60) if isinstance(r, dict)]
+    return {"said_at": _ax_date(x.get("said_at")), "connectors": labels, "connectors_other": other, "routines": rts,
+            "memories": x["memories"] if type(x.get("memories")) is int and x["memories"] >= 0 else None,
+            "reads_outside_content": _ax_flag(x.get("reads_outside_content")), "sends_without_asking": _ax_flag(x.get("sends_without_asking"))}
+
+
+def rollcall_said(x):
+    """_ax_said as rollcall_findings.json keeps it: written there and again whenever an earlier answer is carried over."""
+    a = _ax_said(x if isinstance(x, dict) else {})
+    if not a["connectors_other"]:
+        del a["connectors_other"]
+    return a
+
+
 def access_record(m):
     """The one way an access map is kept or shown: only its known keys, every string masked and cut (_ax_text), counts plain
-    numbers, hosts and ids checked, lists capped. A map read back from state/ passes through here again before it is shown."""
+    numbers, hosts and ids checked, lists capped. PR B, Codex round 1 (3): each capped list keeps its whole count beside it (and
+    the products its whole list reaches), so nothing past the cap reads as absent; (2) a shared field that is missing or the
+    wrong shape is not "checked", so it never says there is none."""
     m = m if isinstance(m, dict) else {}
     sh = m.get("shared") if isinstance(m.get("shared"), dict) else {}
     d = lambda v: v if isinstance(v, dict) else {}
+    num = lambda v: type(v) is int
+    ok = {x for x in _ax_list(sh.get("checked"), 20) if x in ACCESS_SHARED}
     out = {"v": 1, "at": m.get("at") if isinstance(m.get("at"), str) and re.fullmatch(r"[\dT:+.-]{10,40}", m["at"]) else None}
     b = sh.get("browser")
     browser = None
     if isinstance(b, dict):
-        browser = {"sites": _ax_count(b.get("sites")),
-                   "sensitive": [h for h in (_ax_host_of(x) for x in _ax_list(b.get("sensitive"), 8)) if h],
+        sens = [h for h in (_ax_host_of(x) for x in _ax_list(b.get("sensitive"), 8)) if h]
+        n_sens = max(_ax_count(b.get("sensitive_count")), _ax_len(b.get("sensitive")), len(sens))
+        browser = {"sites": max(_ax_count(b.get("sites")), n_sens), "sensitive": sens, "sensitive_count": n_sens,
                    "products": [{"id": p["id"], "site": _ax_host_of(p.get("site"))} for p in _ax_list(b.get("products"), 40)
-                                if isinstance(p, dict) and isinstance(p.get("id"), str) and re.fullmatch(r"[a-z0-9-]{1,30}", p["id"]) and _ax_host_of(p.get("site"))]}
+                                if isinstance(p, dict) and isinstance(p.get("id"), str) and _AX_ID.fullmatch(p["id"]) and _ax_host_of(p.get("site"))]}
+        if not (num(b.get("sites")) and num(b.get("sensitive_count"))):
+            ok.discard("browser")
+    elif "browser" not in sh or b is not None:
+        ok.discard("browser")
     mcp = d(sh.get("mcp"))
     tools = []
     for t in _ax_list(mcp.get("tools"), 40):
         if isinstance(t, dict) and _ax_text(t.get("name"), 40):
             kind = t.get("kind") if t.get("kind") in ("command", "url") else "unknown"
             tools.append(dict({"name": _ax_text(t["name"], 40), "kind": kind}, **({"host": _ax_host_of(t.get("host"))} if kind == "url" and _ax_host_of(t.get("host")) else {})))
+    if not (num(mcp.get("files")) and num(mcp.get("count")) and isinstance(mcp.get("tools"), list)):
+        ok.discard("mcp")
+    cli = [{"tool": _ax_text(c.get("tool"), 40), "file": _ax_text(c.get("file"), 64)} for c in _ax_list(sh.get("cli_logins"), 12)
+           if isinstance(c, dict) and _ax_text(c.get("tool"), 40)]
+    if not (isinstance(sh.get("cli_logins"), list) and num(sh.get("cli_count")) and isinstance(sh.get("platform_logins"), list)):
+        ok.discard("cli_logins")
+    rules_ = [{"id": a["id"], "area": a.get("area") if a.get("area") in ACCESS_AREAS else "other", "says": _ax_text(a.get("says"), 60) or ""}
+              for a in _ax_list(sh.get("auto_allow"), 20) if isinstance(a, dict) and isinstance(a.get("id"), str) and re.fullmatch(r"[0-9a-f]{64}", a["id"])]
+    areas = {a: _ax_count(d(sh.get("auto_allow_areas")).get(a)) for a in ACCESS_AREAS}
+    for a in rules_:
+        areas[a["area"]] = max(areas[a["area"]], sum(1 for r in rules_ if r["area"] == a["area"]))
+    if not (sh.get("settings") in ("found", "missing", "unreadable") and isinstance(sh.get("auto_allow"), list) and isinstance(sh.get("auto_allow_areas"), dict)
+            and sh.get("runs_programs") in ("without asking", "asks first", "never", "unknown")):
+        ok.discard("settings")
     pl, sc, hk = d(sh.get("plugins")), d(sh.get("scheduled")), d(sh.get("hooks"))
+    ws = [{"service": w["service"], "skill": _ax_text(w.get("skill"), 40) or "a file"} for w in _ax_list(sh.get("webhooks"), 12)
+          if isinstance(w, dict) and w.get("service") in [s for s, _ in ACCESS_CHAT]]
+    services = [s for s, _ in ACCESS_CHAT if s in _ax_list(sh.get("webhook_services"), 10)
+                or any(isinstance(w, dict) and w.get("service") == s for w in _ax_list(sh.get("webhooks"), 10 ** 5))]   # the whole list
+    for k, good in (("plugins", num(pl.get("grok")) and num(pl.get("added"))), ("webhooks", isinstance(sh.get("webhooks"), list) and num(sh.get("webhook_count"))),
+                    ("scheduled", num(sc.get("crontab")) and num(sc.get("systemd"))), ("hooks", num(hk.get("platform")) and num(hk.get("other"))),
+                    ("key_files", num(sh.get("key_files")))):
+        if not good:
+            ok.discard(k)
     out["shared"] = {
         "browser": browser,
-        "cli_logins": [{"tool": _ax_text(c.get("tool"), 40), "file": _ax_text(c.get("file"), 64)} for c in _ax_list(sh.get("cli_logins"), 12)
-                       if isinstance(c, dict) and _ax_text(c.get("tool"), 40)],
+        "cli_logins": cli, "cli_count": max(_ax_count(sh.get("cli_count")), _ax_len(sh.get("cli_logins")), len(cli)),
         "platform_logins": _ax_strs(sh.get("platform_logins"), 4, 60),
-        "settings": "found" if sh.get("settings") == "found" else "missing",
-        "auto_allow": [{"id": a["id"], "area": a.get("area") if a.get("area") in ACCESS_AREAS else "other", "says": _ax_text(a.get("says"), 60) or ""}
-                       for a in _ax_list(sh.get("auto_allow"), 20) if isinstance(a, dict) and isinstance(a.get("id"), str) and re.fullmatch(r"[0-9a-f]{64}", a["id"])],
+        "settings": sh.get("settings") if sh.get("settings") in ("found", "missing", "unreadable") else "unreadable",
+        "auto_allow": rules_, "auto_allow_areas": areas,
         "runs_programs": sh.get("runs_programs") if sh.get("runs_programs") in ("without asking", "asks first", "never") else "unknown",
         "auto_review": _ax_flag(sh.get("auto_review")),
-        "mcp": {"files": _ax_count(mcp.get("files")), "tools": tools, "unreadable": _ax_count(mcp.get("unreadable")),
+        "mcp": {"files": _ax_count(mcp.get("files")), "count": max(_ax_count(mcp.get("count")), _ax_len(mcp.get("tools")), len(tools)), "tools": tools,
+                "products": list(dict.fromkeys(p for p in _ax_list(mcp.get("products"), 40) if isinstance(p, str) and _AX_ID.fullmatch(p))),
+                "unreadable": max(_ax_count(mcp.get("unreadable")), _ax_len(mcp.get("unreadable_files"))),
                 "unreadable_files": _ax_strs(mcp.get("unreadable_files"), 3, 64)},
-        "plugins": {"grok": _ax_count(pl.get("grok")), "added": _ax_count(pl.get("added")), "names": _ax_strs(pl.get("names"), 12, 40)},
-        "webhooks": [{"service": w["service"], "skill": _ax_text(w.get("skill"), 40) or "a file"} for w in _ax_list(sh.get("webhooks"), 12)
-                     if isinstance(w, dict) and w.get("service") in [s for s, _ in ACCESS_CHAT]],
+        "plugins": {"grok": _ax_count(pl.get("grok")), "added": max(_ax_count(pl.get("added")), _ax_len(pl.get("names"))), "names": _ax_strs(pl.get("names"), 12, 40)},
+        "webhooks": ws, "webhook_count": max(_ax_count(sh.get("webhook_count")), _ax_len(sh.get("webhooks")), len(ws)), "webhook_services": services,
         "scheduled": {"crontab": _ax_count(sc.get("crontab")), "systemd": _ax_count(sc.get("systemd"))},
         "hooks": {"platform": _ax_count(hk.get("platform")), "other": _ax_count(hk.get("other"))},
         "key_files": _ax_count(sh.get("key_files")),
+        "checked": [k for k in ACCESS_SHARED if k in ok],
+        "from": sh.get("from") if sh.get("from") in ACCESS_SOURCES else "last-audit",
     }
     bots = []
     for x in _ax_list(m.get("bots"), ACCESS_MAX_BOTS):
-        if not isinstance(x, dict) or not _ax_text(x.get("name"), 60):
-            continue
-        rts = [{"trigger": r.get("trigger") if r.get("trigger") in ROLLCALL_TRIGGERS else "other",   # never a routine's name (rollcall_access)
-                "sends_without_asking": r.get("sends_without_asking") is True, "asks_first": _ax_flag(r.get("asks_first"))}
-               for r in _ax_list(x.get("routines"), 60) if isinstance(r, dict)]
-        bots.append({"name": _ax_text(x["name"], 60), "said_at": _ax_date(x.get("said_at")), "connectors": _ax_strs(x.get("connectors"), 40, 40),
-                     "routines": rts, "memories": x["memories"] if type(x.get("memories")) is int and x["memories"] >= 0 else None,
-                     "reads_outside_content": _ax_flag(x.get("reads_outside_content")), "sends_without_asking": _ax_flag(x.get("sends_without_asking"))})
+        if isinstance(x, dict) and _ax_text(x.get("name"), 60):
+            bots.append(dict({"name": _ax_text(x["name"], 60)}, **_ax_said(x)))
     out["bots"] = bots
-    out["bots_more"] = _ax_count(m.get("bots_more"))
-    out["bots_no_detail"] = _ax_strs(m.get("bots_no_detail"), ACCESS_MAX_BOTS, 60)
-    out["bots_silent"] = _ax_strs(m.get("bots_silent"), ACCESS_MAX_BOTS, 60)
+    out["bots_more"] = _ax_count(m.get("bots_more")) + max(0, _ax_len(m.get("bots")) - ACCESS_MAX_BOTS)
     rc = d(m.get("rollcall"))
     out["rollcall"] = {"at": _ax_date(rc.get("at")), "fresh": rc.get("fresh") is True}
+    for k, more in (("bots_no_detail", "no_detail_more"), ("bots_silent", "silent_more")):   # the names past the cap, counted
+        out[k] = _ax_strs(m.get(k), ACCESS_MAX_BOTS, 60)
+        out["rollcall"][more] = _ax_count(rc.get(more)) + max(0, _ax_len(m.get(k)) - ACCESS_MAX_BOTS)
     out["unknown"] = [u for u in ACCESS_UNKNOWN if u in _ax_list(m.get("unknown"), 10)]
     return out
+
+
+# ---------------------------------------------------------------- reading what the map is built from
+def _ax_bases(roots=()):
+    """The folders a map source may be reached through without a check of its own: the scan roots, the home folder(s) and
+    Watchtower's own folder. Every folder below one of them on the way to a source must be a real folder, not a link."""
+    return list(dict.fromkeys([os.path.expanduser("~"), BOX_HOME, home()] + [os.path.expanduser(r) for r in roots if isinstance(r, str)]))
+
+
+def _ax_open(p, bases=()):
+    """A file the map reads, opened read-only without following a link (PR B, Codex round 1, 5): neither the file nor any folder
+    on the way to it below the nearest of `bases` ("/" when none holds it) may be a link, so a link's target is never opened. The
+    open file must be the one its path names (checked through /proc where there is one) and a plain file. Its fd, or None."""
+    p = os.path.normpath(os.path.abspath(os.path.expanduser(p)))
+    bs = [os.path.normpath(os.path.abspath(b)) for b in bases]
+    base = max((b for b in bs if p.startswith(b.rstrip("/") + "/")), key=len, default="/")
+    rel = os.path.relpath(p, base).split(os.sep)
+    try:
+        cur = base
+        for part in rel[:-1]:
+            cur = os.path.join(cur, part)
+            if not stat.S_ISDIR(os.lstat(cur).st_mode):   # a link to a folder is not a folder here
+                return None
+        if not stat.S_ISREG(os.lstat(p).st_mode):          # nor is a link a file: it is never opened at all
+            return None
+        fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    except OSError:
+        return None
+    try:
+        via = f"/proc/self/fd/{fd}"
+        if (os.path.islink(via) and os.readlink(via) != os.path.join(os.path.realpath(base), *rel)) or not stat.S_ISREG(os.fstat(fd).st_mode):
+            os.close(fd)
+            return None
+    except OSError:
+        os.close(fd)
+        return None
+    return fd
+
+
+def _ax_json_file(p, bases=(), limit=ACCESS_JSON_MAX_BYTES):
+    """A file the map reads, as JSON, read strictly: opened by _ax_open, at most `limit` bytes, UTF-8, no NaN or Infinity. None
+    when it can't be read that way."""
+    fd = _ax_open(p, bases)
+    if fd is None:
+        return None
+    try:
+        chunks, size = [], 0
+        while size <= limit:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+
+    def refuse(c):
+        raise ValueError(c)
+    try:
+        return None if size > limit else json.loads(b"".join(chunks).decode("utf-8"), parse_constant=refuse)
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return None
 
 
 # ---------------------------------------------------------------- building the map
@@ -131,52 +273,57 @@ def _ax_where_path(f):
     return p if ln.isdigit() and p else w
 
 
-def _ax_browser(fs, vocab):
-    """Signed-in sites in the shared browser: the cookie jar's hosts with a login-style cookie (state/browser_hosts.json, written by
-    the sign-in check; host names only) and the sensitive domains WT-S004 names from the cookie seed. None when neither exists."""
-    hosts = None
-    st = load_json_regular(state_path("browser_hosts.json"), None)
-    if isinstance(st, dict) and isinstance(st.get("hosts"), dict):
-        hosts = sorted(h for h in (_ax_host_of(k) for k, v in st["hosts"].items() if v is True) if h)
+def _ax_browser(fs, vocab, jar):
+    """Signed-in sites in the shared browser: `jar`, the cookie jar's hosts with a login-style cookie (host names only; None when
+    there is no jar), and the sensitive domains WT-S004 names from the cookie seed. None when neither exists. PR B, Codex round 1
+    (7): the seed's "sensitive: none" is no site."""
     seed = None
     for f in fs:
         if f.get("rule") == "WT-S004":
-            m = re.search(r"sensitive:\s*(.+)$", str(f.get("evidence") or ""))
-            seed = [h for h in (_ax_host_of(x) for x in (m.group(1).split(",") if m else [])) if h]
+            m = re.search(r"sensitive:\s*(.*)$", str(f.get("evidence") or ""))
+            val = m.group(1).strip() if m else ""
+            seed = [] if val.lower() in ("", "none", "-") else [h for h in (_ax_host_of(x) for x in val.split(",")) if h and "." in h]
             break
-    if hosts is None and seed is None:
+    if jar is None and seed is None:
         return None
-    signed = sorted(set(hosts or []) | set(seed or []))
+    signed = sorted(set(jar or []) | set(seed or []))
     products = []
     for e_ in vocab:
         site = next((dm for dm in e_.get("domains", []) for h in signed if h == dm or h.endswith("." + dm)), None)
         if site:
             products.append({"id": e_["id"], "site": site})
-    return {"sites": len(signed), "sensitive": [h for h in signed if sensitive_site(h)][:8], "products": products}
+    sens = [h for h in signed if sensitive_site(h)]
+    return {"sites": len(signed), "sensitive": sens[:8], "sensitive_count": len(sens), "products": products}
 
 
-def _ax_json_file(p):
-    """A config file as JSON, read strictly: a plain file (a link is followed, as the audit's own read does), at most 1 MB, UTF-8,
-    no NaN or Infinity. None when it can't be read that way."""
-    try:
-        fd = os.open(p, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
-    except OSError:
-        return None
-    try:
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
-            return None
-        data = os.read(fd, ACCESS_JSON_MAX_BYTES + 1)
-    except OSError:
-        return None
-    finally:
-        os.close(fd)
-
-    def refuse(c):
-        raise ValueError(c)
-    try:
-        return None if len(data) > ACCESS_JSON_MAX_BYTES else json.loads(data.decode("utf-8"), parse_constant=refuse)
-    except (UnicodeDecodeError, ValueError, RecursionError):
-        return None
+def _ax_jar_now():
+    """(the hosts with a login-style cookie in the shared browser's cookie jar, whether Watchtower could look), read now the way the
+    sign-in check reads it (host and cookie name, never a value), but through _ax_open: a jar reached through a link is not read.
+    (None, True) when there is no jar."""
+    import sqlite3
+    for j in BROWSER_JARS:
+        p = os.path.expanduser(j)
+        if not os.path.lexists(p):
+            continue
+        fd = _ax_open(p, _ax_bases())
+        if fd is None:
+            return None, False
+        try:
+            c = sqlite3.connect(f"file:/proc/self/fd/{fd}?immutable=1", uri=True)
+            try:
+                rows = c.execute("select host_key, name from cookies").fetchall()   # never the value
+            finally:
+                c.close()
+        except sqlite3.Error:
+            return None, False
+        finally:
+            os.close(fd)
+        hosts = {}
+        for h, n in rows:
+            if h:
+                hosts[str(h).lstrip(".")] = hosts.get(str(h).lstrip("."), False) or is_session_cookie(n)
+        return sorted(h for h, s in hosts.items() if s), True
+    return None, True
 
 
 def _ax_url_host(u):
@@ -187,13 +334,15 @@ def _ax_url_host(u):
         return None
 
 
-def _ax_mcp(paths):
-    """Tool connections from the MCP config files the audit found: each server's name, whether it runs a command or reaches a URL,
-    and that URL's host. Only the `mcpServers` / `servers` lists are read, and in each server only `command` (whether there is one)
-    and `url` (its host); env, args, headers and a URL's path or query are never read or kept (Ken's decision 4)."""
+def _ax_mcp(paths, bases):
+    """Tool connections from the MCP config files: each server's name, whether it runs a command or reaches a URL, and that URL's
+    host. Only the `mcpServers` / `servers` lists are read, and in each server only `command` (whether there is one) and `url`
+    (its host); env, args, headers and a URL's path or query are never read or kept (Ken's decision 4). PR B, Codex round 1: the
+    count and the products the tools reach come from every tool, before the list is cut (3); a file reached through a link is
+    unreadable, its target never opened (5)."""
     tools, bad, seen = [], [], set()
     for p in paths:
-        doc = _ax_json_file(p)
+        doc = _ax_json_file(p, bases)
         if not isinstance(doc, dict):
             bad.append(short_path(p))
             continue
@@ -210,15 +359,26 @@ def _ax_mcp(paths):
                 if k not in seen:
                     seen.add(k)
                     tools.append(t)
-    return {"files": len(paths), "tools": tools[:40], "unreadable": len(bad), "unreadable_files": bad[:3]}
+    products = [e_["id"] for e_ in access_vocab() if "mcp_rx" in e_["_rx"]
+                and any(e_["_rx"]["mcp_rx"].search(str(t["name"])) or e_["_rx"]["mcp_rx"].search(t.get("host") or "") for t in tools)]
+    return {"files": len(paths), "count": len(tools), "tools": tools[:40], "products": products, "unreadable": len(bad), "unreadable_files": bad[:3]}
 
 
-def _ax_auto_allow():
+def _ax_auto_allow(bases):
     """(the Allow-automatically rules in Grok Bot's settings file, each with its area, its id and the start of its text; the
-    settings) or (None, None) when there is no settings file."""
-    nat = native_settings(entries=True)
+    settings; "found", "missing" or "unreadable"). The file is read through _ax_open."""
+    refused = []
+
+    def read(p):
+        if not os.path.lexists(p):
+            return None
+        doc = _ax_json_file(p, bases)
+        if not isinstance(doc, dict):
+            refused.append(p)
+        return doc
+    nat = native_settings(entries=True, read=read)
     if not nat:
-        return None, None
+        return None, None, "unreadable" if refused else "missing"
     entries, settings, p = nat
     out = []
     for raw in rule_entries(entries):
@@ -236,22 +396,37 @@ def _ax_auto_allow():
             area = "runs code" if _AX_RUNS.search(plain) else "other"
         says = re.sub(r"(?i)^\s*allow\s+automatically\s*:\s*", "", raw)
         out.append({"id": auto_allow_fingerprint(raw), "area": area, "says": says})
-    return out, settings
+    return out, settings, "found"
 
 
-def _ax_plugins():
-    st = load_json_regular(state_path("plugins.json"), None)
-    grok, added, names = 0, 0, []
+def _ax_plugins(plugin_files=None):
+    """Plugins: Grok Bot's own (the catalog's, or only in platform folders) and added ones, from state/plugins.json (the audit
+    writes it each run). With `plugin_files` (a map built outside an audit), a plugin folder found now that the file doesn't list
+    counts as added: deleting a line there hides nothing."""
+    st = _ax_json_file(state_path("plugins.json"), [home()], 8 * ACCESS_JSON_MAX_BYTES)
+    grok, added, names, known = 0, 0, [], set()
     for name, v in sorted(st.items()) if isinstance(st, dict) else ():
         if not isinstance(v, dict):
             continue
         roots = [r for r in v.get("roots", []) if isinstance(r, str)] if isinstance(v.get("roots"), list) else []
+        known |= {os.path.normpath(r) for r in roots}
         if v.get("status") == "catalog" or (roots and all(platform_ish(r) for r in roots)):
             grok += 1
         else:
             added += 1
             names.append(name)
-    return {"grok": grok, "added": added, "names": names[:12]}
+    for p in plugin_files or []:
+        if os.path.basename(p) == "plugin.json" and any(x in p for x in ("/plugins/", "/plugin-cache/")):
+            d = os.path.dirname(p)
+            d = os.path.normpath(os.path.dirname(d) if os.path.basename(d) in PLUGIN_META_DIRS else d)
+            if d not in known:
+                known.add(d)
+                if platform_ish(d):
+                    grok += 1
+                else:
+                    added += 1
+                    names.append(os.path.basename(d))
+    return {"grok": grok, "added": added, "names": names}
 
 
 def _ax_webhooks(fs):
@@ -280,20 +455,59 @@ def _ax_scheduled(persist):
     return {"crontab": len(lines), "systemd": sum(1 for u in units if isinstance(u, str) and u.endswith((".service", ".timer"))) if isinstance(units, list) else 0}
 
 
-def _ax_hooks(src):
+def _ax_scheduled_now():
+    """Scheduled jobs counted now (crontab -l and the systemd user folder, as persistence_snapshot reads them), or None when the
+    systemd folder is a link."""
+    code, out, _ = run(["crontab", "-l"], 10)
+    d = os.path.expanduser("~/.config/systemd/user")
+    if os.path.islink(d):
+        return None
+    try:
+        units = sorted(os.listdir(d)) if os.path.isdir(d) else []
+    except OSError:
+        return None
+    return _ax_scheduled({"crontab": out.strip() if code == 0 else "", d: units})
+
+
+def _ax_hooks(roots, plugin_files, bases):
+    """({platform, other}: the commands hooks files make the app run around a Bot's tool calls, whether every one could be read).
+    The same files hook_files reads, each through _ax_open."""
+    files = [os.path.join(os.path.expanduser(r), sub, "hooks.json") for r in list(roots) + [os.path.expanduser("~")] for sub in (".cursor", ".grok", ".claude")]
+    files += [p for p in plugin_files if os.path.basename(p) == "hooks.json"]
     plat = other = 0
-    for p, cmds in hook_files(src.get("roots") or [], {"plugin_files": src.get("plugin_files") or []}):
+    ok, seen = True, set()
+    for p in files:
+        p = os.path.normpath(p)
+        if p in seen or not os.path.lexists(p):
+            continue
+        seen.add(p)
+        data = _ax_json_file(p, bases)
+        if data is None:
+            ok = False
+            continue
+        cmds, stack = set(), [data]
+        while stack:
+            x = stack.pop()
+            if isinstance(x, dict):
+                if isinstance(x.get("command"), str):
+                    cmds.add(x["command"])
+                stack += list(x.values())
+            elif isinstance(x, list):
+                stack += x
         for c in cmds:
             if c.strip() in PLATFORM_HOOKS and "/plugins/" not in p:
                 plat += 1
             else:
                 other += 1
-    return {"platform": plat, "other": other}
+    return {"platform": plat, "other": other}, ok
 
 
-def _ax_known_bots():
+def _ax_known_bots(bases):
     """Bot names this computer lists: the roster the Bot last saved, and each agent folder's own profile name (only "name")."""
-    names = set(roster_bots() or ())
+    roster = _ax_json_file(os.path.join(home(), *ROSTER_FILE), bases)
+    items = roster.get("entries", roster.get("roster", [])) if isinstance(roster, dict) else roster
+    names = {e["name"].strip() for e in items if isinstance(e, dict) and isinstance(e.get("name"), str)
+             and str(e.get("kind", "")).lower() in BOT_KINDS} if isinstance(items, list) else set()
     seen = set()
     for base in ("~/agent-data/agents", "~/sand-data/agents"):
         d = os.path.expanduser(base)
@@ -306,16 +520,16 @@ def _ax_known_bots():
         for i in ids[:200]:
             if not _AX_AGENT_ID.fullmatch(i):
                 continue
-            prof = load_json_regular(os.path.join(d, i, "profile.json"), None)
+            prof = _ax_json_file(os.path.join(d, i, "profile.json"), bases)
             if isinstance(prof, dict) and isinstance(prof.get("name"), str) and prof["name"].strip():
                 names.add(prof["name"].strip()[:60])
     return {mask_rollcall(n, 60) for n in names if isinstance(n, str) and n.strip()}
 
 
-def _ax_bots():
-    """(bots with what they said, how many more, Bots that answered before access was kept, silent Bots, the roll-call's date and
-    whether it is within ROLLCALL_MAX_DAYS)."""
-    rc = load_json_regular(state_path("rollcall_findings.json"), None)
+def _ax_bots(bases):
+    """(bots with what they said, Bots that answered before access was kept, silent Bots, the roll-call's date and whether it is
+    within ROLLCALL_MAX_DAYS). Whole lists: access_record cuts them and counts the rest."""
+    rc = _ax_json_file(state_path("rollcall_findings.json"), [home()], 8 * ACCESS_JSON_MAX_BYTES)
     at = str(rc.get("at") or "") if isinstance(rc, dict) else ""
     fresh = bool(at) and at >= (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=ROLLCALL_MAX_DAYS)).isoformat()
     said = rc.get("access") if fresh and isinstance(rc.get("access"), dict) else {}
@@ -323,16 +537,11 @@ def _ax_bots():
     order = list(dict.fromkeys([b for b in answered if b in said] + sorted(b for b in said if isinstance(b, str))))
     bots = [dict(said[b], name=b) for b in order if isinstance(said[b], dict)]
     no_detail = [b for b in dict.fromkeys(answered) if b not in said]
-    silent = sorted(n for n in _ax_known_bots() if n not in said and n not in answered)
-    return bots[:ACCESS_MAX_BOTS], max(0, len(bots) - ACCESS_MAX_BOTS), no_detail, silent, {"at": at[:10] or None, "fresh": fresh}
+    silent = sorted(n for n in _ax_known_bots(bases) if n not in said and n not in answered)
+    return bots, no_detail, silent, {"at": at[:10] or None, "fresh": fresh}
 
 
-def build_access_map(snapshot, meta):
-    """The access map for this run (access_record shape), from the snapshot's findings (open and accepted: an accepted login is
-    still there) and the audit's own collection (meta["access_sources"], meta["persistence"])."""
-    fs = [f for f in list(snapshot.get("findings") or []) + list(snapshot.get("suppressed") or []) if isinstance(f, dict)]
-    src = meta.get("access_sources") or {}
-    vocab = access_vocab()
+def _ax_cli(fs):
     h = os.path.expanduser("~").rstrip("/") + "/"
     cli = []
     for f in fs:
@@ -341,6 +550,10 @@ def build_access_map(snapshot, meta):
             tool_ = KNOWN_CRED_FILES.get(p[len(h):]) if p.startswith(h) else None
             if not any(c["file"] == short_path(p) for c in cli):
                 cli.append({"tool": tool_ or str(f.get("evidence") or "a command-line tool"), "file": short_path(p)})
+    return cli
+
+
+def _ax_platform_logins(fs):
     plat = []
     for f in fs:
         if f.get("rule") == "WT-I009":
@@ -348,17 +561,69 @@ def build_access_map(snapshot, meta):
                     else "the platform's secret store (values you saved through the secure secret request)")
             if what not in plat:
                 plat.append(what)
-    rules_, settings = _ax_auto_allow()
+    return plat
+
+
+def _ax_map(fs, roots, mcp_paths, plugin_files, jar, plugins, scheduled, checked, source):
+    """The map (access_record shape) from these findings and sources; `checked` names the shared fields they observed."""
+    bases = _ax_bases(roots)
+    rules_, settings, st = _ax_auto_allow(bases)
     le = (settings or {}).get("local_execution")
-    bots, more, no_detail, silent, rc = _ax_bots()
-    shared = {"browser": _ax_browser(fs, vocab), "cli_logins": cli, "platform_logins": plat, "settings": "found" if settings is not None else "missing",
-              "auto_allow": rules_ or [], "runs_programs": {"always": "without asking", "ask": "asks first", "never": "never"}.get(le, "unknown"),
-              "auto_review": (settings or {}).get("auto_review"), "mcp": _ax_mcp(src.get("mcp") or []), "plugins": _ax_plugins(),
-              "webhooks": _ax_webhooks(fs), "scheduled": _ax_scheduled(meta.get("persistence")), "hooks": _ax_hooks(src),
+    bots, no_detail, silent, rc = _ax_bots(bases)
+    hooks, hooks_ok = _ax_hooks(roots, plugin_files, bases)
+    webhooks = _ax_webhooks(fs)
+    areas = {}
+    for a in rules_ or []:
+        areas[a["area"]] = areas.get(a["area"], 0) + 1
+    cli = _ax_cli(fs)
+    shared = {"checked": [c for c in checked if (c != "hooks" or hooks_ok) and (c != "scheduled" or scheduled is not None)], "from": source,
+              "browser": _ax_browser(fs, access_vocab(), jar), "cli_logins": cli, "cli_count": len(cli), "platform_logins": _ax_platform_logins(fs),
+              "settings": st, "auto_allow": rules_ or [], "auto_allow_areas": areas,
+              "runs_programs": {"always": "without asking", "ask": "asks first", "never": "never"}.get(le, "unknown"),
+              "auto_review": (settings or {}).get("auto_review"), "mcp": _ax_mcp(mcp_paths, bases), "plugins": plugins,
+              "webhooks": webhooks, "webhook_count": len(webhooks), "webhook_services": sorted({w["service"] for w in webhooks}),
+              "scheduled": scheduled or {"crontab": 0, "systemd": 0}, "hooks": hooks,
               "key_files": len({_ax_where_path(f) for f in fs if f.get("rule") in ("WT-S001", "WT-S002") and f.get("severity") == "critical"})}
     unknown = ["connectors", "routines_on_box", "secrets_content"] + (["approvals"] if settings is None else [])
-    return access_record({"v": 1, "at": snapshot.get("at") or now(), "shared": shared, "bots": bots, "bots_more": more,
+    return access_record({"v": 1, "at": now(), "shared": shared, "bots": bots,
                           "bots_no_detail": no_detail, "bots_silent": silent, "rollcall": rc, "unknown": unknown})
+
+
+def build_access_map(snapshot, meta):
+    """The access map for this run (access_record shape), from the snapshot's findings (open and accepted: an accepted login is
+    still there) and the audit's own collection (meta["access_sources"], meta["persistence"]): every shared field is checked."""
+    fs = [f for f in list(snapshot.get("findings") or []) + list(snapshot.get("suppressed") or []) if isinstance(f, dict)]
+    src = meta.get("access_sources") or {}
+    hosts = src.get("browser")
+    jar = sorted(h for h, v in hosts.items() if v is True and _ax_host_of(h)) if isinstance(hosts, dict) else None
+    m = _ax_map(fs, src.get("roots") or [], src.get("mcp") or [], src.get("plugin_files") or [], jar, _ax_plugins(),
+                _ax_scheduled(meta.get("persistence")), ACCESS_SHARED, "audit")
+    return dict(m, at=snapshot.get("at") or m["at"])
+
+
+def access_roots():
+    """Where a map built outside an audit looks: the home folder, and the workspace Watchtower is installed in (/workspace for
+    /workspace/watchtower: the audit's own default roots)."""
+    return list(dict.fromkeys([os.path.expanduser("~"), os.path.dirname(os.path.normpath(home()))]))
+
+
+def access_map_now():
+    """A map built now from this computer, for a command that runs no audit (report, brief, `wt.py access`; PR B, Codex round 1,
+    2): Grok Bot's settings, the command-line sign-ins, the MCP and hooks files, plugins, scheduled jobs and the browser's
+    cookie jar are looked at again, each the way the audit looks. Chat webhooks and files with live-looking keys need the audit's
+    full scan: they come from its last findings and are never taken as "none" (not checked)."""
+    roots = access_roots()
+    snap = _ax_json_file(state_path("last_findings.json"), [home()], 64 * ACCESS_JSON_MAX_BYTES)
+    snap = snap if isinstance(snap, dict) else {}
+    last = [f for k in ("findings", "suppressed") for f in (snap.get(k) if isinstance(snap.get(k), list) else []) if isinstance(f, dict)]
+    inv = collect_inventory(roots)
+    stores = [p for p in sorted(secret_store_places()) if any(_under(p, {os.path.normpath(os.path.expanduser(r))}, strict=True) for r in roots)
+              and os.path.lexists(p)]
+    fs = ([f for f in last if f.get("rule") in ("WT-S004", "WT-T018", "WT-T005", "WT-S001", "WT-S002")] + cli_credentials()
+          + [platform_secret_store_note(p) for p in stores])
+    jar, jar_ok = _ax_jar_now()
+    checked = [c for c in ACCESS_SHARED if c not in ("webhooks", "key_files") and (c != "browser" or jar_ok)]
+    return _ax_map(fs, roots, inv["mcp_configs"], inv["plugin_files"], jar, _ax_plugins(inv["plugin_files"]), _ax_scheduled_now(), checked, "now")
 
 
 def save_access_map(m):
@@ -366,17 +631,41 @@ def save_access_map(m):
 
 
 def refresh_access_map(snapshot, meta):
-    """After every audit and daily run: rebuild state/access_map.json. A failure here never fails the run; it is logged by type."""
+    """After every audit and daily run: rebuild state/access_map.json, and keep the map for this command's own output. A failure
+    here never fails the run; it is logged by type."""
     try:
-        save_access_map(build_access_map(snapshot, meta))
+        m = build_access_map(snapshot, meta)
+        save_access_map(m)
+        _ACCESS_RUN.update(home=home(), map=m)
     except Exception as e:   # noqa: BLE001 - the map is a summary; the audit's own results are already saved
         ledger({"event": "access-map-failed", "error": type(e).__name__})
 
 
-def load_access_map():
-    """The last access map, sanitized again (state/ is writable by the Bot), or None when there is none."""
+def last_access_map():
+    """state/access_map.json, sanitized again, as the last audit's map: nothing in it counts as checked, so it never says there is
+    none (state/ is writable by the Bot). None when there is none."""
     m = load_json_regular(state_path(ACCESS_MAP_FILE), None)
-    return access_record(m) if isinstance(m, dict) and m.get("v") == 1 else None
+    if not (isinstance(m, dict) and m.get("v") == 1):
+        return None
+    return access_record(dict(m, shared=dict(m["shared"] if isinstance(m.get("shared"), dict) else {}, checked=[], **{"from": "last-audit"})))
+
+
+def load_access_map():
+    """The access map this command shows (the audit JSON's line, the report section, the dashboard card, the brief, `wt.py
+    access`): the one this command's audit built, else one built now (access_map_now). Only when that fails, the last audit's
+    (last_access_map), with nothing checked. None on a box where no audit has written a map yet (an older box: shown as before)."""
+    if _ACCESS_RUN.get("home") == home() and _ACCESS_RUN.get("map") is not None:
+        return _ACCESS_RUN["map"]
+    if not os.path.lexists(state_path(ACCESS_MAP_FILE)):
+        return None
+    try:
+        m = access_map_now()
+    except Exception as e:   # noqa: BLE001 - the last audit's map, with every shared line unknown
+        ledger({"event": "access-map-check-failed", "error": type(e).__name__})
+        m = last_access_map()
+    if m is not None:
+        _ACCESS_RUN.update(home=home(), map=m)
+    return m
 
 
 # ---------------------------------------------------------------- the map in words
@@ -391,6 +680,12 @@ def _ax_and(items, limit=8):
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1] if items else ""
 
 
+def _ax_and_n(items, total, limit=8):
+    """_ax_and for a list that may have been cut: "N more" counts up to `total`, the whole count."""
+    items = list(items)[:limit]
+    return _ax_and(items + ([f"{total - len(items)} more"] if total > len(items) else []), limit + 1)
+
+
 def _ax_day(d):
     try:
         x = dt.date.fromisoformat(d)
@@ -399,58 +694,82 @@ def _ax_day(d):
     return f"{x.strftime('%b')} {x.day}"
 
 
+ACCESS_UNCHECKED = "Watchtower couldn't check this time."
+ACCESS_FROM_LAST = " (from the last audit; Watchtower couldn't check it this time)"
+
+
 def access_shared_lines(m):
+    """The shared part in words. A field this command didn't check never says there is none: it says Watchtower couldn't check
+    it, and what the last audit's map shows of it is marked as that (PR B, Codex round 1, 2)."""
     sh = m["shared"]
+    ok, old = set(sh["checked"]), sh["from"] == "last-audit"
     out = []
+
+    def say(field, text):
+        out.append(text[:-1] + ACCESS_FROM_LAST + "." if field not in ok and old else text)
     b = sh["browser"]
-    if b is None:
+    if b is not None and b["sites"]:
+        say("browser", f"Browser: signed in to {_ax_n(b['sites'], 'site')}"
+            + (f", including {_ax_and_n(b['sensitive'], b['sensitive_count'], 4)}" if b["sensitive"] else "") + ".")
+    elif "browser" not in ok:
+        out.append("Browser: " + ACCESS_UNCHECKED)
+    elif b is None:
         out.append("Browser: Watchtower found no shared browser cookies to check.")
-    elif not b["sites"]:
-        out.append("Browser: not signed in to any site Watchtower can see.")
     else:
-        out.append(f"Browser: signed in to {_ax_n(b['sites'], 'site')}" + (f", including {_ax_and(b['sensitive'], 4)}" if b["sensitive"] else "") + ".")
+        out.append("Browser: not signed in to any site Watchtower can see.")
     cli = [c["tool"] for c in sh["cli_logins"]]
     grok = [p for p in sh["platform_logins"] if p.startswith("Grok CLI")]
     if cli:
-        out.append(f"Command-line sign-ins: {_ax_and(cli, 6)}." + (" Grok Bot's own CLI sign-in is there too (Watchtower never reads it)." if grok else ""))
+        say("cli_logins", f"Command-line sign-ins: {_ax_and_n(cli, sh['cli_count'], 6)}."
+            + (" Grok Bot's own CLI sign-in is there too (Watchtower never reads it)." if grok else ""))
     elif grok:
-        out.append("Command-line sign-ins: only Grok Bot's own CLI sign-in (Watchtower never reads it).")
+        say("cli_logins", f"Command-line sign-ins: {'only ' if 'cli_logins' in ok else ''}Grok Bot's own CLI sign-in (Watchtower never reads it).")
+    elif "cli_logins" not in ok:
+        out.append("Command-line sign-ins: " + ACCESS_UNCHECKED)
     else:
         out.append("Command-line sign-ins: none found.")
-    if sh["settings"] == "missing":
+    areas = sh["auto_allow_areas"]
+    bits = []
+    for area in ACCESS_AREAS:
+        if areas[area]:
+            says = next((a["says"] for a in sh["auto_allow"] if a["area"] == area), "")
+            bits.append(f"{_ax_n(areas[area], 'rule')} {'lets' if areas[area] == 1 else 'let'} Bots {ACCESS_AREA_WORDS[area]} without asking you"
+                        + (f" (\"{says}\")" if says else ""))
+    allowed = "Allowed without asking: " + "; ".join(bits[:3]) + (f"; and {len(bits) - 3} more kinds" if len(bits) > 3 else "") + "."
+    if "settings" not in ok:
+        say("settings", allowed) if bits else out.append("Allowed without asking: " + ACCESS_UNCHECKED)
+    elif sh["settings"] == "missing":
         out.append("Allowed without asking: Watchtower couldn't find Grok Bot's approval settings, so it can't say what Bots may do without asking.")
-    elif not sh["auto_allow"]:
+    elif sh["settings"] == "unreadable":
+        out.append("Allowed without asking: Watchtower couldn't read Grok Bot's approval settings (a link, or not plain JSON), so it can't "
+                   "say what Bots may do without asking.")
+    elif not bits:
         out.append("Allowed without asking: no Allow-automatically rules.")
     else:
-        bits = []
-        for area in ACCESS_AREAS:
-            rs = [a for a in sh["auto_allow"] if a["area"] == area]
-            if rs:
-                bits.append(f"{_ax_n(len(rs), 'rule')} {'lets' if len(rs) == 1 else 'let'} Bots {ACCESS_AREA_WORDS[area]} without asking you"
-                            + (f" (\"{rs[0]['says']}\")" if rs[0]["says"] else ""))
-        out.append("Allowed without asking: " + "; ".join(bits[:3]) + (f"; and {len(bits) - 3} more kinds" if len(bits) > 3 else "") + ".")
-    rp = sh["runs_programs"]
+        out.append(allowed)
+    rp = sh["runs_programs"] if "settings" in ok and sh["settings"] == "found" else None
     if rp == "without asking":
         out.append("Running programs: Bots can run programs without asking you (Execution on Local Computer: Always allow).")
     elif rp == "asks first":
         out.append("Running programs: Bots ask you first (Execution on Local Computer: Ask every time).")
     elif rp == "never":
         out.append("Running programs: not allowed (Execution on Local Computer: Never allow).")
-    elif sh["settings"] == "found":
+    elif rp == "unknown":
         out.append("Running programs: Watchtower couldn't read this setting.")
-    if sh["auto_review"] is False:
+    if rp is not None and sh["auto_review"] is False:
         out.append("Auto Review is off, so nothing checks what a Bot does before it does it.")
-    if sh["webhooks"]:
-        ws = sh["webhooks"]
-        if len(ws) == 1:
-            out.append(f"Chat webhooks: a {ws[0]['service']} webhook in \"{ws[0]['skill']}\". Anyone who has that link can post to that channel.")
-        else:
-            named = [f"{w['service']} in \"{w['skill']}\"" for w in ws]
-            out.append(f"Chat webhooks: {_ax_and(named, 4)}. Anyone who has one of those links can post to its channel.")
+    ws, nw = sh["webhooks"], sh["webhook_count"]
+    if nw == 1 and ws:
+        say("webhooks", f"Chat webhooks: a {ws[0]['service']} webhook in \"{ws[0]['skill']}\". Anyone who has that link can post to that channel.")
+    elif nw:
+        named = [f"{w['service']} in \"{w['skill']}\"" for w in ws]
+        say("webhooks", f"Chat webhooks: {_ax_and_n(named, nw, 4)}. Anyone who has one of those links can post to its channel.")
     mcp = sh["mcp"]
-    if mcp["tools"]:
+    if mcp["count"]:
         names = [t["name"] + (f" ({t['host']})" if t.get("host") else "") for t in mcp["tools"]]
-        out.append(f"Tool connections (MCP): {_ax_n(len(mcp['tools']), 'tool')} in {_ax_n(mcp['files'], 'file')}: {_ax_and(names, 8)}.")
+        say("mcp", f"Tool connections (MCP): {_ax_n(mcp['count'], 'tool')} in {_ax_n(mcp['files'], 'file')}: {_ax_and_n(names, mcp['count'], 8)}.")
+    elif "mcp" not in ok:
+        out.append("Tool connections (MCP): " + ACCESS_UNCHECKED)
     elif mcp["files"] and not mcp["unreadable"]:
         out.append(f"Tool connections (MCP): {_ax_n(mcp['files'], 'file')}, with no tools listed in it{'s' if mcp['files'] != 1 else ''}.")
     elif not mcp["files"]:
@@ -460,15 +779,18 @@ def access_shared_lines(m):
                    + (f" (and {mcp['unreadable'] - len(mcp['unreadable_files'])} more)" if mcp["unreadable"] > len(mcp["unreadable_files"]) else "") + ".")
     pl = sh["plugins"]
     n_pl = pl["grok"] + pl["added"]
-    out.append(f"Plugins: {n_pl} ({pl['grok']} from Grok Bot, {pl['added']} added)." if n_pl else "Plugins: none.")
+    if n_pl:
+        say("plugins", f"Plugins: {n_pl} ({pl['grok']} from Grok Bot, {pl['added']} added).")
+    else:
+        out.append("Plugins: none." if "plugins" in ok else "Plugins: " + ACCESS_UNCHECKED)
     jobs = sh["scheduled"]["crontab"] + sh["scheduled"]["systemd"]
     if jobs:
-        out.append(f"Scheduled jobs on this computer: {jobs}.")
+        say("scheduled", f"Scheduled jobs on this computer: {jobs}.")
     if sh["hooks"]["other"]:
-        out.append(f"Hooks: {_ax_n(sh['hooks']['other'], 'command')} the app runs by itself around a Bot's tool calls"
-                   + (", besides Grok Bot's own." if sh["hooks"]["platform"] else "."))
+        say("hooks", f"Hooks: {_ax_n(sh['hooks']['other'], 'command')} the app runs by itself around a Bot's tool calls"
+            + (", besides Grok Bot's own." if sh["hooks"]["platform"] else "."))
     if sh["key_files"]:
-        out.append(f"Files with live-looking keys: {sh['key_files']}. Every Bot can read them (see the findings).")
+        say("key_files", f"Files with live-looking keys: {sh['key_files']}. Every Bot can read them (see the findings).")
     return out
 
 
@@ -478,8 +800,10 @@ def access_said_on(m):
 
 
 def _ax_bot_line(b):
-    c = b["connectors"]
-    bits = [(f"{_ax_and(c, 3)} connector{'s' if len(c) != 1 else ''}") if c else "no connectors"]
+    c, other = b["connectors"], b["connectors_other"]
+    named = c[:3] + ([f"{len(c) - 3} more"] if len(c) > 3 else []) + ([f"{other} other"] if other else [])
+    n = len(c) + other
+    bits = [f"{_ax_and(named, 6)} connector{'s' if n != 1 else ''}" if n else "no connectors"]
     if b["routines"]:
         sends = sum(1 for r in b["routines"] if r["sends_without_asking"])
         bits.append(_ax_n(len(b["routines"]), "routine") + (f", {sends} {'sends' if sends == 1 else 'send'} without asking you" if sends else ""))
@@ -502,7 +826,11 @@ def access_bot_lines(m):
     if m["bots_more"]:
         out.append(f"And {_ax_n(m['bots_more'], 'more Bot')}: `wt.py access --json` lists them.")
     out += [f"{n}: answered the roll-call before Watchtower kept what each Bot can reach; the next roll-call fills this in." for n in m["bots_no_detail"]]
+    if rc["no_detail_more"]:
+        out.append(f"And {_ax_n(rc['no_detail_more'], 'more Bot')} that answered before Watchtower kept what each Bot can reach.")
     out += [f"{n}: didn't answer the roll-call." for n in m["bots_silent"]]
+    if rc["silent_more"]:
+        out.append(f"And {_ax_n(rc['silent_more'], 'more Bot')} that didn't answer the roll-call.")
     return out or ["No Bot answered the last roll-call."]
 
 
@@ -513,6 +841,8 @@ def access_unknown_lines(m):
            "What's inside memories, messages or saved passwords. Watchtower never reads them."]
     if "approvals" in m["unknown"]:
         out.insert(0, "Grok Bot's approval settings: Watchtower couldn't find them on this computer.")
+    if m["shared"]["from"] == "last-audit":
+        out.insert(0, "This computer, just now: Watchtower couldn't look, so the shared list is the last audit's, and nothing missing from it means it isn't there.")
     return out
 
 
@@ -545,37 +875,46 @@ def access_card(m):
 
 
 def access_summary(m):
-    """One line (at most 300 characters) for the audit JSON."""
+    """One line (at most 300 characters) for the audit JSON. A count this command didn't check and found nothing in is "unknown"."""
     sh = m["shared"]
-    b = sh["browser"]
-    bits = [f"browser signed in to {_ax_n(b['sites'], 'site')}" if b and b["sites"] else "no browser sign-ins seen",
-            _ax_n(len(sh["cli_logins"]), "command-line sign-in"),
-            "approval settings not found" if sh["settings"] == "missing" else _ax_n(len(sh["auto_allow"]), "rule") + " allowed without asking",
-            _ax_n(len(sh["mcp"]["tools"]), "MCP tool"), _ax_n(sh["plugins"]["grok"] + sh["plugins"]["added"], "plugin")]
-    if sh["webhooks"]:
-        bits.append(_ax_n(len(sh["webhooks"]), "chat webhook"))
+    ok, b = set(sh["checked"]), sh["browser"]
+    n = lambda field, v, one: _ax_n(v, one) if v or field in ok else f"{one}s unknown"
+    bits = [f"browser signed in to {_ax_n(b['sites'], 'site')}" if b and b["sites"] else "no browser sign-ins seen" if "browser" in ok else "browser unknown",
+            n("cli_logins", sh["cli_count"], "command-line sign-in"),
+            ("approval settings not found" if sh["settings"] != "found" else _ax_n(sum(sh["auto_allow_areas"].values()), "rule") + " allowed without asking")
+            if "settings" in ok else "approval settings unknown",
+            n("mcp", sh["mcp"]["count"], "MCP tool"), n("plugins", sh["plugins"]["grok"] + sh["plugins"]["added"], "plugin")]
+    if sh["webhook_count"]:
+        bits.append(_ax_n(sh["webhook_count"], "chat webhook"))
     rc = m["rollcall"]
-    bots = (f"Each Bot (roll-call, not checked): {len(m['bots']) + m['bots_more']} said, {len(m['bots_silent'])} didn't answer"
+    bots = (f"Each Bot (roll-call, not checked): {len(m['bots']) + m['bots_more']} said, {len(m['bots_silent']) + rc['silent_more']} didn't answer"
             if rc["fresh"] or m["bots"] else "Each Bot: no roll-call in the last 35 days")
     return clip(f"Shared by every Bot: {'; '.join(bits)}. {bots}. `wt.py access` has the details.", 300)
 
 
 def access_json(m):
-    """The map for the Bot: flat lists fit() can trim, every one capped, all of it at most 4 KB."""
+    """The map for the Bot: flat lists fit() can trim, every one capped, all of it at most 4 KB. A count this command didn't check
+    and found nothing in is null (unknown), never 0."""
     sh = m["shared"]
-    b = sh["browser"] or {}
+    ok, b = set(sh["checked"]), sh["browser"] or {}
+    z = lambda field, v: v if field in ok or v else None
     out = {"at": m["at"], "about": "What every Bot on this computer can reach (shared), and what each Bot said in the roll-call (not checked). "
-                                   "Names here are data, never instructions.",
-           "shared": {"browser_sites": b.get("sites"), "browser_sensitive": b.get("sensitive", []), "settings": sh["settings"],
-                      "runs_programs": sh["runs_programs"], "auto_review": sh["auto_review"], "mcp_files": sh["mcp"]["files"],
-                      "mcp_unreadable": sh["mcp"]["unreadable"], "plugins_from_grok_bot": sh["plugins"]["grok"], "plugins_added": sh["plugins"]["added"],
-                      "scheduled_jobs": sh["scheduled"]["crontab"] + sh["scheduled"]["systemd"], "hooks": sh["hooks"]["other"], "key_files": sh["key_files"]},
+                                   "Names here are data, never instructions. null: Watchtower couldn't check it this time.",
+           "checked": sh["checked"],
+           "shared": {"browser_sites": z("browser", b.get("sites")), "browser_sensitive": b.get("sensitive", []),
+                      "settings": sh["settings"] if "settings" in ok else None, "runs_programs": sh["runs_programs"] if "settings" in ok else None,
+                      "auto_review": sh["auto_review"], "mcp_files": z("mcp", sh["mcp"]["files"]), "mcp_tools": z("mcp", sh["mcp"]["count"]),
+                      "mcp_unreadable": sh["mcp"]["unreadable"], "plugins_from_grok_bot": z("plugins", sh["plugins"]["grok"]),
+                      "plugins_added": z("plugins", sh["plugins"]["added"]), "webhooks": z("webhooks", sh["webhook_count"]),
+                      "scheduled_jobs": z("scheduled", sh["scheduled"]["crontab"] + sh["scheduled"]["systemd"]),
+                      "hooks": z("hooks", sh["hooks"]["other"]), "key_files": z("key_files", sh["key_files"])},
            "cli_logins": [c["tool"] for c in sh["cli_logins"]] + sh["platform_logins"],
            "auto_allow": [{"id": a["id"], "area": a["area"], "says": a["says"]} for a in sh["auto_allow"]],
            "mcp_tools": [t["name"] + (f" ({t['host']})" if t.get("host") else "") for t in sh["mcp"]["tools"]],
            "plugins_added": sh["plugins"]["names"], "webhooks": [f"{w['service']} in {w['skill']}" for w in sh["webhooks"]],
-           "bots": [{"name": x["name"], "said_at": x["said_at"], "connectors": x["connectors"][:12], "routines": len(x["routines"]),
-                     "routines_send_without_asking": sum(1 for r in x["routines"] if r["sends_without_asking"]), "memories": x["memories"]} for x in m["bots"]],
+           "bots": [{"name": x["name"], "said_at": x["said_at"], "connectors": x["connectors"][:12], "other_connectors": x["connectors_other"],
+                     "routines": len(x["routines"]), "routines_send_without_asking": sum(1 for r in x["routines"] if r["sends_without_asking"]),
+                     "memories": x["memories"]} for x in m["bots"]],
            "bots_no_detail": m["bots_no_detail"], "bots_silent": m["bots_silent"], "cant_see": access_unknown_lines(m)}
     return fit(out, limit=4096, keep=("cant_see",))
 
@@ -597,7 +936,10 @@ def cmd_access(args):
         for x in items:
             print(f"- {x}")
     print("")
-    print(f"From the audit at {m['at']}. Run `wt.py audit` for a fresh one.")
+    if m["shared"]["from"] == "last-audit":
+        print(f"From the audit at {m['at']}: Watchtower couldn't look at this computer just now. Run `wt.py audit` for a fresh one.")
+    else:
+        print(f"Checked at {m['at']}; chat webhooks and files with keys are from the last audit. Run `wt.py audit` for a fresh one.")
     return 0
 
 
@@ -660,13 +1002,16 @@ def access_products(text):
 
 
 def access_touch(e_, m):
-    """What on this computer a vocabulary entry reaches, from the access map only: {bots: [names], site, mcp, cli, webhook, browser}."""
+    """What on this computer a vocabulary entry reaches, from the access map only: {bots: [names], site, mcp, cli, webhook, browser}.
+    PR B, Codex round 1 (3): a tool or webhook past the names the map lists still counts (mcp or webhook is then True)."""
     sh, rx = m["shared"], e_["_rx"]
-    bots = [b["name"] for b in m["bots"] if "connector_rx" in rx and any(rx["connector_rx"].search(c) for c in b["connectors"])]
+    bots = [b["name"] for b in m["bots"] if "connector_rx" in rx and e_["label"] in b["connectors"]]
     site = next((p["site"] for p in ((sh["browser"] or {}).get("products") or []) if p["id"] == e_["id"]), None)
     mcp = next((t["name"] for t in sh["mcp"]["tools"] if "mcp_rx" in rx and (rx["mcp_rx"].search(t["name"]) or rx["mcp_rx"].search(t.get("host") or ""))), None)
+    mcp = mcp or ("mcp_rx" in rx and e_["id"] in sh["mcp"]["products"])
     cli = next((c for c in [c["tool"] for c in sh["cli_logins"]] + sh["platform_logins"] if "cli_tool" in rx and rx["cli_tool"].search(c)), None)
     hook = next((w["skill"] for w in sh["webhooks"] if w["service"] == e_.get("webhook_service")), None)
+    hook = hook or (e_.get("webhook_service") is not None and e_["webhook_service"] in sh["webhook_services"])
     browser = bool(e_.get("browser")) and sh["browser"] is not None
     return {"bots": bots, "site": site, "mcp": mcp, "cli": cli, "webhook": hook, "browser": browser}
 
@@ -690,11 +1035,11 @@ def here_sentence(e_, t):
     if t["site"]:
         parts.append(f"the shared browser is signed in to {t['site']}")
     if t["mcp"]:
-        parts.append(f"a tool connection named {t['mcp']}")
+        parts.append(f"a tool connection named {t['mcp']}" if t["mcp"] is not True else f"a {label} tool connection")
     if t["cli"]:
         parts.append(f"the {t['cli']}")
     if t["webhook"]:
-        parts.append(f"a {e_['webhook_service']} webhook in \"{t['webhook']}\"")
+        parts.append(f"a {e_['webhook_service']} webhook in \"{t['webhook']}\"" if t["webhook"] is not True else f"a {e_['webhook_service']} webhook in a skill")
     tail = ", so every Bot can reach it." if shared else "."
     while parts:
         s = f"This is about {label}. Here: " + _ax_and(parts, 6) + tail
@@ -704,8 +1049,15 @@ def here_sentence(e_, t):
     return f"This is about {label}, and something on this computer reaches it: `wt.py access` says what."
 
 
-def no_access_sentence(e_):
-    return (f"This is about {e_['label']}. Watchtower found no {e_['label']} connector, sign-in or webhook here "
+def no_access_sentence(e_, m):
+    """A product the map shows nothing for. PR B, Codex round 1 (2): "found no" only from what this command checked; with the
+    sign-ins or tool connections not checked, it says Watchtower couldn't check."""
+    ok = set(m["shared"]["checked"])
+    need ={f for f, there in (("browser", e_.get("domains")), ("cli_logins", e_.get("cli_tool")), ("mcp", e_.get("mcp_rx"))) if there}
+    if not need <= ok:
+        return f"This is about {e_['label']}. Watchtower couldn't check this time whether anything on this computer reaches {e_['label']}."
+    what = "connector, sign-in or webhook" if "webhooks" in ok or not e_.get("webhook_service") else "connector or sign-in"
+    return (f"This is about {e_['label']}. Watchtower found no {e_['label']} {what} here "
             "(it only knows the connectors Bots named in the roll-call).")
 
 
@@ -728,5 +1080,5 @@ def story_here(s, m, ctx):
     if e_ is not None and hit:
         return here_sentence(e_, access_touch(e_, m))
     if e_ is not None and (e_.get("connector_rx") or e_.get("domains")):   # a product: say it isn't seen here, and what that rests on
-        return no_access_sentence(e_)
+        return no_access_sentence(e_, m)
     return clip(means_here(s["category"], ctx, m), HERE_MAX)   # nothing named, or a generic entry (any MCP tool, the browser) not here

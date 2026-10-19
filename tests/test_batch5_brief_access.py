@@ -135,7 +135,7 @@ class OlderBoxes(_Brief):
         self.assertIsNone(wt.load_access_map())
         s = r["top_stories"][0]
         old = wt.means_here(json.loads(saved)["research"][0]["category"], wt.account_context()).split(". ")[0].rstrip(".") + "."
-        self.assertEqual(s["here"], old)
+        self.assertNotIn("here", s)   # PR B, Codex round 1 (6): no `here` key at all (was: s["here"] == old)
         self.assertIn("<b>Why you care:</b> " + html.escape(old) + " <b>Do:</b> ", page)
         self.assertNotIn("<b>Here:</b>", page)
         self.assertTrue(r["next_step"].startswith("Required: write notes.json"))

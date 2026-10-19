@@ -173,7 +173,8 @@ def audit(roots, exports, quick=False):
     fs += cli_credentials()
     known = {os.path.join(os.path.expanduser("~"), k) for k in KNOWN_CRED_FILES}
     fs += browser_sessions(roots)
-    sign_ins = new_sign_ins()   # kept open EVENT_DAYS with the other one-time events below
+    jar = {}
+    sign_ins = new_sign_ins(jar)   # kept open EVENT_DAYS with the other one-time events below
     decoys = canary_paths()
     for p in walk(roots, max_depth=6):
         if p in known or p in decoys or os.path.basename(p) in SESSION_FILES:
@@ -309,5 +310,6 @@ def audit(roots, exports, quick=False):
     fs = sort_findings(dedupe(fs))
     meta = {"inventory": {k: len(v) for k, v in inv.items() if k not in ("non_live_skills", "platform_aliases")}, "notes": notes, "manifest": manifest, "persistence": snap, "scanners_missing": gone,
             "skill_dirs": [os.path.dirname(x) for x in inv["skills"]], "baseline_status": base_status,
-            "access_sources": {"roots": list(roots), "mcp": list(inv["mcp_configs"]), "plugin_files": list(inv["plugin_files"])}}   # batch 5 (a)
+            "access_sources": {"roots": list(roots), "mcp": list(inv["mcp_configs"]), "plugin_files": list(inv["plugin_files"]),
+                               "browser": jar.get("hosts")}}   # batch 5 (a); PR B, Codex round 1 (2): this run's own look at the jar
     return fs, meta

@@ -273,11 +273,14 @@ def _prev_host_sessions(prev):
     return {}
 
 
-def new_sign_ins():
+def new_sign_ins(seen=None):
     """WT-S005: a sensitive site that got its first session in the shared browser since the last look. The first look is a baseline.
     State stores per-host whether a session cookie was seen, so a visit that later becomes a sign-in still alarms.
-    The sessions WT-S004 lists are carried across box resets by the platform's cookie seed; a new one is something that happened."""
+    The sessions WT-S004 lists are carried across box resets by the platform's cookie seed; a new one is something that happened.
+    `seen` (a dict) gets "hosts": {host: had a session cookie} from this look, or None with no jar (batch 5 a: the access map)."""
     hosts = browser_jar_hosts()
+    if seen is not None:
+        seen["hosts"] = None if hosts is None else {h: bool(hosts[h][1]) for h in sorted(hosts)}
     if hosts is None:
         return []
     path = state_path("browser_hosts.json")

@@ -826,11 +826,13 @@ def cmd_brief(args):
     save_json(state_path("last_brief.json"), dict(b, tag=tag, path=path))
     ledger({"event": "brief", "week": tag, "research": len(b["research"]), "kev": len(b["kev"])})
     top, _ = split_stories(b)
-    amap, ctx = load_access_map(), account_context()
-    # batch 5 (b): `here` is the line the page shows for each story (story_here: the access map and the release's vocabulary only)
+    amap = load_access_map()
+    # batch 5 (b): `here` is the line the page shows for each story (story_here: the access map and the release's vocabulary only).
+    # PR B, Codex round 1 (6): without a map there is no `here`, so the JSON is exactly what it was.
+    here = (lambda r: {}) if amap is None else (lambda r, ctx=account_context(): {"here": story_here(r, amap, ctx)})
     print(fit({"brief": path, "threat_level": threat_level(b, snap, top)[1], "score_line": score_line(snap),
-               "top_stories": [{"id": r["id"], "tier": r["tier"], "category": r["category_label"], "title": r["title"],
-                                "cves": r.get("cves", []), "source": r["source"], "here": story_here(r, amap, ctx)} for r in top],
+               "top_stories": [dict({"id": r["id"], "tier": r["tier"], "category": r["category_label"], "title": r["title"],
+                                     "cves": r.get("cves", []), "source": r["source"]}, **here(r)) for r in top],
                "kev_relevant": [f"{k['cve']} {k['vendor']} {k['product']}" for k in b["kev"] if k["relevant"]][:6],
                "updates": b["updates"], "doc_changes": [p["name"] for p in b["pages"]],
                "sources_down": [s["name"] for s in b["sources"] if s["status"] != "ok"],
@@ -1209,6 +1211,7 @@ def build_parser():
 
 def main_inner(argv=None):
     a = build_parser().parse_args(argv)
+    _ACCESS_RUN.clear()   # PR B, Codex round 1 (2): each command shows a map it built itself (load_access_map)
     if a.cmd not in SELF_CHECK_SKIP:
         code = self_check_gate()
         if code:

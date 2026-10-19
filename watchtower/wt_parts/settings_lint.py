@@ -59,15 +59,16 @@ def hook_findings(roots, inv):
 NATIVE_SETTINGS = ["~/agent-data/settings.json", "/home/box/agent-data/settings.json"]
 
 
-def native_settings(entries=False):
+def native_settings(entries=False, read=None):
     """Read Grok Bot's own settings file (spike, Oct 5 2026): autoReviewInstructions + localToolPermission.
     Returns (auto_review_text, settings_dict, path) or None. Schema is undocumented, so parse loosely.
     With entries=True the first item is the list of rule entries instead, each whole: an entry can span several lines, and
-    read line by line its continuation would be linted, shown, hashed and kept unseen (Codex, round 3)."""
+    read line by line its continuation would be linted, shown, hashed and kept unseen (Codex, round 3). `read(path)` reads a
+    candidate instead of load_json (the access map's reader follows no link)."""
     cands = [os.environ["WATCHTOWER_SETTINGS"]] if os.environ.get("WATCHTOWER_SETTINGS") else NATIVE_SETTINGS
     for cand in cands:
         p = os.path.expanduser(cand)
-        data = load_json(p, None)
+        data = read(p) if read else load_json(p, None)
         if not isinstance(data, dict):
             continue
         lines = []

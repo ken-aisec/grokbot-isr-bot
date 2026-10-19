@@ -159,10 +159,10 @@ def means_here(cat, ctx, amap=None):
     n = lambda v, one, many: f"{v} {one if v == 1 else many}" if v else None
     if amap is not None:
         sh = amap["shared"]
-        tools = [t["name"] for t in sh["mcp"]["tools"]]
+        tools, total = [t["name"] for t in sh["mcp"]["tools"]], sh["mcp"]["count"]   # PR B, Codex round 1 (3): the whole count
         if cat == "mcp" and tools:
-            names = ", ".join(tools[:3]) + (f" and {len(tools) - 3} more" if len(tools) > 3 else "")
-            return (f"This computer has {n(len(tools), 'tool connection', 'tool connections')} ({names}). Every Bot that loads a poisoned "
+            names = ", ".join(tools[:3]) + (f" and {total - len(tools[:3])} more" if total > 3 else "")
+            return (f"This computer has {n(total, 'tool connection', 'tool connections')} ({names}). Every Bot that loads a poisoned "
                     "tool description follows it, with the logins all your Bots share.")
         ctx = dict(ctx, sites=(sh["browser"] or {}).get("sites") or ctx.get("sites"), secrets=sh["key_files"] or ctx.get("secrets"))
     if cat == "mcp":
