@@ -332,6 +332,9 @@ def run_audit_locked(args, quick):
         fs = roll_builtin(fs, meta, meta["notes"])
     fs = split_facts(platform_owned(fs))
     for f in fs:
+        # batch 6 (B2), fix round 1 (Codex 2, 3): whether a gitleaks hit in a metadata file is a platform note is decided where it
+        # is asked (metadata_hit_note), from the release list and the file's bytes then; 6cd1ab4's stored flag means nothing.
+        f.pop("verified_metadata", None)
         if f.get("unverified_platform"):   # item 8 (R3): the owner's to decide, so no platform or built-in scope
             continue
         if platform_file(f):

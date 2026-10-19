@@ -6,7 +6,7 @@ Open findings that dev carries knowingly. Each one is **must-fix before any rele
 
 Ken approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Codex highs open. Forge fixes them after the freeze, before release. They're worded as Codex wrote them in its final checks after fix round 3: #15 at 62ccd0e and #16 at c3b0257. File links point at the code as merged.
 
-**Status: open, must-fix before any release.**
+**Status: open, must-fix before any release** (except 4 and 7, fixed in batch 6 PR1, branch `fix/batch6a`; see each).
 
 ### From #15 (batch 5 PR A: platform notes, reviewed list, #11 follow-ups)
 
@@ -52,6 +52,8 @@ Ken approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Codex hig
 
    **Fix:** keep reviewed-list, normalization and scanner trust bound to verified release provenance regardless of directory layout or missing state. Missing Bot-writable metadata must not grant unchecked trust.
 
+   **Fixed in batch 6 PR1 (`fix/batch6a`):** every shipped rules file (platform lock, reviewed list, normalization spec, access and Ask-first vocabularies, scanner lock and its reader) is held to the running folder's `MANIFEST.sha256` in every layout; a missing manifest or line refuses the file with a note. Replays in `tests/test_batch6_release_files.py`.
+
 ### From #16 (batch 5 PR B: access map, threat brief)
 
 5. **High — [collect.py:10](../watchtower/wt_parts/collect.py), [access.py:344](../watchtower/wt_parts/access.py), [access.py:460](../watchtower/wt_parts/access.py): Permission failures can still mean “absent.”**
@@ -75,3 +77,10 @@ Ken approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Codex hig
    Using the shipped item-a entries, I supplied one healthy audit and a second audit in the same scenario with its entire access addition omitted. The result remained **zero unexpected lines and zero unmet requirements**. The scenario sequences actually contain repeated audits.
 
    **Fix:** require each applicable `(scenario, output key/run)` independently, including outputs whose omission leaves them identical to baseline.
+
+   **Fixed in batch 6 PR1 (`fix/batch6a`):** an exact-scenario `must_see` entry must match in every output of each of its scenarios that its `key_rx` names, those equal to the baseline included; pattern entries keep "any one scenario". Replays in `tests/test_batch6_golden_perkey.py`.
+
+## Open mediums (batch 6 plan)
+
+- **#16 medium 1:** the access JSON can exceed 4 KB; fixing it means making nested display lists trimmable in `fit` (a JSON shape change, broad golden churn, no security impact).
+- **#16 medium 2, wording half:** "scheduled jobs" → "cron files / timers observed" would change every access line in every golden box; left for a wording-only batch. (The error/link half is planned for PR3.)

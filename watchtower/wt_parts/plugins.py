@@ -355,11 +355,17 @@ def summarize_refresh(fs):
                 names.append(n)
         c = {r: sum(1 for f in unflagged if f["rule"] == r) for r in ("WT-I001", "WT-I002", "WT-I003")}
         shown = ", ".join(names[:6]) + (f", +{len(names) - 6} more" if len(names) > 6 else "")
+        fix = ("Nothing to do. Grok Bot updated its own skills or plugin catalog; every new or changed file here from its own "
+               "skill folders is on Grok Bot's release list. Watchtower re-checks the new files and accepts them on the next full audit when nothing "
+               "flags them.")
+        # batch 6 (B1): a metadata file verified by content (platform_verified) says how it was checked
+        meta = sorted(dict.fromkeys(_platform_place(f["where"])[0] for f in unflagged if _path_part(f["where"]) in VERIFIED_METADATA))
+        if meta:
+            fix = (f"Nothing to do. Grok Bot updated its list of what it loads ({', '.join(meta[:4])}{' …' if len(meta) > 4 else ''}). "
+                   "Watchtower compared it with the released version: only dates, and copies of files Watchtower checked itself, changed."
+                   + (" " + fix[len("Nothing to do. "):] if len(meta) < len(unflagged) else ""))
         tip = finding(REFRESH_RULE, f"Platform refresh: {len(unflagged)} of Grok Bot's own files changed ({shown})", "info", ["AST07"],
-                      "platform-refresh", f"{c['WT-I001']} updated, {c['WT-I002']} added, {c['WT-I003']} removed",
-                      "Nothing to do. Grok Bot updated its own skills or plugin catalog; every new or changed file here from its own "
-                      "skill folders is on Grok Bot's release list. Watchtower re-checks the new files and accepts them on the next full audit when nothing "
-                      "flags them.", ident="platform-refresh")
+                      "platform-refresh", f"{c['WT-I001']} updated, {c['WT-I002']} added, {c['WT-I003']} removed", fix, ident="platform-refresh")
         tip["class"], tip["label"] = "tip", TIP   # created after label_findings; keep it a Tip
         out.append(tip)
     return out
@@ -527,8 +533,24 @@ def counts(f):
         if is_sample_skill_path(path) and not is_loadable_skill_location(path):
             return False
     if f.get("scope") == "platform" or platform_file(f):   # v0.7.1 item 4: never, except a real key outside Grok Bot's config
-        return f["rule"] in SECRET_RULES and not platform_config_finding(f)
+        # batch 6 (B2): nor a gitleaks pattern hit in a metadata file the release list vouches for (metadata_hit_note)
+        return f["rule"] in SECRET_RULES and not platform_config_finding(f) and not metadata_hit_note(f)
     return not builtin(f) or f["severity"] in ("critical", "high")
+
+
+def metadata_hit_note(f):
+    """Batch 6 (B2), fix round 1 (Codex 2, 3, 4): a gitleaks pattern hit in Grok Bot's own metadata file that is a platform note,
+    not counted. Decided again each time it is asked, never from a stored flag (6cd1ab4's `verified_metadata` is ignored): the
+    hit is gitleaks' alone (no provider confirmed a key: TruffleHog's live, dead or unsure, or a critical, always counts), on
+    one line of one file; its `metadata_sha256` is the bytes gitleaks_findings bound it to (a private copy of the verified
+    bytes gave gitleaks exactly the same hits); and the file has those bytes now, they verify against the release list, and
+    every unit's file is itself on it (metadata_proof). Anything else counts, with its cleanup."""
+    if f.get("rule") != "WT-S002" or f.get("source") != "gitleaks" or f.get("severity") == "critical":
+        return False
+    if f.get("title") not in ("gitleaks: secrets in file", KEY_MAYBE):
+        return False
+    path, _, ln = str(f.get("where") or "").rpartition(":")
+    return path.startswith("/") and ln.isdigit() and metadata_proof(path, f.get("metadata_sha256"))
 
 
 def platform_owned(fs):
