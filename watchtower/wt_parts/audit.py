@@ -22,10 +22,17 @@ def audit(roots, exports, quick=False):
                           ident="not-scanned"))
 
     # 1. skills, plugins, MCP configs on disk
+    # PR A, Codex round 1 (8): each file is read once; what is scanned and its fingerprint are the same bytes, and each finding
+    # from them carries that fingerprint (_snap) until mark_reviewed, which only applies an entry to it.
+    def scanned_from(batch, h):
+        for f in batch:
+            f["_snap"] = h
+        return batch
+
     for skill in inv["skills"]:
         for p in skill_dir_files(skill):
             if os.path.splitext(p)[1].lower() in TEXT_EXT:
-                t = read_text(p)
+                t, manifest[p] = read_scanned(p)
                 if t is not None:
                     kind = "vendor" if is_vendor(p) else ("skill" if os.path.basename(p) == "SKILL.md" else "reference")
                     batch = scan_text(t, p, rules, kind=kind)
@@ -34,13 +41,14 @@ def audit(roots, exports, quick=False):
                             if f["rule"] in ("WT-T008", "WT-T016"):   # story wording only; never exfil/pipe/override (R2)
                                 f["severity"] = "info"
                                 f["title"] = f["title"] + " (example text in a built-in template)"
-                    fs += batch
-            manifest[p] = sha256_file(p)
+                    fs += scanned_from(batch, manifest[p])
+            else:
+                manifest[p] = sha256_file(p)
     for p in inv["plugin_files"] + inv["mcp_configs"]:
-        t = read_text(p)
+        t, h = read_scanned(p)
         if t is not None:
-            fs += scan_text(t, p, rules, kind="reference")
-            manifest[p] = sha256_file(p)
+            fs += scanned_from(scan_text(t, p, rules, kind="reference"), h)
+            manifest[p] = h
             for m in re.finditer(r'"command"\s*:\s*"([^"]+)"', t):
                 if re.search(r"(?i)\b(npx|uvx|bunx)\b", m.group(1)) and "@" not in t[m.end():m.end() + 200]:
                     fs.append(finding("WT-M001", "MCP server launched unpinned", "medium", ["AST02", "ASI04"],
@@ -50,13 +58,15 @@ def audit(roots, exports, quick=False):
         scanned = {os.path.realpath(p) for p in manifest}
         for a in inv["platform_aliases"]:
             for p in (skill_dir_files(a) if os.path.basename(a) == "SKILL.md" else [a]):
-                manifest[p] = sha256_file(p)
                 rp = os.path.realpath(p)
                 if rp not in scanned and os.path.splitext(p)[1].lower() in TEXT_EXT:
                     scanned.add(rp)
-                    t = read_text(p)
+                    t, manifest[p] = read_scanned(p)
                     if t is not None:
-                        fs += scan_text(t, p, rules, kind="vendor" if is_vendor(p) else ("skill" if os.path.basename(p) == "SKILL.md" else "reference"))
+                        fs += scanned_from(scan_text(t, p, rules, kind="vendor" if is_vendor(p) else ("skill" if os.path.basename(p) == "SKILL.md" else "reference")),
+                                           manifest[p])
+                else:
+                    manifest[p] = sha256_file(p)
     # item 8 review 2 (high 1): every file name in the platform folders, found by their own walk, is fingerprinted
     plat_files, plat_short = platform_inventory(roots)
     for p in plat_files:

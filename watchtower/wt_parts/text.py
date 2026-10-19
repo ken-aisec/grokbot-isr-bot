@@ -549,6 +549,7 @@ _SHELL_TOOL = re.compile(r"[ \t]*(?:\$[ \t]+)?(?:sudo[ \t]+)?(?:[A-Za-z_][A-Za-z
 _FENCE_LINE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})[ \t]*([^\s`]*)[^\n]*", re.M)
 _SENDERS = frozenset(("post", "request", "fetch", "urlopen", "Request", "get", "put", "send"))
 _JOINERS = frozenset(("join", "format", "format_map", "reduce", "sum", "urljoin", "Template", "reversed", "sorted"))
+_URL_KEYS = frozenset(("url", "uri", "endpoint"))   # PR A, Codex round 1 (1): the keyword or dict key a sender's destination is under
 _STR_RX = (r"[rRbBuUfF]{0,2}(?:'''[\s\S]*?(?:'''|\Z)|\"\"\"[\s\S]*?(?:\"\"\"|\Z)|'(?:[^'\\\n]|\\.)*'|\"(?:[^\"\\\n]|\\.)*\"%s)")
 _TOK_TAIL = (r"|(?P<name>[A-Za-z_$][\w$]*(?:'[A-Za-z]+)*)|(?P<num>\d[\w.]*)|(?P<open>[(\[{])|(?P<close>[)\]}])"
              r"|(?P<op>\*\*|&&|\|\||==|!=|<=|>=|[-+*/%=<>!&|^~?:;,.@])|(?P<bad>[\s\S])")
@@ -664,7 +665,67 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
                 return line[0] in "'\"`+%.[(*"
             j = k
         return False
+    def destination(o, p, pt, bt, keys):
+        """PR A, Codex round 1 (1): the operand ending at p + 1 is where the call opened at o sends: its first argument, a url=
+        keyword, or request's second after an HTTP method; reached through dict values only under a url key."""
+        if any(k.strip("'\"`") not in _URL_KEYS for k in keys):
+            return False
+        if p == o:
+            return True
+        if pt == "=" and p - 1 > o and kinds[p - 1] == "name" and tok(p - 1) in _URL_KEYS and (p - 2 == o or tok(p - 2) == ","):
+            return True
+        return (bt == "request" and p == o + 2 and pt == "," and kinds[o + 1] == "str"
+                and re.fullmatch(r"[rRbBuU]{0,2}(['\"`])(?i:get|post|put|patch|delete|head|options)\1", tok(o + 1) or "") is not None)
+
+    def sent(lo, hi):
+        """The call text[lo..hi] sends to the URL: true when nothing makes its result one piece of something else, up to the
+        statement (its result used, .json() or [0], is fine; an operator or a literal beside it, a join, or another sender that
+        sends somewhere else, isn't)."""
+        used = False
+        for _ in range(n + 1):
+            while True:   # its result used: .name, a call, an index
+                q = hi + 1
+                if q + 1 < n and tok(q) == "." and kinds[q + 1] == "name":
+                    hi, used = q + 1, True
+                elif q < n and kinds[q] == "open" and text[starts[q]] in "([" and q in match:
+                    hi, used = match[q], True
+                else:
+                    break
+            p, q = lo - 1, hi + 1
+            pk, pt = (kinds[p], tok(p)) if p >= 0 else (None, None)
+            qk, qt = (kinds[q], tok(q)) if q < n else (None, None)
+            if pk in ("str", "bad") or (pt in ("+", "%") or (pt == "*" and not first(p))):
+                return False
+            if qk in ("str", "bad") or qt in ("+", "%", "*"):
+                return False
+            if pk is None and edge_line(lo, -1) or qk is None and edge_line(hi, 1):
+                return False
+            o = parent[lo]
+            if o is None:
+                return not (qk == "close" or (qk is None and r["broke"] is not None))
+            if o not in match:
+                return False
+            ob, bb = text[starts[o]], o - 1
+            bk, bt = (kinds[bb], tok(bb)) if bb >= 0 else (None, None)
+            if ob == "(" and (bk == "name" or bt in (")", "]")):
+                if bk != "name":
+                    return False
+                c = bb
+                while c >= 2 and tok(c - 1) == "." and kinds[c - 2] == "name":
+                    c -= 2
+                if bt in _JOINERS or bt.startswith("concat"):
+                    return False
+                if (bt in _SENDERS or tok(c) == "axios") and (used or not destination(o, p, pt, bt, ())):
+                    return False   # inside another call that sends: urlopen(Request(url)) only
+                lo, hi = c, match[o]
+                continue
+            if ob == "[" and (bk in ("name", "str") or bt in (")", "]", "}")):
+                return False
+            lo, hi = o, match[o]
+        return False
+
     lo = hi = li
+    keys = []   # the dict keys it is the value of, on the way up
     for _ in range(n + 1):
         p, q = lo - 1, hi + 1
         pk, pt = (kinds[p], tok(p)) if p >= 0 else (None, None)
@@ -691,6 +752,7 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
         if pt == ":":
             if ob != "{":
                 return False   # a slice, a lambda or an annotation
+            keys.append(tok(p - 1) or "")
             lo, hi = o, match[o]   # a dict value: the dict is the operand now
             continue
         if pt == "=" and not (ob == "(" and p - 1 > o and kinds[p - 1] == "name" and (p - 2 == o or tok(p - 2) == ",")):
@@ -704,7 +766,9 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
             if bt in _JOINERS or bt.startswith("concat"):
                 return False
             if bt in _SENDERS or tok(c) == "axios":
-                return True   # an argument of the call that sends: that is where it goes
+                # PR A, Codex round 1 (1): a call named like a sender sends to one argument (config.get('hook', URL) is a lookup's
+                # default); the URL must be that argument, and the call itself must be the whole statement's sending
+                return destination(o, p, pt, bt, keys) and sent(c, match[o])
             lo, hi = c, match[o]   # a wrapper call: the call is the operand now
             continue
         if ob == "[" and (bk in ("name", "str") or bt in (")", "]", "}")):

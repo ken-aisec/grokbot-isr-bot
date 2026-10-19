@@ -291,11 +291,11 @@ def platform_reviewed_problem():
     return _platform_reviewed_state()[1]
 
 
-def platform_reviewed(f, manifest):
-    """The reviewed-list entry for a platform finding, or None. It applies only when the finding is platform scope, its file is on
-    the release list with the sha256 this run's manifest holds for it (platform_listed), that sha256 is the entry's, the file's
-    path under the home folder (as written and where it really leads) is one of the entry's paths, and rule and line are the
-    entry's."""
+def platform_reviewed(f, manifest, snap=None):
+    """The reviewed-list entry for a platform finding, or None. It applies only when the finding is platform scope, it was found
+    in the bytes this run's manifest fingerprinted (`snap`, the sha256 of the very bytes scanned, is the manifest's: PR A, Codex
+    round 1, 8), its file is on the release list with that sha256 (platform_listed), that sha256 is the entry's, the file's path
+    under the home folder (as written and where it really leads) is one of the entry's paths, and rule and line are the entry's."""
     w = f.get("where") or ""
     path, _, ln = w.rpartition(":")
     if f.get("scope") != "platform" or f.get("guarded") or not ln.isdigit() or not path.startswith("/"):
@@ -304,7 +304,7 @@ def platform_reviewed(f, manifest):
     if not entries:
         return None
     h = (manifest or {}).get(path)
-    if not isinstance(h, str) or not platform_listed(path, h):
+    if not isinstance(h, str) or snap != h or not platform_listed(path, h):
         return None
     try:
         n = os.path.normpath(path)

@@ -408,6 +408,12 @@ def in_catalog_plugin(where):
     w = (where or "").split(":")[0]
     if not any(x in w for x in CATALOG_CACHE):
         return False
+    # PR A, Codex round 1 (7): an owner's skill folder is never the catalog's, whatever state/plugins.json says about a folder in it
+    try:
+        if skill_tier(w) == "user":   # as written or where it really leads
+            return False
+    except (OSError, ValueError):
+        return False
     for r in catalog_plugin_roots():
         if w == r or w.startswith(r + "/"):
             if r not in _RUNS_CODE:
@@ -450,9 +456,10 @@ def platform_secret_store_note(p):
                    ident="platform-secret-store")
 
 
-def platform_file(f):
+def platform_file(f, catalog=True):
     """Grok Bot's own file: real platform skill roots (realpath prefix), its config files, catalog plugins, or system packages.
-    A user skill whose path merely contains a platform-looking segment is never platform (Claude v0.7.1 F3)."""
+    A user skill whose path merely contains a platform-looking segment is never platform (Claude v0.7.1 F3). catalog=False
+    leaves out catalog plugins, which only state/plugins.json says are the catalog's (platform_scope, PR A Codex round 1, 7)."""
     w = f.get("where", "") if isinstance(f, dict) else str(f)
     if isinstance(f, dict) and f.get("unverified_platform"):   # item 8 (R3): not shown to be the platform's, so it counts as the owner's
         return False
@@ -463,7 +470,7 @@ def platform_file(f):
     lit = literal_path(f)   # item 8: the producer's own file, when it recorded one
     if (lit in secret_store_places()) if lit else (f"{w}".startswith("/") and is_platform_secret_store(w)):
         return True
-    if platform_config_finding(f) or in_catalog_plugin(w) or w.startswith("system python package "):
+    if platform_config_finding(f) or (catalog and in_catalog_plugin(w)) or w.startswith("system python package "):
         return True
     path = lit or (w.split(":")[0] if isinstance(w, str) else "")
     return bool(path.startswith("/")) and under_platform_root(path)
@@ -475,9 +482,10 @@ REVIEWED_LABEL = "Platform note (checked)"
 def mark_reviewed(fs, manifest):
     """Batch 5 (d2): a platform finding an entry of rules/platform-reviewed.json covers (platform_reviewed: that file's exact bytes,
     that rule and line) is a checked platform note: severity info (the rule's own kept as severity_was), the entry's note as its fix,
-    never new and never a rug-pull alert. Run before summarize_refresh and mark_platform."""
+    never new and never a rug-pull alert. Run before summarize_refresh and mark_platform. Each finding's _snap (the fingerprint
+    of the bytes it was found in, audit) is used here and dropped."""
     for f in fs:
-        e = platform_reviewed(f, manifest)
+        e = platform_reviewed(f, manifest, f.pop("_snap", None))
         if e is not None:
             f.update({"class": "platform", "label": REVIEWED_LABEL, "severity_was": f.get("severity_was") or f["severity"], "severity": "info",
                       "fix": e["note"], "reviewed": True})

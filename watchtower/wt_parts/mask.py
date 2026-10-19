@@ -12,7 +12,9 @@ def mask(s):
 # the original text, and one pass writes them out, so no reader sees another's output, a hidden value keeps its line breaks
 # (history and `show` stay line for line) and the whole is linear. MASK_VERSION goes up whenever masking learns a new shape:
 # copies stored masked by an older version (approved skills, the engine cache) are then masked again.
-MASK_VERSION = 4   # batch 5: whole logical shell words for credentials, quoted YAML keys, webhook URLs over joins and \u escapes
+MASK_VERSION = 5   # batch 5: whole logical shell words for credentials, quoted YAML keys, webhook URLs over joins and \u escapes
+# (4); PR A, Codex round 1 (5): attached -u/-U/-p and the other line-reader forms in whole words, YAML quoted values over lines,
+# an escaped or joined scheme separator
 MASK_WINDOW = 8192   # finding() stores 160 characters: it masks this much of the text they are cut from, never less
 HIDDEN = "[hidden]"
 KEY_SHAPE = re.compile(   # the lookahead names every shape's first letter, so most of a text is skipped at C speed
@@ -171,7 +173,10 @@ def _urls(s, spans):
         i = nxt
 
 
-_URLISH = re.compile(r":(?:\\*/|\\u002[fF]){2}")   # ://, and JSON's :\/\/, :\\\/\\\/ or ://
+# ://, and JSON's :\/\/, :\\\/\\\/ or //. PR A, Codex round 1 (4): the colon written : too, and line joins
+# (backslash, line break) and quotes anywhere between the three, so the URL's word is read before it is searched (https:\ then
+# //…, 'https:/'\ then '/…').
+_URLISH = re.compile(r"(?::|\\u003[aA])(?:['\"]|\\\r?\n)*(?:\\*/|\\u002[fF])(?:['\"]|\\\r?\n)*(?:\\*/|\\u002[fF])")
 
 
 _JOINED_LINE = re.compile(r"(?<!\\)(?:\\\\)*\\\r?$")
@@ -283,6 +288,34 @@ def _yaml_quoted_keys(s, spans):
         pos = max(pos, b)
 
 
+def _quoted_scalar_end(s, a):
+    """PR A, Codex round 1 (3): where the YAML quoted scalar opened at s[a] ends (after its closing quote; the text's end when it
+    never closes). It may run over lines: in "…" a backslash escapes the next character (a line break too), in '…' '' is a quote."""
+    q, i, n = s[a], a + 1, len(s)
+    while i < n:
+        c = s[i]
+        if c == "\\" and q == '"':
+            i += 2
+            continue
+        if c == q:
+            if q == "'" and s[i + 1:i + 2] == "'":
+                i += 2
+                continue
+            return i + 1
+        i += 1
+    return n
+
+
+def _multiline_scalar(s, a):
+    """The end of the quoted value opened at s[a] when it runs past its line (_quoted_scalar_end), else None: a value closed on
+    its own line keeps the line readers' reading."""
+    if a >= len(s) or s[a] not in "'\"":
+        return None
+    e = _quoted_scalar_end(s, a)
+    eol = s.find("\n", a)
+    return e if eol != -1 and e > eol else None
+
+
 def _fields(s, spans):
     _yaml_quoted_keys(s, spans)
     pos = 0
@@ -292,14 +325,16 @@ def _fields(s, spans):
             return
         if m.group("n1") is not None:
             if _secret_name(m.group("n1")) and not _kept(m.group("v1")):
-                spans.append((m.start("v1"), m.end("v1")))
-                pos = m.end()
+                e = _multiline_scalar(s, m.start("v1")) or m.end("v1")   # round 1 (3): "password": "FAKEa\n  FAKEz"
+                spans.append((m.start("v1"), e))
+                pos = m.end()   # never past e: a key on the next line of text that isn't YAML is still read
             else:
                 pos = max(m.start("v1"), m.start() + 1)
         elif _secret_name(m.group("n2")):
             a, b = _yaml_value(s, m)
-            if b > a and not _kept(s[a:b]):
-                spans.append((a, b))
+            e = max(b, _multiline_scalar(s, a) or b)   # password: 'FAKEa\nFAKEz', its next line not indented
+            if e > a and not _kept(s[a:e]):
+                spans.append((a, e))
             pos = max(b, m.end())
         else:
             pos = m.end()
@@ -594,25 +629,47 @@ def _credential_word_spans(s, spans):
     see the whole word. NAME=… with a secret NAME (export "NAME=…", 'NAME'='…', --token=… too) hides from after the = to the word's
     end; --user=/--proxy-user= and -u/--user/--proxy-user's next word hide from after the first :; a secret flag (--token, …)
     hides the whole next word; a credential header's word (after -H or not) hides from after its name and scheme; a -d/--data*
-    word hides from a secret name's = to its end. Bare $VAR references stay."""
-    prev = None   # (raw plain-lowered flag) of the word before, in the same command
+    word hides from a secret name's = to its end. Bare $VAR references stay.
+    PR A, Codex round 1 (2): every form the line readers (_mask_words) know is read here too: an attached -uuser:… or -Uuser:…
+    (from after the first :), a MySQL tool's -p… and sshpass's -p… (after the -p) or the word after sshpass's -p, the word after
+    Bearer, after a secret name= or name: word (or a lone = after a secret name), and =… right after a secret name."""
+    prev = prev2 = tool = None   # the shell's reading, lowered, of the two words before (short ones), and the command's tool
     for a, b, first in _logical_words(s):
         raw = s[a:b]
-        flag = None if first or prev is None else prev
-        prev = raw.lower() if b - a <= 32 and "\n" not in raw else None
+        if first:
+            prev = prev2 = tool = None
+        flag, flag2 = prev, prev2
+        short = b - a <= 32 and "\n" not in raw
+        prev2, prev = prev, (_unquote(raw).lower() if short else None)
+        was = tool
+        if prev is not None:   # _mask_words' tool reading: sshpass's own options end at the command it runs
+            if tool == "sshpass" and not prev.startswith("-") and flag != "-p":
+                tool = "done"
+            base = prev.rpartition("/")[2]
+            if base == "sshpass" and tool is None:
+                tool = "sshpass"
+            elif base in MYSQL_TOOLS:
+                tool = "mysql"
         if "\n" not in raw and b - a <= 4096:
             continue
-        if flag is not None:
-            flag = _unquote(flag)
         head, _, _ = _shell_plain(raw[:200])
         hl = head.lower()
-        if flag in SECRET_FLAGS:
+        if (flag in SECRET_FLAGS or (was == "sshpass" and flag == "-p") or flag in ("bearer",)
+                or (flag == "=" and flag2 is not None and _secret_name(flag2))
+                or (flag is not None and len(flag) > 1 and (flag[-1] == "=" or (flag[-1] == ":" and ("_" in flag or "-" in flag)))
+                    and _secret_name(flag[:-1]))):
             if not _kept(raw):
                 spans.append((a, b))
             continue
         plain, lo, hi = _shell_plain(raw)
         hit = None
-        if flag in USER_FLAGS or hl.startswith(USER_EQ):
+        if was in ("mysql", "sshpass") and head.startswith("-p") and len(plain) > 2:
+            hit = 2   # mysql -p'…', sshpass -p'…'
+        elif hl[:2] == "-u" and len(hl) > 2 and hl[:3] != "-u=" and ":" in plain:
+            hit = plain.find(":") + 1   # curl -uuser:'…', -Uuser:"…"
+        elif flag is not None and plain[:1] == "=" and len(plain) > 1 and _secret_name(flag):
+            hit = 1   # TOKEN ='…'
+        elif flag in USER_FLAGS or hl.startswith(USER_EQ):
             c = plain.find(":", plain.find("=") + 1 if hl.startswith(USER_EQ) else 0)
             hit = c + 1 if c != -1 else None
         elif flag in ("-d", "--data", "--data-raw", "--data-binary", "--data-urlencode", "--data-ascii"):

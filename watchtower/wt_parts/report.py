@@ -118,13 +118,17 @@ def by_sev(fs):
 # vendor rug pull still alerts and stays Confirmed, but they are never one of the owner's problems: not in open_by_severity, not
 # in `new`, not in breakdown's Confirmed list, not in the report's counts or the dashboard's tiles. Each is one plain line in
 # "Platform notes" instead. Unverified platform files (WT-I001/I002/I011) are never platform scope and still count.
+# PR A, Codex round 1 (5, 7): a platform finding that counts (a real key outside Grok Bot's config: counts() keeps it) is the
+# owner's, with its own fix, in every channel; and only a place Watchtower itself vouches for (a platform root, Grok Bot's
+# config, its secret store, a system package, the platform's hook) makes a note. A plugin state/plugins.json files as "catalog"
+# (the Bot can write that file) stays in the owner's lists, as on 151e40c.
 def platform_scope(f):
-    return f.get("scope") == "platform" and not f.get("guarded")
+    return f.get("scope") == "platform" and not f.get("guarded") and not counts(f) and platform_file(f, catalog=False)
 
 
 def owners(fs):
-    """The findings that are the owner's to deal with: everything but platform notes."""
-    return [f for f in fs if f.get("scope") != "platform"]
+    """The findings that are the owner's to deal with: everything but platform notes (and platform warning-text records)."""
+    return [f for f in fs if not (platform_scope(f) or (f.get("scope") == "platform" and f.get("guarded")))]
 
 
 def _platform_place(where):
@@ -141,16 +145,33 @@ def _unlisted(path, unlisted):
     return path in unlisted or any(u.startswith(path.rstrip("/") + "/") for u in unlisted)
 
 
+def _note_kind(f, unlisted=()):
+    """Which line a platform note gets: "reviewed", "unlisted", "pattern" or "said" (Watchtower would call it <severity>)."""
+    if f.get("reviewed"):
+        return "reviewed"
+    if _unlisted(f["where"].split(":")[0], unlisted):
+        return "unlisted"
+    if f.get("class") == "platform" and not f.get("platform_hook"):
+        return "pattern"
+    return "said"
+
+
+def loud_note(f, unlisted=()):
+    """A note whose line says Watchtower would call it critical or high: the ones the daily routine names (Codex round 1, 10)."""
+    return _note_kind(f, unlisted) == "said" and (f.get("severity_was") or f["severity"]) in ("critical", "high")
+
+
 def platform_note_line(f, unlisted=()):
     """One plain line for a platform note. `unlisted`: paths whose platform file the release list doesn't include."""
     short, ln = _platform_place(f.get("where", ""))
     line = f" (line {ln})" if ln else ""
     v = platform_vendor(f["where"].split(":")[0]) if str(f.get("where", "")).startswith("/") else "Grok Bot"
-    if f.get("reviewed"):   # d2: an exact-bytes entry of rules/platform-reviewed.json; its note is the fix
+    kind = _note_kind(f, unlisted)
+    if kind == "reviewed":   # d2: an exact-bytes entry of rules/platform-reviewed.json; its note is the fix
         return f"{f['fix']} Watchtower checked this exact text{' (line ' + ln + ')' if ln else ''}; nothing to do."
-    if _unlisted(f["where"].split(":")[0], unlisted):
+    if kind == "unlisted":
         return f"{v}'s own folder, {short}{line}: {f['title']}. Not on Watchtower's release list: its own alert counts, this line doesn't."
-    if f.get("class") == "platform" and not f.get("platform_hook"):
+    if kind == "pattern":
         return f"{v}'s own file {short}{line}: {f['title']}. A pattern match nothing backs up; not counted."
     sev = f.get("severity_was") or f["severity"]
     said = f"would call {sev}" if sev in ("critical", "high", "medium", "low") else "would list"
@@ -159,12 +180,26 @@ def platform_note_line(f, unlisted=()):
 
 
 def platform_notes(fs, limit):
-    """{"count", "lines"} for the platform notes among `fs` (the first `limit` lines), or None when there are none."""
+    """{"count", "loud", "lines"} for the platform notes among `fs`, or None when there are none: `loud` counts those Watchtower
+    would call critical or high, whose lines come first (Codex round 1, 10); `lines` holds at most `limit`. `loud` is for the
+    caller, which says what it leaves out (notes_more) and never prints it."""
     unlisted = {f["where"].split(":")[0] for f in fs if f.get("unverified_platform")}
     plat = [f for f in shown(fs) if platform_scope(f)]
     if not plat:
         return None
-    return {"count": len(plat), "lines": [platform_note_line(f, unlisted) for f in plat][:limit]}
+    plat = [f for f in plat if loud_note(f, unlisted)] + [f for f in plat if not loud_note(f, unlisted)]
+    return {"count": len(plat), "loud": sum(1 for f in plat if loud_note(f, unlisted)),
+            "lines": [platform_note_line(f, unlisted) for f in plat[:limit]]}
+
+
+PLATFORM_NOTES_MORE = "`wt.py breakdown` lists every one"
+
+
+def notes_more(count, loud, shown_):
+    """The `more` line of platform_notes when the first `shown_` of `count` lines (the `loud` ones first) are shown."""
+    left, loud = count - shown_, max(0, loud - shown_)
+    return (f"{left} more platform note{'' if left == 1 else 's'} not shown here"
+            + (f", {loud} of them Watchtower would call critical or high" if loud else "") + f": {PLATFORM_NOTES_MORE}.")
 
 
 # ---------------------------------------------------------------- report
@@ -204,8 +239,8 @@ def trend(hist):
 
 def render_md(snap, hist, tag):
     warn = [f for f in shown(snap["findings"]) if f.get("guarded")]   # batch 2 (R1): one count line, never a finding
-    plat = [f for f in shown(snap["findings"]) if f.get("scope") == "platform" and not f.get("guarded")]   # v0.7.1 item 4: their own section, never scored
-    fs = [f for f in shown(snap["findings"]) if f.get("scope") != "platform" and not f.get("guarded")]
+    plat = [f for f in shown(snap["findings"]) if platform_scope(f)]   # v0.7.1 item 4: their own section, never scored
+    fs = [f for f in shown(snap["findings"]) if not platform_scope(f) and not f.get("guarded")]   # Codex round 1 (5): a counted one is here
     c = by_sev(fs)
     lines = [f"# Watchtower report {tag}", "", f"Status: {status_line(snap)}", "",
              f"Score {score_line(snap)} (grade {snap_grade(snap)}), {trend(hist)}. Open findings: "
@@ -245,8 +280,11 @@ def render_md(snap, hist, tag):
                 if not any(_unlisted(f["where"].split(":")[0], unlisted) for f in plat) else
                 "Grok Bot's own files. They don't count toward your problems or your status; a file Watchtower's release list doesn't "
                 "include has its own counted alert above.")
+        notes = platform_notes(snap["findings"], 40)
         lines += ["", "## Platform notes", "", lead]
-        lines += [f"- {platform_note_line(f, unlisted)}" for f in plat[:40]]
+        lines += [f"- {l}" for l in notes["lines"]]
+        if notes["count"] > len(notes["lines"]):
+            lines.append(f"- {notes_more(notes['count'], notes['loud'], len(notes['lines']))}")
     inv = snap.get("inventory", {})
     lines += ["", "## Inventory", "", f"Skills on disk: {inv.get('skills', 0)} · plugin files: {inv.get('plugin_files', 0)} · MCP configs: {inv.get('mcp_configs', 0)}"]
     fyi = [f for f in shown(snap["findings"]) if not counts(f)]
@@ -289,8 +327,9 @@ def platform_details(findings):
     notes = platform_notes(findings, 40)
     if not notes:
         return ""
+    more = [notes_more(notes["count"], notes["loud"], len(notes["lines"]))] if notes["count"] > len(notes["lines"]) else []
     return (f"<details><summary>Platform notes ({notes['count']})</summary><p class='mut'>Grok Bot's own files. They don't count toward "
-            "your problems or your status.</p><ul>" + "".join(f"<li>{html.escape(l)}</li>" for l in notes["lines"]) + "</ul></details>")
+            "your problems or your status.</p><ul>" + "".join(f"<li>{html.escape(l)}</li>" for l in notes["lines"] + more) + "</ul></details>")
 
 
 def render_html(snap, hist, tag):

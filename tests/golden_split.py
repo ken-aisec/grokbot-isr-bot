@@ -527,43 +527,104 @@ def short_diff(a, b, n=30):
 
 # ------------------------------------------------------------------------------------------------ expected differences (batch 5)
 EXPECT_FIELDS = {"item": str, "scenario_rx": str, "key_rx": str, "lines_rx": list, "must_see": bool, "why": str}
+# PR A, Codex round 1 (11): instead of lines_rx, an entry may name the one JSON field whose value changes, from one exact value to
+# another ({"field", "from", "to"}): the item is expected only when post is pre with exactly that change (parsed, everything else
+# equal), never by its lines.
+JSON_CHANGE_FIELDS = {"field": str, "from": (int, str), "to": (int, str)}
 NEW_ITEM, GONE_ITEM = "+<new item>", "-<item gone>"   # the pseudo line for an item only post (or only pre) has
 # Lines no narrow pattern accepts all of: a pattern that accepts every added (or every removed) one is refused as too broad.
-BROAD_PROBES = (("+", "+zq 1", '+ "unrelated": [0]', "+<x>", NEW_ITEM), ("-", "-QX {}", '- "other": null', "-<y>", GONE_ITEM))
+BROAD_PROBES = (("+", "+zq 1", '+ "unrelated": [0]', "+<x>", NEW_ITEM, "+a", "+Z9 ~", '+   "k": "v",', "+\t#"),
+                ("-", "-QX {}", '- "other": null', "-<y>", GONE_ITEM, "-b", "-Y8 ^", '-   "j": 2,', "-\t;"))
+
+
+def _covers_a_side(compiled):
+    """True when these patterns together accept every added or every removed probe line."""
+    return any(all(any(c.search(p) for c in compiled) for p in probes) for probes in BROAD_PROBES)
 
 
 def too_broad(rx):
     """True for a line pattern that is empty or accepts any added line or any removed line (.*, .+, ^[-+], ...)."""
     if not isinstance(rx, str) or not rx.strip():
         return True
-    c = re.compile(rx)
-    return any(all(c.search(p) for p in probes) for probes in BROAD_PROBES)
+    return _covers_a_side([re.compile(rx)])
+
+
+def _entry_shape(e):
+    """The entry's fields are EXPECT_FIELDS, or the same with json_change in place of lines_rx, each with its type."""
+    if not isinstance(e, dict):
+        return False
+    want = dict(EXPECT_FIELDS)
+    if "json_change" in e:
+        del want["lines_rx"]
+        want["json_change"] = dict
+    if set(e) != set(want) or not all(isinstance(e[k], t) for k, t in want.items()):
+        return False
+    j = e.get("json_change")
+    return j is None or (set(j) == set(JSON_CHANGE_FIELDS) and j["field"].strip() != "" and j["from"] != j["to"]
+                         and all(isinstance(j[k], t) and not isinstance(j[k], bool) for k, t in JSON_CHANGE_FIELDS.items()))
 
 
 def parse_expect(doc, items):
-    """The entries of the enabled `items` in an expect file's JSON: {"entries": [{item, scenario_rx, key_rx, lines_rx[], must_see,
-    why}]}. A line of a differing item ("+text" or "-text", diff_lines) is expected when an enabled entry's scenario_rx and key_rx
-    search the scenario id and item name and one of its lines_rx searches the line. ValueError for a malformed file or a pattern
-    too_broad refuses; entries of other items are checked as strictly and then left out."""
+    """The entries of the enabled `items` in an expect file's JSON: {"entries": [{item, scenario_rx, key_rx, lines_rx[] or
+    json_change, must_see, why}]}. A line of a differing item ("+text" or "-text", diff_lines) is expected when an enabled entry's
+    scenario_rx and key_rx search the scenario id and item name and one of its lines_rx searches the line; a json_change entry
+    expects the whole item when only that field changed (json_only_change). ValueError for a malformed file, a pattern too_broad
+    refuses, an entry whose patterns together accept any line, or a file whose entries together do (Codex round 1, 11); entries
+    of other items are checked as strictly and then left out."""
     entries = doc.get("entries") if isinstance(doc, dict) else None
     if not isinstance(entries, list):
         raise ValueError("the expect file has no entries list")
-    out = []
+    out, every = [], []
     for n, e in enumerate(entries):
-        if not isinstance(e, dict) or set(e) != set(EXPECT_FIELDS) or not all(isinstance(e[k], t) for k, t in EXPECT_FIELDS.items()):
-            raise ValueError(f"entry {n}: needs exactly {sorted(EXPECT_FIELDS)} with those types")
-        if not e["why"].strip() or not e["lines_rx"]:
+        if not _entry_shape(e):
+            raise ValueError(f"entry {n}: needs exactly {sorted(EXPECT_FIELDS)} with those types (or json_change {{field, from, to}} "
+                             "in place of lines_rx)")
+        lines = e.get("lines_rx", [])
+        if not e["why"].strip() or ("json_change" not in e and not lines):
             raise ValueError(f"entry {n} ({e['item']}): an empty why or lines_rx")
         try:
-            rxs = [re.compile(x) for x in (e["scenario_rx"], e["key_rx"])] + [re.compile(x) if isinstance(x, str) else None for x in e["lines_rx"]]
+            rxs = [re.compile(x) for x in (e["scenario_rx"], e["key_rx"])] + [re.compile(x) if isinstance(x, str) else None for x in lines]
         except re.error as err:
             raise ValueError(f"entry {n} ({e['item']}): bad pattern: {err}")
-        broad = [x for x in e["lines_rx"] if too_broad(x)]
+        broad = [x for x in lines if too_broad(x)]
         if broad:
             raise ValueError(f"entry {n} ({e['item']}): lines_rx {broad!r} would accept any line; write a narrow one")
+        if lines and _covers_a_side(rxs[2:]):
+            raise ValueError(f"entry {n} ({e['item']}): its lines_rx together would accept any line; write narrow ones")
+        every += rxs[2:]
         if e["item"] in items:
-            out.append(dict(e, id=n, _s=rxs[0], _k=rxs[1], _l=rxs[2:]))
+            out.append(dict(e, id=n, _s=rxs[0], _k=rxs[1], _l=rxs[2:], _j=e.get("json_change")))
+    if every and _covers_a_side(every):
+        raise ValueError("the entries' lines_rx together would accept any line; write narrow ones")
     return out
+
+
+def _json_item(text):
+    """(the item's lines before its JSON document, the document) or None: a tree item is "file <mode>" and, for a .gz, "gzip mtime
+    <n>" lines, then the content."""
+    if text is None:
+        return None
+    i = 0 if text.startswith(("{", "[")) else text.find("\n{") + 1
+    if i == 0 and not text.startswith(("{", "[")):
+        return None
+    try:
+        return text[:i], json.loads(text[i:])
+    except ValueError:
+        return None
+
+
+def json_only_change(pre, post, change):
+    """True when post is pre with exactly one change: the top-level field change["field"] is change["from"] in pre and
+    change["to"] in post, and everything else (the lines before the document included) is equal once parsed."""
+    a, b = _json_item(pre), _json_item(post)
+    if a is None or b is None or a[0] != b[0] or not (isinstance(a[1], dict) and isinstance(b[1], dict)):
+        return False
+    f = change["field"]
+    if f not in a[1] or f not in b[1] or a[1][f] != change["from"] or b[1][f] != change["to"]:
+        return False
+    if type(a[1][f]) is not type(change["from"]) or type(b[1][f]) is not type(change["to"]):
+        return False
+    return dict(a[1], **{f: change["to"]}) == b[1]
 
 
 def diff_lines(pre, post):
@@ -580,8 +641,14 @@ def diff_lines(pre, post):
 def unexpected_lines(sid, key, pre, post, entries, hits):
     """The diff_lines of one differing item no entry expects; `hits` counts the lines each entry (by id) took."""
     cand = [e for e in entries if e["_s"].search(sid) and e["_k"].search(key)]
+    lines = diff_lines(pre, post)
+    whole = next((e for e in cand if e["_j"] and json_only_change(pre, post, e["_j"])), None)
+    if whole is not None:   # exactly the one field changed: the whole item is expected
+        hits[whole["id"]] = hits.get(whole["id"], 0) + len(lines)
+        return []
+    cand = [e for e in cand if not e["_j"]]
     bad = []
-    for line in diff_lines(pre, post):
+    for line in lines:
         e = next((e for e in cand if any(r.search(line) for r in e["_l"])), None)
         if e is None:
             bad.append(line)

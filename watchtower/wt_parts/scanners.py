@@ -251,7 +251,28 @@ def remember_manifest(root, text):
         if len(parts) == 2:
             files.setdefault(parts[1].lstrip("*").strip(), parts[0])
     _RELEASE.clear()
-    _RELEASE.update(root=root, files=files, at=(SELF_ROOT, os.path.join(home(), "app")))
+    _RELEASE.update(root=root, files=files, at=SELF_ROOT)
+
+
+def installed_root():
+    """The real folder of the installed copy this wt.py runs from, or None in a developer checkout. PR A, Codex round 1 (6): it
+    was an installed copy only while WATCHTOWER_HOME/app led to it, so changing that variable made one a developer checkout, whose
+    rules files (the reviewed list, the normalization spec, the locks) are never held to MANIFEST.sha256. An installed copy is the
+    `app` folder install.sh makes, whatever WATCHTOWER_HOME says now: this folder is named app, or WATCHTOWER_HOME/app leads to it."""
+    root = os.path.realpath(SELF_ROOT)
+    if os.path.basename(root) == "app" or os.path.basename(os.path.normpath(SELF_ROOT)) == "app" \
+            or root == os.path.realpath(os.path.join(home(), "app")):
+        return root
+    return None
+
+
+def install_home(root):
+    """The Watchtower folder the installed copy at `root` was installed into (install.sh's WT_HOME, the folder holding `app`):
+    WATCHTOWER_HOME when its app leads there, else the folder this copy's app is in."""
+    if root == os.path.realpath(os.path.join(home(), "app")):
+        return home()
+    s = os.path.normpath(SELF_ROOT)
+    return os.path.dirname(s) if os.path.basename(s) == "app" else os.path.dirname(root)
 
 
 def release_manifest():
@@ -264,9 +285,9 @@ def release_manifest():
     remembered it is never read again, and a different folder behind the same name lists nothing (the lock then reads as
     changed: scanner_lock)."""
     root = os.path.realpath(SELF_ROOT)
-    if _RELEASE.get("at") == (SELF_ROOT, os.path.join(home(), "app")):
+    if _RELEASE.get("at") == SELF_ROOT:
         return _RELEASE["files"] if root == _RELEASE["root"] else {}
-    if root != os.path.realpath(os.path.join(home(), "app")):
+    if installed_root() is None:   # PR A, Codex round 1 (6): the copy this runs from, never what WATCHTOWER_HOME says
         return None
     remember_manifest(root, read_text(os.path.join(root, "MANIFEST.sha256")))
     return _RELEASE["files"]

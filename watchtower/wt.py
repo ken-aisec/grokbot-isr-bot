@@ -126,7 +126,8 @@ def cmd_audit(args):
     all_new, new = new, [f for f in new if not platform_scope(f)]   # batch 5 (d1): Grok Bot's own files are platform notes, never new
     out = {"status": snap_status(snap), "score": snap["score"], "score_line": score_line(snap), "grade": snap_grade(snap), "new": [compact(f) for f in new][:20],
            "fixed": [compact(f) for f in fixed][:10], "open_by_severity": by_sev(owners(snap["findings"])),
-           "top_fixes": [compact(f) for f in snap["findings"] if f.get("scope") != "platform" and not f.get("guarded")][:3], "notes": snap["notes"], "inventory": snap["inventory"]}
+           "top_fixes": [compact(f) for f in snap["findings"] if (f.get("scope") != "platform" or counts(f)) and not f.get("guarded")][:3],   # round 1 (5): a counted key too
+           "notes": snap["notes"], "inventory": snap["inventory"]}
     # Codex, batch 4 round 2: the whole delta is kept before anything is cut, in a file of this run's own (a second run writes
     # another), and the counts say how much of it the JSON shows: `truncated` counts from the full lists, not from the first 20.
     out["new_total"], out["fixed_total"] = len(new), len(fixed)
@@ -155,14 +156,13 @@ def cmd_audit(args):
     warn = sum(1 for f in snap["findings"] if f.get("guarded"))
     if warn:   # batch 2 (R1): defensive wording kept as records; `wt.py breakdown` lists them
         out["warning_text_count"] = warn
+    # v0.7.1 item 4: Grok Bot's own files, one line each, never scored. Batch 5 (d1): plain lines, outside every count; `platform`
+    # is the same lines under the old name, for one release. Codex round 1 (9): they take only the room the owner's part leaves.
     notes = platform_notes(snap["findings"], 8)
-    if notes:   # v0.7.1 item 4: Grok Bot's own files, one line each, never scored. Batch 5 (d1): plain lines, outside every count;
-        out["platform_notes"] = notes   # `platform` is the same lines under the old name, for one release
-        out["platform"] = notes["lines"]
     alerts = scanner_alerts(snap)
     if alerts:
         out["scanner_alerts"] = alerts
-    print(fit(out, keep=("scanner_alerts",)))
+    print(fit_owner_first(out, notes, keep=("scanner_alerts",), alias=True, before="scanner_alerts"))
     return 0
 
 
@@ -225,6 +225,56 @@ def fit(obj, limit=4096, keep=()):
     return json.dumps(obj, indent=1)
 
 
+PLATFORM_NOTES_BYTES = 1536   # what platform notes may add to the owner's part (Codex round 1, 9: their own budget)
+
+
+def fit_owner_first(obj, notes, limit=4096, keep=(), alias=False, before=None, budget=PLATFORM_NOTES_BYTES):
+    """PR A, Codex round 1 (9, 10): platform notes never cost the owner a finding. The owner's part is fitted first, in the whole
+    `limit`, exactly as fit() does without notes; then platform_notes ({count, lines[, more]}, placed before the key `before`)
+    takes the room the owner's part left plus its own `budget` bytes, a line at a time (the loud ones first: platform_notes), and
+    the `platform` alias (alias=True, audit) gets its copies of those lines last, so its lines go first. What doesn't fit is said:
+    `more` (how many, how many of them Watchtower would call critical or high, and `wt.py breakdown`, which lists every one) and
+    `truncated` `platform`."""
+    obj = json.loads(fit(obj, limit=limit, keep=keep))
+    if not notes:
+        return json.dumps(obj, indent=1)
+    limit = max(limit, len(json.dumps(obj, indent=1))) + budget
+    pn, al = {"count": notes["count"], "lines": []}, []
+
+    def text():
+        out, at = {}, before if before in obj else None
+        for k, v in list(obj.items()) + [(None, None)]:
+            if k == at:
+                out["platform_notes"] = pn
+                if alias:
+                    out["platform"] = al
+            if k is not None:
+                out[k] = v
+        return json.dumps(out, indent=1)
+
+    def say_more():
+        pn.pop("more", None)
+        if pn["count"] > len(pn["lines"]):
+            pn["more"] = notes_more(pn["count"], notes["loud"], len(pn["lines"]))
+
+    for line in notes["lines"]:
+        pn["lines"].append(line)
+        say_more()
+        if len(text()) > limit:
+            pn["lines"].pop()
+            break
+    say_more()
+    if alias:
+        for line in pn["lines"]:
+            al.append(line)
+            if len(text()) > limit:
+                al.pop()
+                break
+        if len(al) < len(pn["lines"]):
+            obj.setdefault("truncated", {})["platform"] = len(pn["lines"]) - len(al)
+    return text()
+
+
 PLATFORM_OPEN_SHOWN = 50
 
 
@@ -275,9 +325,9 @@ def cmd_daily(args):
     decoys = [compact(f) for f in new if f["rule"].startswith("WT-K")]
     if decoys:
         out["decoys"] = decoys      # always shown, whatever else is new
+    # batch 5 (d1): a new finding in Grok Bot's own files is said in platform_notes, never in `new` (a vendor rug pull still breaks
+    # NO_CHANGES). Codex round 1 (10): critical and high ones first, and any left out are counted in `more`, with the command.
     notes = platform_notes([f for f in new if platform_scope(f)] + [f for f in snap["findings"] if f.get("unverified_platform")], 5)
-    if notes:   # batch 5 (d1): a new finding in Grok Bot's own files is said here, never in `new` (a vendor rug pull still breaks NO_CHANGES)
-        out["platform_notes"] = notes
     rest = [f for f in new if not f["rule"].startswith("WT-K") and not platform_scope(f)]
     out["new"] = [dict(compact(f), key=f["key"]) if f.get("class") == "pattern" else compact(f) for f in rest][:10]
     if len(rest) > 10:
@@ -286,7 +336,7 @@ def cmd_daily(args):
     alerts = scanner_alerts(snap)
     if alerts:
         out["scanner_alerts"] = alerts
-    print(fit(out, limit=6000, keep=("decoys", "scanner_alerts", "platform_notes")))
+    print(fit_owner_first(out, notes, limit=6000, keep=("decoys", "scanner_alerts"), before="new"))
     return 0
 
 
@@ -354,6 +404,8 @@ def cmd_breakdown(args):
         print("")
         print(f"Platform notes (Grok Bot's own files, not counted): {len(plat)}. `wt.py show <rule>` lists them "
               f"({', '.join(sorted({f['rule'] for f in plat}))}).")
+        for line in platform_notes(snap["findings"], len(plat))["lines"]:   # Codex round 1 (9, 10): every one, where `more` points
+            print(f"  {line}")
     return 0
 
 
@@ -887,8 +939,8 @@ def self_check():
     """Before every run, the installed copy checks itself: every file against MANIFEST.sha256, and the commit against the one
     install.sh recorded. Returns the problems found ([] when all is well, None when this is not an installed copy, such as a
     developer's checkout). An install from before v0.6.8 has no recorded commit: the current one is recorded once, and said."""
-    root = os.path.realpath(SELF_ROOT)
-    if root != os.path.realpath(os.path.join(home(), "app")):
+    root = installed_root()   # PR A, Codex round 1 (6): the copy this runs from, whatever WATCHTOWER_HOME says
+    if root is None:
         return None
     problems = []
     man = read_text(os.path.join(root, "MANIFEST.sha256"))
@@ -913,13 +965,14 @@ def self_check():
             if rel not in listed:
                 problems.append(f"{rel} is not in the release")
     head = git_head(root)
-    rec_path = state_path(COMMIT_FILE)
+    rec_path = os.path.join(install_home(root), "state", COMMIT_FILE)   # where install.sh recorded it, for this copy
     rec = (read_text(rec_path) or "").strip()
     if not head:
         problems.append("the installed commit can't be read (.git is missing)")
     elif rec and rec != head:
         problems.append(f"the installed commit is {head[:12]}, but install.sh recorded {rec[:12]}")
     elif not rec and not problems:
+        os.makedirs(os.path.dirname(rec_path), exist_ok=True)
         with open(rec_path, "w") as f:
             f.write(head + "\n")
     return problems
