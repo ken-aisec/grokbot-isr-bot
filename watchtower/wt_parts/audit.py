@@ -7,7 +7,8 @@ def audit(roots, exports, quick=False):
     _RUNS_CODE.clear()
     reset_scanner_checks()
     walk_errors = []   # batch 5 PR B, Codex round 2 (3): a folder the scan couldn't list leaves the access map incomplete
-    inv = collect_inventory(roots, errors=walk_errors)
+    walk_skipped = []   # round 3 (1): so does one it left out (a link, too deep, a folder it never scans)
+    inv = collect_inventory(roots, errors=walk_errors, skipped=walk_skipped)
     manifest = {}
     # DQ-022/023, v0.7.1 item 1: SKILL.md outside loadable locations — one "Not scanned" line (a Tip), never scored as installed
     if inv.get("non_live_skills"):
@@ -317,5 +318,5 @@ def audit(roots, exports, quick=False):
                                # round 2 (1, 3): the jar and the cookie seed looked at whole (or said not to be), the crontab's
                                # answer, the folders the scan couldn't list
                                "jar": _ax_jar_now(), "seed": _ax_seed_now(roots), "crontab": CRONTAB_SEEN.get("crontab", "failed"),
-                               "walk_errors": len(walk_errors)}}
+                               "walk_errors": len(walk_errors), "walk_skipped": len(walk_skipped)}}   # round 3 (1): and those it left out
     return fs, meta

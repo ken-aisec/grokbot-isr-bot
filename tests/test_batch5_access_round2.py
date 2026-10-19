@@ -188,8 +188,12 @@ class CountsBeforeCaps(_Small):
 
     def test_the_bots_past_the_list_are_in_the_json(self):   # replay (3170952: no count of them)
         self.forty_one()
-        more = json.loads(self.access("--json")[1]).get("more", {})
-        self.assertEqual((more.get("bots"), more.get("connectors_of_bots_not_listed")), (1, {"Gmail": 1}))
+        d = json.loads(self.access("--json")[1])
+        more = d.get("more", {})
+        # round 3 (3): `more` counts every Bot the JSON doesn't list, fit()'s cuts too (was (1, {"Gmail": 1}): only Bot40, while
+        # fit() had cut 30 more from the list)
+        self.assertLess(len(d["bots"]), 40)
+        self.assertEqual((more.get("bots"), more.get("connectors_of_bots_not_listed")), (41 - len(d["bots"]), {"Gmail": 1}))
 
     def test_every_connector_of_a_bot_is_in_the_json(self):   # replay (3170952: 12 of 22)
         self.small()
@@ -203,7 +207,8 @@ class CountsBeforeCaps(_Small):
         quiet = {"trigger": "schedule", "sends_or_posts": False, "asks_first": True}
         self.rollcall({"name": "Golf", "routines": [quiet] * 60 + [{"trigger": "schedule", "sends_or_posts": True, "asks_first": False}]})
         self.audit_json()
-        self.assertIn("- Golf: no connectors; 61 routines, 1 sends without asking you.", self.access()[1])
+        # round 3 (2): the reply has no connectors, so Golf didn't say (was: "- Golf: no connectors; 61 routines, ...")
+        self.assertIn("- Golf: didn't say which connectors it uses; 61 routines, 1 sends without asking you.", self.access()[1])
         golf = json.loads(self.access("--json")[1])["bots"][0]
         self.assertEqual((golf["routines"], golf["routines_send_without_asking"]), (61, 1))
 

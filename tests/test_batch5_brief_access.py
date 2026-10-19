@@ -6,7 +6,7 @@ map (an older box) every line is what it was.
 
 Tests marked "replay" fail on 77dedd1 on their assertion (measured with 77dedd1's watchtower/ sources and rules, this file in place);
 "guard" ones keep what must not change."""
-import datetime as dt, html, json, os, re, sys, unittest
+import datetime as dt, html, json, os, re, shutil, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import ROOT, wt
@@ -79,6 +79,9 @@ class WhatAStoryTouchesHere(_Brief):
         # PR B, Codex round 2 (3): a tool list Watchtower couldn't read may name Dropbox, so "found no" needs every one readable;
         # test_batch5_access_round2 has the sentence with the unreadable one left in
         os.remove(os.path.join(self.home, "projects", "tools", "mcp.json"))
+        # round 3 (1): so does a folder the scan never enters (the browser profile, SKIP_PATH_PARTS); test_batch5_access_round3 has
+        # the sentence with such a folder left in
+        shutil.rmtree(os.path.join(self.home, "chrome-profile"))
         r = self.brief([("Dropbox token leak lets attackers steal shared files", "")])[0]
         self.assertEqual(r["top_stories"][0].get("here"),
                          "This is about Dropbox. Watchtower found no Dropbox connector, sign-in or webhook here (it only knows the connectors "

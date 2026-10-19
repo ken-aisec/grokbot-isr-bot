@@ -125,9 +125,11 @@ class AccessMapExpectations(unittest.TestCase):
     SID = "box-empty_account-cli"
     # PR B, Codex round 2 (6): the map and section as this box really writes them now (the map gained incomplete, cached,
     # cached_at, scope, cli_products and the roll-call's counts; the section's four limitation lines, which the old line patterns
-    # let a test leave out, are back in). Only these fixtures changed, no assertion.
+    # let a test leave out, are back in). Only these fixtures changed, no assertion. Round 3: the map has the roll-call's
+    # connectors_unknown_more and scheduled.system (fixtures only again).
     MAP = {"at": "<TS>", "bots": [], "bots_more": 0, "bots_no_detail": [], "bots_silent": [],
-           "rollcall": {"at": None, "connectors_more": {}, "fresh": False, "no_detail_more": 0, "profiles_unreadable": 0, "silent_more": 0},
+           "rollcall": {"at": None, "connectors_more": {}, "connectors_unknown_more": 0, "fresh": False, "no_detail_more": 0, "profiles_unreadable": 0,
+                        "silent_more": 0},
            "shared": {"auto_allow": [], "auto_allow_areas": dict.fromkeys(("deletes", "everything", "installs", "other", "pays", "permissions", "runs code", "sends"), 0),
                       "auto_review": None, "browser": None, "cached": [], "cached_at": None,
                       "checked": ["browser", "cli_logins", "settings", "mcp", "plugins", "webhooks", "scheduled", "hooks", "key_files"],
@@ -135,7 +137,7 @@ class AccessMapExpectations(unittest.TestCase):
                       "incomplete": {"key_files": "depth", "scheduled": "failed"}, "key_files": 0,
                       "mcp": {"count": 0, "files": 0, "products": [], "tools": [], "unreadable": 0, "unreadable_files": []},
                       "platform_logins": [], "plugins": {"added": 0, "grok": 0, "names": []}, "runs_programs": "unknown",
-                      "scheduled": {"crontab": 0, "systemd": 0}, "scope": ["/home/box", "/workspace"], "settings": "missing",
+                      "scheduled": {"crontab": 0, "system": 0, "systemd": 0}, "scope": ["/home/box", "/workspace"], "settings": "missing",
                       "webhook_count": 0, "webhook_services": [], "webhooks": []},
            "unknown": ["connectors", "routines_on_box", "secrets_content", "approvals"], "v": 1}
     SECTION = ["", "## Who can reach what", "", "All your Bots share this computer, so every Bot can use everything in the first list.", "",
@@ -249,6 +251,8 @@ class AccessMapRound2Negatives(unittest.TestCase):
             for m in (new, old):
                 m["shared"]["browser"] = dict(self.SEEN)
             new["shared"]["plugins"] = {"added": 3, "grok": 0, "names": ["figma-notes", "notion-workspace", "vercel-docs"]}
+            # round 3 (1): this box has folders the scan leaves out (fixture only)
+            new["shared"]["incomplete"] = dict(dict.fromkeys(("hooks", "mcp", "plugins", "webhooks"), "skipped"), key_files="depth", scheduled="failed")
             old["shared"]["plugins"] = {"added": 0, "grok": 3, "names": []}
         if sid == "box-emoji_names-cli":
             new["bots_silent"] = old["bots_silent"] = ["Ïris 🤖", "Танго"]

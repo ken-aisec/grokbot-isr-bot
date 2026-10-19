@@ -53,6 +53,8 @@ class Box(unittest.TestCase):
         self.roots = [self.home, self.ws]
         # batch 5 PR B, Codex round 2 (3): the access map's "folders an audit scans" are this box's, never this computer's /workspace
         self.saved_workspace, wt.ACCESS_WORKSPACE = getattr(wt, "ACCESS_WORKSPACE", None), self.ws
+        # round 3 (5): and the system cron folder it counts is this box's (none until a test makes one)
+        self.saved_cron, wt.SYSTEM_CRON = getattr(wt, "SYSTEM_CRON", None), os.path.join(self.tmp, "etc", "cron.d")
         self.saved = (wt.RUN_LIMIT, wt.DAILY_LIMIT, wt.ENGINE_BUDGET, wt.ENGINE_LAUNCH_BASE, wt.ENGINE_LAUNCH_PER_SKILL, wt.ENGINE_SOLO_LIMIT)
         clear_scanner_checks()
         # Item 8: the vendor release list is a file in this box, empty until a test lists a vendor's files (profiles.vendor_release)
@@ -68,6 +70,10 @@ class Box(unittest.TestCase):
             vars(wt).pop("ACCESS_WORKSPACE", None)
         else:
             wt.ACCESS_WORKSPACE = self.saved_workspace
+        if self.saved_cron is None:
+            vars(wt).pop("SYSTEM_CRON", None)
+        else:
+            wt.SYSTEM_CRON = self.saved_cron
         if self.saved_lock is None:
             vars(wt).pop("PLATFORM_LOCK", None)
         else:

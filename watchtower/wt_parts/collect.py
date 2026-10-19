@@ -1,31 +1,42 @@
 # Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
 # ---------------------------------------------------------------- collection
-def walk(roots, max_depth=8, errors=None):
+def walk(roots, max_depth=8, errors=None, skipped=None):
     """Every plain file under roots. `errors` (a list) gets each folder the walk couldn't list (batch 5 PR B, Codex round 2, 3:
-    the access map then never says there is none)."""
+    the access map then never says there is none). Round 3 (1): `errors` also gets each file it couldn't look at (not one that
+    vanished), and `skipped` (a list) each folder it left out: a link to a folder, one past max_depth, one of the folders it never
+    scans (SKIP_DIRS, SKIP_PATH_PARTS). Watchtower's own folder is left out too, but not counted: it is Watchtower's, not the Bots'."""
     for root in roots:
         root = os.path.expanduser(root)
         if not os.path.isdir(root):
             continue
         base = root.rstrip("/").count("/")
         for dirpath, dirnames, filenames in os.walk(root, onerror=errors.append if errors is not None else None):
-            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith((".venv",) + SKIP_PREFIXES)]
-            if dirpath.count("/") - base >= max_depth:
-                dirnames[:] = []
             ap = os.path.abspath(dirpath)
             if any(x in ap + "/" for x in SKIP_PATH_PARTS):
                 dirnames[:] = []
+                if skipped is not None:
+                    skipped.append(ap)
                 continue
             if _under(ap, {os.path.abspath(home()), SELF_ROOT}):   # R08: separator-aware; watchtower-customer-skill is not inside
                 dirnames[:] = []
                 continue
+            kept = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith((".venv",) + SKIP_PREFIXES)]
+            if dirpath.count("/") - base >= max_depth:
+                kept = []
+            if skipped is not None:
+                skipped += [os.path.join(dirpath, d) for d in dirnames if d not in kept or os.path.islink(os.path.join(dirpath, d))]
+            dirnames[:] = kept
             for fn in filenames:
                 p = os.path.join(dirpath, fn)
                 try:
                     if stat.S_ISREG(os.stat(p).st_mode):
                         yield p
-                except OSError:
-                    continue   # vanished, a broken link, or no permission
+                except FileNotFoundError:
+                    continue   # vanished, or a broken link
+                except OSError as e:
+                    if errors is not None:
+                        errors.append(e)
+                    continue   # no permission
 
 
 def is_skill_file(path):
@@ -37,9 +48,9 @@ def is_skill_file(path):
 MCP_CONFIG = re.compile(r"(?i)^(\.?mcp|mcp[_-]?(config|servers|settings)|[\w-]*[_-]mcp[_-]?(config|servers|settings)|claude_desktop_config)\.json$")
 
 
-def collect_inventory(roots, errors=None):
+def collect_inventory(roots, errors=None, skipped=None):
     inv = {"skills": [], "plugin_files": [], "mcp_configs": [], "non_live_skills": []}
-    for p in walk(roots, errors=errors):
+    for p in walk(roots, errors=errors, skipped=skipped):
         fn = os.path.basename(p)
         if fn == "SKILL.md":
             if is_live_skill_path(p):
@@ -138,6 +149,7 @@ def run(cmd, timeout=120, cwd=None):
 
 
 CRONTAB_SEEN = {}   # "crontab": what the last persistence_snapshot's `crontab -l` said (crontab_state; batch 5 PR B, Codex round 2, 3)
+SYSTEM_CRON = "/etc/cron.d"   # batch 5 PR B, Codex round 3 (5): the access map counts its jobs too (tests point it at their box)
 
 
 def persistence_snapshot():
@@ -145,7 +157,7 @@ def persistence_snapshot():
     code, out, err = run(["crontab", "-l"], 10)
     snap["crontab"] = out.strip() if code == 0 else ""
     CRONTAB_SEEN["crontab"] = crontab_state(code, err)
-    for d in ("/etc/cron.d", os.path.expanduser("~/.config/systemd/user")):
+    for d in (SYSTEM_CRON, os.path.expanduser("~/.config/systemd/user")):
         if os.path.isdir(d):
             snap[d] = sorted(os.listdir(d))
     for rc in ("~/.bashrc", "~/.profile", "~/.bash_profile", "~/.zshrc"):
