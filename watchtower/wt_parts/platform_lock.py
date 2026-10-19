@@ -46,9 +46,9 @@ def _platform_lock_state():
 def _parse_platform_lock(data):
     if len(data) > PLATFORM_LOCK_MAX_BYTES:
         return {}, "it is larger than 4 MB"
-    want = release_digest(PLATFORM_LOCK_REL)
+    want = release_want(PLATFORM_LOCK, PLATFORM_LOCK_REL)   # batch 6 (KL4): whatever the folder's layout
     if want is not None and hashlib.sha256(data).hexdigest() != want:
-        return {}, "it isn't the file this release of Watchtower shipped (MANIFEST.sha256)"
+        return {}, _not_shipped(want)
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
@@ -199,9 +199,10 @@ OLD_PLATFORM_APPROVALS = "platform_approved.json"   # written by earlier version
 
 def platform_unproven(manifest):
     """The files in this manifest that sit in a platform folder and aren't on the release list with these bytes (platform_listed),
-    nor with the digest of their canonical form where the release's normalization spec names them (platform_listed_normalized)."""
+    nor with the digest of their canonical form where the release's normalization spec names them (platform_verified, which
+    checks the spec's units against this same manifest: batch 6, B1)."""
     return {p for p, h in manifest.items() if not p.startswith("persist:") and platform_ish(p) and not platform_listed(p, h)
-            and not platform_churn_file(p) and not platform_listed_normalized(p, h)}
+            and not platform_churn_file(p) and not platform_listed_normalized(p, h, manifest)}
 
 
 def _release_file(path, rel, max_bytes):
@@ -226,10 +227,19 @@ def _release_file(path, rel, max_bytes):
         os.close(fd)
     if len(data) > max_bytes:
         return b"", f"it is larger than {max_bytes // 1024} KB"
-    want = release_digest(rel)
+    want = release_want(path, rel)   # batch 6 (KL4): held to MANIFEST.sha256 in every layout, a developer checkout included
     if want is not None and hashlib.sha256(data).hexdigest() != want:
-        return b"", "it isn't the file this release of Watchtower shipped (MANIFEST.sha256)"
+        return b"", _not_shipped(want)
     return data, ""
+
+
+def _not_shipped(want):
+    """Why a rules file that isn't its MANIFEST.sha256 line is refused."""
+    if not want and release_files_unchecked():
+        return "Watchtower's release files can't be checked (its MANIFEST.sha256 is missing or unreadable)"
+    if not want:
+        return "MANIFEST.sha256 doesn't list it, so it can't be checked"
+    return "it isn't the file this release of Watchtower shipped (MANIFEST.sha256)"
 
 
 def _stat_key(path):
@@ -326,12 +336,47 @@ PLATFORM_NORMALIZE = os.path.join(HERE, "..", PLATFORM_NORMALIZE_REL)
 PLATFORM_NORMALIZE_MAX_BYTES = 64 * 1024
 NORMALIZE_FILE_MAX = 1024 * 1024
 NORMALIZE_TYPES = {"iso8601": re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})"),
-                   "epoch_ms": re.compile(r"1\d{12}"), "hex_digest": re.compile(r"[0-9a-f]{12,128}")}
+                   "epoch_ms": re.compile(r"1\d{12}"), "hex_digest": re.compile(r"[0-9a-f]{12,128}"),
+                   # batch 6 (B1): a JSON number of milliseconds (an int, never a bool or a float) and a UUID
+                   "epoch_ms_number": None, "uuid": re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")}
 _PLATFORM_NORMALIZE_CACHE = {}
+
+# Batch 6 (B1, Ken's decision: option D): an entry may also name `units`, where the per-skill or per-file units of the file are and
+# the file in the same platform root each must equal. Watchtower then checks, by content, that the file says nothing beyond what it
+# fingerprinted itself in this run (platform_verified): a skill_text unit (each element of the list at `at`, named by its `id`
+# field) has text fields equal to its `file` (the whole SKILL.md, what follows its frontmatter, or one frontmatter field); a
+# file_digest unit (each entry of the {relpath: sha256} map at `at`) has the sha256 of its file. Those text fields and digests are
+# replaced by {"$unit": <id>} in the canonical form; identities, order and every other field stay. A key step "*" in `fields` is
+# every element of a list. An unknown kind or a malformed unit refuses the whole spec.
+UNIT_TEXT = re.compile(r"file|after_frontmatter|frontmatter:[a-z_]{1,40}")
+UNIT_ID = re.compile(r"[A-Za-z0-9._-]{1,128}")
+
+
+def _plain_relpath(rel):
+    """A relative path inside a folder: no .., not absolute, no colon or control character, already normal."""
+    return (isinstance(rel, str) and rel and not rel.startswith("/") and ":" not in rel and ".." not in rel.split("/")
+            and os.path.normpath(rel) == rel and not any(ord(c) < 32 or 127 <= ord(c) < 160 for c in rel))
+
+
+def _key_path(k, star=False):
+    return (isinstance(k, list) and k and all(isinstance(x, str) and x and (star or x != "*") for x in k) and k[-1] != "*")
+
+
+def _unit_ok(u):
+    if not isinstance(u, dict) or not _key_path(u.get("at")):
+        return False
+    if u.get("kind") == "skill_text":
+        f, t = u.get("file"), u.get("text")
+        return (set(u) == {"kind", "at", "id", "file", "text"} and isinstance(u["id"], str) and u["id"] != ""
+                and isinstance(f, str) and f.count("{id}") == 1 and _plain_relpath(f.replace("{id}", "x"))
+                and isinstance(t, dict) and t and all(isinstance(k, str) and k and isinstance(v, str) and UNIT_TEXT.fullmatch(v) for k, v in t.items()))
+    if u.get("kind") == "file_digest":
+        return set(u) == {"kind", "at", "base"} and (u["base"] == "" or _plain_relpath(u["base"]))
+    return False
 
 
 def _platform_normalize_state():
-    """({path under the home folder: [(key path tuple, type)]}, why the spec can't be used or "")."""
+    """({path under the home folder: {"fields": [(key path tuple, type)], "units": [unit]}}, why the spec can't be used or "")."""
     key = _stat_key(PLATFORM_NORMALIZE)
     if key is not None and _PLATFORM_NORMALIZE_CACHE.get("key") == key:
         return _PLATFORM_NORMALIZE_CACHE["state"]
@@ -347,13 +392,17 @@ def _platform_normalize_state():
     out, why = {}, "" if isinstance(entries, list) else "it isn't a JSON object with an entries list"
     for n, e in enumerate(entries if isinstance(entries, list) else [], 1):
         fields = e.get("fields") if isinstance(e, dict) else None
-        ok = (isinstance(e, dict) and set(e) == {"path", "fields"} and _plain_rel(e["path"]) and isinstance(fields, list) and fields
-              and all(isinstance(x, dict) and set(x) == {"key", "type"} and isinstance(x["key"], list) and x["key"]
-                      and all(isinstance(k, str) and k for k in x["key"]) and x["type"] in NORMALIZE_TYPES for x in fields))
+        units = e.get("units", []) if isinstance(e, dict) else None
+        ok = (isinstance(e, dict) and {"path", "fields"} <= set(e) <= {"path", "fields", "units"} and _plain_rel(e["path"])
+              and isinstance(fields, list) and isinstance(units, list) and (fields or units) and ("units" not in e or units)
+              and all(isinstance(x, dict) and set(x) == {"key", "type"} and _key_path(x["key"], star=True) and x["type"] in NORMALIZE_TYPES
+                      for x in fields)
+              and all(_unit_ok(u) for u in units))
         if not ok:
-            out, why = {}, f"entry {n} isn't {{path, fields: [{{key: [...], type}}]}} with a plain platform path and a known type"
+            out, why = {}, (f"entry {n} isn't {{path, fields: [{{key: [...], type}}], units: [...]}} with a plain platform path, known "
+                            "types and units of a known kind")
             break
-        out[e["path"]] = [(tuple(x["key"]), x["type"]) for x in fields]
+        out[e["path"]] = {"fields": [(tuple(x["key"]), x["type"]) for x in fields], "units": units}
     _PLATFORM_NORMALIZE_CACHE.update(key=key, state=(out, why))
     return out, why
 
@@ -380,9 +429,31 @@ def _refuse_constant(name):
     raise _Refused(name)
 
 
-def canonical_platform_json(data, fields):
-    """The sha256 of `data` (a platform metadata file's bytes) with the spec's `fields` dropped, or None when it can't be read
-    strictly or a named value hasn't exactly its type."""
+def _typed(v, typ):
+    if typ == "epoch_ms_number":
+        return type(v) is int and 10 ** 12 <= v < 2 * 10 ** 12
+    return isinstance(v, str) and NORMALIZE_TYPES[typ].fullmatch(v) is not None
+
+
+def _drop_field(node, key, typ):
+    """Drop the value at `key` ("*": every element of a list) from node; False when a value there hasn't exactly its type."""
+    if key[0] == "*":
+        return all(_drop_field(x, key[1:], typ) for x in node) if isinstance(node, list) else True
+    if not isinstance(node, dict) or key[0] not in node:
+        return True   # not there: nothing to drop
+    if len(key) > 1:
+        return _drop_field(node[key[0]], key[1:], typ)
+    if not _typed(node[key[0]], typ):
+        return False   # a named field holding anything but its type: nothing is normalized, the file stays counted
+    del node[key[0]]
+    return True
+
+
+def canonical_platform_json(data, fields, units=(), check=None):
+    """The sha256 of `data` (a platform metadata file's bytes) with the spec's `fields` dropped and each of its `units` (batch 6,
+    B1) replaced by {"$unit": <id>} once check(unit, id, how, value) says it equals what Watchtower fingerprinted, or None when it
+    can't be read strictly, a named value hasn't exactly its type, or a unit isn't verified (check(unit, id, None, None): its
+    file is there and fine; how is a text kind, or "digest")."""
     if len(data) > NORMALIZE_FILE_MAX or data[:3] == b"\xef\xbb\xbf":
         return None
     try:
@@ -400,50 +471,164 @@ def canonical_platform_json(data, fields):
     except (_Refused, RecursionError):
         return None
     for key, typ in fields:
+        if not _drop_field(doc, key, typ):
+            return None
+    for u in units:
         node = doc
-        for k in key[:-1]:
+        for k in u["at"]:
             node = node.get(k) if isinstance(node, dict) else None
-        if not isinstance(node, dict) or key[-1] not in node:
-            continue
-        v = node[key[-1]]
-        if not (isinstance(v, str) and NORMALIZE_TYPES[typ].fullmatch(v)):
-            return None   # a named field holding anything but its type: nothing is normalized, the file stays counted
-        del node[key[-1]]
+        if node is None:
+            continue   # not there: the canonical form shows that, and the release list decides
+        if u["kind"] == "skill_text":
+            if not isinstance(node, list):
+                return None
+            for el in node:
+                ident = el.get(u["id"]) if isinstance(el, dict) else None
+                if not isinstance(ident, str) or check is None or not check(u, ident, None, None):
+                    return None   # a unit with no checked file behind it
+                for t, how in u["text"].items():
+                    if t in el:
+                        if not isinstance(el[t], str) or not check(u, ident, how, el[t]):
+                            return None
+                        el[t] = {"$unit": ident}
+        else:
+            if not isinstance(node, dict):
+                return None
+            for rel in list(node):
+                if not isinstance(node[rel], str) or check is None or not check(u, rel, "digest", node[rel]):
+                    return None
+                node[rel] = {"$unit": rel}
     return hashlib.sha256(json.dumps(doc, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
-def platform_listed_normalized(p, h):
+def _read_plain(n, limit):
+    """The bytes of n: a plain file opened without following a link, at most `limit` bytes; None otherwise."""
+    try:
+        fd = os.open(n, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    except OSError:
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return None
+        data = b""
+        while len(data) <= limit:
+            chunk = os.read(fd, limit + 1 - len(data))
+            if not chunk:
+                break
+            data += chunk
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+    return data if len(data) <= limit else None
+
+
+def _frontmatter(text):
+    """(the frontmatter's lines, what follows it) of a SKILL.md, or None when it has none."""
+    if not text.startswith("---\n"):
+        return None
+    end = text.find("\n---\n", 3)
+    if end < 0:
+        return None
+    return text[4:end].split("\n"), text[end + 5:]
+
+
+def _unit_text(data, how):
+    """What a unit's text field must equal for a file with these bytes (how: UNIT_TEXT), or None when it can't be said exactly."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if how == "file":
+        return text
+    fm = _frontmatter(text)
+    if fm is None:
+        return None
+    if how == "after_frontmatter":
+        return fm[1]
+    name = how.split(":", 1)[1]
+    found = [l[len(name) + 1:].strip() for l in fm[0] if l.startswith(name + ":")]
+    if len(found) != 1 or found[0][:1] in ("|", ">", ""):
+        return None   # missing, twice, or a block value: never guessed
+    v = found[0]
+    return v[1:-1] if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'" else v
+
+
+def _unit_checker(n, manifest):
+    """check() for canonical_platform_json on the metadata file n: a unit's file is in the same platform root as n (as written
+    and where it leads, no link at or below the root), a plain file in this run's manifest, still the bytes the scan
+    fingerprinted; a text equals what UNIT_TEXT names of it, a digest its sha256."""
+    root = next((r for r in platform_roots() if _under(n, {r}, strict=True)), None)
+    seen = {}
+
+    def backing(u, ident):
+        if u["kind"] == "skill_text":
+            if not UNIT_ID.fullmatch(ident) or ident in (".", ".."):
+                return None
+            rel = u["file"].replace("{id}", ident)
+        else:
+            if not _plain_relpath(ident):
+                return None
+            rel = os.path.join(u["base"], ident) if u["base"] else ident
+        q = os.path.normpath(os.path.join(os.path.dirname(n), rel))
+        if q not in seen:
+            seen[q] = None
+            try:
+                ok = (root is not None and _under(q, {root}, strict=True)
+                      and os.path.realpath(q) == os.path.join(os.path.realpath(root), os.path.relpath(q, root)))
+            except (OSError, ValueError):
+                ok = False
+            want = (manifest if manifest is not None else {}).get(q)
+            data = _read_plain(q, NORMALIZE_FILE_MAX) if ok and isinstance(want, str) else None
+            if data is not None and hashlib.sha256(data).hexdigest() == want:
+                seen[q] = (data, want)
+        return seen[q]
+
+    def check(u, ident, how, value):
+        got = backing(u, ident)
+        if got is None:
+            return False
+        if how is None:
+            return True
+        if how == "digest":
+            return value == got[1]
+        return _unit_text(got[0], how) == value
+    return check
+
+
+VERIFIED_METADATA = set()   # this run's metadata files verified by content (B1), for the Platform refresh Tip's wording
+
+
+def platform_verified(p, h, manifest=None):
     """True when the spec names p (under the home folder, as written and where it really leads), p is a plain file (never a
     link), and the release list holds the digest of its canonical form for it (platform_listed). PR A, Codex round 2 (9): `h` is
     the sha256 of the bytes the scan read (the manifest's); the bytes read here are normalized only when they are those same
-    bytes, so a file swapped between the scan and this read is never vouched for by what it became."""
+    bytes, so a file swapped between the scan and this read is never vouched for by what it became. Batch 6 (B1): its units are
+    checked against `manifest`, this run's fingerprints (none: no unit is verified)."""
     spec = _platform_normalize_state()[0]
     if not spec:
         return False
     try:
         n = os.path.normpath(str(p))
         rels = _home_rels(n) & _home_rels(os.path.realpath(n))
-        fields = next((spec[r] for r in sorted(rels) if r in spec), None)
-        if fields is None:
-            return False
-        fd = os.open(n, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
-        try:
-            if not stat.S_ISREG(os.fstat(fd).st_mode):
-                return False
-            data = b""
-            while len(data) <= NORMALIZE_FILE_MAX:
-                chunk = os.read(fd, NORMALIZE_FILE_MAX + 1 - len(data))
-                if not chunk:
-                    break
-                data += chunk
-        finally:
-            os.close(fd)
+        entry = next((spec[r] for r in sorted(rels) if r in spec), None)
     except (OSError, ValueError):
         return False
-    if not isinstance(h, str) or hashlib.sha256(data).hexdigest() != h:
+    if entry is None:
         return False
-    c = canonical_platform_json(data, fields)
-    return c is not None and platform_listed(n, c)
+    data = _read_plain(n, NORMALIZE_FILE_MAX)
+    if data is None or not isinstance(h, str) or hashlib.sha256(data).hexdigest() != h:
+        return False
+    c = canonical_platform_json(data, entry["fields"], entry["units"], _unit_checker(n, manifest))
+    if c is None or not platform_listed(n, c):
+        return False
+    VERIFIED_METADATA.add(n)
+    return True
+
+
+def platform_listed_normalized(p, h, manifest=None):
+    """platform_verified under its batch 5 name."""
+    return platform_verified(p, h, manifest)
 
 
 # PR #9 (Ken: few false alarms): the platform's own sync bookkeeping, rewritten at every sync with no release (Ken's box, Oct 18:

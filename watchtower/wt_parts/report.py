@@ -175,6 +175,9 @@ def platform_note_line(f, unlisted=()):
         return f"{v}'s own file {short}{line}: {f['title']}. A pattern match nothing backs up; not counted."
     sev = f.get("severity_was") or f["severity"]
     said = f"would call {sev}" if sev in ("critical", "high", "medium", "low") else "would list"
+    if f.get("verified_metadata"):   # batch 6 (B2): a gitleaks hit in a metadata file verified by content (checksums, skill text)
+        return (f"gitleaks {said.replace('would call', 'would call this')} in {v}'s own file {short}{line} ({f['title']}). "
+                f"Watchtower checked that file against the released version: it's {v}'s list of what it loads, so it isn't counted.")
     return (f"{v}'s own file {short}{line}: has text Watchtower {said} in your own skill ({f['title']}). It isn't counted. "
             f"If it worries you, tell {v} support; Watchtower keeps it listed.")
 

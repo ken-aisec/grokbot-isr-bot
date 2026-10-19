@@ -332,6 +332,11 @@ def run_audit_locked(args, quick):
         fs = roll_builtin(fs, meta, meta["notes"])
     fs = split_facts(platform_owned(fs))
     for f in fs:
+        # batch 6 (B2): a gitleaks hit in a metadata file this run verified by content (platform_verified: the released file but for
+        # typed dates and copies of files Watchtower checked itself) is a platform note. Decided afresh each run, never kept.
+        f.pop("verified_metadata", None)
+        if f["rule"] == "WT-S002" and str(f.get("where") or "").startswith("/") and _path_part(f["where"]) in VERIFIED_METADATA:
+            f["verified_metadata"] = True
         if f.get("unverified_platform"):   # item 8 (R3): the owner's to decide, so no platform or built-in scope
             continue
         if platform_file(f):

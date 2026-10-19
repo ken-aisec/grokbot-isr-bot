@@ -21,7 +21,7 @@ Expect mode (batch 5: changes that alter behavior on purpose; `--expect FILE --i
 that the working tree's reassembled wt.py compiles and that PRE_REF's wt.py has the loader block. Calibration and N1-N9 are as
 above; then every line by which a post item differs from pre must match an entry of an enabled item in FILE (see parse_expect),
 and an enabled `must_see` entry that matched nothing, in a run where its scenarios ran, is a problem too (since batch 5 PR B,
-Codex round 3: one that names its scenarios exactly, in each of them that ran, on its own; see unmet)."""
+Codex round 3: one that names its scenarios exactly, in each of them that ran, on its own; since batch 6, KL7: in each output of those scenarios its key_rx names; see unmet)."""
 import datetime as dt, difflib, hashlib, json, os, re, shutil, statistics, subprocess, sys, tempfile, unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -800,18 +800,28 @@ def unexpected_lines(sid, key, pre, post, entries, hits):
 EXACT_SCENARIOS = re.compile(r"\^(\((?:(?:[\w-]|\\-)+\|)*(?:[\w-]|\\-)+\)|(?:[\w-]|\\-)+)\$")   # ^(a|b-c)$, ^tierA$: literal ids only
 
 
-def unmet(entries, hits_by, sids):
+def missing_outputs(e, s, hits_by, keys_by):
+    """The outputs of scenario `s` (`keys_by` is {scenario: every item key its pre or post run produced}) that an exact-scenario
+    entry's key_rx names and that it matched no line of (`hits_by[s]` also counts by (entry id, item key))."""
+    got = hits_by.get(s, {})
+    return sorted(k for k in (keys_by or {}).get(s, ()) if e["_k"].search(k) and not got.get((e["id"], k)))
+
+
+def unmet(entries, hits_by, sids, keys_by=None):
     """[(entry, scenario)]: the must_see entries that matched no line although one of their scenarios (`sids`: those compared)
     ran. PR B, Codex round 3 (4): an entry whose scenario_rx names its scenarios exactly (^(a|b)$, as item a's do) must match in
     each of them that ran, on its own (`hits_by` is {scenario: {entry id: lines}}): a scenario that left out its whole map or
     report section fails even when another scenario met the entry, and even when leaving it out made no difference from the
     baseline. A pattern (^box-) is met in any one of its scenarios, as before (PR A's changes don't happen in every box); the
-    scenario is then the first of them that ran."""
+    scenario is then the first of them that ran.
+    Batch 6 (KL7, #16 high 3): within a scenario, one output met it for all of them, so a second audit that left out the access
+    lines (its output equal to the baseline's) passed. With `keys_by`, an exact-scenario entry must match in every output of the
+    scenario its key_rx names (missing_outputs), those equal to the baseline included."""
     out = []
     for e in (e for e in entries if e["must_see"]):
         ran = [s for s in sids if e["_s"].search(s)]
         if EXACT_SCENARIOS.fullmatch(e["scenario_rx"]):
-            out += [(e, s) for s in ran if not hits_by.get(s, {}).get(e["id"])]
+            out += [(e, s) for s in ran if not hits_by.get(s, {}).get(e["id"]) or missing_outputs(e, s, hits_by, keys_by)]
         elif ran and not any(hits_by.get(s, {}).get(e["id"]) for s in ran):
             out.append((e, ran[0]))
     return out
@@ -963,7 +973,7 @@ class GoldenSplit(unittest.TestCase):
         enabled = {"N1", "N2", "N3", "N4", "N5", "N6", "N9"}
         needed = set()
         compared = 0
-        hits, hits_by, sids, expected_items = {}, {}, [], 0
+        hits, hits_by, keys_by, sids, expected_items = {}, {}, {}, [], 0
         for sid, plan in self.scenarios():
             res = {}
             sid_hits = hits_by.setdefault(sid, {})   # round 3 (4): what each entry took in this scenario alone
@@ -993,15 +1003,21 @@ class GoldenSplit(unittest.TestCase):
                 if self.expect is None:
                     problems.append(f"[{sid}] post differs from pre in {k!r}:\n{short_diff(pa.get(k, '<missing>'), pc.get(k, '<missing>'))}")
                     continue
-                bad = unexpected_lines(sid, k, pa.get(k), pc.get(k), self.expect, sid_hits)
+                item_hits = {}
+                bad = unexpected_lines(sid, k, pa.get(k), pc.get(k), self.expect, item_hits)
+                for i, n in item_hits.items():   # batch 6 (KL7): by entry, and by entry and output
+                    sid_hits[i] = sid_hits.get(i, 0) + n
+                    sid_hits[(i, k)] = sid_hits.get((i, k), 0) + n
                 if bad:
                     problems.append(f"[{sid}] post differs from pre in {k!r} by {len(bad)} line(s) no enabled entry expects:\n"
                                     + "\n".join("    | " + x[:220] for x in bad[:60]) + ("\n    | ..." if len(bad) > 60 else ""))
                 else:
                     expected_items += 1
             sids.append(sid)
+            keys_by[sid] = set(pa) | set(pc)   # KL7: every output this scenario produced, those equal to the baseline too
             for i, n in sid_hits.items():
-                hits[i] = hits.get(i, 0) + n
+                if not isinstance(i, tuple):
+                    hits[i] = hits.get(i, 0) + n
             for r in sorted(apply | ({"N8"} if crash else set())):
                 extra = len(differing(norm_items(a, apply - {r}, crash and r != "N8"), norm_items(c, apply - {r}, crash and r != "N8"))) - len(diff_post)
                 if extra > 0:
@@ -1019,8 +1035,10 @@ class GoldenSplit(unittest.TestCase):
         self.say("normalizations needed by calibration (items): " + (", ".join(f"{r} ({n})" for r, n in sorted(used_cal.items())) or "none"))
         self.say("normalizations applied where pre and post differed raw (items; N4 is always on): " + (", ".join(f"{r} ({n})" for r, n in sorted(used_post.items())) or "none"))
         if self.expect is not None:
-            for e, s in unmet(self.expect, hits_by, sids):
-                problems.append(f"[{e['item']}] must_see entry {e['id']} matched nothing in {s} (the intended change didn't happen there): {e['why']}")
+            for e, s in unmet(self.expect, hits_by, sids, keys_by):
+                miss = missing_outputs(e, s, hits_by, keys_by)
+                outs = f" (in {len(miss)} output{'' if len(miss) == 1 else 's'} it names: {', '.join(miss[:4])})" if miss else ""
+                problems.append(f"[{e['item']}] must_see entry {e['id']} matched nothing in {s}{outs} (the intended change didn't happen there): {e['why']}")
             per = {}
             for e in self.expect:
                 n, k = per.get(e["item"], (0, 0))

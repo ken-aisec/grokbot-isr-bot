@@ -8,7 +8,7 @@ SCORE_CAP = {"critical": 50, "high": 25, "medium": 12, "low": 3}      # per seve
 # changed, a provider said a key works, two engines agree, a setting is on). "Pattern" rules match wording or a key-shaped
 # string, or are one engine alone: often right, sometimes fine. A pattern finding is at most medium unless something backs it up.
 EVIDENCE_RULES = frozenset((
-    "WT-A001", "WT-A002", "WT-A003", "WT-A004", "WT-A005", "WT-C001", "WT-C002", "WT-C003", "WT-C004", "WT-C005",
+    "WT-A001", "WT-A002", "WT-A003", "WT-A004", "WT-A005", "WT-C001", "WT-C003", "WT-C004", "WT-C005",
     "WT-D001", "WT-D002", "WT-I001", "WT-I002", "WT-I003", "WT-I004", "WT-I005", "WT-I006", "WT-I010", "WT-I011",
     # Shell history: commands that actually ran on this computer, not wording (Ken, 2026-10-10). H007 is a file-mode fact.
     "WT-H001", "WT-H002", "WT-H003", "WT-H004", "WT-H005", "WT-H006", "WT-H007", "WT-H008", "WT-H009",
@@ -23,6 +23,9 @@ CONFIRMED, MAYBE_FINE = "Confirmed", "Worth a look (might be fine)"
 TIP_RULES = frozenset(("WT-R002", "WT-R003"))   # pattern-class best practice only; no evidence rule is moved
 SCOPE_RULES = frozenset(("WT-I007", "WT-I008"))   # v0.7.1 items 1 and 6: "Not scanned" and "Platform refresh" summaries are tips
 TIP = "Tip"
+# Batch 6 (B3, Ken's decision 8): a setting that is already safe, said as a Tip (no severity, never scored, never new). WT-C002
+# ("Ask every time" for running commands on this computer) left EVIDENCE_RULES for it; "Always allow" (WT-C001) stays critical.
+SETTING_TIPS = frozenset(("WT-C002",))
 VERB_AREA = (("sending email or messages", r"(?i)^(send|sends|sending|email|emails|message|messages|reply|replies|dm)$"),
              ("publishing or posting", r"(?i)^(post|posts|publish|publishes|tweet|tweets)$"),
              ("purchases or payments", r"(?i)^(buy|buys|pay|pays|purchase|purchases|transfer|transfers|submit|submits)$"),
@@ -392,8 +395,8 @@ def label_findings(findings, covered=None):
         f = dict(f)
         if f.get("guarded"):   # batch 2 (R1): defensive wording, kept as a record with no severity; severity_was stays the rule's own
             f["class"], f["label"], f["severity"] = "guarded", GUARDED_LABEL, "info"
-        elif (f["rule"] in TIP_RULES or f["rule"] in SCOPE_RULES or f.get("fact_only") or covered_by_ask_first(f, covered)
-                or plain_cookie_jar(f)):
+        elif (f["rule"] in TIP_RULES or f["rule"] in SCOPE_RULES or f["rule"] in SETTING_TIPS or f.get("fact_only")
+                or covered_by_ask_first(f, covered) or plain_cookie_jar(f) or ask_first_unread(f)):
             _no_severity(f, "tip", TIP)
         elif is_evidence(f):
             f["class"], f["label"] = "evidence", CONFIRMED

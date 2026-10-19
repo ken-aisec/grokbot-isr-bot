@@ -265,7 +265,10 @@ class InstalledCopyIdentity(Box):
 
     def test_a_developer_checkout_is_still_not_an_install(self):   # guard
         self.assertIsNone(wt.self_check())
-        self.assertIsNone(wt.release_digest(wt.PLATFORM_REVIEWED_REL))
+        # batch 6 (KL4, plan section 3): was assertIsNone; a checkout's release files are now held to its own MANIFEST.sha256
+        with open(os.path.join(ROOT, "MANIFEST.sha256")) as f:
+            line = next(l.split()[0] for l in f if l.split()[1:] == [wt.PLATFORM_REVIEWED_REL])
+        self.assertEqual(wt.release_digest(wt.PLATFORM_REVIEWED_REL), line)
 
 
 # ---------------------------------------------------------------- 7: a "catalog" plugin in state/ is not provenance

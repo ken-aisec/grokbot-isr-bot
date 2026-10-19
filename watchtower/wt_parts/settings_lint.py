@@ -96,9 +96,96 @@ ASK_AREAS = (("sending email or messages", r"send|email|message"), ("publishing 
              ("changing permissions or settings", r"permission|setting|routine|connector"))
 
 
+# Batch 6 (B4): Ask-first rules in other languages. rules/ask_first_vocab.json ships with the release and is held to
+# MANIFEST.sha256 like the access vocabulary: per language, the words that open an Ask-first rule and the stems of the five
+# ASK_AREAS (13 languages). Its English entry is the expressions used before it, exactly; a file that doesn't load whole is
+# ignored (a note says so) and the built-in English alone is used. A rule set is linted over every language at once.
+ASK_FIRST_VOCAB_REL = "rules/ask_first_vocab.json"
+ASK_FIRST_VOCAB = os.path.join(HERE, "..", ASK_FIRST_VOCAB_REL)
+ASK_FIRST_VOCAB_MAX_BYTES = 64 * 1024
+_ASK_FIRST_VOCAB_CACHE = {}
+ASK_LABEL = "Ask first: "   # native_settings' label for an entry under an Ask-first key (not the owner's own words)
+
+
+def _ask_builtin():
+    return [{"lang": "en", "openers": [re.compile(r"ask\s+first", re.I)], "areas": [re.compile(rx, re.I) for _, rx in ASK_AREAS]}]
+
+
+def _ask_first_vocab_state():
+    """([{lang, openers, areas} with compiled expressions], why the file can't be used or ""). One bad language makes the whole
+    file unusable; the built-in English is used then."""
+    key = _stat_key(ASK_FIRST_VOCAB)
+    if key is not None and _ASK_FIRST_VOCAB_CACHE.get("key") == key:
+        return _ASK_FIRST_VOCAB_CACHE["state"]
+    data, why = _release_file(ASK_FIRST_VOCAB, ASK_FIRST_VOCAB_REL, ASK_FIRST_VOCAB_MAX_BYTES)
+    out = []
+    if not why:
+        try:
+            doc = json.loads(data.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            doc = None
+        langs = doc.get("languages") if isinstance(doc, dict) else None
+        why = "" if isinstance(langs, list) and langs else "it isn't a JSON object with a languages list"
+        rx_ok = lambda x: isinstance(x, str) and 0 < len(x) <= 400
+        for n, l in enumerate(langs if isinstance(langs, list) else [], 1):
+            ok = (isinstance(l, dict) and set(l) == {"lang", "openers", "areas"} and isinstance(l["lang"], str)
+                  and re.fullmatch(r"[a-z]{2}", l["lang"]) and isinstance(l["openers"], list) and l["openers"]
+                  and all(rx_ok(x) for x in l["openers"]) and isinstance(l["areas"], list) and len(l["areas"]) == len(ASK_AREAS)
+                  and all(rx_ok(x) for x in l["areas"]))
+            try:
+                c = {"lang": l["lang"], "openers": [re.compile(x, re.I) for x in l["openers"]],
+                     "areas": [re.compile(x, re.I) for x in l["areas"]]} if ok else None
+            except re.error:
+                c = None
+            if c is None or any(x.search("") for x in c["openers"] + c["areas"]):   # one matching nothing at all would match everything
+                out, why = [], (f"entry {n} isn't {{lang, openers: [...], areas: [{len(ASK_AREAS)} regular expressions]}} with "
+                                "regular expressions that compile and need some text")
+                break
+            out.append(c)
+    state = (out if out and not why else _ask_builtin(), why)
+    _ASK_FIRST_VOCAB_CACHE.update(key=key, state=state)
+    return state
+
+
+def ask_first_vocab():
+    return _ask_first_vocab_state()[0]
+
+
+def ask_first_vocab_problem():
+    """Why rules/ask_first_vocab.json can't be used, or ""."""
+    return _ask_first_vocab_state()[1]
+
+
+def _ask_opens(line, langs):
+    return any(o.search(line) for lang in langs for o in lang["openers"])
+
+
 def ask_first_gaps(text):
-    ask = " ".join(l for l in text.splitlines() if re.search(r"(?i)ask\s+first", l)).lower()
-    return [w for w, rx in ASK_AREAS if not re.search(rx, ask)]
+    """The ASK_AREAS no Ask-first line covers: a line is one when some language's opener is in it, an area is covered when some
+    language's stem is in those lines. With the English entry alone this is exactly the check before batch 6."""
+    langs = ask_first_vocab()
+    ask = " ".join(l for l in text.splitlines() if _ask_opens(l, langs)).lower()
+    return [w for i, (w, _) in enumerate(ASK_AREAS) if not any(lang["areas"][i].search(ask) for lang in langs)]
+
+
+def ask_first_state(native, exported):
+    """("absent" | "read" | "unread", gaps) for the account's Ask-first rules: `native` the settings file's entries (an Ask-first
+    key's are labelled ASK_LABEL), `exported` the exports' text. "unread": there are rules, but none of the owner's own words is
+    an opener or an area stem in any language, so Watchtower can't tell what they cover (B4: a Tip, never "not found")."""
+    langs = ask_first_vocab()
+    gaps = ask_first_gaps("\n".join(native) + "\n" + exported)
+    own = [e_[len(ASK_LABEL):] for e_ in native if e_.startswith(ASK_LABEL)] + [l for l in exported.splitlines() if _ask_opens(l, langs)]
+    if not own:
+        return ("absent" if len(gaps) == len(ASK_AREAS) else "read"), gaps
+    if len(gaps) < len(ASK_AREAS) or any(_ask_opens(t, langs) for t in own):
+        return "read", gaps
+    return "unread", gaps
+
+
+def ask_first_unread(f):
+    """A WT-A003 that only says Watchtower couldn't read the rules' language (B4): a Tip. It names every area as missing, so
+    nothing is ever assumed covered by it (ask_first_covered)."""
+    return f["rule"] == "WT-A003" and f.get("ask_first_unread") is True and f.get("evidence") == ", ".join(w for w, _ in ASK_AREAS)
 
 
 # Only real paths/URLs/filenames: slash-joined words like pay/transfer or send/post are the actions themselves.
@@ -284,8 +371,8 @@ def lint_settings(s, where):
         out.append(finding("WT-C001", "Local-computer execution set to Always allow", "critical", ["ASI03", "ASI05"], where, le,
                            "Settings → General → Bot → Execution on Local Computer → Never allow (xAI's own recommendation)."))
     elif le in ("ask", "ask every time"):
-        out.append(finding("WT-C002", "Local-computer execution set to Ask every time", "low", ["ASI03"], where, le,
-                           "Fine if you use it; otherwise set Never allow."))
+        out.append(finding("WT-C002", "Running commands on this computer asks you first each time", "low", ["ASI03"], where, le,
+                           "That's a safe setting; if you never use it, Never allow is safer still."))   # a Tip (B3: SETTING_TIPS)
     if s.get("auto_review") is False:
         out.append(finding("WT-C003", "Auto Review is off", "high", ["ASI09"], where, "auto_review=false",
                            "Turn it on in Settings → General → Auto-review. It is fallible, but it is the only inline check."))
