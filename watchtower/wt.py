@@ -128,6 +128,9 @@ def cmd_audit(args):
            "fixed": [compact(f) for f in fixed][:10], "open_by_severity": by_sev(owners(snap["findings"])),
            "top_fixes": [compact(f) for f in snap["findings"] if (f.get("scope") != "platform" or counts(f)) and not f.get("guarded")][:3],   # round 1 (5): a counted key too
            "notes": snap["notes"], "inventory": snap["inventory"]}
+    amap = load_access_map()
+    if amap is not None:   # batch 5 (a): one line; `wt.py access` has the map
+        out["access"] = access_summary(amap)
     # Codex, batch 4 round 2: the whole delta is kept before anything is cut, in a file of this run's own (a second run writes
     # another), and the counts say how much of it the JSON shows: `truncated` counts from the full lists, not from the first 20.
     out["new_total"], out["fixed_total"] = len(new), len(fixed)
@@ -162,7 +165,9 @@ def cmd_audit(args):
     alerts = scanner_alerts(snap)
     if alerts:
         out["scanner_alerts"] = alerts
-    print(fit_owner_first(out, notes, keep=("scanner_alerts",), alias=True, before="scanner_alerts"))
+    # batch 5 (a): the access line brings its own room, so the owner's part is fitted exactly as without it (it never costs a finding)
+    room = len(json.dumps(out, indent=1)) - len(json.dumps({k: v for k, v in out.items() if k != "access"}, indent=1))
+    print(fit_owner_first(out, notes, limit=4096 + room, keep=("scanner_alerts",), alias=True, before="scanner_alerts"))
     return 0
 
 
@@ -503,6 +508,9 @@ _wt_part("rollcall")
 _wt_part("prepublish")
 
 
+_wt_part("access")
+
+
 # ---------------------------------------------------------------- OWASP Top 10 (2021) code review for code your Bots write
 CODE_RULES = [
     ("A01", "Broken access control", "high", r"(?i)(@app\.route\([^)]*\)\s*\n\s*def\s+\w+\([^)]*\):(?![\s\S]{0,200}(login_required|auth|current_user))|cors\(\s*\w+\s*,\s*origins\s*=\s*['\"]\*|Access-Control-Allow-Origin['\"]?\s*[:,]\s*['\"]\*)"),
@@ -681,13 +689,19 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
     rest_html = ("<details><summary>" + f"{len(rest)} smaller {'item' if len(rest) == 1 else 'items'}</summary><ol class='todo small-todo'>" +
                  "".join(todo_item(0, t) for t in rest) + "</ol></details>") if rest else ""
 
+    amap = load_access_map()
+
     def threat(s):
         n = notes.get(s["id"], {})
-        why = (n.get("means") or means_here(s["category"], account_context())).split(". ")[0].rstrip(".") + "."
         do = n.get("do") or DO_THIS[s["category"]]
-        return (f"<li><span class='tag c-{s['category']}'>{e(s['category_label'])}</span>"
-                f"<a href='{safe(s['link'])}' target='_blank' rel='noopener'>{e(s['title'])}</a>"
-                f"<p><b>Why you care:</b> {e(why)} <b>Do:</b> {e(do)}</p></li>")
+        head = (f"<li><span class='tag c-{s['category']}'>{e(s['category_label'])}</span>"
+                f"<a href='{safe(s['link'])}' target='_blank' rel='noopener'>{e(s['title'])}</a>")
+        if amap is None:   # an older box with no access map: exactly as before
+            why = (n.get("means") or means_here(s["category"], account_context())).split(". ")[0].rstrip(".") + "."
+            return head + f"<p><b>Why you care:</b> {e(why)} <b>Do:</b> {e(do)}</p></li>"
+        # batch 5 (b): what the story touches here, from the access map and the release's vocabulary only; the Bot's notes after it
+        why = f" <b>Why you care:</b> {e(n['means'])}" if n.get("means") else ""
+        return head + f"<p><b>Here:</b> {e(story_here(s, amap, account_context()))}{why} <b>Do:</b> {e(do)}</p></li>"
 
     threats = "".join(threat(s) for s in stories[:3]) or "<li><p>No major threats touched setups like yours this week.</p></li>"
     later = stories[3:] + more
@@ -695,7 +709,8 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
                   "".join(f"<li><a href='{safe(s['link'])}' target='_blank' rel='noopener'>{e(s['title'])}</a> <span class=q>{e(s['source'])}</span></li>" for s in later) +
                   "</ul></details>") if later else ""
     kev_line = ((f"{WORDS.get(len(rel_kev), str(len(rel_kev)))} actively exploited {'bug affects' if len(rel_kev) == 1 else 'bugs affect'} software like yours: "
-                 + ", ".join(f"{e(k['vendor'] + ' ' + k['product'])} (<a href='https://nvd.nist.gov/vuln/detail/{e(k['cve'] or '')}' target='_blank' rel='noopener'>{e(k['cve'] or '')}</a>)" for k in rel_kev[:3])
+                 + ", ".join(f"{e(k['vendor'] + ' ' + k['product'])} (<a href='https://nvd.nist.gov/vuln/detail/{e(k['cve'] or '')}' target='_blank' rel='noopener'>{e(k['cve'] or '')}</a>)"
+                             + (f" (used here: {e(k['used_here'])})" if k.get("used_here") else "") for k in rel_kev[:3])
                  + (". The platform's next update fixes it." if len(rel_kev) == 1 else ". The platform's next updates fix them."))
                 if rel_kev else "None of this week's actively exploited bugs affect software like yours.")
     exc = exceptions_active(snap or {})
@@ -811,15 +826,21 @@ def cmd_brief(args):
     save_json(state_path("last_brief.json"), dict(b, tag=tag, path=path))
     ledger({"event": "brief", "week": tag, "research": len(b["research"]), "kev": len(b["kev"])})
     top, _ = split_stories(b)
+    amap = load_access_map()
+    # batch 5 (b): `here` is the line the page shows for each story (story_here: the access map and the release's vocabulary only).
+    # PR B, Codex round 1 (6): without a map there is no `here`, so the JSON is exactly what it was.
+    here = (lambda r: {}) if amap is None else (lambda r, ctx=account_context(): {"here": story_here(r, amap, ctx)})
     print(fit({"brief": path, "threat_level": threat_level(b, snap, top)[1], "score_line": score_line(snap),
-               "top_stories": [{"id": r["id"], "tier": r["tier"], "category": r["category_label"], "title": r["title"],
-                                "cves": r.get("cves", []), "source": r["source"]} for r in top],
+               "top_stories": [dict({"id": r["id"], "tier": r["tier"], "category": r["category_label"], "title": r["title"],
+                                     "cves": r.get("cves", []), "source": r["source"]}, **here(r)) for r in top],
                "kev_relevant": [f"{k['cve']} {k['vendor']} {k['product']}" for k in b["kev"] if k["relevant"]][:6],
                "updates": b["updates"], "doc_changes": [p["name"] for p in b["pages"]],
                "sources_down": [s["name"] for s in b["sources"] if s["status"] != "ok"],
                "next_step": ("Analysis added." if notes else
                              "Required: write notes.json with 'means' and 'do' for each top_stories id (see the watchtower-brief skill, step 2), "
-                             "then run wt.py brief --notes <file>. Until then the stories show generic text.")}, limit=6000))
+                             "then run wt.py brief --notes <file>. Until then the stories show generic text." if amap is None else
+                             "Optional: add notes.json with 'means' and 'do' for any top_stories id (see the watchtower-brief skill, step 2), "
+                             "then run wt.py brief --notes <file>. Each story already says what it touches here.")}, limit=6000))
     return 0
 
 
@@ -1183,11 +1204,14 @@ def build_parser():
     ic = sub.add_parser("incident"); ic.add_argument("--note")
     cs = sub.add_parser("codescan"); cs.add_argument("path")
     br = sub.add_parser("brief"); br.add_argument("--summary"); br.add_argument("--notes"); br.add_argument("--offline")
+    ax = sub.add_parser("access", help="what every Bot on this computer can reach, and what each Bot said in the roll-call")
+    ax.add_argument("--json", action="store_true", help="the same, as JSON for the Bot (at most 4 KB)")
     return ap
 
 
 def main_inner(argv=None):
     a = build_parser().parse_args(argv)
+    _ACCESS_RUN.clear()   # PR B, Codex round 1 (2): each command shows a map it built itself (load_access_map)
     if a.cmd not in SELF_CHECK_SKIP:
         code = self_check_gate()
         if code:
@@ -1198,7 +1222,7 @@ def main_inner(argv=None):
             "canary": cmd_canary, "rollcall": cmd_rollcall, "prepublish": cmd_prepublish, "incident": cmd_incident,
             "codescan": cmd_codescan, "brief": cmd_brief, "events": cmd_events, "fix": cmd_fix, "accept": cmd_accept, "status": cmd_status,
             "diff": cmd_diff, "exception": cmd_exception, "doctor": cmd_doctor, "quarantine": cmd_quarantine, "uninstall": cmd_uninstall,
-            "auto-allow": cmd_auto_allow}[a.cmd](a)
+            "auto-allow": cmd_auto_allow, "access": cmd_access}[a.cmd](a)
 
 
 if __name__ == "__main__":

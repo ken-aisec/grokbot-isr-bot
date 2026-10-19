@@ -120,6 +120,8 @@ wt.py canary plant|status [--token-file F]   plant the decoys; see what touched 
 wt.py canary remove --owner-said-yes   remove the decoys (only after the owner's yes)
 wt.py auto-allow [keep IDS --owner-said-yes --reason "..."]   list Allow-automatically lines on consequential actions;
                                          keep exact ones after the owner's yes
+wt.py access [--json]         who can reach what: what every Bot shares on this computer, and what each Bot said in
+                                         the roll-call (not checked); --json for the Bot (at most 4 KB)
 wt.py incident --note "..."   evidence pack + containment checklist
 wt.py codescan PATH           OWASP Top 10 code review
 wt.py status                  what a running audit is doing and how long each stage took
@@ -147,7 +149,7 @@ Release drill, dev dry-run (precision plan item 8): before each release the dev 
 
 ## Tests
 
-`make test` runs more than 1100 tests: seeded malicious skills must be caught, clean and defensive text must not be flagged, hostile feed content must not execute in the brief, and every feature has its own test.
+`make test` runs more than 1200 tests: seeded malicious skills must be caught, clean and defensive text must not be flagged, hostile feed content must not execute in the brief, and every feature has its own test.
 
 ## License
 

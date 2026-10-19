@@ -122,8 +122,11 @@ def classify(text):
     return "platform", "Platform and models"
 
 
-def story_score(text, kind):
-    sc = SOURCE_WEIGHT.get(kind, 0) + sum(w for rx, w in BOOST if re.search(rx, text))
+ACCESS_BOOST = 3   # batch 5 (b): a story about something this computer actually reaches ranks higher, by this much at most
+
+
+def story_score(text, kind, touches=False):
+    sc = SOURCE_WEIGHT.get(kind, 0) + sum(w for rx, w in BOOST if re.search(rx, text)) + (ACCESS_BOOST if touches else 0)
     if any(re.search(rx, text) for rx in DAMPEN):
         sc -= 5
     return sc
@@ -150,8 +153,18 @@ def account_context():
             "cli": sum(1 for f in fs if f["rule"] == "WT-S003"), "secrets": sum(1 for f in fs if f["rule"] in ("WT-S001", "WT-S002") and f["severity"] == "critical")}
 
 
-def means_here(cat, ctx):
+def means_here(cat, ctx, amap=None):
+    """What a story of this category means on this computer. Batch 5 (b): with an access map, its counts and tool names are used
+    where it has them; without one (an older box) the text is exactly what it was."""
     n = lambda v, one, many: f"{v} {one if v == 1 else many}" if v else None
+    if amap is not None:
+        sh = amap["shared"]
+        tools, total = [t["name"] for t in sh["mcp"]["tools"]], sh["mcp"]["count"]   # PR B, Codex round 1 (3): the whole count
+        if cat == "mcp" and tools:
+            names = ", ".join(tools[:3]) + (f" and {total - len(tools[:3])} more" if total > 3 else "")
+            return (f"This computer has {n(total, 'tool connection', 'tool connections')} ({names}). Every Bot that loads a poisoned "
+                    "tool description follows it, with the logins all your Bots share.")
+        ctx = dict(ctx, sites=(sh["browser"] or {}).get("sites") or ctx.get("sites"), secrets=sh["key_files"] or ctx.get("secrets"))
     if cat == "mcp":
         bits = [n(ctx["mcp"], "MCP config", "MCP configs"), n(ctx["plugins"], "plugin file", "plugin files")]
         have = " and ".join(b for b in bits if b) or "MCP connectors"
@@ -244,6 +257,7 @@ def gather_brief(cfg, offline=None):
     since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
     rel = re.compile(cfg["relevance"])
     sources, research = [], []
+    amap = load_access_map()
     for fd in cfg["feeds"]:
         try:
             items = parse_feed(get(fd["url"], accept="application/rss+xml, application/atom+xml, application/xml"))
@@ -262,6 +276,8 @@ def gather_brief(cfg, offline=None):
             sc = story_score(text, fd["kind"])
             if sc < 3:
                 continue
+            if story_touch(text, amap)[1]:   # batch 5 (b): ranked up by what it touches here, never let in by it
+                sc = story_score(text, fd["kind"], touches=True)
             cat, label = classify(text)
             research.append({"id": hashlib.sha1(it["title"].encode()).hexdigest()[:8], "source": fd["name"], "kind": fd["kind"],
                              "title": it["title"], "link": it.get("link", ""), "date": it["date"].date().isoformat() if it.get("date") else "",
@@ -284,9 +300,12 @@ def gather_brief(cfg, offline=None):
             added = parse_date(v.get("dateAdded", "") + "T00:00:00+00:00")
             if added and added >= since:
                 text = f"{v.get('vendorProject')} {v.get('product')}"
+                used, hit = story_touch(text, amap)   # batch 5 (b): relevant too when the product is one this computer reaches
                 kev.append({"cve": v.get("cveID"), "vendor": v.get("vendorProject"), "product": v.get("product"),
                             "name": v.get("vulnerabilityName"), "added": v.get("dateAdded"), "due": v.get("dueDate"),
-                            "ransomware": v.get("knownRansomwareCampaignUse") == "Known", "relevant": bool(watch.search(text))})   # no free text from the feed
+                            "ransomware": v.get("knownRansomwareCampaignUse") == "Known", "relevant": bool(watch.search(text)) or hit})   # no free text from the feed
+                if hit:
+                    kev[-1]["used_here"] = used["label"]   # the vocabulary's own label, never the feed's words
         kev.sort(key=lambda x: (not x["relevant"], x["added"]))
     except Exception as e:
         kev_status = f"unavailable ({type(e).__name__})"

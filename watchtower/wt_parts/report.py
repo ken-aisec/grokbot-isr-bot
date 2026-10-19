@@ -255,6 +255,9 @@ def render_md(snap, hist, tag):
         lines.append(f"{i}. **{f['title']}** ({label_of(f)}; {f['severity']}, {', '.join(f['owasp'])}) at `{f['where']}`. {f['fix']}")
     if not fs:
         lines.append("Nothing to fix this week.")
+    amap = load_access_map()
+    if amap is not None:   # batch 5 (a): what every Bot can reach, and what each Bot said
+        lines += access_md(amap)
     lines += ["", "## All open findings", "", "| Severity | Rule | Finding | Where | Evidence | OWASP |", "| --- | --- | --- | --- | --- | --- |"]
     lines.insert(-3, f"Confirmed: something Watchtower saw happen, or two checks agree. {MAYBE_FINE}: a wording or pattern match that is often harmless.")
     lines.insert(-3, "")
@@ -363,6 +366,6 @@ table{{border-collapse:collapse;width:100%;font-size:13px}}td,th{{border-bottom:
 <div class='row'><div class='card'><div class='mut'>Status</div><div style='font-size:24px;font-weight:700'>{html.escape(status_line(snap))}</div><div class='mut'>Posture score</div><div class='big'>{snap['score']}<span class='mut' style='font-size:18px'>/100 · {snap_grade(snap)}</span></div><div class='mut'>{html.escape(score_line(snap))}</div><div class='mut'>{trend(hist)}</div></div>
 <div class='card'><div class='mut'>Score, last {len(pts)} runs</div><svg width='{w}' height='{h}' viewBox='0 0 {w} {h}' role='img' aria-label='score trend'><polyline fill='none' stroke='#2e86c1' stroke-width='2' points='{poly}'/></svg></div>
 {tiles}</div><h2 style='font-size:16px'>Open findings</h2><div class='wrap'><table><tr><th>Severity</th><th>Finding</th><th>Where</th><th>OWASP</th><th>Fix</th></tr>{rows or "<tr><td colspan=5>Nothing open.</td></tr>"}</table></div>
-{extra_sections(fs)}{platform_details(snap["findings"])}
+{access_card(load_access_map())}{extra_sections(fs)}{platform_details(snap["findings"])}
 <p style='margin-top:16px'>{f"<a href='threat-brief-{tag}.html'>Open this week's threat brief →</a>" if os.path.exists(os.path.join(home(), "reports", f"threat-brief-{tag}.html")) else ""}</p>
 <p class='mut' style='margin-top:20px'>Watchtower {VERSION}. Scanners can be bypassed; this is evidence, not proof.</p></body></html>"""

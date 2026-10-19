@@ -100,13 +100,14 @@ def _rc_count(v):
 
 
 def _rc_name(v, n):
-    """A short name, masked. Text longer than a name is not a name: it is dropped, never truncated into the report."""
+    """A short name, masked. Text longer than a name is not a name: it is dropped, never truncated into the report. PR B, Codex
+    round 1 (1): secrets are masked too (mask_secrets: a token, "password=..."), before anything is kept."""
     if not isinstance(v, str):
         return None
     t = re.sub(r"\s+", " ", v).strip()
     if not t or len(t) > n:
         return None
-    return mask_rollcall(t, n)
+    return mask_rollcall(mask_secrets(t), n)
 
 
 def shape_reply(d):
@@ -127,10 +128,20 @@ def shape_reply(d):
         else:
             conns.append(nm)
     out["connectors"] = conns
+    # batch 5 PR B, Codex round 3 (2): for the access map, every connector the reply lists (it is at most 64 KB, _rc_read) is read
+    # for the vocabulary's labels before any limit, so a name too long to keep ("Gmail account for the operations department") is
+    # still Gmail; only labels and a count of other connectors are kept (access_connectors), never the text. An answer without a
+    # connector list, or with an item that isn't a name, leaves the Bot's connectors not known whole (rollcall_access).
+    items = raw if isinstance(raw, list) else [] if raw is None or (isinstance(raw, str) and not raw.strip()) else [raw]
+    out["connector_labels"], out["connectors_other"] = access_connectors([c for c in items if isinstance(c, str)])
+    out["connectors_known"] = None if not items and not isinstance(raw, list) else not any(not isinstance(c, str) for c in items)
     rts, raw = [], d.get("routines")
     if raw is not None and not isinstance(raw, list):
         extra.add("routines (not a list)")
         raw = []
+    past = [r for r in (raw or [])[60:] if isinstance(r, dict)]   # round 2 (4): counted for the access map, never kept; round 3 (2): all
+    out["routines_more"] = len(past)
+    out["routines_more_sending"] = sum(1 for r in past if _rc_yesno(r.get("sends_or_posts")) and _rc_yesno(r.get("asks_first")) is not True)
     for r in (raw or [])[:60]:
         if not isinstance(r, dict):
             extra.add("routines (not the asked shape)")
@@ -205,27 +216,50 @@ def _rc_remove(p, rdir):
     return 0
 
 
-def merge_rollcall(prev, rnd, findings, bots, answered):
+def merge_rollcall(prev, rnd, findings, bots, answered, access=None):
     """Oct 15: Foxtrot's late reply, run on its own, replaced all ten Bots' findings with its own. A run in the same roll-call
     round (`rnd`) as the saved file now merges per Bot: a Bot that answered this run (`answered`) replaces only its own findings,
     every other Bot keeps its findings and its name. Outside a round, or against a file from another round or from before
     shape-only replies, this run's findings replace the file as before. A finding's Bot is the `bot` saved with it, never read
     back out of `where`: a Bot may be named "Alpha:memories", which is also where Alpha's WT-M010 points. A finding with no
-    saved Bot is kept, never dropped on a guess."""
-    fresh = {"at": now(), "round": rnd, "masked": VERSION, "shape_only": True, "bots": list(bots), "findings": list(findings)}
+    saved Bot is kept, never dropped on a guess. Batch 5 (a, Ken's decision 5): `access`, what each Bot said it can reach
+    (rollcall_access), is merged per Bot the same way."""
+    fresh = {"at": now(), "round": rnd, "masked": VERSION, "shape_only": True, "bots": list(bots), "findings": list(findings),
+             "access": dict(access or {})}
     if (rnd is None or not isinstance(prev, dict) or prev.get("round") != rnd or prev.get("shape_only") is not True or not prev.get("masked")
             or not isinstance(prev.get("bots"), list) or not isinstance(prev.get("findings"), list)):
         return fresh
-    kept = [f for f in prev["findings"] if isinstance(f, dict) and not (isinstance(f.get("bot"), str) and f["bot"] in answered)]
+    # PR B, Codex round 1 (1): what is carried over from the file (the Bot can write it) is masked and reduced again
+    kept = [dict(f, evidence=mask_rollcall(mask_secrets(str(f.get("evidence") or "")))) for f in prev["findings"]
+            if isinstance(f, dict) and not (isinstance(f.get("bot"), str) and f["bot"] in answered)]
     earlier = [b for b in prev["bots"] if isinstance(b, str) and b not in answered]
-    return dict(fresh, bots=earlier + fresh["bots"], findings=kept + fresh["findings"])
+    pa = prev.get("access") if isinstance(prev.get("access"), dict) else {}
+    said = {b: rollcall_said(a) for b, a in pa.items() if b in earlier and isinstance(a, dict)}
+    return dict(fresh, bots=earlier + fresh["bots"], findings=kept + fresh["findings"], access=dict(said, **fresh["access"]))
+
+
+def rollcall_access(sh):
+    """What a Bot said it can reach, kept for the access map (batch 5, a; Ken's decision 5): from the reply's shape only, each
+    routine's trigger and flags, the memory count (never memory text) and the reply's date. A routine's name is never kept: a naive
+    Bot pastes memory text there (test_v071_rollcall_redteam), and the map only counts routines. PR B, Codex round 1 (1): nor is a
+    connector's own text: only the vocabulary's label for it, or a count of other connectors (rollcall_said). The access map
+    labels all of it "what the Bot said; not checked"."""
+    mem = sh["memories"].get("count") if isinstance(sh.get("memories"), dict) else None
+    known = sh.get("connectors_known")   # round 3 (2): None, no connector list; False, an item that isn't a name
+    return rollcall_said({"said_at": now()[:10], "connectors": list(sh.get("connector_labels", [])), "connectors_other": sh.get("connectors_other", 0),
+                          "connectors_unknown": "unsaid" if known is None else None if known else "partial",
+                          "routines": [{"trigger": r["trigger"], "sends_without_asking": bool(r["sends_or_posts"]) and r["asks_first"] is not True,
+                                        "asks_first": r["asks_first"]} for r in sh["routines"][:60]],
+                          "routines_more": sh.get("routines_more", 0), "routines_more_sending": sh.get("routines_more_sending", 0),
+                          "memories": mem, "reads_outside_content": sh["reads_outside_content"],
+                          "sends_without_asking": sh["sends_or_posts_without_asking"]})
 
 
 def rollcall_findings(rdir, removed=None, kept=None):
     """Each reply is read once, reduced to its shape, and deleted right away (in Watchtower's own folder). Findings name what
     the Bot said about itself in counts and yes/no answers; no reply text is kept anywhere. Returns this run's findings and
     Bots; the saved file also keeps earlier Bots from the same roll-call round (merge_rollcall), named in `kept`."""
-    out, bots, answered = [], [], set()
+    out, bots, answered, access = [], [], set(), {}
     if not os.path.isdir(rdir):
         return out, bots
     gone = 0
@@ -235,7 +269,7 @@ def rollcall_findings(rdir, removed=None, kept=None):
             continue
         d = _rc_read(p)
         gone += _rc_remove(p, rdir)
-        label = mask_rollcall(fn[:-5], RC_NAME_MAX)
+        label = mask_rollcall(mask_secrets(fn[:-5]), RC_NAME_MAX)
         if not isinstance(d, dict):
             answered.add(label)
             out.append(dict(finding("WT-R010", "Roll-call reply did not parse", "low", ["ASI07"], f"rollcall:{label}", "reply was not the asked JSON",
@@ -246,6 +280,7 @@ def rollcall_findings(rdir, removed=None, kept=None):
         name = sh["name"] or label
         answered.add(name)
         bots.append(name)
+        access[name] = rollcall_access(sh)
         where = f"rollcall:{name}"
         first = len(out)
         if extra:
@@ -288,10 +323,10 @@ def rollcall_findings(rdir, removed=None, kept=None):
     if removed is not None:
         removed.append(gone)
     for f in out:                                         # only masked findings are kept, never the reply itself
-        f["evidence"] = mask_rollcall(f["evidence"])
+        f["evidence"] = mask_rollcall(mask_secrets(f["evidence"]))   # PR B, Codex round 1 (1): secrets too
     p = state_path("rollcall_findings.json")
     prev = load_json_regular(p, None)                     # a link or FIFO put there is not read (and never waited on)
-    rc = merge_rollcall(prev, current_rollcall_round(), out, bots, answered)
+    rc = merge_rollcall(prev, current_rollcall_round(), out, bots, answered, access)
     save_json_keep_mode(p, rc)
     if kept is not None:
         kept.extend(rc["bots"][:len(rc["bots"]) - len(bots)])
@@ -346,8 +381,11 @@ def prune_removed_bots(rc):
         return rc, []
     bot_of = lambda f: f["bot"] if isinstance(f.get("bot"), str) else (f["where"].split(":")[1] if f.get("where", "").startswith("rollcall:") else None)
     gone = sorted({b for b in rc.get("bots", []) if b not in bots} | {bot_of(f) for f in rc.get("findings", []) if bot_of(f) and bot_of(f) not in bots})
+    said = rc.get("access") if isinstance(rc.get("access"), dict) else {}
+    gone = sorted(set(gone) | {b for b in said if b not in bots})
     if gone:
-        rc = dict(rc, bots=[b for b in rc.get("bots", []) if b in bots], findings=[f for f in rc.get("findings", []) if bot_of(f) in bots])
+        rc = dict(rc, bots=[b for b in rc.get("bots", []) if b in bots], findings=[f for f in rc.get("findings", []) if bot_of(f) in bots],
+                  **({"access": {b: a for b, a in said.items() if b in bots}} if "access" in rc else {}))
         save_json_keep_mode(state_path("rollcall_findings.json"), rc)
         ledger({"event": "rollcall-removed-bots-dropped", "count": len(gone)})
     return rc, gone

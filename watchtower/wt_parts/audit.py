@@ -6,7 +6,9 @@ def audit(roots, exports, quick=False):
     INCOMPLETE_SKILLS.clear()
     _RUNS_CODE.clear()
     reset_scanner_checks()
-    inv = collect_inventory(roots)
+    walk_errors = []   # batch 5 PR B, Codex round 2 (3): a folder the scan couldn't list leaves the access map incomplete
+    walk_skipped = []   # round 3 (1): so does one it left out (a link, too deep, a folder it never scans)
+    inv = collect_inventory(roots, errors=walk_errors, skipped=walk_skipped)
     manifest = {}
     # DQ-022/023, v0.7.1 item 1: SKILL.md outside loadable locations — one "Not scanned" line (a Tip), never scored as installed
     if inv.get("non_live_skills"):
@@ -127,8 +129,9 @@ def audit(roots, exports, quick=False):
     if platform_lock_problem():
         notes.append(f"The platform release list ({PLATFORM_LOCK_REL}) can't be used: {platform_lock_problem()}. So no file in a platform "
                      "folder is verified by it: every new or changed one is a high alert until a Watchtower release lists it.")
-    for rel, problem in ((PLATFORM_REVIEWED_REL, platform_reviewed_problem()), (PLATFORM_NORMALIZE_REL, platform_normalize_problem())):
-        if problem:   # batch 5 (d2, d3b): ignored whole, so nothing in a platform file is checked or normalized by it
+    for rel, problem in ((PLATFORM_REVIEWED_REL, platform_reviewed_problem()), (PLATFORM_NORMALIZE_REL, platform_normalize_problem()),
+                         (ACCESS_VOCAB_REL, access_vocab_problem())):
+        if problem:   # batch 5 (d2, d3b): ignored whole, so nothing in a platform file is checked or normalized by it (b: no story is matched)
             notes.append(f"Watchtower's {rel} can't be used: {problem}. It is ignored, so nothing it lists applies this run.")
     if os.path.lexists(state_path(OLD_PLATFORM_APPROVALS)):
         notes.append(f"state/{OLD_PLATFORM_APPROVALS} is left from an earlier Watchtower and is no longer read: platform files it listed are "
@@ -158,6 +161,7 @@ def audit(roots, exports, quick=False):
                           "listed and counts until you decide. Tell Watchtower \"fix it\" to keep it with one yes, or remove it in the app (Marketplace → Your plugins)."))
 
     # 3. persistence (ASI10)
+    CRONTAB_SEEN.clear()   # batch 5 PR B, Codex round 2 (3): unless this look says otherwise, the crontab couldn't be read
     snap = persistence_snapshot()
     old = load_json(state_path("persistence.json"), None)
     if old is not None:
@@ -172,7 +176,8 @@ def audit(roots, exports, quick=False):
     fs += cli_credentials()
     known = {os.path.join(os.path.expanduser("~"), k) for k in KNOWN_CRED_FILES}
     fs += browser_sessions(roots)
-    sign_ins = new_sign_ins()   # kept open EVENT_DAYS with the other one-time events below
+    jar = {}
+    sign_ins = new_sign_ins(jar)   # kept open EVENT_DAYS with the other one-time events below
     decoys = canary_paths()
     for p in walk(roots, max_depth=6):
         if p in known or p in decoys or os.path.basename(p) in SESSION_FILES:
@@ -307,5 +312,11 @@ def audit(roots, exports, quick=False):
     fs += scanner_x005()   # batch 3 (R7): every scanner was looked at just above, in audit and daily alike
     fs = sort_findings(dedupe(fs))
     meta = {"inventory": {k: len(v) for k, v in inv.items() if k not in ("non_live_skills", "platform_aliases")}, "notes": notes, "manifest": manifest, "persistence": snap, "scanners_missing": gone,
-            "skill_dirs": [os.path.dirname(x) for x in inv["skills"]], "baseline_status": base_status}
+            "skill_dirs": [os.path.dirname(x) for x in inv["skills"]], "baseline_status": base_status,
+            "access_sources": {"roots": list(roots), "mcp": list(inv["mcp_configs"]), "plugin_files": list(inv["plugin_files"]),
+                               "browser": jar.get("hosts"),   # batch 5 (a); PR B, Codex round 1 (2): this run's own look at the jar
+                               # round 2 (1, 3): the jar and the cookie seed looked at whole (or said not to be), the crontab's
+                               # answer, the folders the scan couldn't list
+                               "jar": _ax_jar_now(), "seed": _ax_seed_now(roots), "crontab": CRONTAB_SEEN.get("crontab", "failed"),
+                               "walk_errors": len(walk_errors), "walk_skipped": len(walk_skipped)}}   # round 3 (1): and those it left out
     return fs, meta

@@ -374,6 +374,7 @@ def run_audit_locked(args, quick):
     snapshot["notes"] = [mask_secrets(n) if isinstance(n, str) else n for n in snapshot["notes"]]   # round 2: a scanner's error line too
     mask_approved_copies()                       # and its approved skill copies (Codex, round 1)
     save_json(state_path("last_findings.json"), snapshot)
+    refresh_access_map(snapshot, meta)           # batch 5 (a): state/access_map.json, from what this run collected
     with open(state_path("score_history.csv"), "a") as f:
         f.write(f"{snapshot['at']},{s},{len(live)},{'daily' if quick else 'full'},{score_fingerprint()}\n")
     resolved = load_json(state_path("resolved.json"), {})

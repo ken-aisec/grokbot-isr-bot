@@ -20,7 +20,8 @@ selects no scenario, and when no scenario was compared. Everything is written un
 Expect mode (batch 5: changes that alter behavior on purpose; `--expect FILE --items A,B` to golden-check.sh): step 0 only checks
 that the working tree's reassembled wt.py compiles and that PRE_REF's wt.py has the loader block. Calibration and N1-N9 are as
 above; then every line by which a post item differs from pre must match an entry of an enabled item in FILE (see parse_expect),
-and an enabled `must_see` entry that matched nothing, in a run where its scenarios ran, is a problem too."""
+and an enabled `must_see` entry that matched nothing, in a run where its scenarios ran, is a problem too (since batch 5 PR B,
+Codex round 3: one that names its scenarios exactly, in each of them that ran, on its own; see unmet)."""
 import datetime as dt, difflib, hashlib, json, os, re, shutil, statistics, subprocess, sys, tempfile, unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -531,7 +532,77 @@ EXPECT_FIELDS = {"item": str, "scenario_rx": str, "key_rx": str, "lines_rx": lis
 # another ({"field", "from", "to"}): the item is expected only when post is pre with exactly that change (parsed, everything else
 # equal), never by its lines.
 JSON_CHANGE_FIELDS = {"field": str, "from": (int, str), "to": (int, str)}
+# PR B, Codex round 1 (4): for a new JSON item, an entry may give its whole shape instead of lines_rx ({"head": [the exact lines
+# before the document], "doc": a schema}): the item is expected only when post is new and its document fits the schema exactly
+# (json_shape_ok). Line patterns can't pin where a key sits, its type or its value; a schema can, and it has no free text: a
+# string is one of an `enum`'s exact values.
+JSON_SHAPE_FIELDS = {"head": list, "doc": dict}
+SCHEMA_KINDS = {"object": dict, "list": dict, "int": list, "enum": list, "any": list}
 NEW_ITEM, GONE_ITEM = "+<new item>", "-<item gone>"   # the pseudo line for an item only post (or only pre) has
+# PR B, Codex round 2 (6): two exact kinds, each in place of lines_rx. `json_exact` {head, doc}: a new JSON item whose lines
+# before the document are exactly `head` and whose document is exactly `doc` (_same: every value, its type and each object's key
+# order). `block` [lines]: diff lines ("+text"/"-text", NEW_ITEM) that must all appear in the item's diff, in that order, once
+# (_block_span); a line left out, moved or changed takes none of them, so all are unexpected; a line between them that isn't
+# one of them is unexpected whatever else might take it, and a second copy is left to the other entries. No pattern in either:
+# what they take is spelled out.
+ALT_FIELDS = {"json_change": dict, "json_shape": dict, "json_exact": dict, "block": list}
+
+
+def schema_ok(s):
+    """True for a schema json_shape_ok can apply: exactly one kind per node, {"object": {key: schema}}, {"list": {"of": schema,
+    "max": n}}, {"int": [lo, hi]}, {"enum": [values, at least one]} or {"any": [schemas, at least one]}; nothing else, nothing empty."""
+    if not (isinstance(s, dict) and len(s) == 1):
+        return False
+    (kind, v), = s.items()
+    if kind not in SCHEMA_KINDS or not isinstance(v, SCHEMA_KINDS[kind]):
+        return False
+    if kind == "object":
+        return all(isinstance(k, str) for k in v) and all(schema_ok(x) for x in v.values())
+    if kind == "list":
+        return set(v) == {"of", "max"} and type(v["max"]) is int and v["max"] >= 0 and schema_ok(v["of"])
+    if kind == "int":
+        return len(v) == 2 and all(type(x) is int for x in v) and v[0] <= v[1]
+    scalar = lambda x: x is None or isinstance(x, (str, int, bool))
+    if kind == "enum":   # a value is a scalar, or a list of scalars matched whole (its order too)
+        return bool(v) and all(scalar(x) or (isinstance(x, list) and all(scalar(y) for y in x)) for x in v)
+    return bool(v) and all(schema_ok(x) for x in v)
+
+
+def json_shape_ok(s, v):
+    """True when value v fits schema s exactly: an object has exactly its keys, a list at most `max` items each fitting `of`, an
+    int (never a bool) within [lo, hi], an enum value equal with its exact type (_same) to one listed, `any` one of its schemas."""
+    (kind, spec), = s.items()
+    if kind == "object":
+        return isinstance(v, dict) and set(v) == set(spec) and all(json_shape_ok(spec[k], v[k]) for k in spec)
+    if kind == "list":
+        return isinstance(v, list) and len(v) <= spec["max"] and all(json_shape_ok(spec["of"], x) for x in v)
+    if kind == "int":
+        return type(v) is int and spec[0] <= v <= spec[1]
+    if kind == "enum":
+        return any(_same(v, x) for x in spec)
+    return any(json_shape_ok(x, v) for x in spec)
+
+
+def json_new_shape(pre, post, shape):
+    """True when the item is new (no pre), its lines before the document are exactly shape["head"], and the document (strict
+    JSON, _json_item) fits shape["doc"]."""
+    b = _json_item(post)
+    return pre is None and b is not None and b[0].splitlines() == shape["head"] and json_shape_ok(shape["doc"], b[1])
+
+
+def json_new_exact(pre, post, exact):
+    """True when the item is new, its lines before the document are exactly exact["head"], and the document is exact["doc"] with
+    exact types and key order (_same). PR B, Codex round 2 (6): a scenario's map pinned value for value."""
+    b = _json_item(post)
+    if b is None or pre is not None or b[0].splitlines() != exact["head"]:
+        return False
+    doc = b[1]
+    if isinstance(doc, dict) and isinstance(doc.get("at"), str) and EXACT_AT.fullmatch(doc["at"]):
+        doc = dict(doc, at="<TS>")   # the one value that varies: when it was written (N1 normalizes it only when calibration needs it)
+    return _same(doc, exact["doc"])
+
+
+EXACT_AT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})")
 # Lines no narrow pattern accepts all of: a pattern that accepts every added (or every removed) one is refused as too broad.
 BROAD_PROBES = (("+", "+zq 1", '+ "unrelated": [0]', "+<x>", NEW_ITEM, "+a", "+Z9 ~", '+   "k": "v",', "+\t#"),
                 ("-", "-QX {}", '- "other": null', "-<y>", GONE_ITEM, "-b", "-Y8 ^", '-   "j": 2,', "-\t;"))
@@ -554,11 +625,22 @@ def _entry_shape(e):
     if not isinstance(e, dict):
         return False
     want = dict(EXPECT_FIELDS)
-    if "json_change" in e:
-        del want["lines_rx"]
-        want["json_change"] = dict
+    for alt, t in ALT_FIELDS.items():
+        if alt in e:
+            del want["lines_rx"]
+            want[alt] = t
+            break
     if set(e) != set(want) or not all(isinstance(e[k], t) for k, t in want.items()):
         return False
+    if "block" in e:
+        return bool(e["block"]) and all(isinstance(x, str) and (x[:1] in ("+", "-") or x == NEW_ITEM) for x in e["block"])
+    if "json_exact" in e:
+        ex = e["json_exact"]
+        return set(ex) == set(JSON_SHAPE_FIELDS) and isinstance(ex["head"], list) and all(isinstance(x, str) for x in ex["head"]) and isinstance(ex["doc"], dict)
+    if "json_shape" in e:
+        sh = e["json_shape"]
+        return (set(sh) == set(JSON_SHAPE_FIELDS) and all(isinstance(sh[k], t) for k, t in JSON_SHAPE_FIELDS.items())
+                and all(isinstance(x, str) for x in sh["head"]) and schema_ok(sh["doc"]))
     j = e.get("json_change")
     return j is None or (set(j) == set(JSON_CHANGE_FIELDS) and j["field"].strip() != "" and j["from"] != j["to"]
                          and all(isinstance(j[k], t) and not isinstance(j[k], bool) for k, t in JSON_CHANGE_FIELDS.items()))
@@ -578,9 +660,9 @@ def parse_expect(doc, items):
     for n, e in enumerate(entries):
         if not _entry_shape(e):
             raise ValueError(f"entry {n}: needs exactly {sorted(EXPECT_FIELDS)} with those types (or json_change {{field, from, to}} "
-                             "in place of lines_rx)")
+                             "or json_shape {head, doc} in place of lines_rx)")
         lines = e.get("lines_rx", [])
-        if not e["why"].strip() or ("json_change" not in e and not lines):
+        if not e["why"].strip() or (not any(alt in e for alt in ALT_FIELDS) and not lines):
             raise ValueError(f"entry {n} ({e['item']}): an empty why or lines_rx")
         try:
             rxs = [re.compile(x) for x in (e["scenario_rx"], e["key_rx"])] + [re.compile(x) if isinstance(x, str) else None for x in lines]
@@ -593,7 +675,8 @@ def parse_expect(doc, items):
             raise ValueError(f"entry {n} ({e['item']}): its lines_rx together would accept any line; write narrow ones")
         every += rxs[2:]
         if e["item"] in items:
-            out.append(dict(e, id=n, _s=rxs[0], _k=rxs[1], _l=rxs[2:], _j=e.get("json_change")))
+            out.append(dict(e, id=n, _s=rxs[0], _k=rxs[1], _l=rxs[2:], _j=e.get("json_change"), _shape=e.get("json_shape"),
+                            _exact=e.get("json_exact"), _block=e.get("block")))
     if every and _covers_a_side(every):
         raise ValueError("the entries' lines_rx together would accept any line; write narrow ones")
     return out
@@ -662,17 +745,50 @@ def diff_lines(pre, post):
     return out
 
 
+def _block_span(lines, taken, run_):
+    """([the positions of run_'s lines], [the other lines between them]) for the shortest stretch of not yet taken `lines` holding
+    every line of run_ in order, or None when no stretch holds them all. A block's line left out, moved or changed is no match."""
+    if not run_:
+        return None
+    best = None
+    for start in (i for i, x in enumerate(lines) if x == run_[0] and not taken[i]):
+        pos, i = [start], start + 1
+        for want in run_[1:]:
+            while i < len(lines) and (taken[i] or lines[i] != want):
+                i += 1
+            if i == len(lines):
+                break
+            pos.append(i)
+            i += 1
+        if len(pos) == len(run_) and (best is None or pos[-1] - pos[0] < best[-1] - best[0]):
+            best = pos
+    if best is None:
+        return None
+    return best, [i for i in range(best[0], best[-1] + 1) if i not in set(best) and not taken[i]]
+
+
 def unexpected_lines(sid, key, pre, post, entries, hits):
     """The diff_lines of one differing item no entry expects; `hits` counts the lines each entry (by id) took."""
     cand = [e for e in entries if e["_s"].search(sid) and e["_k"].search(key)]
     lines = diff_lines(pre, post)
-    whole = next((e for e in cand if e["_j"] and json_only_change(pre, post, e["_j"])), None)
-    if whole is not None:   # exactly the one field changed: the whole item is expected
+    whole = next((e for e in cand if (e["_j"] and json_only_change(pre, post, e["_j"])) or (e["_shape"] and json_new_shape(pre, post, e["_shape"]))
+                  or (e.get("_exact") and json_new_exact(pre, post, e["_exact"]))), None)
+    if whole is not None:   # exactly the one field changed, or a new item of exactly that shape or content: the whole item is expected
         hits[whole["id"]] = hits.get(whole["id"], 0) + len(lines)
         return []
-    cand = [e for e in cand if not e["_j"]]
-    bad = []
-    for line in lines:
+    taken, bad = [False] * len(lines), []
+    for e in cand:   # PR B, Codex round 2 (6): each block takes its run once, whole, before any pattern looks
+        span = _block_span(lines, taken, e.get("_block"))
+        if span is None:
+            continue
+        for i in span[0]:
+            taken[i] = True
+        for i in span[1]:   # a line inside the run that isn't one of its own: unexpected, whatever else might take it
+            taken[i] = True
+            bad.append(lines[i])
+        hits[e["id"]] = hits.get(e["id"], 0) + len(span[0])
+    cand = [e for e in cand if not e["_j"] and not e["_shape"] and not e.get("_exact") and not e.get("_block")]
+    for line in [x for x, t in zip(lines, taken) if not t]:
         e = next((e for e in cand if any(r.search(line) for r in e["_l"])), None)
         if e is None:
             bad.append(line)
@@ -681,9 +797,24 @@ def unexpected_lines(sid, key, pre, post, entries, hits):
     return bad
 
 
-def unmet(entries, hits, sids):
-    """The must_see entries that matched no line although one of their scenarios (`sids`: those compared) ran."""
-    return [e for e in entries if e["must_see"] and not hits.get(e["id"]) and any(e["_s"].search(s) for s in sids)]
+EXACT_SCENARIOS = re.compile(r"\^(\((?:(?:[\w-]|\\-)+\|)*(?:[\w-]|\\-)+\)|(?:[\w-]|\\-)+)\$")   # ^(a|b-c)$, ^tierA$: literal ids only
+
+
+def unmet(entries, hits_by, sids):
+    """[(entry, scenario)]: the must_see entries that matched no line although one of their scenarios (`sids`: those compared)
+    ran. PR B, Codex round 3 (4): an entry whose scenario_rx names its scenarios exactly (^(a|b)$, as item a's do) must match in
+    each of them that ran, on its own (`hits_by` is {scenario: {entry id: lines}}): a scenario that left out its whole map or
+    report section fails even when another scenario met the entry, and even when leaving it out made no difference from the
+    baseline. A pattern (^box-) is met in any one of its scenarios, as before (PR A's changes don't happen in every box); the
+    scenario is then the first of them that ran."""
+    out = []
+    for e in (e for e in entries if e["must_see"]):
+        ran = [s for s in sids if e["_s"].search(s)]
+        if EXACT_SCENARIOS.fullmatch(e["scenario_rx"]):
+            out += [(e, s) for s in ran if not hits_by.get(s, {}).get(e["id"])]
+        elif ran and not any(hits_by.get(s, {}).get(e["id"]) for s in ran):
+            out.append((e, ran[0]))
+    return out
 
 
 # ------------------------------------------------------------------------------------------------ the check
@@ -832,9 +963,10 @@ class GoldenSplit(unittest.TestCase):
         enabled = {"N1", "N2", "N3", "N4", "N5", "N6", "N9"}
         needed = set()
         compared = 0
-        hits, sids, expected_items = {}, [], 0
+        hits, hits_by, sids, expected_items = {}, {}, [], 0
         for sid, plan in self.scenarios():
             res = {}
+            sid_hits = hits_by.setdefault(sid, {})   # round 3 (4): what each entry took in this scenario alone
             for tag, tree in (("pre1", self.pre), ("pre2", self.pre), ("post", self.post)):
                 self.place(tree)
                 res[tag] = self.run_sandboxed(sid, plan, tag)["items"]
@@ -861,13 +993,15 @@ class GoldenSplit(unittest.TestCase):
                 if self.expect is None:
                     problems.append(f"[{sid}] post differs from pre in {k!r}:\n{short_diff(pa.get(k, '<missing>'), pc.get(k, '<missing>'))}")
                     continue
-                bad = unexpected_lines(sid, k, pa.get(k), pc.get(k), self.expect, hits)
+                bad = unexpected_lines(sid, k, pa.get(k), pc.get(k), self.expect, sid_hits)
                 if bad:
                     problems.append(f"[{sid}] post differs from pre in {k!r} by {len(bad)} line(s) no enabled entry expects:\n"
                                     + "\n".join("    | " + x[:220] for x in bad[:60]) + ("\n    | ..." if len(bad) > 60 else ""))
                 else:
                     expected_items += 1
             sids.append(sid)
+            for i, n in sid_hits.items():
+                hits[i] = hits.get(i, 0) + n
             for r in sorted(apply | ({"N8"} if crash else set())):
                 extra = len(differing(norm_items(a, apply - {r}, crash and r != "N8"), norm_items(c, apply - {r}, crash and r != "N8"))) - len(diff_post)
                 if extra > 0:
@@ -885,8 +1019,8 @@ class GoldenSplit(unittest.TestCase):
         self.say("normalizations needed by calibration (items): " + (", ".join(f"{r} ({n})" for r, n in sorted(used_cal.items())) or "none"))
         self.say("normalizations applied where pre and post differed raw (items; N4 is always on): " + (", ".join(f"{r} ({n})" for r, n in sorted(used_post.items())) or "none"))
         if self.expect is not None:
-            for e in unmet(self.expect, hits, sids):
-                problems.append(f"[{e['item']}] must_see entry {e['id']} matched nothing (the intended change didn't happen): {e['why']}")
+            for e, s in unmet(self.expect, hits_by, sids):
+                problems.append(f"[{e['item']}] must_see entry {e['id']} matched nothing in {s} (the intended change didn't happen there): {e['why']}")
             per = {}
             for e in self.expect:
                 n, k = per.get(e["item"], (0, 0))
