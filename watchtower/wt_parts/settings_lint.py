@@ -171,7 +171,8 @@ def ask_first_gaps(text):
 def ask_first_state(native, exported):
     """("absent" | "read" | "unread", gaps) for the account's Ask-first rules: `native` the settings file's entries (an Ask-first
     key's are labelled ASK_LABEL), `exported` the exports' text. "unread": there are rules, but none of the owner's own words is
-    an opener or an area stem in any language, so Watchtower can't tell what they cover (B4: a Tip, never "not found")."""
+    an opener or an area stem in any language, so Watchtower can't tell what they cover (fix round 1, Codex 5: still the counted
+    medium, with every area missing; a language Tip is added beside it)."""
     langs = ask_first_vocab()
     gaps = ask_first_gaps("\n".join(native) + "\n" + exported)
     own = [e_[len(ASK_LABEL):] for e_ in native if e_.startswith(ASK_LABEL)] + [l for l in exported.splitlines() if _ask_opens(l, langs)]
@@ -182,10 +183,14 @@ def ask_first_state(native, exported):
     return "unread", gaps
 
 
+ASK_UNREAD_EVIDENCE = "Ask-first rules with no word Watchtower reads in any of its languages"
+
+
 def ask_first_unread(f):
-    """A WT-A003 that only says Watchtower couldn't read the rules' language (B4): a Tip. It names every area as missing, so
-    nothing is ever assumed covered by it (ask_first_covered)."""
-    return f["rule"] == "WT-A003" and f.get("ask_first_unread") is True and f.get("evidence") == ", ".join(w for w, _ in ASK_AREAS)
+    """The WT-A003 Tip about the rules' language (B4). Fix round 1 (Codex 5): it is added beside the counted medium, never
+    instead of it, and its evidence names no area, so it can never be the medium (whose evidence is the missing areas) and
+    never makes an area look covered (ask_first_covered)."""
+    return f["rule"] == "WT-A003" and f.get("ask_first_unread") is True and f.get("evidence") == ASK_UNREAD_EVIDENCE
 
 
 # Only real paths/URLs/filenames: slash-joined words like pay/transfer or send/post are the actions themselves.

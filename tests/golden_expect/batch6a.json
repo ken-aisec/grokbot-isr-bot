@@ -1,5 +1,5 @@
 {"entries": [
  {"item": "b9", "scenario_rx": "^(box-busy_clean_box-cli|box-busy_clean_box-driver|box-platform_refresh-cli|box-platform_refresh-driver)$",
-  "key_rx": "^\\d{3} doctor( \\[driver\\])? :stdout$", "lines_rx": ["^[-+]\\s*\"(critical|high|medium|low|info)\": \\d+,?$"], "must_see": true,
-  "why": "B9: doctor's last_run.open_by_severity counts owners() as the audit does, so the platform notes of the boxes that have them (busy_clean_box, platform_refresh) leave its info count; a probe of the kept /tmp run with no entries showed exactly these four outputs, one info line each"}
+  "key_rx": "^\\d{3} doctor( \\[driver\\])? :stdout$", "json_counts": {"at": ["last_run", "open_by_severity"], "delta": {"info": -1}}, "must_see": true,
+  "why": "B9: doctor's last_run.open_by_severity counts owners() as the audit does, so the platform note of the boxes that have one (busy_clean_box, platform_refresh) leaves its info count. Fix round 1 (Codex 6): pinned, info -1 and every other count unchanged in each of these four outputs, as a probe of the kept /tmp run with no entries showed (busy_clean_box-cli 2 -> 1, -driver 3 -> 2, platform_refresh-cli 3 -> 2, -driver 3 -> 2)"}
 ]}

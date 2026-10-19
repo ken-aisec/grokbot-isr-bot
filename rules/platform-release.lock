@@ -24,6 +24,9 @@
 #
 # Format: `sha256sum` output, run from the home folder on relative paths:
 #   <sha256>  <path under the home folder>
+# A metadata file rules/platform-normalize.json names may instead be listed by its canonical form (batch 6), on a line that
+# says so: `canonical <sha256>  <path>` (scripts/platform-json-shape.py --canonical prints it). That line vouches for the file
+# only after Watchtower normalized it and checked every unit; a file whose own bytes hash to it is not listed by it.
 # Paths must sit inside one of these folders: .grok/bundled, sand-data/managed-skills, agent-data/managed-skills,
 # .codex/skills/.system, .claude/plugins/synced. One malformed line (a bad hash, a path from /, "..", a colon, or a
 # path outside those folders) makes the whole list unusable, and the audit says so.

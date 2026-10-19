@@ -533,9 +533,24 @@ def counts(f):
         if is_sample_skill_path(path) and not is_loadable_skill_location(path):
             return False
     if f.get("scope") == "platform" or platform_file(f):   # v0.7.1 item 4: never, except a real key outside Grok Bot's config
-        # batch 6 (B2): nor a gitleaks hit in a metadata file verified by content this run (run_audit_locked sets it afresh)
-        return f["rule"] in SECRET_RULES and not platform_config_finding(f) and not f.get("verified_metadata")
+        # batch 6 (B2): nor a gitleaks pattern hit in a metadata file the release list vouches for (metadata_hit_note)
+        return f["rule"] in SECRET_RULES and not platform_config_finding(f) and not metadata_hit_note(f)
     return not builtin(f) or f["severity"] in ("critical", "high")
+
+
+def metadata_hit_note(f):
+    """Batch 6 (B2), fix round 1 (Codex 2, 3, 4): a gitleaks pattern hit in Grok Bot's own metadata file that is a platform note,
+    not counted. Decided again each time it is asked, never from a stored flag (6cd1ab4's `verified_metadata` is ignored): the
+    hit is gitleaks' alone (no provider confirmed a key: TruffleHog's live, dead or unsure, or a critical, always counts), on
+    one line of one file; its `metadata_sha256` is the bytes gitleaks_findings bound it to (a private copy of the verified
+    bytes gave gitleaks exactly the same hits); and the file has those bytes now, they verify against the release list, and
+    every unit's file is itself on it (metadata_proof). Anything else counts, with its cleanup."""
+    if f.get("rule") != "WT-S002" or f.get("source") != "gitleaks" or f.get("severity") == "critical":
+        return False
+    if f.get("title") not in ("gitleaks: secrets in file", KEY_MAYBE):
+        return False
+    path, _, ln = str(f.get("where") or "").rpartition(":")
+    return path.startswith("/") and ln.isdigit() and metadata_proof(path, f.get("metadata_sha256"))
 
 
 def platform_owned(fs):

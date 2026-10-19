@@ -102,7 +102,7 @@ class Normalized(_Meta):
         self.spec(self.SPEC)
         self.write(text(doc))
         with open(self.platform_lock, "a") as f:
-            f.write(f"{canonical(doc)}  {REL}\n")   # what a release lists: the digest of the canonical form
+            f.write(f"canonical {canonical(doc)}  {REL}\n")   # what a release lists: the digest of the canonical form (batch 6 fix round 1: on a line that says so)
         self.skills(1); self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         self.assertEqual(self.counted(), [])
 

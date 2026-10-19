@@ -545,7 +545,13 @@ NEW_ITEM, GONE_ITEM = "+<new item>", "-<item gone>"   # the pseudo line for an i
 # (_block_span); a line left out, moved or changed takes none of them, so all are unexpected; a line between them that isn't
 # one of them is unexpected whatever else might take it, and a second copy is left to the other entries. No pattern in either:
 # what they take is spelled out.
-ALT_FIELDS = {"json_change": dict, "json_shape": dict, "json_exact": dict, "block": list}
+# Batch 6 fix round 1 (Codex 6): `json_counts` {at: [key path], delta: {severity: signed int}}, in place of lines_rx: the item is
+# expected only when post is pre (strict JSON, the same lines before the document) with one change, the counts object at `at`:
+# the same keys, every value an int, and post minus pre exactly `delta` for each key it names and 0 for every other
+# (json_counts_change). A run that also moves a critical or high count, or leaves the intended change out, takes no line, so
+# every changed line is unexpected. Line patterns on count lines accepted any count moving any way.
+JSON_COUNTS_FIELDS = {"at": list, "delta": dict}
+ALT_FIELDS = {"json_change": dict, "json_shape": dict, "json_exact": dict, "block": list, "json_counts": dict}
 
 
 def schema_ok(s):
@@ -634,6 +640,11 @@ def _entry_shape(e):
         return False
     if "block" in e:
         return bool(e["block"]) and all(isinstance(x, str) and (x[:1] in ("+", "-") or x == NEW_ITEM) for x in e["block"])
+    if "json_counts" in e:
+        jc = e["json_counts"]
+        return (set(jc) == set(JSON_COUNTS_FIELDS) and isinstance(jc["at"], list) and jc["at"]
+                and all(isinstance(k, str) and k for k in jc["at"]) and isinstance(jc["delta"], dict) and jc["delta"]
+                and all(isinstance(k, str) and k and type(v) is int for k, v in jc["delta"].items()) and any(jc["delta"].values()))
     if "json_exact" in e:
         ex = e["json_exact"]
         return set(ex) == set(JSON_SHAPE_FIELDS) and isinstance(ex["head"], list) and all(isinstance(x, str) for x in ex["head"]) and isinstance(ex["doc"], dict)
@@ -660,7 +671,7 @@ def parse_expect(doc, items):
     for n, e in enumerate(entries):
         if not _entry_shape(e):
             raise ValueError(f"entry {n}: needs exactly {sorted(EXPECT_FIELDS)} with those types (or json_change {{field, from, to}} "
-                             "or json_shape {head, doc} in place of lines_rx)")
+                             "or json_shape {head, doc}, json_exact, block or json_counts {at, delta} in place of lines_rx)")
         lines = e.get("lines_rx", [])
         if not e["why"].strip() or (not any(alt in e for alt in ALT_FIELDS) and not lines):
             raise ValueError(f"entry {n} ({e['item']}): an empty why or lines_rx")
@@ -676,7 +687,7 @@ def parse_expect(doc, items):
         every += rxs[2:]
         if e["item"] in items:
             out.append(dict(e, id=n, _s=rxs[0], _k=rxs[1], _l=rxs[2:], _j=e.get("json_change"), _shape=e.get("json_shape"),
-                            _exact=e.get("json_exact"), _block=e.get("block")))
+                            _exact=e.get("json_exact"), _block=e.get("block"), _counts=e.get("json_counts")))
     if every and _covers_a_side(every):
         raise ValueError("the entries' lines_rx together would accept any line; write narrow ones")
     return out
@@ -719,6 +730,37 @@ def _same(a, b):
     if isinstance(a, list):
         return len(a) == len(b) and all(_same(x, y) for x, y in zip(a, b))
     return a == b
+
+
+PLACEHOLDER_VALUE = re.compile(r'(?<=: )<(DUR|EPOCH|PID|STAT)>(?=[,\n}\]])')
+
+
+def json_counts_change(pre, post, counts):
+    """True when post is pre with exactly one change, the counts object at counts["at"]: the same keys on both sides, every value
+    an int (never a bool), post minus pre equal to counts["delta"] for each key it names (all of them there) and 0 for every other,
+    and everything else (the lines before the document too) equal once parsed, with exact types and key order (_same). The bare
+    placeholders N3, N4, N5 and N9 leave in a JSON item (doctor's "seconds_per_stage": <DUR>) are read as strings, the same on
+    both sides."""
+    bare = lambda t: t if t is None else PLACEHOLDER_VALUE.sub(r'"<\1>"', t)
+    a, b = _json_item(bare(pre)), _json_item(bare(post))
+    if a is None or b is None or a[0] != b[0]:
+        return False
+
+    def at(doc):
+        for k in counts["at"]:
+            doc = doc.get(k) if isinstance(doc, dict) else None
+        return doc if isinstance(doc, dict) else None
+    ca, cb = at(a[1]), at(b[1])
+    if ca is None or cb is None or list(ca) != list(cb) or not set(counts["delta"]) <= set(ca):
+        return False
+    if not all(type(ca[k]) is int and type(cb[k]) is int and cb[k] - ca[k] == counts["delta"].get(k, 0) for k in ca):
+        return False
+    doc = json.loads(json.dumps(a[1]))
+    node = doc
+    for k in counts["at"][:-1]:
+        node = node[k]
+    node[counts["at"][-1]] = cb
+    return _same(doc, b[1])
 
 
 def json_only_change(pre, post, change):
@@ -772,7 +814,8 @@ def unexpected_lines(sid, key, pre, post, entries, hits):
     cand = [e for e in entries if e["_s"].search(sid) and e["_k"].search(key)]
     lines = diff_lines(pre, post)
     whole = next((e for e in cand if (e["_j"] and json_only_change(pre, post, e["_j"])) or (e["_shape"] and json_new_shape(pre, post, e["_shape"]))
-                  or (e.get("_exact") and json_new_exact(pre, post, e["_exact"]))), None)
+                  or (e.get("_exact") and json_new_exact(pre, post, e["_exact"]))
+                  or (e.get("_counts") and json_counts_change(pre, post, e["_counts"]))), None)
     if whole is not None:   # exactly the one field changed, or a new item of exactly that shape or content: the whole item is expected
         hits[whole["id"]] = hits.get(whole["id"], 0) + len(lines)
         return []
@@ -787,7 +830,7 @@ def unexpected_lines(sid, key, pre, post, entries, hits):
             taken[i] = True
             bad.append(lines[i])
         hits[e["id"]] = hits.get(e["id"], 0) + len(span[0])
-    cand = [e for e in cand if not e["_j"] and not e["_shape"] and not e.get("_exact") and not e.get("_block")]
+    cand = [e for e in cand if not e["_j"] and not e["_shape"] and not e.get("_exact") and not e.get("_block") and not e.get("_counts")]
     for line in [x for x, t in zip(lines, taken) if not t]:
         e = next((e for e in cand if any(r.search(line) for r in e["_l"])), None)
         if e is None:

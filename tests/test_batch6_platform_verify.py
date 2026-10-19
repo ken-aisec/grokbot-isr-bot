@@ -61,6 +61,12 @@ def text(doc):
 def canon(doc, spec):
     """The canonical form's sha256, written independently of wt: fields dropped (a "*" step is every list element), each unit's
     text fields (or digest values) replaced by {"$unit": its id}, compact JSON in the file's own key order."""
+    return sha(canon_bytes(doc, spec))
+
+
+def canon_bytes(doc, spec):
+    """The canonical form's own bytes (canon() hashes them; fix round 1: what a Bot would write as the raw file to match a
+    canonical line)."""
     doc = copy.deepcopy(doc)
 
     def drop(node, key):
@@ -88,7 +94,7 @@ def canon(doc, spec):
         else:
             for k in node:
                 node[k] = {"$unit": k}
-    return sha(json.dumps(doc, separators=(",", ":"), ensure_ascii=False))
+    return json.dumps(doc, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
 class _Units(Box):
@@ -125,8 +131,10 @@ class _Units(Box):
         self.addCleanup(vars(wt)["_PLATFORM_NORMALIZE_CACHE"].clear)
 
     def list_canon(self, rel, doc, spec):
+        # fix round 1 (Codex 1): a line that says it is a canonical form; 6cd1ab4 (a replay against it) read a plain line as one
+        tag = "canonical " if hasattr(wt, "platform_lock_canonical") else ""
         with open(self.platform_lock, "a") as f:
-            f.write(f"{canon(doc, spec)}  {rel}\n")
+            f.write(f"{tag}{canon(doc, spec)}  {rel}\n")
 
     def baseline(self, clean=True):
         """The released files, listed by their canonical forms, and a baseline. `clean`: and nothing counted (only Watchtower
@@ -310,11 +318,27 @@ class StillCounted(_Units):
 
 
 # ---------------------------------------------------------------- B2: gitleaks on a verified metadata file
-def gitleaks_hit(path, line=5):
-    report = json.dumps([{"File": path, "StartLine": line, "EndLine": line, "RuleID": "generic-api-key", "Match": "REDACTED", "Secret": "REDACTED"}])
-    return ('#!/usr/bin/env python3\nimport sys\na = sys.argv[1:]\nif a and a[0] == "version":\n    print("8.30.1"); sys.exit(0)\n'
-            f'if a[a.index("--source") + 1] in {path!r}:\n    open(a[a.index("--report-path") + 1], "w").write({report!r})\n'
-            'else:\n    open(a[a.index("--report-path") + 1], "w").write("[]")\n')
+NEEDLE = f'"skills/pptx/SKILL.md": "{sha(PPTX1)}"'   # the manifest's checksum line, which gitleaks calls a generic key
+
+
+def gitleaks_hit(path, needle=NEEDLE, swap=None, touch_copy=False):
+    """A fake gitleaks that reads content (fix round 1: so a private copy of the bytes gets the same hits): a generic-api-key
+    hit on every line under --source that holds `needle`. `swap` (before, after): on the scan of the folder that holds `path`,
+    `path` gets the bytes `before` just before the read, and `after` (when not None) just after it. `touch_copy`: on the scan
+    of Watchtower's private copy, each file there is written again with the same bytes."""
+    return ('#!/usr/bin/env python3\nimport json, os, sys\na = sys.argv[1:]\nif a and a[0] == "version":\n    print("8.30.1"); sys.exit(0)\n'
+            f'src, path, needle, swap, touch = a[a.index("--source") + 1], {path!r}, {needle!r}, {swap!r}, {touch_copy!r}\n'
+            'def put(data):\n    os.remove(path)\n    open(path, "w").write(data)\n'
+            'mine = swap and path.startswith(src.rstrip("/") + "/")\n'
+            'if mine:\n    put(swap[0])\n'
+            'for d, _, fs in os.walk(src) if touch and os.path.basename(src).startswith("wt-metadata-") else ():\n'
+            '    for fn in fs:\n        p = os.path.join(d, fn); data = open(p, "rb").read(); os.chmod(p, 0o600); open(p, "wb").write(data)\n'
+            'leaks = []\nfor d, _, fs in os.walk(src):\n    for fn in sorted(fs):\n        p = os.path.join(d, fn)\n'
+            '        try:\n            lines = open(p, encoding="utf-8").read().split("\\n")\n        except (OSError, UnicodeDecodeError):\n            continue\n'
+            '        leaks += [{"File": p, "StartLine": n, "EndLine": n, "RuleID": "generic-api-key", "Match": "REDACTED", "Secret": "REDACTED"}\n'
+            '                  for n, l in enumerate(lines, 1) if needle in l]\n'
+            'if mine and swap[1] is not None:\n    put(swap[1])\n'
+            'open(a[a.index("--report-path") + 1], "w").write(json.dumps(leaks))\n')
 
 
 class GitleaksOnVerifiedFiles(_Units):
@@ -350,6 +374,113 @@ class GitleaksOnVerifiedFiles(_Units):
         self.assertIn(s2[0], wt.owners(self.snap()["findings"]))
         self.assertEqual((s2[0]["label"], s2[0]["severity"]), (wt.CONFIRMED, "medium"))
 
+    # ------------------------------------------------ fix round 1
+    def assert_counted_with_cleanup(self, where=None):
+        where = where or self.manifest
+        s2 = [f for f in self.snap()["findings"] if f["rule"] == "WT-S002" and f["where"].split(":")[0] == where]
+        self.assertEqual(len(s2), 1, s2)
+        self.assertIn(s2[0], wt.owners(self.snap()["findings"]))
+        self.assertTrue(wt.counts(s2[0]))
+        plan = json.loads(self.fix_plan())   # its cleanup: the revoke for a working key, else the key-strings decision
+        if s2[0]["severity"] == "critical":
+            self.assertTrue([x for x in plan["only_you"] if x["what"] == "Keys that still work are sitting in files"], plan)
+        else:
+            self.assertTrue([d for d in plan["decisions"] if d["rule"] == "WT-S002" and os.path.basename(where) in d["names"]], plan)
+        return s2[0]
+
+    def verified_rewrite(self, **kw):
+        """The released manifest, a timestamp later: verified by content (B1), so 6cd1ab4 made its gitleaks hit a note."""
+        self.baseline()
+        self.scanners(**kw)
+        doc = manifest_doc(sha(PPTX1), when="2026-10-19T06:00:00Z")
+        self.write_manifest(doc)
+        return doc
+
+    def test_a_swap_after_verification_keeps_the_hit_counted(self):   # replay, Codex 2 (6cd1ab4: a note, by its path alone)
+        doc = self.verified_rewrite()
+        swapped = text(dict(doc, generation=8))   # same hit, same line; not the verified bytes
+        self.scanners(gitleaks=gitleaks_hit(self.manifest, swap=(swapped, None)))
+        self.audit()
+        self.assertIn(self.manifest, wt.VERIFIED_METADATA)   # it was verified before gitleaks read it
+        self.assert_counted_with_cleanup()
+
+    def test_a_swap_put_back_after_the_scan_keeps_the_hit_counted(self):   # replay, Codex 2 (6cd1ab4: a note)
+        doc = self.verified_rewrite()
+        evil = text(dict(doc, mirror={"skills/pptx/SKILL.md": sha(PPTX1)}))   # one more hit, read by gitleaks only
+        self.scanners(gitleaks=gitleaks_hit(self.manifest, swap=(evil, text(doc))))
+        self.audit()
+        with open(self.manifest) as f:
+            self.assertEqual(f.read(), text(doc))   # the verified bytes are back on disk
+        self.assertEqual(self.s002()[0]["evidence"], "2 hit(s): generic-api-key")
+        self.assert_counted_with_cleanup()
+
+    def test_a_private_copy_changed_while_it_is_scanned_binds_nothing(self):   # replay, Codex 2 (6cd1ab4: no copy, a note)
+        self.verified_rewrite(gitleaks=gitleaks_hit(self.manifest, touch_copy=True))
+        self.audit()
+        self.assertNotIn("metadata_sha256", self.s002()[0])
+        self.assert_counted_with_cleanup()
+
+    def test_a_forged_flag_in_the_last_findings_changes_nothing(self):   # replay, Codex 3 (6cd1ab4: report and doctor dropped it)
+        self.baseline(clean=False)
+        self.scanners(gitleaks=gitleaks_hit(self.manifest))
+        self.write_manifest(dict(manifest_doc(sha(PPTX1)), generation=8))   # not the released version
+        r = self.audit()
+        p = wt.state_path("last_findings.json")
+        with open(p) as f:
+            snap = json.load(f)
+        with open(self.manifest, "rb") as f:
+            now = sha(f.read())
+        for f in snap["findings"]:
+            if f["rule"] == "WT-S002":
+                f.update(verified_metadata=True, metadata_sha256=now)   # what a Bot can write
+        with open(p, "w") as f:
+            json.dump(snap, f)
+        self.assert_counted_with_cleanup()
+        self.assertEqual(json.loads(self.run_cmd("doctor")[1])["last_run"]["open_by_severity"], r["open_by_severity"])
+        self.assertGreaterEqual(r["open_by_severity"]["medium"], 2)   # the hit and WT-A003
+        self.run_cmd("report")
+        reports = os.path.join(os.environ["WATCHTOWER_HOME"], "reports")
+        md = open(os.path.join(reports, next(n for n in os.listdir(reports) if n.endswith(".md")))).read()
+        self.assertIn("| medium | WT-S002 |", md)
+        self.assertNotIn("gitleaks would call this medium", md)
+
+    def test_report_and_doctor_decide_a_note_as_the_audit_did(self):   # guard: decided again, from the disk and the release
+        r = self.audit_of_a_note()
+        self.assertEqual(json.loads(self.run_cmd("doctor")[1])["last_run"]["open_by_severity"], r["open_by_severity"])
+        wt._METADATA_PROOF.clear()
+        self.assertNotIn(self.s002()[0], wt.owners(self.snap()["findings"]))
+
+    def audit_of_a_note(self):
+        self.verified_rewrite(gitleaks=gitleaks_hit(self.manifest))
+        r = self.audit()
+        self.assertNotIn(self.s002()[0], wt.owners(self.snap()["findings"]))
+        return r
+
+    def test_a_note_counts_again_once_the_file_changes(self):   # guard: the bytes it was bound to must still be there
+        self.audit_of_a_note()
+        self.write_manifest(dict(manifest_doc(sha(PPTX1), when="2026-10-19T06:00:00Z"), generation=8))
+        self.assert_counted_with_cleanup()
+
+    def test_a_live_key_in_a_verified_file_is_counted(self):   # replay, Codex 4 (6cd1ab4: a note, no revoke advice)
+        th = ("#!/bin/sh\necho '" + json.dumps({"SourceMetadata": {"Data": {"Filesystem": {"file": self.manifest, "line": 5}}},
+                                                 "DetectorName": "Github", "Verified": True}) + "'\n")
+        self.verified_rewrite(gitleaks=gitleaks_hit(self.manifest), trufflehog=th)
+        self.audit()
+        s2 = self.assert_counted_with_cleanup()
+        self.assertEqual((s2["severity"], s2["title"]), ("critical", wt.KEY_LIVE))
+
+    def test_a_hit_in_a_file_with_an_unlisted_unit_is_counted(self):   # replay, Codex 4 (6cd1ab4: a note in the cache)
+        token = "api_key = FAKE-0000-not-a-real-key"
+        evil = skill_md("pptx", "Make slide decks.", f"# Decks\n\nBuild a deck from an outline.\n{token}\n")
+        self.baseline()
+        self.scanners(gitleaks=gitleaks_hit(self.cache, needle=token))
+        self.put("sand-data/managed-skills/skills/pptx/SKILL.md", evil)   # not on the release list: its own counted high
+        self.write_cache(cache_doc(pptx=evil, when=1760900000000))   # the cache repeats it, so B1 still verifies the cache
+        self.audit()
+        self.assertIn(self.cache, wt.VERIFIED_METADATA)
+        self.assertIn(("WT-I001", "high", self.pptx), self.counted())
+        self.assert_counted_with_cleanup(self.cache)
+
 
 # ---------------------------------------------------------------- the spike's tool
 class ShapeScriptModes(_Units):
@@ -374,13 +505,63 @@ class ShapeScriptModes(_Units):
         self.write_cache(cache_doc())
         out = self.run_script("--canonical", "--spec", wt.PLATFORM_NORMALIZE, self.cache)
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
-        self.assertIn(f"{canon(cache_doc(), CACHE_SPEC)}  {CACHE}\n", out.stdout)
+        self.assertIn(f"canonical {canon(cache_doc(), CACHE_SPEC)}  {CACHE}\n", out.stdout)
 
     def test_the_plain_mode_is_unchanged(self):   # guard
         self.write_cache(cache_doc())
         out = self.run_script(self.cache).stdout
         self.assertIn('."skills"[0]."installation_preference"\tstring\t', out)
         self.assertNotIn("Make slide decks", out)
+
+
+# ---------------------------------------------------------------- fix round 1 (Codex 1): raw and canonical lock lines
+class CanonicalLinesAreNotRawLines(_Units):
+    """The lock line comes from the release tool (scripts/platform-json-shape.py --canonical), so each commit writes its own
+    format: 6cd1ab4's plain "<sha256>  <path>", this one's "canonical <sha256>  <path>". 5dcd0a2 has no --canonical (and no
+    units), so these fail there at the released_line setup, not on their assertion."""
+    SCRIPT, run_script = ShapeScriptModes.SCRIPT, ShapeScriptModes.run_script
+
+    def released_line(self):
+        self.write_cache(cache_doc())
+        out = self.run_script("--canonical", "--spec", wt.PLATFORM_NORMALIZE, self.cache)
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        line = next(l for l in out.stdout.splitlines() if l.endswith("  " + CACHE))
+        with open(self.platform_lock, "a") as f:
+            f.write(line + "\n")
+        vars(wt)["_PLATFORM_LOCK_CACHE"].clear()
+        self.assertNotIn(self.cache, wt.platform_unproven(self.run_manifest()))   # the released cache is verified by it
+
+    def test_the_canonical_bytes_written_as_the_file_stay_unproven(self):   # replay (6cd1ab4: listed through platform_listed)
+        self.released_line()
+        raw = canon_bytes(cache_doc(), CACHE_SPEC)
+        self.assertEqual(sha(raw), canon(cache_doc(), CACHE_SPEC))   # the raw file's sha256 is the canonical line's
+        os.remove(self.pptx)
+        os.remove(self.learn)   # no backing skill file at all
+        self.write_cache(raw)
+        self.assertIn(self.cache, wt.platform_unproven(self.run_manifest()))
+        self.assertFalse(wt.platform_listed(self.cache, sha(raw)))
+        self.skills(1)
+        self.audit()
+        self.assertIn(("WT-I002", "high", self.cache), self.counted(self.cache))
+
+    def test_the_canonical_bytes_stay_unproven_with_the_skill_files_there(self):   # replay (6cd1ab4: listed)
+        self.released_line()
+        self.write_cache(canon_bytes(cache_doc(), CACHE_SPEC))
+        self.assertIn(self.cache, wt.platform_unproven(self.run_manifest()))
+
+    def test_a_plain_line_never_vouches_for_a_canonical_form(self):   # replay (6cd1ab4: a plain line was read as either form)
+        self.write_cache(cache_doc())
+        with open(self.platform_lock, "a") as f:
+            f.write(f"{canon(cache_doc(), CACHE_SPEC)}  {CACHE}\n")
+        vars(wt)["_PLATFORM_LOCK_CACHE"].clear()
+        self.assertIn(self.cache, wt.platform_unproven(self.run_manifest()))
+
+    def test_a_canonical_line_parses_and_a_malformed_one_refuses_the_list(self):   # guard
+        with mock.patch.object(wt, "release_want", lambda *a: None):
+            raw, why, can = wt._parse_platform_lock(f"canonical {'a' * 64}  {CACHE}\n{'b' * 64}  {CACHE}\n".encode())
+            self.assertEqual((raw, why, can), ({CACHE: {"b" * 64}}, "", {CACHE: {"a" * 64}}))
+            for bad in (f"canonicals {'a' * 64}  {CACHE}\n", f"Canonical {'a' * 64}  {CACHE}\n", f"canonical  {'a' * 64}  {CACHE}\n"):
+                self.assertEqual(wt._parse_platform_lock(bad.encode())[0::2], ({}, {}), bad)
 
 
 if __name__ == "__main__":

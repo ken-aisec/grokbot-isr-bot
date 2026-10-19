@@ -6,6 +6,7 @@ def audit(roots, exports, quick=False):
     INCOMPLETE_SKILLS.clear()
     _RUNS_CODE.clear()
     VERIFIED_METADATA.clear()   # batch 6 (B1): filled by platform_verified below
+    _METADATA_PROOF.clear()   # fix round 1: metadata_proof decides again from the disk
     reset_scanner_checks()
     walk_errors = []   # batch 5 PR B, Codex round 2 (3): a folder the scan couldn't list leaves the access map incomplete
     walk_skipped = []   # round 3 (1): so does one it left out (a link, too deep, a folder it never scans)
@@ -235,18 +236,22 @@ def audit(roots, exports, quick=False):
     else:
         notes.append("Grok Bot settings.json not found: Auto Review rules and local execution checked from exports only.")
 
-    # batch 6 (B4): read in every language rules/ask_first_vocab.json has; rules Watchtower can't read at all are a Tip
+    # batch 6 (B4): read in every language rules/ask_first_vocab.json has. Fix round 1 (Codex 5): coverage nobody can show is the
+    # counted medium whatever the rules say ("." and "every shell command" too); rules none of whose words Watchtower reads also
+    # get a Tip about the language, beside the medium, never instead of it
     seen, gaps = ask_first_state(entries, export_rules)
-    if seen == "unread":
-        fs.append(finding("WT-A003", "Watchtower can't read the language your Ask-first rules are written in", "medium", ["ASI09"],
-                          "Auto-review rules", ", ".join(w for w, _ in ASK_AREAS),
-                          "So it couldn't check they cover sending, publishing, payments, deleting and permission changes. Make sure they do."))
-        fs[-1]["ask_first_unread"] = True   # a Tip (ask_first_unread); it names every area, so none is assumed covered
-    elif gaps:
-        fs.append(finding("WT-A003", "Ask-first rules not found" if seen == "absent" else "Ask-first rules don't cover everything",
-                          "medium", ["ASI09"], "Auto-review rules", ", ".join(gaps),
+    if gaps:
+        fs.append(finding("WT-A003", {"absent": "Ask-first rules not found", "unread": "Ask-first rules don't say what they cover"}.get(
+                              seen, "Ask-first rules don't cover everything"), "medium", ["ASI09"], "Auto-review rules", ", ".join(gaps),
                           "Rules saved only in the app can't be seen from the computer. Tell the Bot to add them and save a copy to "
                           "/workspace/watchtower/exports/auto-review.txt."))
+    if seen == "unread":
+        fs.append(finding("WT-A003", "If your Ask-first rules are in a language Watchtower doesn't read, it can't check them", "info",
+                          ["ASI09"], "Auto-review rules", ASK_UNREAD_EVIDENCE,
+                          "Watchtower reads Ask-first rules in English, Spanish, French, German, Portuguese, Italian, Russian, Chinese, "
+                          "Japanese, Korean, Arabic, Greek and Hindi, and found none of their words in yours. The alert above stays "
+                          "until your rules name sending, publishing, payments, deleting and permission changes in one of those."))
+        fs[-1]["ask_first_unread"] = True   # a Tip (ask_first_unread: this evidence only, so it never matches the medium)
 
     # 5b. tripwires and shell history (zero tokens)
     fs += soft("hooks", ("WT-C005",), notes, [], hook_findings, roots, inv)

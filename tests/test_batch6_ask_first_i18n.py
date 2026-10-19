@@ -2,8 +2,9 @@
 
 rules/ask_first_vocab.json (shipped, held to MANIFEST.sha256 like the access vocabulary) gives, for 13 languages, the words that
 open an Ask-first rule and the stems of the five areas. A rule set Watchtower reads is linted over every language at once; one
-it can't read (none of its words in any language) is a Tip that asks the owner to make sure, never a counted medium; no rule set
-at all stays the medium "Ask-first rules not found". The English entry is today's regular expressions exactly.
+it can't read (none of its words in any language) stays the counted medium, with every area missing, and gets a language Tip
+beside it (fix round 1, Codex 5: 6cd1ab4 made it a Tip instead, so `["."]` hid the medium); no rule set at all stays the medium
+"Ask-first rules not found". The English entry is today's regular expressions exactly.
 
 Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's watchtower/ sources and rules, this file in
 place); "guard" ones keep what must not change. Settings files are written into temp boxes."""
@@ -84,14 +85,29 @@ class OtherLanguages(_Settings):
         self.native(ask=[s for s in SPANISH if "pagos" not in s])
         self.assertEqual(self.counted(), [("WT-A003", "medium", "Ask-first rules don't cover everything", "purchases or payments")])
 
-    def test_a_language_watchtower_cant_read_is_a_tip(self):   # replay (5dcd0a2: a counted medium)
-        self.native(ask=SWAHILI)
+    def test_a_language_watchtower_cant_read_stays_counted_with_a_tip(self):   # replay (5dcd0a2: the medium, no Tip)
+        self.native(ask=SWAHILI)   # fix round 1 (Codex 5): the medium stays; the language Tip is added beside it
         fs = self.a003()
-        self.assertEqual([(f["class"], f["severity"]) for f in fs], [("tip", "info")])
-        self.assertIn("can't read the language your Ask-first rules are written in", fs[0]["title"] + " " + fs[0]["fix"])
+        self.assertEqual(sorted((f["class"], f["severity"]) for f in fs), [("evidence", "medium"), ("tip", "info")])
+        self.assertEqual(self.counted(), [("WT-A003", "medium", "Ask-first rules don't say what they cover", ", ".join(AREAS))])
+        tip = next(f for f in fs if f["class"] == "tip")
+        self.assertIn("in a language Watchtower doesn't read", tip["title"])
+        self.assertIn("The alert above stays", tip["fix"])
         r = self.audit()
-        self.assertEqual(r["open_by_severity"]["medium"], 0, r)
+        self.assertEqual(r["open_by_severity"]["medium"], 1, r)
         self.assertEqual(wt.ask_first_covered(self.snap()["findings"]), set())   # nothing is assumed covered
+
+    def test_rules_that_name_no_area_stay_the_counted_medium(self):   # replay, Codex 5 (6cd1ab4: a Tip, nothing counted)
+        for ask in (["."], ["every shell command"]):
+            self.native(ask=ask)
+            self.assertEqual(self.counted(), [("WT-A003", "medium", "Ask-first rules don't say what they cover", ", ".join(AREAS))], ask)
+            self.assertEqual(self.audit()["open_by_severity"]["medium"], 1, ask)
+
+    def test_a_forged_tip_flag_never_lowers_the_medium(self):   # guard: the Tip is known by its own evidence, never the medium's
+        med = wt.finding("WT-A003", "Ask-first rules not found", "medium", ["ASI09"], "Auto-review rules", ", ".join(AREAS), "x")
+        med["ask_first_unread"] = True
+        self.assertFalse(wt.ask_first_unread(med))
+        self.assertEqual(wt.label_findings([med])[0]["severity"], "medium")
 
 
 class EnglishAsBefore(_Settings):
@@ -147,7 +163,7 @@ class Vocabulary(_Settings):
             self.assertIn("entry 2", wt.ask_first_vocab_problem())
             self.assertEqual(wt.ask_first_gaps(ENGLISH_CORPUS[0]), [])
             self.native(ask=SPANISH)
-            self.assertEqual(len(self.counted()), 0)   # Spanish is unread without the file: a Tip, never a counted medium
+            self.assertEqual([s for _, s, _, _ in self.counted()], ["medium"])   # Spanish is unread without the file: the medium (fix round 1)
             notes = self.snap()["notes"]
             self.assertTrue([n for n in notes if "rules/ask_first_vocab.json" in n and "entry 2" in n], notes)
 

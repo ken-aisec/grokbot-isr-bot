@@ -11,23 +11,27 @@ PLATFORM_LOCK_REL = "rules/platform-release.lock"
 PLATFORM_LOCK = os.path.join(HERE, "..", PLATFORM_LOCK_REL)   # tests point this at a file in their box; never read from the environment
 PLATFORM_LOCK_MAX_BYTES = 4 * 1024 * 1024
 _PLATFORM_LOCK_CACHE = {}
-_SHA256SUM_LINE = re.compile(r"([0-9a-fA-F]{64}) [ *](.+)")
+_SHA256SUM_LINE = re.compile(r"(?:(canonical) )?([0-9a-fA-F]{64}) [ *](.+)")
+# Batch 6 fix round 1 (Codex 1): a line says which form it lists. "<sha256>  <path>" is the file's raw bytes (platform_listed);
+# "canonical <sha256>  <path>" is the digest of its canonical form (platform_canonical_listed), which vouches for the file only
+# after platform_verified normalized it and checked every unit. A file whose raw bytes are a listed canonical form isn't listed.
 
 
 def _platform_lock_state():
-    """({path under the home folder: {sha256, ...}}, why it can't be used or ""). One bad line makes the whole list unusable."""
+    """({path under the home folder: {sha256 of the raw bytes, ...}}, why it can't be used or "", {path: {sha256 of the
+    canonical form, ...}}). One bad line makes the whole list unusable."""
     path = PLATFORM_LOCK
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
     except OSError as e:
-        return {}, f"it can't be opened as a plain file ({errno.errorcode.get(e.errno, 'error')})"
+        return {}, f"it can't be opened as a plain file ({errno.errorcode.get(e.errno, 'error')})", {}
     try:
         st = os.fstat(fd)
         if not stat.S_ISREG(st.st_mode):
-            return {}, "it isn't a plain file"
+            return {}, "it isn't a plain file", {}
         key = (path, st.st_size, st.st_mtime_ns, st.st_ino)
         if _PLATFORM_LOCK_CACHE.get("key") == key:
-            return _PLATFORM_LOCK_CACHE["lock"], _PLATFORM_LOCK_CACHE["why"]
+            return _PLATFORM_LOCK_CACHE["lock"], _PLATFORM_LOCK_CACHE["why"], _PLATFORM_LOCK_CACHE["canonical"]
         data = b""
         while len(data) <= PLATFORM_LOCK_MAX_BYTES:
             chunk = os.read(fd, PLATFORM_LOCK_MAX_BYTES + 1 - len(data))
@@ -35,35 +39,35 @@ def _platform_lock_state():
                 break
             data += chunk
     except OSError as e:
-        return {}, f"it can't be read ({errno.errorcode.get(e.errno, 'error')})"
+        return {}, f"it can't be read ({errno.errorcode.get(e.errno, 'error')})", {}
     finally:
         os.close(fd)
-    lock, why = _parse_platform_lock(data)
-    _PLATFORM_LOCK_CACHE.update(key=key, lock=lock, why=why)
-    return lock, why
+    lock, why, canon = _parse_platform_lock(data)
+    _PLATFORM_LOCK_CACHE.update(key=key, lock=lock, why=why, canonical=canon)
+    return lock, why, canon
 
 
 def _parse_platform_lock(data):
     if len(data) > PLATFORM_LOCK_MAX_BYTES:
-        return {}, "it is larger than 4 MB"
+        return {}, "it is larger than 4 MB", {}
     want = release_want(PLATFORM_LOCK, PLATFORM_LOCK_REL)   # batch 6 (KL4): whatever the folder's layout
     if want is not None and hashlib.sha256(data).hexdigest() != want:
-        return {}, _not_shipped(want)
+        return {}, _not_shipped(want), {}
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
-        return {}, "it isn't UTF-8 text"
+        return {}, "it isn't UTF-8 text", {}
     roots = tuple(sub + "/" for sub in PLATFORM_ROOT_SUBS)
-    out = {}
+    out, canon = {}, {}
     for n, line in enumerate(text.split("\n"), 1):
         line = line[:-1] if line.endswith("\r") else line
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         m = _SHA256SUM_LINE.fullmatch(line)
-        rel = m.group(2) if m else ""
+        rel = m.group(3) if m else ""
         rel = rel[2:] if rel.startswith("./") else rel
         if not m:
-            why = "it isn't \"<sha256>  <path>\""
+            why = "it isn't \"<sha256>  <path>\" or \"canonical <sha256>  <path>\""
         elif rel.startswith("/"):
             why = "its path starts at / (paths are under the home folder)"
         elif ":" in rel:
@@ -75,15 +79,20 @@ def _parse_platform_lock(data):
         elif not rel.startswith(roots):
             why = "its path isn't inside one of the platform's own folders"
         else:
-            out.setdefault(rel, set()).add(m.group(1).lower())
+            (canon if m.group(1) else out).setdefault(rel, set()).add(m.group(2).lower())
             continue
-        return {}, f"line {n}: {why}"
-    return out, ""
+        return {}, f"line {n}: {why}", {}
+    return out, "", canon
 
 
 def platform_lock():
-    """The usable vendor release list ({} when it is empty or can't be used whole)."""
+    """The usable vendor release list's raw-bytes lines ({} when it is empty or can't be used whole)."""
     return _platform_lock_state()[0]
+
+
+def platform_lock_canonical():
+    """The usable vendor release list's "canonical" lines ({path: {sha256 of the canonical form}}; {} when there are none)."""
+    return _platform_lock_state()[2]
 
 
 def platform_lock_problem():
@@ -101,13 +110,14 @@ def _home_rels(p):
     return out
 
 
-def platform_listed(p, h):
+def platform_listed(p, h, lock=None):
     """True only when p is strictly inside a platform root as written and as its real path (platform_skill_path, no colon
     reading) and both, relative to their home base, are listed in the vendor release list with exactly the sha256 h. A path plus
-    its hash is the provenance: vendor bytes at a new path aren't listed there."""
+    its hash is the provenance: vendor bytes at a new path aren't listed there. Only raw-bytes lines (fix round 1: `lock` is
+    the "canonical" lines for platform_canonical_listed)."""
     if not isinstance(h, str) or not re.fullmatch(r"[0-9a-f]{64}", h) or not platform_skill_path(p, line=False):
         return False
-    lock = platform_lock()
+    lock = platform_lock() if lock is None else lock
     if not lock:
         return False
     try:
@@ -116,6 +126,12 @@ def platform_listed(p, h):
     except OSError:
         return False
     return all(any(h in lock.get(r, ()) for r in _home_rels(q)) for q in (n, rn))
+
+
+def platform_canonical_listed(p, c):
+    """platform_listed for the digest `c` of p's canonical form, against the release list's "canonical" lines only. Only
+    platform_verified asks, after it normalized p and checked every unit."""
+    return platform_listed(p, c, platform_lock_canonical() or {})
 
 
 def platform_ish(p):
@@ -554,10 +570,11 @@ def _unit_text(data, how):
     return v[1:-1] if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'" else v
 
 
-def _unit_checker(n, manifest):
+def _unit_checker(n, manifest, used=None):
     """check() for canonical_platform_json on the metadata file n: a unit's file is in the same platform root as n (as written
     and where it leads, no link at or below the root), a plain file in this run's manifest, still the bytes the scan
-    fingerprinted; a text equals what UNIT_TEXT names of it, a digest its sha256."""
+    fingerprinted; a text equals what UNIT_TEXT names of it, a digest its sha256. `used` (a list) gets (path, sha256, its
+    _stat_key before the read) of each unit's file found (fix round 1: metadata_proof holds each to the release list)."""
     root = next((r for r in platform_roots() if _under(n, {r}, strict=True)), None)
     seen = {}
 
@@ -578,10 +595,13 @@ def _unit_checker(n, manifest):
                       and os.path.realpath(q) == os.path.join(os.path.realpath(root), os.path.relpath(q, root)))
             except (OSError, ValueError):
                 ok = False
+            before = _stat_key(q)
             want = (manifest if manifest is not None else {}).get(q)
             data = _read_plain(q, NORMALIZE_FILE_MAX) if ok and isinstance(want, str) else None
             if data is not None and hashlib.sha256(data).hexdigest() == want:
                 seen[q] = (data, want)
+                if used is not None:
+                    used.append((q, want, before))
         return seen[q]
 
     def check(u, ident, how, value):
@@ -596,15 +616,18 @@ def _unit_checker(n, manifest):
     return check
 
 
-VERIFIED_METADATA = set()   # this run's metadata files verified by content (B1), for the Platform refresh Tip's wording
+# This run's metadata files verified by content (B1): {path: the bytes verified}, for the Platform refresh Tip's wording and (fix
+# round 1, Codex 2) the private copy gitleaks_findings scans. In memory only: nothing stored vouches for a file.
+VERIFIED_METADATA = {}
 
 
-def platform_verified(p, h, manifest=None):
+def platform_verified(p, h, manifest=None, used=None):
     """True when the spec names p (under the home folder, as written and where it really leads), p is a plain file (never a
-    link), and the release list holds the digest of its canonical form for it (platform_listed). PR A, Codex round 2 (9): `h` is
-    the sha256 of the bytes the scan read (the manifest's); the bytes read here are normalized only when they are those same
-    bytes, so a file swapped between the scan and this read is never vouched for by what it became. Batch 6 (B1): its units are
-    checked against `manifest`, this run's fingerprints (none: no unit is verified)."""
+    link), and the release list holds the digest of its canonical form for it (a "canonical" line: platform_canonical_listed).
+    PR A, Codex round 2 (9): `h` is the sha256 of the bytes the scan read (the manifest's); the bytes read here are normalized
+    only when they are those same bytes, so a file swapped between the scan and this read is never vouched for by what it
+    became. Batch 6 (B1): its units are checked against `manifest`, this run's fingerprints (none: no unit is verified); `used`
+    gets each unit's file (_unit_checker)."""
     spec = _platform_normalize_state()[0]
     if not spec:
         return False
@@ -619,11 +642,47 @@ def platform_verified(p, h, manifest=None):
     data = _read_plain(n, NORMALIZE_FILE_MAX)
     if data is None or not isinstance(h, str) or hashlib.sha256(data).hexdigest() != h:
         return False
-    c = canonical_platform_json(data, entry["fields"], entry["units"], _unit_checker(n, manifest))
-    if c is None or not platform_listed(n, c):
+    c = canonical_platform_json(data, entry["fields"], entry["units"], _unit_checker(n, manifest, used))
+    if c is None or not platform_canonical_listed(n, c):   # fix round 1 (Codex 1): a "canonical" line, never a raw one
         return False
-    VERIFIED_METADATA.add(n)
+    VERIFIED_METADATA[n] = data
     return True
+
+
+class _DiskManifest(dict):
+    """A manifest taken from the disk when asked: a plain file's sha256, read without following a link (None otherwise)."""
+    def get(self, p, default=None):
+        if p not in self:
+            data = _read_plain(p, NORMALIZE_FILE_MAX)
+            self[p] = hashlib.sha256(data).hexdigest() if data is not None else None
+        return dict.get(self, p, default)
+
+
+_METADATA_PROOF = {}   # {(path, sha256): (answer, what it was decided from)}; audit() clears it
+
+
+def metadata_proof(p, h):
+    """Fix round 1 (Codex 2, 3, 4): True when the metadata file p has the bytes `h` now, those bytes verify against the release
+    list (platform_verified: the release's spec, a "canonical" line, each unit checked against its file on disk now), and every
+    unit's file is itself on the release list with those bytes (platform_listed). Recomputed whenever it is asked, in the audit
+    and in report, doctor or fix alike; no flag or record on the computer answers it. A file with any unit that isn't listed
+    (an unlisted skill whose text the file repeats) is never proven, so a hit in it stays counted with its cleanup."""
+    try:
+        n = os.path.normpath(str(p))
+    except (TypeError, ValueError):
+        return False
+    if not isinstance(h, str) or not re.fullmatch(r"[0-9a-f]{64}", h) or not _platform_normalize_state()[0]:
+        return False
+    # the stat keys are taken before each read, so a file changed while it is checked is checked again next time
+    now = (_stat_key(n), _stat_key(PLATFORM_LOCK), _stat_key(PLATFORM_NORMALIZE))
+    got = _METADATA_PROOF.get((n, h))
+    if got is not None and got[1] == now and all(_stat_key(q) == k for q, k in got[2]):
+        return got[0]
+    data, used = _read_plain(n, NORMALIZE_FILE_MAX), []
+    ok = (data is not None and hashlib.sha256(data).hexdigest() == h and platform_verified(n, h, _DiskManifest(), used)
+          and all(platform_listed(q, d) for q, d, _ in used))
+    _METADATA_PROOF[(n, h)] = (ok, now, [(q, k) for q, _, k in used])
+    return ok
 
 
 def platform_listed_normalized(p, h, manifest=None):

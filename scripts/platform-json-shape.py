@@ -17,7 +17,7 @@ Batch 6 (B1), two more modes for the spec's `units`:
   ("file"), what follows its frontmatter ("after_frontmatter"), one of its frontmatter fields ("frontmatter:<name>"), or that
   file's sha256 ("file_digest"), with the file's path under ROOT. Never a value. That says which unit kind and text mapping a
   spec entry needs.
---canonical: the release lock line ("<sha256>  <path under the home folder>") of each FILE's canonical form, computed by the
+--canonical: the release lock line ("canonical <sha256>  <path under the home folder>") of each FILE's canonical form, computed by the
   checkout's own watchtower/wt.py (canonical_platform_json, with each unit checked against the files on disk now) and the
   checkout's rules/platform-normalize.json, or SPEC. Run it on a clean box at release, from the home folder the lock is filled for."""
 import hashlib, json, os, sys
@@ -175,7 +175,7 @@ def canonical(spec, files):
             print(f"# {p}: no canonical form (not strict JSON, a field of another type, or a unit that doesn't equal its file)")
             rc = 1
             continue
-        print(f"{c}  {rel}")
+        print(f"canonical {c}  {rel}")   # fix round 1 (Codex 1): the line says it lists a canonical form
     return rc
 
 
