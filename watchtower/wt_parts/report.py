@@ -36,6 +36,21 @@ def dismissed_keys():
     return {k: e_.get("reason", "") for k, e_ in dismissed_records().items()}
 
 
+def source_ev256(f):
+    """Batch 6 fix round 1 (Codex 5, 6): finding f's ev256 as Watchtower's text rules give it now: its file (`path`, or `where`
+    without its :line) read again and scanned, and the finding with f's own key taken. None unless exactly one comes back with an
+    ev256 (a finding not from a file's text, a file gone or changed so the key is gone, a high or critical finding). ev256 is
+    never stored with findings, so this is the only way a dismissal gets one."""
+    m = re.fullmatch(r"(.+):(\d+)", str(f.get("where") or ""))
+    if not m or not f.get("key"):
+        return None
+    text = read_text(f.get("path") or m.group(1))
+    if text is None:
+        return None
+    got = [g["ev256"] for g in scan_text(text, m.group(1), load_rules(), keep_ev256=True) if g.get("key") == f["key"] and g.get("ev256")]
+    return got[0] if len(got) == 1 else None
+
+
 def dismiss(key, reason):
     """Drop a Worth-a-look finding the Bot has shown is a false alarm, and log why. Never an evidence or Confirmed finding; never
     when the content argues it is safe. Every decision, kept or dropped, goes to state/dismissed.jsonl."""
@@ -48,8 +63,9 @@ def dismiss(key, reason):
         ok, why = False, "no such finding in the last audit or roll-call"
     else:
         entry.update(key=f["key"], rule=f["rule"], where=f["where"], cls=f.get("class") or ("evidence" if is_evidence(f) else "pattern"))
-        if f.get("ev256"):   # batch 6 (B6): the whole evidence's digest, for a dismissal held across an unrelated edit
-            entry["ev256"] = f["ev256"]
+        ev = source_ev256(f)   # batch 6 (B6), fix round 1: its whole source line's or command's digest, for a dismissal held
+        if ev:                 # across an unrelated edit; none, and that dismissal never holds over a change
+            entry["ev256"] = ev
         m = SAFE_CLAIM.search(dismiss_context(f))
         if f.get("unverified_platform"):   # item 8 review 1; Ken's decision (Oct 18): only a release that lists it clears one
             ok, why = False, "a platform file not on the vendor's release list: only a Watchtower release that lists it clears it"

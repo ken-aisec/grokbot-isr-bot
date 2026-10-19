@@ -155,23 +155,27 @@ def read_text(path, limit=1_000_000):
         return None
 
 
-def finding(rule_id, title, severity, owasp, where, evidence, fix, source="watchtower", ident=None, path=None, shown=None):
+def finding(rule_id, title, severity, owasp, where, evidence, fix, source="watchtower", ident=None, path=None, shown=None, span=None):
     """`ident` names the finding when its evidence holds a count that drifts (63 logins, 6 advisories): the same problem
     keeps the same key, so it is never reported as fixed and new in one run. `key0` is the key older versions gave it.
     `path` is the literal file a "<file>:<line>" where is about (item 8, from Codex's batch 3 round 2), kept with the finding
     when it is carried to later runs, so a file named gateway.json:3 stays itself even after it is gone.
     Batch 4 (R11): the key is made from `evidence` exactly as before; what is stored is masked first, then cut. `shown`: the
-    uncut text the caller cut `evidence` from (or that it masked its own way), so a value cut short is masked as a whole."""
+    uncut text the caller cut `evidence` from (or that it masked its own way), so a value cut short is masked as a whole.
+    `span` (batch 6 fix round 1, Codex 5, 6): the whole source text the match was read from (its lines, a command joined over
+    lines, and what the rule looked at past the match); ev256 is its digest with the evidence, never the text itself."""
     key = finding_key(rule_id, where, evidence)
     stored =mask_secrets(((evidence if shown is None else shown) or "")[:MASK_WINDOW]).replace("\n", " ")[:160]
     out = {"key": key, "rule": rule_id, "title": title, "severity": severity, "owasp": owasp,
            "where": where, "evidence": stored, "fix": fix, "source": source}
     if path is not None:
         out["path"] = path
-    full = (evidence or "") if shown is None else f"{evidence or ''}\x00{shown}"
-    if len((evidence or "").replace("\n", " ")) > 160 or (shown is not None and shown != evidence):
-        # batch 6 (B6): the key covers the first 160 characters of the evidence; ev256 (a digest, never the text) covers all
-        # of it, so a dismissal held across an unrelated edit is for exactly this text. Only kept where the key doesn't cover it.
+    if span is not None and severity in ("medium", "low", "info"):
+        # batch 6 (B6), fix round 1 (Codex 5, 6): a dismissal held across an unrelated edit is for exactly this source text, its
+        # whole line or command (T017's file and destination included), not only the evidence the key is made from. No span:
+        # no ev256, and such a finding's dismissal never holds over a change (held_dismissal); a high or critical one never
+        # holds, so it carries none
+        full = f"{evidence or ''}\x00{'' if shown is None else shown}\x00{span}"
         out["ev256"] = hashlib.sha256(full.encode("utf-8", "replace")).hexdigest()
     if ident is not None:
         out["key"], out["key0"] = hashlib.sha1(f"{rule_id}|{where}|id:{ident}".encode()).hexdigest()[:16], key

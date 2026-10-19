@@ -13,11 +13,12 @@ placeholders; every real-shaped key (tokens, DER, OpenSSH) is generated when the
 
 Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's watchtower/ sources, this file in place); the
 ones marked "guard" pass there too."""
-import base64, gzip, json, os, secrets, string, sys, unittest
+import base64, gzip, json, os, re, secrets, string, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, SCANNERS, wt
 
 ALNUM = string.ascii_letters + string.digits
+PLACEHOLDER_WORDS = re.compile(r"(?i)(example|sample|placeholder|your|dummy|fake|test|xxxx|0000|1234|abcd)")
 
 FAKE_GITLEAKS = r"""#!/usr/bin/env python3
 import json, math, os, re, sys
@@ -39,19 +40,32 @@ def entropy(s):
     for ch in s:
         c[ch] = c.get(ch, 0) + 1
     return -sum(k / len(s) * math.log2(k / len(s)) for k in c.values())
+def column(data, i, end=False):
+    # gitleaks' columns, in bytes: from 1 on the first line, from 2 on the lines after (it counts the line break before)
+    nl = data.rfind(b"\n", 0, i - 1 if end else i)
+    return (i if end else i + 1) if nl < 0 else (i - nl if end else i - nl + 1)
 report, later = [], []
-for h in json.load(open(CANDS)):
-    if not h["file"].startswith(src.rstrip("/") + "/"):
-        continue
-    line = open(h["file"]).read().split("\n")[h["line"] - 1]
-    target = {"line": line, "secret": h["secret"], "match": h["match"]}
-    if any((not b["rules"] or h["rule"] in b["rules"]) and (any(x.search(h["file"]) for x in b["paths"])
-           or any(x.search(target[b["target"]]) for x in b["regexes"])) for b in blocks):
-        continue
-    report.append({"File": h["file"], "StartLine": h["line"], "EndLine": h["line"] + h["match"].count("\n"), "RuleID": h["rule"],
-                   "Match": h["match"].replace(h["secret"], "REDACTED"), "Secret": "REDACTED", "Entropy": entropy(h["secret"])})
-    if h.get("then") is not None:
-        later.append((h["file"], h["then"]))
+cands = json.load(open(CANDS))
+files = [os.path.join(d, n) for d, _, ns in os.walk(src) for n in ns]
+for f in files:   # by content, as gitleaks reads: a hit named for this file, or for a file of the same name (a private copy)
+    data = open(f, "rb").read()
+    for h in cands:
+        if h["file"] != f and (os.path.basename(h["file"]) != os.path.basename(f) or h["file"] in files):
+            continue
+        i = data.find(h["match"].encode())
+        if i < 0 or data.count(b"\n", 0, i) + 1 != h["line"]:
+            continue
+        j = i + len(h["match"].encode())
+        line = data.decode().split("\n")[h["line"] - 1]
+        target = {"line": line, "secret": h["secret"], "match": h["match"]}
+        if any((not b["rules"] or h["rule"] in b["rules"]) and (any(x.search(f) for x in b["paths"])
+               or any(x.search(target[b["target"]]) for x in b["regexes"])) for b in blocks):
+            continue
+        report.append({"File": f, "StartLine": h["line"], "EndLine": h["line"] + h["match"].count("\n"), "RuleID": h["rule"],
+                       "StartColumn": column(data, i), "EndColumn": column(data, j, True),
+                       "Match": h["match"].replace(h["secret"], "REDACTED"), "Secret": "REDACTED", "Entropy": entropy(h["secret"])})
+        if h.get("then") is not None and h["file"] == f:
+            later.append((f, h["then"]))
 json.dump(report, open(out, "w"))
 for f, text in later:
     open(f, "w").write(text)
@@ -59,10 +73,11 @@ for f, text in later:
 
 
 def token(prefix, n):
-    """A real-shaped random token, made now: no placeholder word in it."""
+    """A real-shaped random token, made now: no placeholder word in it (fix round 1: the words checked here, as wt.PLACEHOLDER,
+    which is gone, did; such a token is real for every version)."""
     while True:
         k = prefix + "".join(secrets.choice(ALNUM) for _ in range(n))
-        if not wt.PLACEHOLDER.search(k):
+        if not PLACEHOLDER_WORDS.search(k):
             return k
 
 
@@ -178,12 +193,16 @@ class ExampleKeysAreNotSecrets(_Keys):
         self.assertNotIn(p, wt.scrub_targets_from_findings())
 
     def test_a_checksum_list_is_not_keys(self):   # replay (5dcd0a2: S002 for each line)
-        h1, h2 = secrets.token_hex(32), secrets.token_hex(20)
-        p = self.put("projects/app/release/manifest.json", '{\n  "skills/auth/tokens.md": "%s",\n  "bin/api_key.sh": "%s"\n}\n' % (h1, h2))
-        self.leak(p, 'tokens.md": "%s"' % h1, h1)
-        self.leak(p, 'api_key.sh": "%s"' % h2, h2)
+        # fix round 1 (Codex 3): a checksum by its line's own format (sha256sum's "<hex>  <path>", pip's --hash=sha256:), no
+        # longer a name -> hex map: a name never makes a value a checksum (test_batch6_codex_r1 has that one counted)
+        h1, h2 = secrets.token_hex(32), secrets.token_hex(32)
+        p = self.put("projects/app/release/SHA256SUMS", "%s  skills/auth/tokens.md\n" % h1)
+        q = self.put("projects/app/requirements.txt", "requests==2.32.3 --hash=sha256:%s\n" % h2)
+        self.leak(p, "%s  skills/auth/tokens.md" % h1, h1)
+        self.leak(q, "--hash=sha256:%s" % h2, h2)
         fs, _ = self.scan()
         self.assertEqual(self.keys(fs, p), [])
+        self.assertEqual(self.keys(fs, q), [])
 
     def test_fakes_never_make_a_folder_group(self):   # replay (5dcd0a2: one critical finding for the 6 files)
         d = "sand-data/workflows/setup-dev-tools/examples"

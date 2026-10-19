@@ -45,60 +45,73 @@ regexes = ['''(?i)^["']?(next|prev|previous|page|pagination|continuation)_?(page
 # line next to "token" and a $VAR, <...> or xxxx (so token=$X api_key=<a real key> was hidden) are gone; each hit's own secret is
 # judged by its content instead (gitleaks_example), the same check as Watchtower's own rule (secret_kind).
 GITLEAKS_READ_LIMIT = 5_000_000   # gitleaks reads files up to --max-target-megabytes 5
-_GL_TOKEN = r"[\w+/.~@-]"
+GITLEAKS_ONE_PIECE = 10_000       # gitleaks reads a file 100 KB at a time; well before that, a line is never a piece's first
 
 
-def gitleaks_secret(leak, text):
-    """(secret, the text after it) for one gitleaks hit, found again in the file without gitleaks storing it: gitleaks runs with
-    --redact, so its Match has REDACTED where the secret was. Lines StartLine..EndLine of the file as Watchtower read it are searched
-    with Match turned into a pattern (its text exact, each REDACTED the same secret); for a private-key hit, the one key block
-    (a BEGIN … PRIVATE KEY line in those lines) is the secret. None, and the hit is kept as it is, unless exactly one place fits, and (when gitleaks gave it) the
-    secret has gitleaks' Entropy: a file changed since gitleaks read it, or a Match that fits twice, is never judged."""
-    match = leak.get("Match")
-    if not isinstance(match, str) or "REDACTED" not in match or text is None:
-        return None
-    try:
-        sl = int(leak.get("StartLine"))
-        el = int(leak.get("EndLine") or sl)
-    except (TypeError, ValueError):
-        return None
-    lines = text.split("\n")
-    if sl < 1 or el < sl or el > len(lines):
-        return None
-    off = sum(len(x) + 1 for x in lines[:sl - 1])
-    region = "\n".join(lines[sl - 1:el])
-    # only gitleaks' private-key hit is a key block: a BEGIN line beside another hit's secret never judges that secret
-    heads = list(PEM_HEAD.finditer(region)) if leak.get("RuleID") == "private-key" else []
-    if heads:
-        if len(heads) != 1:
-            return None
-        return heads[0].group(0), text[off + heads[0].end():off + heads[0].end() + PEM_CAP]
+def _int_field(leak, k):
+    v = leak.get(k)
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+
+def _fill(match, text):
+    """The secret when `text` is gitleaks' Match with each REDACTED put back as one same secret; None otherwise. Both ends of
+    text are fixed, so the secret's length, and the secret, follow from the length alone."""
     parts = match.split("REDACTED")
-    want = leak.get("Entropy")
-    want = float(want) if isinstance(want, (int, float)) and not isinstance(want, bool) and want > 0 else None
-    word = rf"(?<!{_GL_TOKEN})(?P<s>{_GL_TOKEN}{{8,}}={{0,3}})(?!{_GL_TOKEN}|=)"   # a whole word; = only as base64's padding
-    if not any(p.strip() for p in parts):
-        if want is None:
-            return None   # the whole Match is the secret: only gitleaks' Entropy can say which word of the line it is
-        rxs = [word]
-    else:
-        rest = "".join(r"(?P=s)" + re.escape(p) for p in parts[2:])   # a secret named twice in one Match is the same both times
-        if not parts[0]:
-            firsts = [word.replace("{8,}", "+")]                        # nothing before it: a whole word
-        elif not parts[1]:   # nothing after it: up to the word's end, or (only gitleaks' Entropy can tell) the line's
-            firsts = [r"(?P<s>[^\s'\"`;,)}\]>]+)"] + ([r"(?P<s>[^\n]*[^\s'\"`;,])"] if want is not None else [])
-        else:
-            firsts = [r"(?P<s>.+?)"]
-        rxs = [re.escape(parts[0]) + f + re.escape(parts[1]) + rest for f in firsts]
-    seen, hits = set(), []
-    for rx in rxs:
-        for m in re.finditer(rx, region, re.S):
-            if (m.start("s"), m.end("s")) not in seen and (want is None or abs(shannon_entropy(m.group("s")) - want) < 1e-3):
-                seen.add((m.start("s"), m.end("s")))
-                hits.append(m)
-    if len(hits) != 1:
+    k, rest = len(parts) - 1, len(text) - sum(len(p) for p in parts)
+    if k < 1 or rest <= 0 or rest % k:
         return None
-    return hits[0].group("s"), text[off + hits[0].end("s"):off + hits[0].end("s") + PEM_CAP]
+    s = text[len(parts[0]):len(parts[0]) + rest // k]
+    return s if s.join(parts) == text else None
+
+
+def gitleaks_secret(leak, data):
+    """Fix round 1 (Codex 1): (secret, its whole source line, where it starts in that line) for one gitleaks hit, read from
+    `data` (the file's bytes as Watchtower read them once) at exactly the place gitleaks reported: StartLine/StartColumn to
+    EndLine/EndColumn, in bytes. gitleaks counts a column from 1 on the first line of what it read at once and from 2 on the
+    lines after (it counts the line break before), and trims line breaks from the ends of its Match; where a line may be
+    either, both counts are tried. The bytes there must be gitleaks' Match exactly (it runs with --redact: each REDACTED is the
+    same secret, so the secret follows from the length) and the secret must have gitleaks' Entropy. None, and the hit is kept
+    as it is, unless exactly one place fits: no field, no Entropy, another text there, bytes that aren't UTF-8, or two places
+    that both fit. No other text on the line is ever picked."""
+    match = leak.get("Match")
+    sl, el, sc, ec = (_int_field(leak, k) for k in ("StartLine", "EndLine", "StartColumn", "EndColumn"))
+    want = leak.get("Entropy")
+    if (not isinstance(match, str) or "REDACTED" not in match or not isinstance(data, bytes) or None in (sl, el, sc, ec)
+            or not isinstance(want, (int, float)) or isinstance(want, bool) or want < 0):
+        return None
+    starts = [0] + [m.end() for m in re.finditer(b"\n", data)]
+    if not (1 <= sl <= el <= len(starts)):
+        return None
+    # (start, end) count: line 1 is the first line gitleaks read at once; a later line is, too, only where gitleaks may have
+    # started a new piece of a long file (it reads 100 KB at a time; any line past GITLEAKS_ONE_PIECE is taken as maybe one)
+    first = (1, 0 if sl == el else 1)
+    counts = [first] if sl == 1 else [(2, 1)] + ([first] if starts[sl - 1] >= GITLEAKS_ONE_PIECE else [])
+    found = set()
+    for ds, de in counts:
+        a, b = starts[sl - 1] + sc - ds, starts[el - 1] + ec - de
+        if not (0 <= a < b <= len(data)):
+            continue
+        raw = data[a:b]
+        lead = len(raw) - len(raw.lstrip(b"\n"))
+        try:
+            text = raw.strip(b"\n").decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        secret = _fill(match, text)
+        if secret is None or abs(shannon_entropy(secret) - float(want)) > 1e-5:   # gitleaks writes Entropy as a float32
+            continue
+        at = a + lead + len(match.split("REDACTED")[0].encode("utf-8"))
+        found.add((at, at + len(secret.encode("utf-8"))))
+    if len(found) != 1:
+        return None
+    s, e = found.pop()
+    ls = data.rfind(b"\n", 0, s) + 1
+    le = data.find(b"\n", e)
+    try:
+        line = data[ls:len(data) if le < 0 else le].decode("utf-8").rstrip("\r")
+        return data[s:e].decode("utf-8"), line, len(data[ls:s].decode("utf-8"))
+    except UnicodeDecodeError:
+        return None
 
 
 def shannon_entropy(s):
@@ -112,19 +125,37 @@ def shannon_entropy(s):
     return -sum(k / n * math.log2(k / n) for k in counts.values())
 
 
-def gitleaks_example(leak, texts):
-    """True when a gitleaks hit's own secret is an example value (secret_kind): FAKE or placeholder text, an environment
-    variable name, a key block that isn't a key, a file's checksum. The file is read once per run (`texts`) with Watchtower's
-    reader (a plain file, at most GITLEAKS_READ_LIMIT); anything it can't find again is kept."""
+def gitleaks_example(leak, datas):
+    """True when a gitleaks hit's own secret, read at gitleaks' place in the file's bytes (gitleaks_secret), is an example
+    value (secret_kind): a whole placeholder or environment-variable reference, a key block whose body isn't a key, a checksum
+    by its line's format. The file's bytes are read once per run (`datas`: a plain file, never through a link, at most
+    GITLEAKS_READ_LIMIT); anything that can't be read there is kept. gitleaks_findings then keeps the verdict only when gitleaks
+    gives the same hit on those very bytes (example_bound)."""
     p = leak.get("File")
     if not isinstance(p, str) or not p:
         return False
-    if p not in texts:
-        texts[p] = read_scanned(p, limit=GITLEAKS_READ_LIMIT)[0]
-    found = gitleaks_secret(leak, texts[p])
+    if p not in datas:
+        datas[p] = _read_plain(p, GITLEAKS_READ_LIMIT)
+    found = gitleaks_secret(leak, datas[p])
     if not found:
         return False
-    return secret_kind(found[0], str(leak.get("RuleID") or ""), found[1], leak.get("Match"))[0] == "example"
+    secret, line, at = found
+    return secret_kind(secret, line=line, at=at)[0] == "example"
+
+
+def _leak_mark(leak):
+    return json.dumps([leak.get(k) for k in _LEAK_FIELDS], sort_keys=True, default=str)
+
+
+def example_bound(exe, cfg, pending, datas):
+    """Fix round 1 (Codex 1): {file: marks} of the example hits (`pending`: file -> hits judged example) that gitleaks also
+    gives, exactly (rule, lines, columns, Match, Entropy), on a private copy of the bytes they were judged on (scan_copies). A
+    file changed between gitleaks' read and Watchtower's, or a copy gitleaks can't scan, binds nothing: its hits count."""
+    files = [fp for fp in pending if isinstance(datas.get(fp), bytes)]
+    leaks = scan_copies(exe, cfg, [(os.path.basename(fp), datas[fp]) for fp in files], "gitleaks-examples.json") if files else None
+    if leaks is None:
+        return {}
+    return {fp: {_leak_mark(l) for l in mine} for fp, mine in zip(files, leaks)}
 
 
 GROUPED_DIRS = ("/agent-transcripts", "/agent-tools", "/.cursor/projects")
@@ -178,7 +209,7 @@ def gitleaks_findings(roots, notes):
             reason = next((l for l in re.sub(r"\x1b\[[0-9;]*m", "", err).splitlines() if "FTL" in l or "error" in l.lower()), err.strip()[:160] or "no report written")
             fail_note(notes, f"gitleaks FAILED on {r} ({reason.strip()[-160:]}): secrets there were NOT checked by gitleaks.")
             continue
-        per_file, all_hits, decoys, skipped_tool, examples, texts = {}, {}, canary_paths(), 0, 0, {}
+        per_file, all_hits, decoys, skipped_tool, examples, datas, order, pending = {}, {}, canary_paths(), 0, 0, {}, [], {}
         for leak in load_json(tmp, []) or []:
             if not isinstance(leak, dict):
                 continue
@@ -190,11 +221,19 @@ def gitleaks_findings(roots, notes):
                 skipped_tool += 1
                 continue                                  # item 8 dry run: test vectors in a language toolchain or package store                                  # Watchtower's own decoys (their names are this install's, not in this config)
             all_hits.setdefault(leak.get("File"), []).append(leak)   # metadata_bound compares every hit in the file, examples too
-            if gitleaks_example(leak, texts):
+            ex = gitleaks_example(leak, datas)
+            if ex:
+                pending.setdefault(leak.get("File"), []).append(leak)
+            order.append((leak, ex))
+        # batch 6 (B5): example hits are left out before the per-file and folder grouping, so fakes never make a group; fix round
+        # 1 (Codex 1): only those gitleaks gives again on the very bytes they were judged on
+        bound_ex = example_bound(exe, cfg, pending, datas) if pending else {}
+        datas.clear()
+        for leak, ex in order:
+            if ex and _leak_mark(leak) in bound_ex.get(leak.get("File"), ()):
                 examples += 1
-                continue                                  # batch 6 (B5): before the per-file and folder grouping, so fakes never make a group
+                continue
             per_file.setdefault(leak.get("File"), []).append(leak)
-        texts.clear()
         by_dir = {}
         for fpath in per_file:
             by_dir.setdefault(group_dir(fpath), []).append(fpath)
@@ -261,14 +300,26 @@ def metadata_bound(exe, cfg, per_file):
              if isinstance(fp, str) and fp.startswith("/") and os.path.normpath(fp) in VERIFIED_METADATA]
     if not files:
         return {}
-    tmp, report = None, state_path("gitleaks-metadata.json")
+    leaks = scan_copies(exe, cfg, [(os.path.basename(fp), data) for fp, data in files], "gitleaks-metadata.json")
+    if leaks is None:
+        return {}
+    return {fp: hashlib.sha256(data).hexdigest() for (fp, data), mine in zip(files, leaks)
+            if mine and _leak_marks(mine) == _leak_marks(per_file[fp])}
+
+
+def scan_copies(exe, cfg, named, report_name):
+    """gitleaks' hits on private copies of some bytes, one list per (name, bytes) in `named`, in order; None when anything
+    is off. The copies are written from memory (a new 0700 folder, each file 0400 in its own folder under its name, never
+    through a link) and must be unchanged after the scan (inode, change time, size, bytes). (metadata_bound's private scan,
+    shared with example_bound in batch 6 fix round 1.)"""
+    tmp, report = None, state_path(report_name)
     try:
         tmp = tempfile.mkdtemp(prefix="wt-metadata-")
         copies = []
-        for i, (fp, data) in enumerate(files):
+        for i, (name, data) in enumerate(named):
             d = os.path.join(tmp, str(i))
             os.mkdir(d, 0o700)
-            q = os.path.join(d, os.path.basename(fp))
+            q = os.path.join(d, name)
             fd = os.open(q, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o400)
             try:
                 view = memoryview(data)
@@ -276,11 +327,11 @@ def metadata_bound(exe, cfg, per_file):
                     view = view[os.write(fd, view):]
             finally:
                 os.close(fd)
-            copies.append((fp, data, q))
+            copies.append((data, q))
 
         def marks():
             return [(x, st.st_ino, st.st_dev, st.st_ctime_ns, st.st_mtime_ns, st.st_size, st.st_mode, st.st_nlink)
-                    for x in [tmp] + [y for _, _, q in copies for y in (os.path.dirname(q), q)] for st in (os.lstat(x),)]
+                    for x in [tmp] + [y for _, q in copies for y in (os.path.dirname(q), q)] for st in (os.lstat(x),)]
         before = marks()
         try:
             os.remove(report)
@@ -289,16 +340,11 @@ def metadata_bound(exe, cfg, per_file):
         code, _, _ = run([exe, "detect", "--source", tmp, "--no-git", "--redact", "--config", cfg, "--report-format", "json",
                           "--report-path", report, "--exit-code", "0", "--max-target-megabytes", "5"], 180)
         leaks = load_json(report, None) if code == 0 else None
-        if not isinstance(leaks, list) or marks() != before or any(_read_plain(q, len(data)) != data for _, data, q in copies):
-            return {}
-        out = {}
-        for fp, data, q in copies:
-            mine = [l for l in leaks if isinstance(l, dict) and os.path.normpath(str(l.get("File") or "")) == q]
-            if mine and _leak_marks(mine) == _leak_marks(per_file[fp]):
-                out[fp] = hashlib.sha256(data).hexdigest()
-        return out
+        if not isinstance(leaks, list) or marks() != before or any(_read_plain(q, len(data)) != data for data, q in copies):
+            return None
+        return [[l for l in leaks if isinstance(l, dict) and os.path.normpath(str(l.get("File") or "")) == q] for _, q in copies]
     except (OSError, ValueError):
-        return {}
+        return None
     finally:
         try:
             os.remove(report)

@@ -39,7 +39,7 @@ def audit(roots, exports, quick=False):
                 t, manifest[p] = read_scanned(p)
                 if t is not None:
                     kind = "vendor" if is_vendor(p) else ("skill" if os.path.basename(p) == "SKILL.md" else "reference")
-                    batch = scan_text(t, p, rules, kind=kind)
+                    batch = scan_text(t, p, rules, kind=kind, keep_ev256=True)   # batch 6 fix round 1: for held dismissals
                     if is_vendor_template_file(p):   # DQ-024: story text in a built-in deck template is not a hidden-action hit
                         for f in batch:
                             if f["rule"] in ("WT-T008", "WT-T016"):   # story wording only; never exfil/pipe/override (R2)
@@ -51,7 +51,7 @@ def audit(roots, exports, quick=False):
     for p in inv["plugin_files"] + inv["mcp_configs"]:
         t, h = read_scanned(p)
         if t is not None:
-            fs += scanned_from(scan_text(t, p, rules, kind="reference"), h)
+            fs += scanned_from(scan_text(t, p, rules, kind="reference", keep_ev256=True), h)
             manifest[p] = h
             for m in re.finditer(r'"command"\s*:\s*"([^"]+)"', t):
                 if re.search(r"(?i)\b(npx|uvx|bunx)\b", m.group(1)) and "@" not in t[m.end():m.end() + 200]:
@@ -67,8 +67,8 @@ def audit(roots, exports, quick=False):
                     scanned.add(rp)
                     t, manifest[p] = read_scanned(p)
                     if t is not None:
-                        fs += scanned_from(scan_text(t, p, rules, kind="vendor" if is_vendor(p) else ("skill" if os.path.basename(p) == "SKILL.md" else "reference")),
-                                           manifest[p])
+                        fs += scanned_from(scan_text(t, p, rules, kind="vendor" if is_vendor(p) else ("skill" if os.path.basename(p) == "SKILL.md" else "reference"),
+                                                     keep_ev256=True), manifest[p])
                 else:
                     manifest[p] = sha256_file(p)
     # item 8 review 2 (high 1): every file name in the platform folders, found by their own walk, is fingerprinted
