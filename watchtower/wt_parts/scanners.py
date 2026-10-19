@@ -261,9 +261,20 @@ def installed_root():
     `app` folder install.sh makes, whatever WATCHTOWER_HOME says now.
     PR A, Codex round 2 (5): SELF_ROOT is the real folder of the wt.py that runs (wt.py follows links to itself), so a folder
     holding only a `watchtower` link to the installed copy runs it as the installed copy; and only that real folder's name
-    counts, never a WATCHTOWER_HOME whose app leads somewhere."""
+    counts, never a WATCHTOWER_HOME whose app leads somewhere.
+    PR A, Codex round 3 (3): the name alone made `mv app app.real` (with or without `ln -s app.real app`) a developer checkout:
+    no self-check, and planted rules files accepted. It is also an installed copy when it has what install.sh leaves: its
+    MANIFEST.sha256 and the commit record in the folder holding it (state/installed_commit), or when it is anywhere under
+    install.sh's default home. A developer checkout is a folder with none of these."""
     root = os.path.realpath(SELF_ROOT)
-    return root if os.path.basename(root) == "app" else None
+    if os.path.basename(root) == "app" or (root + "/").startswith(os.path.realpath(DEFAULT_INSTALL_HOME) + "/"):
+        return root
+    if os.path.isfile(os.path.join(root, "MANIFEST.sha256")) and os.path.lexists(os.path.join(install_home(root), "state", COMMIT_FILE)):
+        return root
+    return None
+
+
+DEFAULT_INSTALL_HOME = "/workspace/watchtower"   # install.sh's WT_HOME when WATCHTOWER_HOME isn't set
 
 
 def install_home(root):

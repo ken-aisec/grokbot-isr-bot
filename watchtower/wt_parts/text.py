@@ -555,7 +555,29 @@ _URL_KEYS = frozenset(("url", "uri", "endpoint"))   # PR A, Codex round 1 (1): t
 _LOOKUPS = frozenset(("getattr", "getenv", "setdefault", "pop", "getOrDefault", "get_or", "getdefault"))
 _LOOKUP_DEFAULTS = frozenset(("default", "fallback"))
 _BOOL_OPS = frozenset(("or", "and", "if", "else", "not", "||", "&&", "?"))
-_SAFE_KEY = re.compile(r"[rRbBuU]{0,2}(['\"`])[\w.\-]*\1")
+# PR A, Codex round 3 (5): the receivers `get` is an HTTP GET on (requests.get, httpx.get, session.get, self.client.get, https.get,
+# axios.get, $.get, …); on any other receiver it is a lookup (round 3 (1))
+_HTTP_CLIENT = re.compile(r"(?i)requests|httpx|aiohttp|urllib3|https?|axios|got|ky|needle|superagent|\$|jquery|\$http|[\w$]*(?:session|client)")
+_CONFIG_PARSER = re.compile(r"(?i)configparser")
+_ANY_URL = re.compile(r"(?i)\b[a-z][a-z0-9+.\-]*://[^\s'\"`<>()\[\]{}|\\,]*|(?<=['\"`])//[^\s'\"`<>()\[\]{}|\\,]+")
+
+
+def _other_urls(text):
+    """PR A, Codex round 3 (1): where each URL of `text` that isn't a chat webhook (CHAT_HOOKS) starts, read once per text."""
+    import urllib.parse
+    memo = _memo(text)
+    if "other_urls" not in memo:
+        out = []
+        for m in _ANY_URL.finditer(text):
+            try:
+                u = urllib.parse.urlsplit(m.group(0) if "://" in m.group(0) else "https:" + m.group(0))
+                host, port = (u.hostname or "").lower(), u.port
+            except ValueError:
+                host, port = "", None
+            if not (port is None and host and u.netloc.lower() == host and any(h.fullmatch(host) and p.match(u.path) for h, p in CHAT_HOOKS)):
+                out.append(m.start())
+        memo["other_urls"] = out
+    return memo["other_urls"]
 _CRED_WORD = re.compile(r"(?i)token|secret|passw(?:or)?d|api_?key|private_?key|credential|cookie|(?<![\w$])\.(?:ssh|aws|netrc|env)\b"
                         r"|\bid_(?:rsa|ed25519)\b")
 _STR_RX = (r"[rRbBuUfF]{0,2}(?:'''[\s\S]*?(?:'''|\Z)|\"\"\"[\s\S]*?(?:\"\"\"|\Z)|'(?:[^'\\\n]|\\.)*'|\"(?:[^\"\\\n]|\\.)*\"%s)")
@@ -712,21 +734,20 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
     def lookup(o, c, bt, lo):
         """PR A, Codex round 2 (1, 7): None when the call at o (its name starting at c) sends or wraps; else the role of the
         argument at lo in the lookup: "default" (a default= or fallback= keyword, or the last positional argument after the key)
-        or "key". `get` is both a lookup and an HTTP GET: a lookup when it has a default, a key and another positional
-        argument that isn't options or a callback, an environment receiver, or when another sender sends to what it returns."""
+        or "key". `get` is both a lookup and an HTTP GET: an HTTP GET on an HTTP client (_HTTP_CLIENT) or bare with the URL
+        first, unless another sender sends to what it returns (round 3; it was read from its arguments before)."""
         al = args(o)
         pos = [a for a in al if a[2] is None]
         mine = next((a for a in al if a[0] <= lo <= a[1]), None)
         if mine is None:
             return None
         if bt == "get":
-            chain = {tok(i) for i in range(c, o, 2)}
-            second = pos[1] if len(pos) >= 2 else None
-            options = second is not None and (kinds[second[0]] == "open" and text[starts[second[0]]] == "{"
-                                              or tok(second[0]) in ("function", "lambda", "async")
-                                              or any(tok(i) == "=" and tok(i + 1) == ">" for i in range(second[0], second[1])))
-            if not (calls_out(c) or chain & {"environ", "env"} or any(a[2] in _LOOKUP_DEFAULTS for a in al)
-                    or (second is not None and not options)):
+            # PR A, Codex round 3 (1, 5): `get` is an HTTP GET only on an HTTP client (requests.get, session.get, https.get,
+            # self.client.get, …, whatever its other arguments: params, a named callback) or as a bare get(url, …) with the URL
+            # first; on anything else (config.get, os.environ.get, cfg.get) it is a lookup, its arguments keys and a default
+            recv = tok(o - 3) if o - 3 >= c else None
+            http = _HTTP_CLIENT.fullmatch(recv) is not None if recv is not None else bool(pos) and mine is pos[0]
+            if http and not calls_out(c):
                 return None
         elif bt not in _LOOKUPS:
             return None
@@ -736,16 +757,6 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
         if mine[2] is None and pos.index(mine) > first and mine is pos[-1]:
             return "default"
         return "key"
-
-    def plain_keys(o, bt, lo):
-        """Every argument of the lookup at o other than the default at lo is a plain literal name ('hook', "SLACK_URL")."""
-        for i, (s, e, kw) in enumerate(args(o)):
-            if s <= lo <= e or (bt == "getattr" and i == 0 and kw is None):
-                continue
-            v = s + 2 if kw else s
-            if v != e or kinds[v] != "str" or not _SAFE_KEY.fullmatch(tok(v)):
-                return False
-        return True
 
     def statement(lo, hi):
         """The tokens of the statement the operand lo..hi is in: (first, last)."""
@@ -765,27 +776,16 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
                 b = match[b]
         return a, b
 
-    def quiet(lo, hi):
-        """PR A, Codex round 2 (1): nothing in the statement around lo..hi is another URL or a credential, so a destination
-        that is only maybe the chat webhook (a lookup's default under a computed key, a helper's argument, one side of an or)
-        can't be a way to send something somewhere else."""
-        import urllib.parse
-        a, b = statement(lo, hi)
-        for i in range(a, b + 1):
-            if i == li or kinds[i] not in ("str", "name"):
-                continue
-            t = tok(i)
-            if _CRED_WORD.search(t):
-                return False
-            if kinds[i] == "str" and re.search(r"(?i)://|\bhttps?:|^[rRbBuUfF]{0,2}['\"`]//", t):
-                try:
-                    u = urllib.parse.urlsplit(t.lstrip("rRbBuUfF")[1:-1])
-                    host, port = (u.hostname or "").lower(), u.port
-                except ValueError:
-                    return False
-                if not (port is None and u.netloc.lower() == host and any(h.fullmatch(host) and p_.match(u.path) for h, p_ in CHAT_HOOKS)):
-                    return False
-        return True
+    def quiet():
+        """PR A, Codex round 2 (1): a destination that is only maybe the chat webhook (a lookup's default, a helper's argument,
+        one side of an or, an element of a dict or list) can't be a way to send something somewhere else. Round 3 (1): what
+        overrides it may be anywhere (config = {'hook': 'https://collector…'} two lines up), so nothing in the whole text is
+        another URL (_other_urls), and no string or name in the whole region is a credential's."""
+        memo = _memo(text)
+        ck = ("cred", start, end, prose)
+        if ck not in memo:
+            memo[ck] = [i for i in range(n) if kinds[i] in ("str", "name") and _CRED_WORD.search(tok(i))]
+        return all(i == li for i in memo[ck]) and all(a <= s < b for s in _other_urls(text))
 
     def sent(lo, hi):
         """The call text[lo..hi] sends to the URL: true when nothing makes its result one piece of something else, up to the
@@ -836,7 +836,7 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
 
     lo = hi = li
     keys = []   # the dict keys it is the value of, on the way up
-    maybe = False   # PR A, Codex round 2 (1): only maybe where it goes (a lookup's default under a computed key, one of a call's arguments)
+    maybe = False   # PR A, Codex round 2 (1): only maybe where it goes (a lookup's default, one of a call's arguments, round 3: a collection's element)
     for _ in range(n + 1):
         p, q = lo - 1, hi + 1
         pk, pt = (kinds[p], tok(p)) if p >= 0 else (None, None)
@@ -855,8 +855,8 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
                 a, b = statement(lo, hi)
                 maybe = maybe or any(parent[i] is None and tok(i) in _BOOL_OPS for i in range(a, b + 1))
             if pk is None:
-                return natural and (not maybe or quiet(lo, hi))
-            return not (pt == "," or pk == "close" or pt == ".") and (not maybe or quiet(lo, hi))
+                return natural and (not maybe or quiet())
+            return not (pt == "," or pk == "close" or pt == ".") and (not maybe or quiet())
         if o not in match:
             return False   # a bracket that never closes
         if not (p == o or pt in (",", ":", "=")) or not (qt == "," or q == match[o]):
@@ -867,6 +867,7 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
             if ob != "{":
                 return False   # a slice, a lambda or an annotation
             keys.append(tok(p - 1) or "")
+            maybe = True   # PR A, Codex round 3 (1): a dict's value; the code may use another one ({'hook': …, 'api': 'https://…'})
             lo, hi = o, match[o]   # a dict value: the dict is the operand now
             continue
         if pt == "=" and not (ob == "(" and p - 1 > o and kinds[p - 1] == "name" and (p - 2 == o or tok(p - 2) == ",")):
@@ -882,21 +883,26 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
             role = lookup(o, c, bt, lo)
             if role == "key" or (role and keys):
                 return False   # PR A, Codex round 2 (1): a lookup's key: what is found under it is where it goes, not this URL
+            if role and _CONFIG_PARSER.search(text):
+                return False   # PR A, Codex round 3 (1): a ConfigParser reads its options from a file (cfg.get(section, option))
             if role:
-                # PR A, Codex round 2 (7): a lookup's default is what it returns when the key isn't there; under a plain literal
-                # key it is where the result goes, followed outward to the sender like any operand
-                maybe = maybe or not plain_keys(o, bt, lo)
+                # PR A, Codex round 2 (7): a lookup's default is what it returns when the key isn't there, followed outward to the
+                # sender like any operand. Round 3 (1): only maybe (the key may be there: config = {'hook': …} above), whatever
+                # the key is
+                maybe = True
                 lo, hi = c, match[o]
                 continue
             if bt in _SENDERS or tok(c) == "axios":
                 # PR A, Codex round 1 (1): a call named like a sender sends to one argument (config.get('hook', URL) is a lookup's
                 # default); the URL must be that argument, and the call itself must be the whole statement's sending
-                return destination(o, p, pt, bt, keys) and sent(c, match[o]) and (not maybe or quiet(c, match[o]))
+                return destination(o, p, pt, bt, keys) and sent(c, match[o]) and (not maybe or quiet())
             maybe = maybe or len(args(o)) > 1   # PR A, Codex round 2 (1): a helper's argument: it may send to another one
             lo, hi = c, match[o]   # a wrapper call: the call is the operand now
             continue
         if ob == "[" and (bk in ("name", "str") or bt in (")", "]", "}")):
             return False   # a subscript, not a list
+        # PR A, Codex round 3 (1): one element of a list, a set or a tuple is only maybe where the code sends; ( URL ) is the URL
+        maybe = maybe or ob in "[{" or pt == "," or qt == ","
         lo, hi = o, match[o]   # a group, a tuple, a list or a set: the whole is the operand now
     return False
 
