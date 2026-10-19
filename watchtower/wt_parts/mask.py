@@ -12,8 +12,9 @@ def mask(s):
 # the original text, and one pass writes them out, so no reader sees another's output, a hidden value keeps its line breaks
 # (history and `show` stay line for line) and the whole is linear. MASK_VERSION goes up whenever masking learns a new shape:
 # copies stored masked by an older version (approved skills, the engine cache) are then masked again.
-MASK_VERSION = 6   # batch 5: whole logical shell words for credentials, quoted YAML keys, webhook URLs over joins and \u escapes
-                   # (PR A, Codex round 2: 6, for long and joined tool and flag words, whole-value keep test, Bash $'…' and $"…")
+MASK_VERSION = 7   # batch 5: whole logical shell words for credentials, quoted YAML keys, webhook URLs over joins and \u escapes
+                   # (PR A, Codex round 2: 6, for long and joined tool and flag words, whole-value keep test, Bash $'…' and $"…";
+                   # round 3: 7, for short values after a joined tool or flag)
 # (4); PR A, Codex round 1 (5): attached -u/-U/-p and the other line-reader forms in whole words, YAML quoted values over lines,
 # an escaped or joined scheme separator
 MASK_WINDOW = 8192   # finding() stores 160 characters: it masks this much of the text they are cut from, never less
@@ -652,9 +653,9 @@ def _json_unescape(text, lo, hi):
 
 
 def _credential_word_spans(s, spans):
-    """Batch 5 (c2): a credential's whole shell word, however many lines and glued segments it has. Only words that cross a line
-    (or run past the 4096 characters the older readers read a crossing quote for) are read here: on one line those readers already
-    see the whole word. NAME=… with a secret NAME (export "NAME=…", 'NAME'='…', --token=… too) hides from after the = to the word's
+    """Batch 5 (c2): a credential's whole shell word, however many lines and glued segments it has. PR A, Codex round 3 (2): every
+    word of a text that has a line break (or runs past the 4096 characters the older readers read a crossing quote for), whatever
+    its length: a short value on one line still has a flag or tool that a line join may have split. NAME=… with a secret NAME (export "NAME=…", 'NAME'='…', --token=… too) hides from after the = to the word's
     end; --user=/--proxy-user= and -u/--user/--proxy-user's next word hide from after the first :; a secret flag (--token, …)
     hides the whole next word; a credential header's word (after -H or not) hides from after its name and scheme; a -d/--data*
     word hides from a secret name's = to its end. Bare $VAR references stay.
@@ -670,7 +671,8 @@ def _credential_word_spans(s, spans):
         # PR A, Codex round 2 (2): every word's whole reading, line joins removed, whatever its length: a long path to mysql
         # is still mysql, and --user\ then a line break is still --user
         long_ = "\n" in raw or b - a > 4096
-        plain, lo, hi = _shell_plain(raw) if long_ or "\\" in raw else (_unquote(raw), None, None)
+        quoted = "\\" in raw or "'" in raw or '"' in raw
+        plain, lo, hi = _shell_plain(raw) if long_ or quoted else (raw, None, None)   # round 3: no quote, no escape: as written
         prev2, prev = prev, plain.lower()
         was = tool
         if tool == "sshpass" and not prev.startswith("-") and flag != "-p":   # _mask_words' tool reading: sshpass's own
@@ -680,8 +682,8 @@ def _credential_word_spans(s, spans):
             tool = "sshpass"
         elif base in MYSQL_TOOLS:
             tool = "mysql"
-        if not long_:
-            continue
+        # PR A, Codex round 3 (2): every word, short ones too. A short value after a joined flag or tool (curl --us\ + a line
+        # break + er 'admin:…', my\ + a line break + sql -p…) is on one line, but the line readers never see its flag or tool
         head = plain[:200]
         hl = head.lower()
         if (flag in SECRET_FLAGS or (was == "sshpass" and flag == "-p") or flag in ("bearer",)
@@ -720,7 +722,7 @@ def _credential_word_spans(s, spans):
                 if nm and _secret_name(nm.group(1)):
                     hit = nm.end()
         if hit is not None and hit < len(plain) and not _kept(plain[hit:]):
-            spans.append((a + lo[hit], b))
+            spans.append((a + (hit if lo is None else lo[hit]), b))
 
 
 def mask_spans(s):
