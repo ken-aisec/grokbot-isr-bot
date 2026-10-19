@@ -178,7 +178,7 @@ def gitleaks_findings(roots, notes):
             reason = next((l for l in re.sub(r"\x1b\[[0-9;]*m", "", err).splitlines() if "FTL" in l or "error" in l.lower()), err.strip()[:160] or "no report written")
             fail_note(notes, f"gitleaks FAILED on {r} ({reason.strip()[-160:]}): secrets there were NOT checked by gitleaks.")
             continue
-        per_file, decoys, skipped_tool, examples, texts = {}, canary_paths(), 0, 0, {}
+        per_file, all_hits, decoys, skipped_tool, examples, texts = {}, {}, canary_paths(), 0, 0, {}
         for leak in load_json(tmp, []) or []:
             if not isinstance(leak, dict):
                 continue
@@ -189,6 +189,7 @@ def gitleaks_findings(roots, notes):
             if in_toolchain_tree(str(leak.get("File") or "")):
                 skipped_tool += 1
                 continue                                  # item 8 dry run: test vectors in a language toolchain or package store                                  # Watchtower's own decoys (their names are this install's, not in this config)
+            all_hits.setdefault(leak.get("File"), []).append(leak)   # metadata_bound compares every hit in the file, examples too
             if gitleaks_example(leak, texts):
                 examples += 1
                 continue                                  # batch 6 (B5): before the per-file and folder grouping, so fakes never make a group
@@ -215,6 +216,9 @@ def gitleaks_findings(roots, notes):
                 out.append(finding("WT-S002", f"gitleaks: secrets in {len(files)} {'file' if len(files) == 1 else 'files'} under {os.path.basename(d)}", sev,
                                    ["ASI03", "LLM02"], d, f"{len(leaks)} hit(s): {', '.join(kinds)[:60]} at {at}", why, source="gitleaks",
                                    ident="gitleaks:" + ",".join(kinds)))
+        # fix round 1 (Codex 2): hits gitleaks also gives on the verified bytes. The copy's scan has the example hits batch 6 (B5)
+        # dropped above, so each file is compared with all of its hits; a file with only example hits is in neither list
+        bound = metadata_bound(exe, cfg, {fp: all_hits[fp] for fp in per_file})
         for fpath, leaks in per_file.items():
             kinds = sorted({l.get("RuleID", "secret") for l in leaks})
             generic = all(k.startswith("generic") for k in kinds)
@@ -222,6 +226,8 @@ def gitleaks_findings(roots, notes):
                                f"{fpath}:{leaks[0].get('StartLine')}", f"{len(leaks)} hit(s): {', '.join(kinds)[:100]}",
                                "Check whether these are live credentials. Revoke live ones, then delete or scrub the file.", source="gitleaks",
                                path=fpath if isinstance(fpath, str) and fpath.startswith("/") else None))
+            if fpath in bound:
+                out[-1]["metadata_sha256"] = bound[fpath]   # what metadata_hit_note holds the file to; never enough on its own
         if examples:
             notes.append(f"gitleaks: {examples} hit(s) were example values (FAKE or placeholder text, an environment variable name, "
                          "a key block that isn't a real key, or a file's checksum), not listed.")
@@ -233,6 +239,73 @@ def gitleaks_findings(roots, notes):
         except OSError:
             pass
     return out
+
+
+_LEAK_FIELDS = ("RuleID", "StartLine", "EndLine", "StartColumn", "EndColumn", "Match", "Secret", "Entropy")
+
+
+def _leak_marks(leaks):
+    """What gitleaks reported for each hit in one file, but the file's name, in an order two scans can be compared in."""
+    return sorted(json.dumps([l.get(k) for k in _LEAK_FIELDS], sort_keys=True, default=str) for l in leaks)
+
+
+def metadata_bound(exe, cfg, per_file):
+    """Batch 6 fix round 1 (Codex 2): {file: sha256} for the files among `per_file` (gitleaks' hits by file, from the scan of
+    the folders) that this run verified by content (VERIFIED_METADATA holds the bytes it verified) and on whose verified bytes
+    gitleaks gives exactly the same hits. Verification happens before gitleaks reads the folders, so the file it scanned may
+    not be the one verified; the hits are bound to the verified bytes only when a private copy of them, written from memory
+    (a new 0700 folder, each file 0400, never through a link), gives the same ones and is unchanged after the scan (inode,
+    change time, size, bytes). metadata_hit_note then also needs the file itself to have those bytes still. Anything else binds
+    nothing, and the hit counts."""
+    files = [(fp, VERIFIED_METADATA[os.path.normpath(fp)]) for fp in per_file
+             if isinstance(fp, str) and fp.startswith("/") and os.path.normpath(fp) in VERIFIED_METADATA]
+    if not files:
+        return {}
+    tmp, report = None, state_path("gitleaks-metadata.json")
+    try:
+        tmp = tempfile.mkdtemp(prefix="wt-metadata-")
+        copies = []
+        for i, (fp, data) in enumerate(files):
+            d = os.path.join(tmp, str(i))
+            os.mkdir(d, 0o700)
+            q = os.path.join(d, os.path.basename(fp))
+            fd = os.open(q, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o400)
+            try:
+                view = memoryview(data)
+                while view:
+                    view = view[os.write(fd, view):]
+            finally:
+                os.close(fd)
+            copies.append((fp, data, q))
+
+        def marks():
+            return [(x, st.st_ino, st.st_dev, st.st_ctime_ns, st.st_mtime_ns, st.st_size, st.st_mode, st.st_nlink)
+                    for x in [tmp] + [y for _, _, q in copies for y in (os.path.dirname(q), q)] for st in (os.lstat(x),)]
+        before = marks()
+        try:
+            os.remove(report)
+        except OSError:
+            pass
+        code, _, _ = run([exe, "detect", "--source", tmp, "--no-git", "--redact", "--config", cfg, "--report-format", "json",
+                          "--report-path", report, "--exit-code", "0", "--max-target-megabytes", "5"], 180)
+        leaks = load_json(report, None) if code == 0 else None
+        if not isinstance(leaks, list) or marks() != before or any(_read_plain(q, len(data)) != data for _, data, q in copies):
+            return {}
+        out = {}
+        for fp, data, q in copies:
+            mine = [l for l in leaks if isinstance(l, dict) and os.path.normpath(str(l.get("File") or "")) == q]
+            if mine and _leak_marks(mine) == _leak_marks(per_file[fp]):
+                out[fp] = hashlib.sha256(data).hexdigest()
+        return out
+    except (OSError, ValueError):
+        return {}
+    finally:
+        try:
+            os.remove(report)
+        except OSError:
+            pass
+        if tmp:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 TOOLCHAIN_TREE = re.compile(r"/\.local/go[^/]*/|/\.local/share/pnpm/|/go/pkg/mod/|/\.rustup/toolchains/|/\.cargo/registry/")

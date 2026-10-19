@@ -285,28 +285,56 @@ def install_home(root):
 
 
 def release_manifest():
-    """{rel: sha256} for an installed copy (the folder self_check checks), None in a developer checkout. Claude review 1 (2):
-    this was read from disk again at each use, so a MANIFEST.sha256 rewritten after the self-check vouched for whatever it
-    listed. It is now the one self_check checked, read once per process.
+    """{rel: sha256} from the MANIFEST.sha256 of the folder this wt.py runs from ({} when it is missing or unreadable). Claude
+    review 1 (2): this was read from disk again at each use, so a MANIFEST.sha256 rewritten after the self-check vouched for
+    whatever it listed. It is now the one self_check checked, read once per process.
 
     Claude review 2 (2): it was read again whenever the real folder behind `app` changed, so `mv app app.real; ln -s evil app`
     after the self-check had the Bot's manifest vouch for its own lock reader, which then ran inside Watchtower. Once one is
     remembered it is never read again, and a different folder behind the same name lists nothing (the lock then reads as
-    changed: scanner_lock)."""
+    changed: scanner_lock).
+
+    Batch 6 (KL4, #15 high 4): it was None in a developer checkout, so a copy that only looked like one (moved out of `app`
+    without its commit record, a renamed custom home) read planted rules files as they were. Whatever the layout, Watchtower's
+    release files are now held to this folder's manifest; installed_root and self_check still say what is an installed copy."""
     root = os.path.realpath(SELF_ROOT)
     if _RELEASE.get("at") == SELF_ROOT:
         return _RELEASE["files"] if root == _RELEASE["root"] else {}
-    if installed_root() is None:   # PR A, Codex round 1 (6): the copy this runs from, never what WATCHTOWER_HOME says
-        return None
-    remember_manifest(root, read_text(os.path.join(root, "MANIFEST.sha256")))
+    remember_manifest(root, read_text(os.path.join(root, "MANIFEST.sha256")))   # a checkout's too (no self-check reads it)
     return _RELEASE["files"]
 
 
 def release_digest(rel):
-    """The sha256 MANIFEST.sha256 lists for rel when this is an installed copy, "" when an installed copy's manifest doesn't
-    list it, and None in a developer checkout (no manifest to hold it to)."""
-    files = release_manifest()
-    return None if files is None else files.get(rel, "")
+    """The sha256 MANIFEST.sha256 lists for rel, or "" when it lists none (or there is no manifest): the file is then refused.
+    Batch 6 (KL4): never None, a developer checkout included."""
+    return release_manifest().get(rel, "")
+
+
+def release_files_unchecked():
+    """True when this folder's MANIFEST.sha256 is missing, unreadable or lists nothing: none of Watchtower's release files can
+    be checked, so each is refused (KL4)."""
+    return not release_manifest()
+
+
+def shipped_path(path, rel):
+    """True when `path` is where this copy ships rel (SELF_ROOT/rel, as written or where it really leads)."""
+    try:
+        want = os.path.normpath(os.path.join(SELF_ROOT, rel))
+        p = os.path.normpath(os.path.abspath(str(path)))
+        return p == want or os.path.realpath(p) == os.path.realpath(want)
+    except (OSError, ValueError):
+        return True
+
+
+def release_want(path, rel):
+    """The sha256 a rules file read from `path` must have (release_digest; "" refuses it), or None when it is used as it is.
+    Only one file is used as it is: in a developer checkout, a file a test pointed the module constant at (never the shipped
+    path, never from the environment or state/; nothing but an edit to Watchtower's own code can change it), unless the test
+    stands in for another manifest by replacing release_digest. An installed copy holds every path to its manifest, as before."""
+    want = release_digest(rel)
+    if installed_root() is None and not shipped_path(path, rel) and want == release_manifest().get(rel, ""):
+        return None
+    return want
 
 
 def _lock_reader():
@@ -316,7 +344,7 @@ def _lock_reader():
     in an installed copy, compiled from those bytes and run; no cache is read or written. None when it can't be used."""
     try:
         src = _reader_source()
-        want = release_digest(LOCK_READER_REL)
+        want = release_want(_reader_path(), LOCK_READER_REL)
         if want is not None and hashlib.sha256(src).hexdigest() != want:
             return None
         return _reader_namespace(src)
@@ -327,7 +355,7 @@ def _lock_reader():
 def _reader_source():
     """The bytes of scripts/scanner_lock.py: a plain file, never a link, at most LOCK_READER_MAX_BYTES. Raises OSError when it
     can't be read, ValueError when it isn't a plain file or is too large."""
-    fd = os.open(os.path.join(HERE, "..", LOCK_READER_REL), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    fd = os.open(_reader_path(), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             raise ValueError("not a plain file")
@@ -344,8 +372,12 @@ def _reader_source():
     return src
 
 
+def _reader_path():
+    return os.path.join(HERE, "..", LOCK_READER_REL)
+
+
 def _reader_namespace(src):
-    path = os.path.join(HERE, "..", LOCK_READER_REL)
+    path = _reader_path()
     ns = {"__name__": "watchtower_scanner_lock", "__file__": path, "__builtins__": builtins}
     exec(compile(src, path, "exec", dont_inherit=True), ns)   # noqa: S102 - Watchtower's own checked file, from its bytes
     return ns
@@ -360,8 +392,9 @@ def scanner_lock():
     time changed, and never held to MANIFEST.sha256, so a line added during a run (and removed after) made any program a
     verified scanner. In an installed copy the lock and its reader are now read once per process and used only when both
     match the manifest the self-check checked. Claude review 2 (6): one that doesn't match lists nothing, as before, and is
-    remembered as changed (scanner_list_changed), never read as the "not listed yet" of an empty lock."""
-    want = release_digest(SCANNER_LOCK_REL)
+    remembered as changed (scanner_list_changed), never read as the "not listed yet" of an empty lock. Batch 6 (KL4): a
+    developer checkout's shipped lock is held to its manifest the same way (release_want)."""
+    want = release_want(SCANNER_LOCK, SCANNER_LOCK_REL)
     if want is not None:
         if _SCANNER_LOCK_CACHE.get("installed") is None:
             lock = _installed_lock(want)
@@ -390,8 +423,8 @@ def _installed_lock(want):
     """The installed copy's lock, read once, when its bytes and its reader's both match the remembered manifest. None when
     either isn't the file that manifest lists (changed, gone, a link, unreadable by permission, or no longer in the folder the
     self-check checked); {} when it can't be read right now (no memory or file descriptors) or can't be used."""
-    reader_want = release_digest(LOCK_READER_REL)
-    if not want or not reader_want:
+    reader_want = release_want(_reader_path(), LOCK_READER_REL)
+    if not want or reader_want == "":
         return None
     try:
         src = _reader_source()
@@ -399,7 +432,7 @@ def _installed_lock(want):
         return None
     except OSError as e:
         return {} if e.errno in _PRESSURE_ERRNOS else None
-    if hashlib.sha256(src).hexdigest() != reader_want:
+    if reader_want is not None and hashlib.sha256(src).hexdigest() != reader_want:
         return None
     try:
         reader = _reader_namespace(src)
@@ -420,7 +453,7 @@ def _installed_lock(want):
 
 def scanner_list_changed():
     """True when this installed copy's lock or its reader isn't what the self-check checked (scanner_lock read it so)."""
-    return bool(_SCANNER_LOCK_CACHE.get("changed")) and release_digest(SCANNER_LOCK_REL) is not None
+    return bool(_SCANNER_LOCK_CACHE.get("changed")) and release_want(SCANNER_LOCK, SCANNER_LOCK_REL) is not None
 
 
 def _scanner_extra(name):

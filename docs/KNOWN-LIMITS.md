@@ -6,7 +6,7 @@ Open findings that dev carries knowingly. Each one is **must-fix before any rele
 
 Ken approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Codex highs open. Forge fixes them after the freeze, before release. They're worded as Codex wrote them in its final checks after fix round 3: #15 at 62ccd0e and #16 at c3b0257. File links point at the code as merged.
 
-**Status: open, must-fix before any release.**
+**Status: open, must-fix before any release** (except 4 and 7, fixed in batch 6 PR1, branch `fix/batch6a`, and 3 and 6, fixed in batch 6 PR2, branch `fix/batch6b`; see each).
 
 ### From #15 (batch 5 PR A: platform notes, reviewed list, #11 follow-ups)
 
@@ -52,6 +52,8 @@ Ken approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Codex hig
 
    **Fix:** keep reviewed-list, normalization and scanner trust bound to verified release provenance regardless of directory layout or missing state. Missing Bot-writable metadata must not grant unchecked trust.
 
+   **Fixed in batch 6 PR1 (`fix/batch6a`):** every shipped rules file (platform lock, reviewed list, normalization spec, access and Ask-first vocabularies, scanner lock and its reader) is held to the running folder's `MANIFEST.sha256` in every layout; a missing manifest or line refuses the file with a note. Replays in `tests/test_batch6_release_files.py`.
+
 ### From #16 (batch 5 PR B: access map, threat brief)
 
 5. **High — [collect.py:10](../watchtower/wt_parts/collect.py), [access.py:344](../watchtower/wt_parts/access.py), [access.py:460](../watchtower/wt_parts/access.py): Permission failures can still mean “absent.”**
@@ -76,9 +78,16 @@ Ken approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Codex hig
 
    **Fix:** require each applicable `(scenario, output key/run)` independently, including outputs whose omission leaves them identical to baseline.
 
+   **Fixed in batch 6 PR1 (`fix/batch6a`):** an exact-scenario `must_see` entry must match in every output of each of its scenarios that its `key_rx` names, those equal to the baseline included; pattern entries keep "any one scenario". Replays in `tests/test_batch6_golden_perkey.py`.
+
+## Open mediums (batch 6 plan)
+
+- **#16 medium 1:** the access JSON can exceed 4 KB; fixing it means making nested display lists trimmable in `fit` (a JSON shape change, broad golden churn, no security impact).
+- **#16 medium 2, wording half:** "scheduled jobs" → "cron files / timers observed" would change every access line in every golden box; left for a wording-only batch. (The error/link half is planned for PR3.)
+
 ## Batch 6 PR2 (fix/batch6b, "Fake keys and dismissals"): follow-ups
 
-KL3 and KL6 above are fixed in this PR; KL1, KL2, KL4, KL5 and KL7 are PR1's and PR3's. B5 removed the name-based secret skips Ken named (gitleaks' `tests/`, `fixtures/`, `testdata/`, `*.test.*` path skips, the whole-line `$VAR`/placeholder rule, and `fixplan.py`'s FIXTURE_PATH). These name- or line-based rules are still in place and are logged here to be replaced by content checks in a later batch (**status: open follow-ups, not release blockers on their own**):
+KL3 and KL6 above are fixed in this PR; KL4 and KL7 in PR1; KL1, KL2 and KL5 are PR3's. B5 removed the name-based secret skips Ken named (gitleaks' `tests/`, `fixtures/`, `testdata/`, `*.test.*` path skips, the whole-line `$VAR`/placeholder rule, and `fixplan.py`'s FIXTURE_PATH). These name- or line-based rules are still in place and are logged here to be replaced by content checks in a later batch (**status: open follow-ups, not release blockers on their own**):
 
 - **gitleaks path allowlist** ([secrets_pkgs.py](../watchtower/wt_parts/secrets_pkgs.py), `GITLEAKS_CONFIG`): package stores and caches (`node_modules`, `.cache`, `site-packages`, `go/pkg`, …), browser profiles, the named credential files, Watchtower's own folders, lockfiles and `marketplace.json`, and every `.h` file are never read by gitleaks.
 - **gitleaks whole-line rules**: a line with `x-amz-credential=` / `X-Amz-Signature=` or `?AWSAccessKeyId=` / `Signature=` / `Expires=` hides every other hit on that line.
@@ -89,4 +98,4 @@ Limits of the new behavior, kept knowingly:
 
 - **B5:** a gitleaks hit is judged only when its secret is found again in exactly one place of the lines gitleaks named (and, when gitleaks gives it, with gitleaks' Entropy); anything else is kept as before. A Match that is the whole secret (`REDACTED` with no text around it) is judged only with gitleaks' Entropy. A key block with no END line within 16 KB is treated as a real key; a gitleaks hit is read as a key block only when it is gitleaks' `private-key` rule, so a BEGIN line beside another hit's secret never judges that secret. `sk_test_`-style keys and any value with a placeholder word (`test`, `example`, `1234`, …) count as examples, as `looks_real_secret` already did for WT-T011.
 - **B6:** a dismissal held across an unrelated edit is read from `state/dismissed.jsonl`, which a Bot can write: a Bot that reads a finding's key and `ev256` from `last_findings.json` can plant one for a non-critical finding that only the change backs up (the change's own WT-I001 still counts). Lines inserted above the dismissed match shift its `where`, so its key changes and it comes back once.
-- **KL3 test conflict:** `tests/test_batch5_codex_r3.py::ShortAfterJoins::test_in_an_approved_copy` asserts `masked == 7`; MASK_VERSION 8 makes it fail. It isn't on the plan's list of assertions this PR may change, so it is left for Ken's decision.
+- **KL3 test change:** `tests/test_batch5_codex_r3.py::ShortAfterJoins::test_in_an_approved_copy` asserted `masked == 7`; MASK_VERSION 8 made it fail. Approved and listed: `masked == 7 -> masked == 8` (the literal, not `MASK_VERSION`).

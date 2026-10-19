@@ -105,7 +105,7 @@ class ShortAfterJoins(History):
         doc = self.copy_of("Run these:\n```\n" + "\n".join(SHORT) + "\n```\nAsk before saving.")
         self.assertNotIn("FAKEz", doc)
         self.assertIn("Ask before saving.", doc)
-        self.assertEqual(json.loads(doc)["masked"], 7)
+        self.assertEqual(json.loads(doc)["masked"], 8)
 
     def test_copies_masked_by_version_6_are_masked_again(self):   # replay (77dedd1's marker 6 left them as they were)
         d = self.skills(1)[0]

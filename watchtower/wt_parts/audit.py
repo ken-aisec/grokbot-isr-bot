@@ -5,6 +5,8 @@ def audit(roots, exports, quick=False):
     fs, notes = [], []
     INCOMPLETE_SKILLS.clear()
     _RUNS_CODE.clear()
+    VERIFIED_METADATA.clear()   # batch 6 (B1): filled by platform_verified below
+    _METADATA_PROOF.clear()   # fix round 1: metadata_proof decides again from the disk
     reset_scanner_checks()
     walk_errors = []   # batch 5 PR B, Codex round 2 (3): a folder the scan couldn't list leaves the access map incomplete
     walk_skipped = []   # round 3 (1): so does one it left out (a link, too deep, a folder it never scans)
@@ -130,7 +132,7 @@ def audit(roots, exports, quick=False):
         notes.append(f"The platform release list ({PLATFORM_LOCK_REL}) can't be used: {platform_lock_problem()}. So no file in a platform "
                      "folder is verified by it: every new or changed one is a high alert until a Watchtower release lists it.")
     for rel, problem in ((PLATFORM_REVIEWED_REL, platform_reviewed_problem()), (PLATFORM_NORMALIZE_REL, platform_normalize_problem()),
-                         (ACCESS_VOCAB_REL, access_vocab_problem())):
+                         (ACCESS_VOCAB_REL, access_vocab_problem()), (ASK_FIRST_VOCAB_REL, ask_first_vocab_problem())):
         if problem:   # batch 5 (d2, d3b): ignored whole, so nothing in a platform file is checked or normalized by it (b: no story is matched)
             notes.append(f"Watchtower's {rel} can't be used: {problem}. It is ignored, so nothing it lists applies this run.")
     if os.path.lexists(state_path(OLD_PLATFORM_APPROVALS)):
@@ -204,7 +206,7 @@ def audit(roots, exports, quick=False):
                               f"{p}:{line_of(t, m.start())}", f"{mask(m.group(0))} ({len(hits)} in file)",
                               "Every Bot can read this file. Revoke the key, delete the file, and use the secure secret request instead.", path=p))
 
-    export_rules, native_rules = "", ""
+    export_rules = ""
     # 5. exports the user pastes in (routines, descriptions, Auto Review rules, settings)
     if exports and os.path.isdir(exports):
         for fn in sorted(os.listdir(exports)):
@@ -225,23 +227,31 @@ def audit(roots, exports, quick=False):
     else:
         notes.append("No exports folder: routine text not checked (Auto Review rules come from settings.json).")
 
-    nat = native_settings(entries=True)
+    nat, entries = native_settings(entries=True), []
     if nat:
         entries, settings, p = nat
-        native_rules = "\n".join(entries)
         if entries:
             fs += lint_auto_review(entries, p, check_missing=False)
         fs += lint_settings(settings, p)
     else:
         notes.append("Grok Bot settings.json not found: Auto Review rules and local execution checked from exports only.")
 
-    combined = native_rules + "\n" + export_rules
-    gaps = ask_first_gaps(combined)
+    # batch 6 (B4): read in every language rules/ask_first_vocab.json has. Fix round 1 (Codex 5): coverage nobody can show is the
+    # counted medium whatever the rules say ("." and "every shell command" too); rules none of whose words Watchtower reads also
+    # get a Tip about the language, beside the medium, never instead of it
+    seen, gaps = ask_first_state(entries, export_rules)
     if gaps:
-        fs.append(finding("WT-A003", "Ask-first rules not found", "medium", ["ASI09"], "Auto-review rules",
-                          ", ".join(gaps),
+        fs.append(finding("WT-A003", {"absent": "Ask-first rules not found", "unread": "Ask-first rules don't say what they cover"}.get(
+                              seen, "Ask-first rules don't cover everything"), "medium", ["ASI09"], "Auto-review rules", ", ".join(gaps),
                           "Rules saved only in the app can't be seen from the computer. Tell the Bot to add them and save a copy to "
                           "/workspace/watchtower/exports/auto-review.txt."))
+    if seen == "unread":
+        fs.append(finding("WT-A003", "If your Ask-first rules are in a language Watchtower doesn't read, it can't check them", "info",
+                          ["ASI09"], "Auto-review rules", ASK_UNREAD_EVIDENCE,
+                          "Watchtower reads Ask-first rules in English, Spanish, French, German, Portuguese, Italian, Russian, Chinese, "
+                          "Japanese, Korean, Arabic, Greek and Hindi, and found none of their words in yours. The alert above stays "
+                          "until your rules name sending, publishing, payments, deleting and permission changes in one of those."))
+        fs[-1]["ask_first_unread"] = True   # a Tip (ask_first_unread: this evidence only, so it never matches the medium)
 
     # 5b. tripwires and shell history (zero tokens)
     fs += soft("hooks", ("WT-C005",), notes, [], hook_findings, roots, inv)

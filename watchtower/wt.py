@@ -996,7 +996,7 @@ def cmd_doctor(args):
            "tools": {t: bool(shutil.which(t)) for t in ("git", "curl", "npm", "pip3")},
            "state_files": {fn: state_of(fn) for fn in STATE_FILES},
            "run_in_progress": bool(lock),
-           "last_run": {"at": snap.get("at"), "version": snap.get("version"), "score": snap.get("score"), "score_line": score_line(snap), "open_by_severity": by_sev(snap.get("findings", [])) if snap else None,
+           "last_run": {"at": snap.get("at"), "version": snap.get("version"), "score": snap.get("score"), "score_line": score_line(snap), "open_by_severity": by_sev(owners(snap.get("findings") or [])) if snap else None,   # batch 6 (B9): as audit counts
                         "inventory": snap.get("inventory"), "scanners_missing": snap.get("scanners_missing"), "stages_skipped": snap.get("stages_skipped"),
                         "notes": [re.sub(r"(/[\w.@~-]+){2,}", "<path>", n)[:160] for n in snap.get("notes", [])][:12]},
            "seconds_per_stage": load_json(state_path("stage_times.json"), None), "last_engine_run": load_json(state_path("engines.json"), None),
