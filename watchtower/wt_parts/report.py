@@ -183,13 +183,18 @@ def platform_notes(fs, limit):
     """{"count", "loud", "lines"} for the platform notes among `fs`, or None when there are none: `loud` counts those Watchtower
     would call critical or high, whose lines come first (Codex round 1, 10); `lines` holds at most `limit`. `loud` is for the
     caller, which says what it leaves out (notes_more) and never prints it."""
-    unlisted = {f["where"].split(":")[0] for f in fs if f.get("unverified_platform")}
-    plat = [f for f in shown(fs) if platform_scope(f)]
+    unlisted, plat = platform_note_order(fs)
     if not plat:
         return None
-    plat = [f for f in plat if loud_note(f, unlisted)] + [f for f in plat if not loud_note(f, unlisted)]
     return {"count": len(plat), "loud": sum(1 for f in plat if loud_note(f, unlisted)),
             "lines": [platform_note_line(f, unlisted) for f in plat[:limit]]}
+
+
+def platform_note_order(fs):
+    """(the unlisted paths, the platform notes among `fs` in the order platform_notes gives their lines: the loud ones first)."""
+    unlisted = {f["where"].split(":")[0] for f in fs if f.get("unverified_platform")}
+    plat = [f for f in shown(fs) if platform_scope(f)]
+    return unlisted, [f for f in plat if loud_note(f, unlisted)] + [f for f in plat if not loud_note(f, unlisted)]
 
 
 PLATFORM_NOTES_MORE = "`wt.py breakdown` lists every one"

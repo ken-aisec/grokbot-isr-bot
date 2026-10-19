@@ -201,7 +201,7 @@ def platform_unproven(manifest):
     """The files in this manifest that sit in a platform folder and aren't on the release list with these bytes (platform_listed),
     nor with the digest of their canonical form where the release's normalization spec names them (platform_listed_normalized)."""
     return {p for p, h in manifest.items() if not p.startswith("persist:") and platform_ish(p) and not platform_listed(p, h)
-            and not platform_churn_file(p) and not platform_listed_normalized(p)}
+            and not platform_churn_file(p) and not platform_listed_normalized(p, h)}
 
 
 def _release_file(path, rel, max_bytes):
@@ -412,9 +412,11 @@ def canonical_platform_json(data, fields):
     return hashlib.sha256(json.dumps(doc, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
-def platform_listed_normalized(p):
+def platform_listed_normalized(p, h):
     """True when the spec names p (under the home folder, as written and where it really leads), p is a plain file (never a
-    link), and the release list holds the digest of its canonical form for it (platform_listed)."""
+    link), and the release list holds the digest of its canonical form for it (platform_listed). PR A, Codex round 2 (9): `h` is
+    the sha256 of the bytes the scan read (the manifest's); the bytes read here are normalized only when they are those same
+    bytes, so a file swapped between the scan and this read is never vouched for by what it became."""
     spec = _platform_normalize_state()[0]
     if not spec:
         return False
@@ -438,8 +440,10 @@ def platform_listed_normalized(p):
             os.close(fd)
     except (OSError, ValueError):
         return False
-    h = canonical_platform_json(data, fields)
-    return h is not None and platform_listed(n, h)
+    if not isinstance(h, str) or hashlib.sha256(data).hexdigest() != h:
+        return False
+    c = canonical_platform_json(data, fields)
+    return c is not None and platform_listed(n, c)
 
 
 # PR #9 (Ken: few false alarms): the platform's own sync bookkeeping, rewritten at every sync with no release (Ken's box, Oct 18:

@@ -608,23 +608,47 @@ def _json_item(text):
     if i == 0 and not text.startswith(("{", "[")):
         return None
     try:
-        return text[:i], json.loads(text[i:])
+        return text[:i], json.loads(text[i:], object_pairs_hook=_unique_pairs, parse_constant=_no_constant)
     except ValueError:
         return None
 
 
+def _unique_pairs(pairs):
+    """PR A, Codex round 2 (8): an object with a key twice is refused (json.loads keeps the last, hiding the first)."""
+    out = {}
+    for k, v in pairs:
+        if k in out:
+            raise ValueError(f"duplicate key {k!r}")
+        out[k] = v
+    return out
+
+
+def _no_constant(name):
+    raise ValueError(f"not JSON: {name}")   # NaN, Infinity, -Infinity
+
+
+def _same(a, b):
+    """Equal with exact types all the way down (1 is not true or 1.0) and object keys in the same order."""
+    if type(a) is not type(b):
+        return False
+    if isinstance(a, dict):
+        return list(a) == list(b) and all(_same(a[k], b[k]) for k in a)
+    if isinstance(a, list):
+        return len(a) == len(b) and all(_same(x, y) for x, y in zip(a, b))
+    return a == b
+
+
 def json_only_change(pre, post, change):
     """True when post is pre with exactly one change: the top-level field change["field"] is change["from"] in pre and
-    change["to"] in post, and everything else (the lines before the document included) is equal once parsed."""
+    change["to"] in post, and everything else (the lines before the document included) is equal once parsed. PR A, Codex round
+    2 (8): both documents are strict JSON (no key twice, no NaN or Infinity) and equal with exact types (_same)."""
     a, b = _json_item(pre), _json_item(post)
     if a is None or b is None or a[0] != b[0] or not (isinstance(a[1], dict) and isinstance(b[1], dict)):
         return False
     f = change["field"]
-    if f not in a[1] or f not in b[1] or a[1][f] != change["from"] or b[1][f] != change["to"]:
+    if f not in a[1] or f not in b[1] or not _same(a[1][f], change["from"]) or not _same(b[1][f], change["to"]):
         return False
-    if type(a[1][f]) is not type(change["from"]) or type(b[1][f]) is not type(change["to"]):
-        return False
-    return dict(a[1], **{f: change["to"]}) == b[1]
+    return _same(dict(a[1], **{f: change["to"]}), b[1])
 
 
 def diff_lines(pre, post):

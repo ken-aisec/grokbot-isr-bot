@@ -258,21 +258,19 @@ def installed_root():
     """The real folder of the installed copy this wt.py runs from, or None in a developer checkout. PR A, Codex round 1 (6): it
     was an installed copy only while WATCHTOWER_HOME/app led to it, so changing that variable made one a developer checkout, whose
     rules files (the reviewed list, the normalization spec, the locks) are never held to MANIFEST.sha256. An installed copy is the
-    `app` folder install.sh makes, whatever WATCHTOWER_HOME says now: this folder is named app, or WATCHTOWER_HOME/app leads to it."""
+    `app` folder install.sh makes, whatever WATCHTOWER_HOME says now.
+    PR A, Codex round 2 (5): SELF_ROOT is the real folder of the wt.py that runs (wt.py follows links to itself), so a folder
+    holding only a `watchtower` link to the installed copy runs it as the installed copy; and only that real folder's name
+    counts, never a WATCHTOWER_HOME whose app leads somewhere."""
     root = os.path.realpath(SELF_ROOT)
-    if os.path.basename(root) == "app" or os.path.basename(os.path.normpath(SELF_ROOT)) == "app" \
-            or root == os.path.realpath(os.path.join(home(), "app")):
-        return root
-    return None
+    return root if os.path.basename(root) == "app" else None
 
 
 def install_home(root):
-    """The Watchtower folder the installed copy at `root` was installed into (install.sh's WT_HOME, the folder holding `app`):
-    WATCHTOWER_HOME when its app leads there, else the folder this copy's app is in."""
-    if root == os.path.realpath(os.path.join(home(), "app")):
-        return home()
-    s = os.path.normpath(SELF_ROOT)
-    return os.path.dirname(s) if os.path.basename(s) == "app" else os.path.dirname(root)
+    """The Watchtower folder the installed copy at `root` (its real folder) was installed into: install.sh's WT_HOME, the real
+    folder holding `app`. PR A, Codex round 2 (5): never WATCHTOWER_HOME, whose `app` may be a link to the installed copy while
+    its state/installed_commit says what someone wants."""
+    return os.path.dirname(root)
 
 
 def release_manifest():

@@ -364,6 +364,11 @@ def run_audit_locked(args, quick):
     snapshot = {"at": now(), "version": VERSION, "status": status_of(scored(live)), "score": s, "grade": g, "previous_score": prev.get("score"), "findings": live, "suppressed": suppressed,
                 "scanners_missing": meta.get("scanners_missing", []), "stages_skipped": list(STAGE_FAILED),
                 "inventory": meta["inventory"], "notes": meta["notes"]}
+    # PR A, Codex round 2 (6): critical or high findings a daily run had no room to name stay owed while they are open, whatever
+    # run comes next (cmd_daily names them and clears them)
+    owed = prev.get("undelivered") if isinstance(prev.get("undelivered"), list) else []
+    if owed:
+        snapshot["undelivered"] = sorted({k for k in owed if isinstance(k, str) and k in cur_keys})
     mask_stored(live), mask_stored(suppressed)   # batch 4 (R11): an older version's unmasked evidence (kept engine lines) is cleaned here
     fixed = mask_stored([dict(f) for f in fixed])   # Codex, round 3: resolved ones come from the last snapshot, maybe an older version's
     snapshot["notes"] = [mask_secrets(n) if isinstance(n, str) else n for n in snapshot["notes"]]   # round 2: a scanner's error line too

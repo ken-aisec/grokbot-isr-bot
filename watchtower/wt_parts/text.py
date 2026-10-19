@@ -550,6 +550,14 @@ _FENCE_LINE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})[ \t]*([^\s`]*)[^\n]*", re.M)
 _SENDERS = frozenset(("post", "request", "fetch", "urlopen", "Request", "get", "put", "send"))
 _JOINERS = frozenset(("join", "format", "format_map", "reduce", "sum", "urljoin", "Template", "reversed", "sorted"))
 _URL_KEYS = frozenset(("url", "uri", "endpoint"))   # PR A, Codex round 1 (1): the keyword or dict key a sender's destination is under
+# PR A, Codex round 2 (1, 7): calls that look something up. What they return is the value found under the key, or the default
+# when nothing is there: a URL as the key is never where it goes; a URL as the default is, when the key is a plain name.
+_LOOKUPS = frozenset(("getattr", "getenv", "setdefault", "pop", "getOrDefault", "get_or", "getdefault"))
+_LOOKUP_DEFAULTS = frozenset(("default", "fallback"))
+_BOOL_OPS = frozenset(("or", "and", "if", "else", "not", "||", "&&", "?"))
+_SAFE_KEY = re.compile(r"[rRbBuU]{0,2}(['\"`])[\w.\-]*\1")
+_CRED_WORD = re.compile(r"(?i)token|secret|passw(?:or)?d|api_?key|private_?key|credential|cookie|(?<![\w$])\.(?:ssh|aws|netrc|env)\b"
+                        r"|\bid_(?:rsa|ed25519)\b")
 _STR_RX = (r"[rRbBuUfF]{0,2}(?:'''[\s\S]*?(?:'''|\Z)|\"\"\"[\s\S]*?(?:\"\"\"|\Z)|'(?:[^'\\\n]|\\.)*'|\"(?:[^\"\\\n]|\\.)*\"%s)")
 _TOK_TAIL = (r"|(?P<name>[A-Za-z_$][\w$]*(?:'[A-Za-z]+)*)|(?P<num>\d[\w.]*)|(?P<open>[(\[{])|(?P<close>[)\]}])"
              r"|(?P<op>\*\*|&&|\|\||==|!=|<=|>=|[-+*/%=<>!&|^~?:;,.@])|(?P<bad>[\s\S])")
@@ -677,6 +685,108 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
         return (bt == "request" and p == o + 2 and pt == "," and kinds[o + 1] == "str"
                 and re.fullmatch(r"[rRbBuU]{0,2}(['\"`])(?i:get|post|put|patch|delete|head|options)\1", tok(o + 1) or "") is not None)
 
+    def args(o):
+        """The arguments of the call opened at o: [(first token, last token, keyword or None)]."""
+        out, s, i = [], o + 1, o + 1
+        while i < match[o]:
+            if kinds[i] == "op" and tok(i) == ",":
+                out.append((s, i - 1))
+                s = i + 1
+            elif kinds[i] == "open" and i in match:
+                i = match[i]
+            i += 1
+        if s < match[o]:
+            out.append((s, match[o] - 1))
+        return [(s, e, tok(s) if e > s and kinds[s] == "name" and tok(s + 1) == "=" else None) for s, e in out]
+
+    def calls_out(c):
+        """The call whose name starts at c is an argument of a call that sends."""
+        o = parent[c]
+        if o is None or text[starts[o]] != "(" or o < 1 or kinds[o - 1] != "name":
+            return False
+        b = o - 1
+        while b >= 2 and tok(b - 1) == "." and kinds[b - 2] == "name":
+            b -= 2
+        return tok(o - 1) in _SENDERS or tok(b) == "axios"
+
+    def lookup(o, c, bt, lo):
+        """PR A, Codex round 2 (1, 7): None when the call at o (its name starting at c) sends or wraps; else the role of the
+        argument at lo in the lookup: "default" (a default= or fallback= keyword, or the last positional argument after the key)
+        or "key". `get` is both a lookup and an HTTP GET: a lookup when it has a default, a key and another positional
+        argument that isn't options or a callback, an environment receiver, or when another sender sends to what it returns."""
+        al = args(o)
+        pos = [a for a in al if a[2] is None]
+        mine = next((a for a in al if a[0] <= lo <= a[1]), None)
+        if mine is None:
+            return None
+        if bt == "get":
+            chain = {tok(i) for i in range(c, o, 2)}
+            second = pos[1] if len(pos) >= 2 else None
+            options = second is not None and (kinds[second[0]] == "open" and text[starts[second[0]]] == "{"
+                                              or tok(second[0]) in ("function", "lambda", "async")
+                                              or any(tok(i) == "=" and tok(i + 1) == ">" for i in range(second[0], second[1])))
+            if not (calls_out(c) or chain & {"environ", "env"} or any(a[2] in _LOOKUP_DEFAULTS for a in al)
+                    or (second is not None and not options)):
+                return None
+        elif bt not in _LOOKUPS:
+            return None
+        if mine[2] in _LOOKUP_DEFAULTS:
+            return "default"
+        first = 1 if bt == "getattr" else 0   # getattr(object, name, default)
+        if mine[2] is None and pos.index(mine) > first and mine is pos[-1]:
+            return "default"
+        return "key"
+
+    def plain_keys(o, bt, lo):
+        """Every argument of the lookup at o other than the default at lo is a plain literal name ('hook', "SLACK_URL")."""
+        for i, (s, e, kw) in enumerate(args(o)):
+            if s <= lo <= e or (bt == "getattr" and i == 0 and kw is None):
+                continue
+            v = s + 2 if kw else s
+            if v != e or kinds[v] != "str" or not _SAFE_KEY.fullmatch(tok(v)):
+                return False
+        return True
+
+    def statement(lo, hi):
+        """The tokens of the statement the operand lo..hi is in: (first, last)."""
+        a = lo
+        while parent[a] is not None:
+            a = parent[a]
+        b = match.get(a, a) if kinds[a] == "open" else a
+        b = max(b, hi)
+        cont = lambda j: (kinds[j] == "op" and tok(j) != ";") or (kinds[j - 1] == "op" and tok(j - 1) != ";")
+        while a > 0 and tok(a - 1) != ";" and not (nl[a] and not cont(a)):
+            a -= 1
+            if kinds[a] == "close" and a in match:
+                a = match[a]
+        while b + 1 < n and tok(b + 1) != ";" and not (nl[b + 1] and not cont(b + 1)):
+            b += 1
+            if kinds[b] == "open" and b in match:
+                b = match[b]
+        return a, b
+
+    def quiet(lo, hi):
+        """PR A, Codex round 2 (1): nothing in the statement around lo..hi is another URL or a credential, so a destination
+        that is only maybe the chat webhook (a lookup's default under a computed key, a helper's argument, one side of an or)
+        can't be a way to send something somewhere else."""
+        import urllib.parse
+        a, b = statement(lo, hi)
+        for i in range(a, b + 1):
+            if i == li or kinds[i] not in ("str", "name"):
+                continue
+            t = tok(i)
+            if _CRED_WORD.search(t):
+                return False
+            if kinds[i] == "str" and re.search(r"(?i)://|\bhttps?:|^[rRbBuUfF]{0,2}['\"`]//", t):
+                try:
+                    u = urllib.parse.urlsplit(t.lstrip("rRbBuUfF")[1:-1])
+                    host, port = (u.hostname or "").lower(), u.port
+                except ValueError:
+                    return False
+                if not (port is None and u.netloc.lower() == host and any(h.fullmatch(host) and p_.match(u.path) for h, p_ in CHAT_HOOKS)):
+                    return False
+        return True
+
     def sent(lo, hi):
         """The call text[lo..hi] sends to the URL: true when nothing makes its result one piece of something else, up to the
         statement (its result used, .json() or [0], is fine; an operator or a literal beside it, a join, or another sender that
@@ -726,6 +836,7 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
 
     lo = hi = li
     keys = []   # the dict keys it is the value of, on the way up
+    maybe = False   # PR A, Codex round 2 (1): only maybe where it goes (a lookup's default under a computed key, one of a call's arguments)
     for _ in range(n + 1):
         p, q = lo - 1, hi + 1
         pk, pt = (kinds[p], tok(p)) if p >= 0 else (None, None)
@@ -740,9 +851,12 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
         if o is None:   # at the top of the region
             if qk == "close" or (qk is None and r["broke"] is not None):
                 return False   # it closes a bracket opened before the region, or the reading broke after it
+            if not prose:   # code: one side of an or, an and or a conditional (prose reads these words as English)
+                a, b = statement(lo, hi)
+                maybe = maybe or any(parent[i] is None and tok(i) in _BOOL_OPS for i in range(a, b + 1))
             if pk is None:
-                return natural
-            return not (pt == "," or pk == "close" or pt == ".")
+                return natural and (not maybe or quiet(lo, hi))
+            return not (pt == "," or pk == "close" or pt == ".") and (not maybe or quiet(lo, hi))
         if o not in match:
             return False   # a bracket that never closes
         if not (p == o or pt in (",", ":", "=")) or not (qt == "," or q == match[o]):
@@ -765,10 +879,20 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
                 c -= 2
             if bt in _JOINERS or bt.startswith("concat"):
                 return False
+            role = lookup(o, c, bt, lo)
+            if role == "key" or (role and keys):
+                return False   # PR A, Codex round 2 (1): a lookup's key: what is found under it is where it goes, not this URL
+            if role:
+                # PR A, Codex round 2 (7): a lookup's default is what it returns when the key isn't there; under a plain literal
+                # key it is where the result goes, followed outward to the sender like any operand
+                maybe = maybe or not plain_keys(o, bt, lo)
+                lo, hi = c, match[o]
+                continue
             if bt in _SENDERS or tok(c) == "axios":
                 # PR A, Codex round 1 (1): a call named like a sender sends to one argument (config.get('hook', URL) is a lookup's
                 # default); the URL must be that argument, and the call itself must be the whole statement's sending
-                return destination(o, p, pt, bt, keys) and sent(c, match[o])
+                return destination(o, p, pt, bt, keys) and sent(c, match[o]) and (not maybe or quiet(c, match[o]))
+            maybe = maybe or len(args(o)) > 1   # PR A, Codex round 2 (1): a helper's argument: it may send to another one
             lo, hi = c, match[o]   # a wrapper call: the call is the operand now
             continue
         if ob == "[" and (bk in ("name", "str") or bt in (")", "]", "}")):

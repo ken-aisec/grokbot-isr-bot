@@ -26,9 +26,9 @@ if sys.version_info < (3, 8):   # degrade with one plain line, not a traceback (
 import argparse, builtins, concurrent.futures, datetime as dt, difflib, errno, gzip, hashlib, heapq, html, json, math, os, platform, re, shutil, stat, subprocess, sys, tempfile, threading, time, traceback
 
 VERSION = "0.7.1"
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.realpath(__file__))   # PR A, Codex round 2 (5): the file that runs, through any link to it
 RULES_PATH = os.path.join(HERE, "..", "rules", "text_rules.json")
-SELF_ROOT = os.path.abspath(os.path.join(HERE, ".."))
+SELF_ROOT = os.path.dirname(HERE)
 SEV_WEIGHT = {"critical": 25, "high": 10, "medium": 4, "low": 1, "info": 0}
 SEV_ORDER = ["critical", "high", "medium", "low", "info"]
 CATEGORY_CAP = 30
@@ -305,11 +305,13 @@ def cmd_daily(args):
     # last run's findings file, which the Bot can write: a plant whose finding was copied into it in advance was never new, and
     # daily said NO_CHANGES. Being in that file is never the owner's acknowledgment.
     plat = platform_open(snap)
-    if snap.get("scanners_missing") and not new and not fixed and not plat:
+    # PR A, Codex round 2 (6): a critical or high finding an earlier run had no room to name is still to be said: never NO_CHANGES
+    pending = undelivered_open(snap, new)
+    if snap.get("scanners_missing") and not new and not fixed and not plat and not pending:
         print("SCANNERS_MISSING " + ", ".join(snap["scanners_missing"]) + ": run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, then `wt.py daily` again")
         return 0
     gap = list(snap.get("stages_skipped") or [])
-    if not new and not fixed and not plat:
+    if not new and not fixed and not plat and not pending:
         # R04: nothing changed among what WAS checked; a stage that didn't finish is said, never hidden behind NO_CHANGES
         print(f"NO_CHANGES_BUT_NOT_CHECKED {'; '.join(gap)[:300]}: these were not checked this run (last results kept)" if gap else "NO_CHANGES")
         return 0
@@ -325,9 +327,12 @@ def cmd_daily(args):
     decoys = [compact(f) for f in new if f["rule"].startswith("WT-K")]
     if decoys:
         out["decoys"] = decoys      # always shown, whatever else is new
+    if pending:   # PR A, Codex round 2 (6): first, never cut short: what earlier runs couldn't name
+        out["not_yet_reported"] = [alert_line(f) for f in pending[:PENDING_SHOWN]]
     # batch 5 (d1): a new finding in Grok Bot's own files is said in platform_notes, never in `new` (a vendor rug pull still breaks
     # NO_CHANGES). Codex round 1 (10): critical and high ones first, and any left out are counted in `more`, with the command.
-    notes = platform_notes([f for f in new if platform_scope(f)] + [f for f in snap["findings"] if f.get("unverified_platform")], 5)
+    note_fs = [f for f in new if platform_scope(f)] + [f for f in snap["findings"] if f.get("unverified_platform")]
+    notes = platform_notes(note_fs, 5)
     rest = [f for f in new if not f["rule"].startswith("WT-K") and not platform_scope(f)]
     out["new"] = [dict(compact(f), key=f["key"]) if f.get("class") == "pattern" else compact(f) for f in rest][:10]
     if len(rest) > 10:
@@ -336,8 +341,82 @@ def cmd_daily(args):
     alerts = scanner_alerts(snap)
     if alerts:
         out["scanner_alerts"] = alerts
-    print(fit_owner_first(out, notes, limit=6000, keep=("decoys", "scanner_alerts"), before="new"))
+    text = fit_owner_first(out, notes, limit=6000, keep=("decoys", "scanner_alerts", "not_yet_reported"), before="new")
+    # PR A, Codex round 2 (6): every critical or high finding this output doesn't name (no room) is kept as undelivered in the
+    # snapshot until a daily run names it, and is listed whole in a file the routine must read and name from, today
+    said = json.loads(text)
+    named = {f["key"] for f in pending[:len(said.get("not_yet_reported", []))]} | {f["key"] for f in rest[:len(said["new"])]}
+    named |= {f["key"] for f in platform_note_order(note_fs)[1][:len((said.get("platform_notes") or {}).get("lines", []))]}
+    left = []
+    for f in pending + rest + platform_note_order(note_fs)[1]:
+        if f["key"] not in named and is_alert(f, snap):
+            named.add(f["key"])
+            left.append(f)
+    keep_undelivered(snap, left)
+    if left:
+        path = save_undelivered(left, snap)
+        said = dict(list(said.items())[:3] + [("undelivered", {
+            "count": len(left), "file": path,
+            "next": f"{len(left)} critical or high finding{'' if len(left) == 1 else 's'} this output had no room to name. Read the file "
+                    "and name every one (severity, title, where), one line each, beyond the 6-line limit. Until a daily run names one "
+                    "itself, it is listed again under not_yet_reported."})] + list(said.items())[3:])
+        text = json.dumps(said, indent=1)
+    print(text)
     return 0
+
+
+PENDING_SHOWN = 10   # PR A, Codex round 2 (6): earlier critical or high findings named per daily run (the rest wait, listed in the file)
+
+
+def is_alert(f, snap):
+    """A finding the daily routine must name: an owner's critical or high one, or a platform note Watchtower would call critical or
+    high. Decoys and scanner alerts are always shown whole, and an unlisted platform file is said every day while it is open."""
+    if f["rule"].startswith("WT-K") or f["rule"] == "WT-X005" or f.get("unverified_platform") or f.get("guarded"):
+        return False
+    if platform_scope(f):
+        unlisted = {g["where"].split(":")[0] for g in snap.get("findings", []) if g.get("unverified_platform")}
+        return loud_note(f, unlisted)
+    return f.get("severity") in ("critical", "high")
+
+
+def alert_line(f):
+    """A short line naming a finding: severity (what Watchtower would call a platform note), title, where."""
+    out = {"severity": f.get("severity_was") or f["severity"], "title": f["title"], "where": f["where"]}
+    if platform_scope(f):
+        out["platform"] = "Grok Bot's own file, not counted: report it to Grok Bot support"
+    return out
+
+
+def undelivered_open(snap, new):
+    """The open findings an earlier daily run had no room to name (the snapshot's `undelivered` keys, carried by run_audit), in
+    their findings order. Only open findings with those keys count, so a key added to the file can only bring back an alert."""
+    keys = {k for k in snap.get("undelivered") or [] if isinstance(k, str)}
+    fresh = {f["key"] for f in new}
+    return [f for f in shown(snap.get("findings", [])) if f["key"] in keys and f["key"] not in fresh and is_alert(f, snap)]
+
+
+def keep_undelivered(snap, left):
+    """Record `left` (findings the daily output didn't name) as the snapshot's `undelivered` keys."""
+    keys = sorted({f["key"] for f in left})
+    if keys != snap.get("undelivered", []):
+        snap["undelivered"] = keys
+        save_json(state_path("last_findings.json"), snap)
+
+
+def save_undelivered(fs, snap):
+    """Every finding in `fs` (masked, platform notes as their lines) in state/deltas/daily-<time>.json; its path, or None."""
+    d = state_path("deltas")
+    unlisted = {g["where"].split(":")[0] for g in snap.get("findings", []) if g.get("unverified_platform")}
+    try:
+        os.makedirs(d, exist_ok=True)
+        path = os.path.join(d, f"daily-{time.time_ns()}.json")
+        rec = lambda f: mask_stored([dict(compact(f), key=f["key"], **({"platform_note": platform_note_line(f, unlisted)} if platform_scope(f) else {}))])[0]
+        save_json(path, {"at": now(), "undelivered": [rec(f) for f in fs]})
+        for old in sorted(fn for fn in os.listdir(d) if fn.startswith("daily-") and fn.endswith(".json"))[:-DELTA_KEEP]:
+            os.remove(os.path.join(d, old))
+    except OSError:
+        return None
+    return path
 
 
 def cmd_baseline(args):

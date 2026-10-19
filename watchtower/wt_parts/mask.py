@@ -12,7 +12,8 @@ def mask(s):
 # the original text, and one pass writes them out, so no reader sees another's output, a hidden value keeps its line breaks
 # (history and `show` stay line for line) and the whole is linear. MASK_VERSION goes up whenever masking learns a new shape:
 # copies stored masked by an older version (approved skills, the engine cache) are then masked again.
-MASK_VERSION = 5   # batch 5: whole logical shell words for credentials, quoted YAML keys, webhook URLs over joins and \u escapes
+MASK_VERSION = 6   # batch 5: whole logical shell words for credentials, quoted YAML keys, webhook URLs over joins and \u escapes
+                   # (PR A, Codex round 2: 6, for long and joined tool and flag words, whole-value keep test, Bash $'…' and $"…")
 # (4); PR A, Codex round 1 (5): attached -u/-U/-p and the other line-reader forms in whole words, YAML quoted values over lines,
 # an escaped or joined scheme separator
 MASK_WINDOW = 8192   # finding() stores 160 characters: it masks this much of the text they are cut from, never less
@@ -176,7 +177,10 @@ def _urls(s, spans):
 # ://, and JSON's :\/\/, :\\\/\\\/ or //. PR A, Codex round 1 (4): the colon written : too, and line joins
 # (backslash, line break) and quotes anywhere between the three, so the URL's word is read before it is searched (https:\ then
 # //…, 'https:/'\ then '/…').
-_URLISH = re.compile(r"(?::|\\u003[aA])(?:['\"]|\\\r?\n)*(?:\\*/|\\u002[fF])(?:['\"]|\\\r?\n)*(?:\\*/|\\u002[fF])")
+# Round 2 (4): Bash's $'…' and $"…" quotes between them too, and $'…''s escapes for the colon and the slash (\x2f, \057, \u2f,
+# \U0000002f), so https:$'//'… and https:$'\x2f\x2f'… are read as the shell reads them.
+_URLISH = re.compile(r"(?::|\\u0{0,2}3[aA]|\\x3[aA]|\\0?72|\\U0{0,6}3[aA])(?:\$?['\"]|\\\r?\n)*(?:\\*/|\\u0{0,2}2[fF]|\\x2[fF]|\\0?57|\\U0{0,6}2[fF])"
+                     r"(?:\$?['\"]|\\\r?\n)*(?:\\*/|\\u0{0,2}2[fF]|\\x2[fF]|\\0?57|\\U0{0,6}2[fF])")
 
 
 _JOINED_LINE = re.compile(r"(?<!\\)(?:\\\\)*\\\r?$")
@@ -324,8 +328,10 @@ def _fields(s, spans):
         if not m:
             return
         if m.group("n1") is not None:
-            if _secret_name(m.group("n1")) and not _kept(m.group("v1")):
-                e = _multiline_scalar(s, m.start("v1")) or m.end("v1")   # round 1 (3): "password": "FAKEa\n  FAKEz"
+            # round 1 (3): "password": "FAKEa\n  FAKEz". Round 2 (3): the whole value is what may be kept, never its first line
+            # ("$TOKEN\n  FAKEz" is not a bare reference)
+            e = (_multiline_scalar(s, m.start("v1")) or m.end("v1")) if _secret_name(m.group("n1")) else None
+            if e is not None and not _kept(s[m.start("v1"):e]):
                 spans.append((m.start("v1"), e))
                 pos = m.end()   # never past e: a key on the next line of text that isn't YAML is still read
             else:
@@ -521,10 +527,26 @@ def _logical_words(s, pos=0):
             first = False
 
 
+_ANSI_ESC = re.compile(r"\\(?:(?P<c>[abeEfnrtv\"?])|(?P<o>[0-7]{1,3})|x(?P<x>[0-9a-fA-F]{1,2})|u(?P<u>[0-9a-fA-F]{1,4})"
+                       r"|U(?P<U>[0-9a-fA-F]{1,8})|c(?P<ctl>[\s\S]))")
+_ANSI_CHARS = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "v": "\v", '"': '"', "?": "?"}
+
+
+def _ansi_char(m):
+    """The character a $'…' escape (_ANSI_ESC) stands for in Bash."""
+    if m.group("c"):
+        return _ANSI_CHARS[m.group("c")]
+    if m.group("ctl"):
+        return chr(ord(m.group("ctl")) & 0x1F)
+    cp = int(m.group("o"), 8) & 0xFF if m.group("o") else int(m.group("x") or m.group("u") or m.group("U"), 16)
+    return chr(cp) if cp < 0x110000 and not 0xD800 <= cp < 0xE000 else "\ufffd"
+
+
 def _shell_plain(raw, stop_at_close=False):
     """The shell's reading of one word: (text, lo, hi), where text[k] came from raw[lo[k]:hi[k]] (an escape keeps its backslash
-    in its range). Line joins are dropped; inside "…" only \\$ \\` \\" \\\\ escape, inside $'…' only \\' and \\\\ (the rest are kept
-    as written). `stop_at_close`: the reading ends at a closing quote followed by } ] ) > or , (a JSON value's end, not more URL)."""
+    in its range). Line joins are dropped; inside "…" only \\$ \\` \\" \\\\ escape, inside $'…' Bash's escapes are read (PR A,
+    Codex round 2 (4): \\x2f, \\057, \\u2f, \\n, …; before it only \\' and \\\\), and $"…" is a "…". `stop_at_close`: the reading
+    ends at a closing quote followed by } ] ) > or , (a JSON value's end, not more URL)."""
     out, lo, hi, i, n = [], [], [], 0, len(raw)
 
     def put(c, a, b):
@@ -533,9 +555,10 @@ def _shell_plain(raw, stop_at_close=False):
         hi.append(b)
     while i < n:
         c = raw[i]
-        if c == "'" or c == '"' or (c == "$" and raw[i + 1:i + 2] == "'"):
-            q, i = ("'", i + 2) if c == "$" else (c, i + 1)
-            ansi = c == "$"
+        if c == "'" or c == '"' or (c == "$" and raw[i + 1:i + 2] in ("'", '"')):
+            q, i = (raw[i + 1], i + 2) if c == "$" else (c, i + 1)   # round 2 (4): $"…" is a "…"
+            ansi = c == "$" and q == "'"
+            c = c if ansi else q
             run = _SQ_RUN if ansi else _DQ_RUN
             while i < n and raw[i] != q:
                 if c == "'":   # '…': nothing escapes
@@ -564,6 +587,11 @@ def _shell_plain(raw, stop_at_close=False):
                     if nx in ("'\\" if ansi else "$`\"\\"):
                         put(nx, i, i + 2)
                         i += 2
+                        continue
+                    e = _ANSI_ESC.match(raw, i) if ansi else None
+                    if e:   # round 2 (4): $'…''s other escapes read as Bash does (\x2f is /)
+                        put(_ansi_char(e), i, e.end())
+                        i = e.end()
                         continue
                 put(raw[i], i, i + 1)
                 i += 1
@@ -633,26 +661,28 @@ def _credential_word_spans(s, spans):
     PR A, Codex round 1 (2): every form the line readers (_mask_words) know is read here too: an attached -uuser:… or -Uuser:…
     (from after the first :), a MySQL tool's -p… and sshpass's -p… (after the -p) or the word after sshpass's -p, the word after
     Bearer, after a secret name= or name: word (or a lone = after a secret name), and =… right after a secret name."""
-    prev = prev2 = tool = None   # the shell's reading, lowered, of the two words before (short ones), and the command's tool
+    prev = prev2 = tool = None   # the shell's reading, lowered, of the two words before, and the command's tool
     for a, b, first in _logical_words(s):
         raw = s[a:b]
         if first:
             prev = prev2 = tool = None
         flag, flag2 = prev, prev2
-        short = b - a <= 32 and "\n" not in raw
-        prev2, prev = prev, (_unquote(raw).lower() if short else None)
+        # PR A, Codex round 2 (2): every word's whole reading, line joins removed, whatever its length: a long path to mysql
+        # is still mysql, and --user\ then a line break is still --user
+        long_ = "\n" in raw or b - a > 4096
+        plain, lo, hi = _shell_plain(raw) if long_ or "\\" in raw else (_unquote(raw), None, None)
+        prev2, prev = prev, plain.lower()
         was = tool
-        if prev is not None:   # _mask_words' tool reading: sshpass's own options end at the command it runs
-            if tool == "sshpass" and not prev.startswith("-") and flag != "-p":
-                tool = "done"
-            base = prev.rpartition("/")[2]
-            if base == "sshpass" and tool is None:
-                tool = "sshpass"
-            elif base in MYSQL_TOOLS:
-                tool = "mysql"
-        if "\n" not in raw and b - a <= 4096:
+        if tool == "sshpass" and not prev.startswith("-") and flag != "-p":   # _mask_words' tool reading: sshpass's own
+            tool = "done"                                                       # options end at the command it runs
+        base = prev.rpartition("/")[2]
+        if base == "sshpass" and tool is None:
+            tool = "sshpass"
+        elif base in MYSQL_TOOLS:
+            tool = "mysql"
+        if not long_:
             continue
-        head, _, _ = _shell_plain(raw[:200])
+        head = plain[:200]
         hl = head.lower()
         if (flag in SECRET_FLAGS or (was == "sshpass" and flag == "-p") or flag in ("bearer",)
                 or (flag == "=" and flag2 is not None and _secret_name(flag2))
@@ -661,7 +691,6 @@ def _credential_word_spans(s, spans):
             if not _kept(raw):
                 spans.append((a, b))
             continue
-        plain, lo, hi = _shell_plain(raw)
         hit = None
         if was in ("mysql", "sshpass") and head.startswith("-p") and len(plain) > 2:
             hit = 2   # mysql -p'…', sshpass -p'…'
