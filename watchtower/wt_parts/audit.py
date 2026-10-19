@@ -6,7 +6,8 @@ def audit(roots, exports, quick=False):
     INCOMPLETE_SKILLS.clear()
     _RUNS_CODE.clear()
     reset_scanner_checks()
-    inv = collect_inventory(roots)
+    walk_errors = []   # batch 5 PR B, Codex round 2 (3): a folder the scan couldn't list leaves the access map incomplete
+    inv = collect_inventory(roots, errors=walk_errors)
     manifest = {}
     # DQ-022/023, v0.7.1 item 1: SKILL.md outside loadable locations — one "Not scanned" line (a Tip), never scored as installed
     if inv.get("non_live_skills"):
@@ -159,6 +160,7 @@ def audit(roots, exports, quick=False):
                           "listed and counts until you decide. Tell Watchtower \"fix it\" to keep it with one yes, or remove it in the app (Marketplace → Your plugins)."))
 
     # 3. persistence (ASI10)
+    CRONTAB_SEEN.clear()   # batch 5 PR B, Codex round 2 (3): unless this look says otherwise, the crontab couldn't be read
     snap = persistence_snapshot()
     old = load_json(state_path("persistence.json"), None)
     if old is not None:
@@ -311,5 +313,9 @@ def audit(roots, exports, quick=False):
     meta = {"inventory": {k: len(v) for k, v in inv.items() if k not in ("non_live_skills", "platform_aliases")}, "notes": notes, "manifest": manifest, "persistence": snap, "scanners_missing": gone,
             "skill_dirs": [os.path.dirname(x) for x in inv["skills"]], "baseline_status": base_status,
             "access_sources": {"roots": list(roots), "mcp": list(inv["mcp_configs"]), "plugin_files": list(inv["plugin_files"]),
-                               "browser": jar.get("hosts")}}   # batch 5 (a); PR B, Codex round 1 (2): this run's own look at the jar
+                               "browser": jar.get("hosts"),   # batch 5 (a); PR B, Codex round 1 (2): this run's own look at the jar
+                               # round 2 (1, 3): the jar and the cookie seed looked at whole (or said not to be), the crontab's
+                               # answer, the folders the scan couldn't list
+                               "jar": _ax_jar_now(), "seed": _ax_seed_now(roots), "crontab": CRONTAB_SEEN.get("crontab", "failed"),
+                               "walk_errors": len(walk_errors)}}
     return fs, meta

@@ -128,10 +128,15 @@ def shape_reply(d):
         else:
             conns.append(nm)
     out["connectors"] = conns
+    # batch 5 PR B, Codex round 2 (4): connectors past the 40 kept are only read for the access map's labels and count
+    out["connectors_more"] = [nm for nm in (_rc_name(c, RC_CONN_MAX) for c in (raw if isinstance(raw, list) else [])[40:1000]) if nm]
     rts, raw = [], d.get("routines")
     if raw is not None and not isinstance(raw, list):
         extra.add("routines (not a list)")
         raw = []
+    past = [r for r in (raw or [])[60:10 ** 4] if isinstance(r, dict)]   # round 2 (4): counted for the access map, never kept
+    out["routines_more"] = len(past)
+    out["routines_more_sending"] = sum(1 for r in past if _rc_yesno(r.get("sends_or_posts")) and _rc_yesno(r.get("asks_first")) is not True)
     for r in (raw or [])[:60]:
         if not isinstance(r, dict):
             extra.add("routines (not the asked shape)")
@@ -235,9 +240,10 @@ def rollcall_access(sh):
     connector's own text: only the vocabulary's label for it, or a count of other connectors (rollcall_said). The access map
     labels all of it "what the Bot said; not checked"."""
     mem = sh["memories"].get("count") if isinstance(sh.get("memories"), dict) else None
-    return rollcall_said({"said_at": now()[:10], "connectors": list(sh["connectors"][:40]),
+    return rollcall_said({"said_at": now()[:10], "connectors": list(sh["connectors"][:40]) + list(sh.get("connectors_more", [])),
                           "routines": [{"trigger": r["trigger"], "sends_without_asking": bool(r["sends_or_posts"]) and r["asks_first"] is not True,
                                         "asks_first": r["asks_first"]} for r in sh["routines"][:60]],
+                          "routines_more": sh.get("routines_more", 0), "routines_more_sending": sh.get("routines_more_sending", 0),
                           "memories": mem, "reads_outside_content": sh["reads_outside_content"],
                           "sends_without_asking": sh["sends_or_posts_without_asking"]})
 

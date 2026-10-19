@@ -1,12 +1,14 @@
 # Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
 # ---------------------------------------------------------------- collection
-def walk(roots, max_depth=8):
+def walk(roots, max_depth=8, errors=None):
+    """Every plain file under roots. `errors` (a list) gets each folder the walk couldn't list (batch 5 PR B, Codex round 2, 3:
+    the access map then never says there is none)."""
     for root in roots:
         root = os.path.expanduser(root)
         if not os.path.isdir(root):
             continue
         base = root.rstrip("/").count("/")
-        for dirpath, dirnames, filenames in os.walk(root):
+        for dirpath, dirnames, filenames in os.walk(root, onerror=errors.append if errors is not None else None):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith((".venv",) + SKIP_PREFIXES)]
             if dirpath.count("/") - base >= max_depth:
                 dirnames[:] = []
@@ -35,9 +37,9 @@ def is_skill_file(path):
 MCP_CONFIG = re.compile(r"(?i)^(\.?mcp|mcp[_-]?(config|servers|settings)|[\w-]*[_-]mcp[_-]?(config|servers|settings)|claude_desktop_config)\.json$")
 
 
-def collect_inventory(roots):
+def collect_inventory(roots, errors=None):
     inv = {"skills": [], "plugin_files": [], "mcp_configs": [], "non_live_skills": []}
-    for p in walk(roots):
+    for p in walk(roots, errors=errors):
         fn = os.path.basename(p)
         if fn == "SKILL.md":
             if is_live_skill_path(p):
@@ -135,10 +137,14 @@ def run(cmd, timeout=120, cwd=None):
             os.close(fd)
 
 
+CRONTAB_SEEN = {}   # "crontab": what the last persistence_snapshot's `crontab -l` said (crontab_state; batch 5 PR B, Codex round 2, 3)
+
+
 def persistence_snapshot():
     snap = {}
-    code, out, _ = run(["crontab", "-l"], 10)
+    code, out, err = run(["crontab", "-l"], 10)
     snap["crontab"] = out.strip() if code == 0 else ""
+    CRONTAB_SEEN["crontab"] = crontab_state(code, err)
     for d in ("/etc/cron.d", os.path.expanduser("~/.config/systemd/user")):
         if os.path.isdir(d):
             snap[d] = sorted(os.listdir(d))

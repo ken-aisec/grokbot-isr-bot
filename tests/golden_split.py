@@ -538,6 +538,13 @@ JSON_CHANGE_FIELDS = {"field": str, "from": (int, str), "to": (int, str)}
 JSON_SHAPE_FIELDS = {"head": list, "doc": dict}
 SCHEMA_KINDS = {"object": dict, "list": dict, "int": list, "enum": list, "any": list}
 NEW_ITEM, GONE_ITEM = "+<new item>", "-<item gone>"   # the pseudo line for an item only post (or only pre) has
+# PR B, Codex round 2 (6): two exact kinds, each in place of lines_rx. `json_exact` {head, doc}: a new JSON item whose lines
+# before the document are exactly `head` and whose document is exactly `doc` (_same: every value, its type and each object's key
+# order). `block` [lines]: diff lines ("+text"/"-text", NEW_ITEM) that must all appear in the item's diff, in that order, once
+# (_block_span); a line left out, moved or changed takes none of them, so all are unexpected; a line between them that isn't
+# one of them is unexpected whatever else might take it, and a second copy is left to the other entries. No pattern in either:
+# what they take is spelled out.
+ALT_FIELDS = {"json_change": dict, "json_shape": dict, "json_exact": dict, "block": list}
 
 
 def schema_ok(s):
@@ -580,6 +587,21 @@ def json_new_shape(pre, post, shape):
     JSON, _json_item) fits shape["doc"]."""
     b = _json_item(post)
     return pre is None and b is not None and b[0].splitlines() == shape["head"] and json_shape_ok(shape["doc"], b[1])
+
+
+def json_new_exact(pre, post, exact):
+    """True when the item is new, its lines before the document are exactly exact["head"], and the document is exact["doc"] with
+    exact types and key order (_same). PR B, Codex round 2 (6): a scenario's map pinned value for value."""
+    b = _json_item(post)
+    if b is None or pre is not None or b[0].splitlines() != exact["head"]:
+        return False
+    doc = b[1]
+    if isinstance(doc, dict) and isinstance(doc.get("at"), str) and EXACT_AT.fullmatch(doc["at"]):
+        doc = dict(doc, at="<TS>")   # the one value that varies: when it was written (N1 normalizes it only when calibration needs it)
+    return _same(doc, exact["doc"])
+
+
+EXACT_AT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})")
 # Lines no narrow pattern accepts all of: a pattern that accepts every added (or every removed) one is refused as too broad.
 BROAD_PROBES = (("+", "+zq 1", '+ "unrelated": [0]', "+<x>", NEW_ITEM, "+a", "+Z9 ~", '+   "k": "v",', "+\t#"),
                 ("-", "-QX {}", '- "other": null', "-<y>", GONE_ITEM, "-b", "-Y8 ^", '-   "j": 2,', "-\t;"))
@@ -602,13 +624,18 @@ def _entry_shape(e):
     if not isinstance(e, dict):
         return False
     want = dict(EXPECT_FIELDS)
-    for alt in ("json_change", "json_shape"):
+    for alt, t in ALT_FIELDS.items():
         if alt in e:
             del want["lines_rx"]
-            want[alt] = dict
+            want[alt] = t
             break
     if set(e) != set(want) or not all(isinstance(e[k], t) for k, t in want.items()):
         return False
+    if "block" in e:
+        return bool(e["block"]) and all(isinstance(x, str) and (x[:1] in ("+", "-") or x == NEW_ITEM) for x in e["block"])
+    if "json_exact" in e:
+        ex = e["json_exact"]
+        return set(ex) == set(JSON_SHAPE_FIELDS) and isinstance(ex["head"], list) and all(isinstance(x, str) for x in ex["head"]) and isinstance(ex["doc"], dict)
     if "json_shape" in e:
         sh = e["json_shape"]
         return (set(sh) == set(JSON_SHAPE_FIELDS) and all(isinstance(sh[k], t) for k, t in JSON_SHAPE_FIELDS.items())
@@ -634,7 +661,7 @@ def parse_expect(doc, items):
             raise ValueError(f"entry {n}: needs exactly {sorted(EXPECT_FIELDS)} with those types (or json_change {{field, from, to}} "
                              "or json_shape {head, doc} in place of lines_rx)")
         lines = e.get("lines_rx", [])
-        if not e["why"].strip() or ("json_change" not in e and "json_shape" not in e and not lines):
+        if not e["why"].strip() or (not any(alt in e for alt in ALT_FIELDS) and not lines):
             raise ValueError(f"entry {n} ({e['item']}): an empty why or lines_rx")
         try:
             rxs = [re.compile(x) for x in (e["scenario_rx"], e["key_rx"])] + [re.compile(x) if isinstance(x, str) else None for x in lines]
@@ -647,7 +674,8 @@ def parse_expect(doc, items):
             raise ValueError(f"entry {n} ({e['item']}): its lines_rx together would accept any line; write narrow ones")
         every += rxs[2:]
         if e["item"] in items:
-            out.append(dict(e, id=n, _s=rxs[0], _k=rxs[1], _l=rxs[2:], _j=e.get("json_change"), _shape=e.get("json_shape")))
+            out.append(dict(e, id=n, _s=rxs[0], _k=rxs[1], _l=rxs[2:], _j=e.get("json_change"), _shape=e.get("json_shape"),
+                            _exact=e.get("json_exact"), _block=e.get("block")))
     if every and _covers_a_side(every):
         raise ValueError("the entries' lines_rx together would accept any line; write narrow ones")
     return out
@@ -716,17 +744,50 @@ def diff_lines(pre, post):
     return out
 
 
+def _block_span(lines, taken, run_):
+    """([the positions of run_'s lines], [the other lines between them]) for the shortest stretch of not yet taken `lines` holding
+    every line of run_ in order, or None when no stretch holds them all. A block's line left out, moved or changed is no match."""
+    if not run_:
+        return None
+    best = None
+    for start in (i for i, x in enumerate(lines) if x == run_[0] and not taken[i]):
+        pos, i = [start], start + 1
+        for want in run_[1:]:
+            while i < len(lines) and (taken[i] or lines[i] != want):
+                i += 1
+            if i == len(lines):
+                break
+            pos.append(i)
+            i += 1
+        if len(pos) == len(run_) and (best is None or pos[-1] - pos[0] < best[-1] - best[0]):
+            best = pos
+    if best is None:
+        return None
+    return best, [i for i in range(best[0], best[-1] + 1) if i not in set(best) and not taken[i]]
+
+
 def unexpected_lines(sid, key, pre, post, entries, hits):
     """The diff_lines of one differing item no entry expects; `hits` counts the lines each entry (by id) took."""
     cand = [e for e in entries if e["_s"].search(sid) and e["_k"].search(key)]
     lines = diff_lines(pre, post)
-    whole = next((e for e in cand if (e["_j"] and json_only_change(pre, post, e["_j"])) or (e["_shape"] and json_new_shape(pre, post, e["_shape"]))), None)
-    if whole is not None:   # exactly the one field changed, or a new item of exactly that shape: the whole item is expected
+    whole = next((e for e in cand if (e["_j"] and json_only_change(pre, post, e["_j"])) or (e["_shape"] and json_new_shape(pre, post, e["_shape"]))
+                  or (e.get("_exact") and json_new_exact(pre, post, e["_exact"]))), None)
+    if whole is not None:   # exactly the one field changed, or a new item of exactly that shape or content: the whole item is expected
         hits[whole["id"]] = hits.get(whole["id"], 0) + len(lines)
         return []
-    cand = [e for e in cand if not e["_j"] and not e["_shape"]]
-    bad = []
-    for line in lines:
+    taken, bad = [False] * len(lines), []
+    for e in cand:   # PR B, Codex round 2 (6): each block takes its run once, whole, before any pattern looks
+        span = _block_span(lines, taken, e.get("_block"))
+        if span is None:
+            continue
+        for i in span[0]:
+            taken[i] = True
+        for i in span[1]:   # a line inside the run that isn't one of its own: unexpected, whatever else might take it
+            taken[i] = True
+            bad.append(lines[i])
+        hits[e["id"]] = hits.get(e["id"], 0) + len(span[0])
+    cand = [e for e in cand if not e["_j"] and not e["_shape"] and not e.get("_exact") and not e.get("_block")]
+    for line in [x for x, t in zip(lines, taken) if not t]:
         e = next((e for e in cand if any(r.search(line) for r in e["_l"])), None)
         if e is None:
             bad.append(line)

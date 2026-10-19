@@ -76,6 +76,9 @@ class WhatAStoryTouchesHere(_Brief):
 
     def test_a_product_this_computer_doesnt_reach(self):   # replay
         self.mapped()
+        # PR B, Codex round 2 (3): a tool list Watchtower couldn't read may name Dropbox, so "found no" needs every one readable;
+        # test_batch5_access_round2 has the sentence with the unreadable one left in
+        os.remove(os.path.join(self.home, "projects", "tools", "mcp.json"))
         r = self.brief([("Dropbox token leak lets attackers steal shared files", "")])[0]
         self.assertEqual(r["top_stories"][0].get("here"),
                          "This is about Dropbox. Watchtower found no Dropbox connector, sign-in or webhook here (it only knows the connectors "
@@ -85,7 +88,11 @@ class WhatAStoryTouchesHere(_Brief):
         self.mapped()
         r = self.brief([("Slack webhook tokens stolen in agent attack", ""), ("Notion MCP server flaw lets agents exfiltrate pages", "")])[0]
         here = {s["title"].split()[0]: s.get("here") for s in r["top_stories"]}
-        self.assertEqual(here["Slack"], "This is about Slack. Here: a Slack webhook in \"digest\", so every Bot can reach it.")
+        # PR B, Codex round 2 (notes): the brief builds its map now, and the webhook is the last audit's: it says so, with the date
+        # (was: '... a Slack webhook in "digest", so every Bot can reach it.')
+        day = dt.date.today()
+        self.assertEqual(here["Slack"], f"This is about Slack. Here: a Slack webhook in \"digest\" (from the last audit, {day.strftime('%b')} {day.day}), "
+                                        "so every Bot can reach it.")
         self.assertEqual(here["Notion"], "This is about Notion. Here: a tool connection named notion, so every Bot can reach it.")
 
     def test_a_bot_name_comes_only_from_the_map(self):   # guard
