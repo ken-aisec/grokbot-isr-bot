@@ -135,6 +135,24 @@ def _quote_before(s, i):
     return s[j - 1 - r:j], j - 1 - r
 
 
+def _continued(s, i):
+    """True when the line break at s[i] (\\n, \\r, or the \\n of \\r\\n) has a backslash right before it: a source line
+    continuation (Python, shell, C), which joins the two lines, at whatever escape level it is written."""
+    if s[i] == "\n" and i > 0 and s[i - 1] == "\r":
+        i -= 1
+    return i > 0 and s[i - 1] == "\\"
+
+
+_BREAK_RUN = re.compile(r"(?<!\\)(\\+)(\r\n?|\n|[nr])")   # a whole backslash run and the line break after it
+
+
+def _continuations(s):
+    """Where each line continuation in s starts: a backslash run before a real line break, or before an escaped n or r when
+    the run's length isn't a power of two (a literal backslash, then a line break, at some escape level: 3 in a JSON string).
+    Each run is read once from its first backslash."""
+    return [m.start() for m in _BREAK_RUN.finditer(s) if m.group(2) not in "nr" or len(m.group(1)) & (len(m.group(1)) - 1)]
+
+
 def _strict_end(s, a, b):
     """(level or "edge", quote) under which a strict reading lets the END marker s[a:b] end a block written with escapes;
     None when it doesn't. Before it, past spaces and tabs: the start of the text or a line break ("edge"), an escaped \\n or
@@ -142,7 +160,11 @@ def _strict_end(s, a, b):
     whole break (its level). Both sides' levels and quotes agree. Fix round 1 (Codex 1): the whole logical line before a quoted
     END is read back to its start (the text's start, a line break, or an escaped break at the END's level), and it may hold
     only spaces, quotes and code (_ARMOR_CODE: "…\\n" + "-----END …"): a header line (Comment: x + "-----END …) never ends a
-    block. Each END reads back only to the previous END or anything else, so all of them are read in linear time."""
+    block. Each END reads back only to the previous END or anything else, so all of them are read in linear time. Fix round 2
+    (Codex 1): a quoted END is read back past source line breaks (between string literals they end nothing in the string) and
+    an outer serialization's own escaped breaks, to an escaped break at its level or the text's start: "Comment: x "⏎"-----END …"
+    is a header; a line continuation (a backslash before a line break) anywhere on the way, or right before an END that starts
+    a line, makes it no END."""
     k, n, q2 = b, len(s), ""
     while k < n and s[k] in " \t":
         k += 1
@@ -162,17 +184,32 @@ def _strict_end(s, a, b):
     q1, lv1 = "", None
     if j > 0 and s[j - 1] in _ARMOR_QUOTES:
         q1 = _quote_before(s, j)[0]
-    elif j and s[j - 1] not in "\r\n" and not _esc_before(s, j):
+    elif j == 0 or s[j - 1] in "\r\n":
+        if j and _continued(s, j - 1):
+            return None   # a source line continued onto the END's line: the END is inside the line before it
+        lv1 = "edge"
+    elif _esc_before(s, j):
+        lv1 = _esc_before(s, j)[0]
+        if lv2 != "edge" and lv1 != lv2:
+            return None
+    else:
         return None   # only a line start or a quote stands right before an END
-    while lv1 is None:   # back over the logical line to its start
-        if j == 0 or s[j - 1] in "\r\n":
+    while lv1 is None:   # a quoted END: back over the code before it to an escaped break at its level, the end of a line
+        if j == 0:
             lv1 = "edge"
+        elif s[j - 1] in "\r\n":   # a source line break between string literals ends nothing in the string itself
+            if _continued(s, j - 1):
+                return None
+            j -= 1
         elif _esc_before(s, j):
-            lv = _esc_before(s, j)[0]
-            if lv2 != "edge" and lv != lv2:
-                return None   # a backslash-n written at another level is text on this line
-            lv1 = lv
-        elif s[j - 1] in " \t\\" + _ARMOR_QUOTES + _ARMOR_CODE and q1:
+            lv, at = _esc_before(s, j)
+            if lv2 == "edge" or lv == lv2:
+                lv1 = lv
+            elif lv < lv2:
+                j = at   # an outer serialization's own line break (a notebook's source lines): read on past it
+            else:
+                return None   # a backslash-n written at a deeper level is text on this line
+        elif s[j - 1] in " \t\\" + _ARMOR_QUOTES + _ARMOR_CODE:
             j -= 1
         else:
             return None
@@ -234,8 +271,9 @@ def armor_blocks(s):
     The block hides to the furthest of the strict END, the loose END and the last loose END that the next BEGIN reading the
     same ENDs doesn't take (with none, the last such END in the text); with no strict END, to the end of the text, so a reader
     unsure where it ends never hides less than before. Fix round 1 (Codex 1): also to the end of the text when an END marker
-    with its label, in any frame, comes after that end and before its label's next BEGIN. One pass over the markers, each END
-    found by bisection."""
+    with its label, in any frame, comes after that end and before its label's next BEGIN. Fix round 2 (Codex 1): and when a
+    line continuation (a backslash right before a line break, at any escape level) lies between the BEGIN and that end. One
+    pass over the markers, each END found by bisection."""
     begins, ends, n = _armor_markers(s, "BEGIN"), _armor_markers(s, "END"), len(s)
     loose, strict = {}, {}
     for a, b, label in ends:
@@ -278,6 +316,7 @@ def armor_blocks(s):
         label_begins.setdefault(label, []).append(a)
     for a, _, label in ends:
         raw_ends.setdefault(label, []).append(a)
+    conts = _continuations(s) if begins else []
     out = []
     for k, ((a, b, label), (lk, sk)) in enumerate(zip(begins, reads)):
         nxt = begins[k + 1][0] if k + 1 < len(begins) else None
@@ -298,6 +337,11 @@ def armor_blocks(s):
             i = bisect.bisect_right(bs, a)
             hi = bisect.bisect_left(lst, bs[i]) if i < len(bs) else len(lst)
             if hi and lst[hi - 1] > hide:
+                hide = None
+            # fix round 2 (Codex 1): a line continuation (a backslash before a line break) inside the block may join any
+            # END line onto the line before it (a header), at any escape level: its end is unsure, hidden to the end
+            i = bisect.bisect_left(conts, b)
+            if hide is not None and i < len(conts) and conts[i] < hide:
                 hide = None
         out.append((a, b, label, e[0] if e else None, e[1] if e else None, nxt, hide))
     return out

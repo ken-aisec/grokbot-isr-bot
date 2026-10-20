@@ -62,6 +62,16 @@ def public_packet():
     return b"\x99" + len(body).to_bytes(2, "big") + body
 
 
+def public_subkey():
+    """public_packet's fields as a public-subkey packet (old format, tag 14)."""
+    return b"\xb9" + public_packet()[1:]
+
+
+def old_packet(tag, body):
+    """An old-format packet with a two-byte length."""
+    return bytes([0x81 | tag << 2]) + len(body).to_bytes(2, "big") + body
+
+
 IGNORED = {"marker": b"\xa8\x03PGP",                                   # old format, tag 10 (RFC 4880 5.8)
            "padding": b"\xd5\x10" + b"\x00" * 16,                       # new format, tag 21
            "trust": b"\xb0\x02\x00\x00",                                # old format, tag 12
@@ -254,6 +264,66 @@ class SerializedArmor(Box):   # assertions on masked text report counts and yes/
         two = text.replace("FAKE more\n", "") + "-----BEGIN PRIVATE KEY-----\n" + junk + "\n-----END PRIVATE KEY-----\nlast\n"
         self.assertEqual([b[6] is None for b in wt.armor_blocks(two)], [True, False])   # bounded by the label's next BEGIN
 
+    # fix round 2 (Codex 1): a source line continued onto the END's line, and a footer assembled from adjacent literals
+    def footless(self):
+        """(armor with a placeholder header and no END line, its body pieces)."""
+        block, bits = pgp_secret_block("Comment: PLACEHOLDER")
+        return block[:block.rindex("-----END PGP")], bits
+
+    def continued_sources(self):
+        armor, bits = self.footless()
+        escaped = self.python_source(armor).replace("Comment: PLACEHOLDER", 'Comment: x \\\n"-----END PGP PRIVATE KEY BLOCK-----')
+        lines = 'KEY = """' + armor.replace("Comment: PLACEHOLDER", "Comment: x \\\n-----END PGP PRIVATE KEY BLOCK-----") + '"""\n'
+        return {"escaped": escaped, "real lines": lines, "real lines in JSON": json.dumps({"src": lines})}, bits
+
+    def test_a_continued_line_before_an_end(self):   # replay (037c0e1: every body line kept, at each level)
+        sources, bits = self.continued_sources()
+        for name, src in sources.items():
+            with self.subTest(name):   # each level on its own
+                self.assertTrue("\\\n" in src or "\\\\\\n" in src, name)
+                self.assert_hidden(src, bits, name)
+                self.assertEqual(wt.pem_kind(src, src.index("-----BEGIN")), "real", name)
+
+    def test_gpg_reads_the_continued_armor(self):   # guard: what Python makes of the continued source is a key GnuPG reads
+        if not GPG:
+            self.skipTest("gpg not installed")
+        armor, _ = self.footless()
+        block, _ = pgp_secret_block("Comment: PLACEHOLDER")
+        value = armor.replace("Comment: PLACEHOLDER", 'Comment: x "-----END PGP PRIVATE KEY BLOCK-----')   # the joined line
+        d = tempfile.mkdtemp()
+        try:
+            r = subprocess.run([GPG, "--homedir", d, "--batch", "--dearmor"], input=value.encode(), capture_output=True, timeout=30)
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-300:])
+        self.assertTrue(r.stdout == armor_packet(armor + "-----END PGP PRIVATE KEY BLOCK-----\n"), "gpg dearmored other bytes")
+
+    def test_a_footer_from_adjacent_literals(self):   # replay (037c0e1: the comment's END was taken, the body kept)
+        armor, bits = self.footless()
+        lines = armor.replace("Comment: PLACEHOLDER", "Comment: x \x00-----END PGP PRIVATE KEY BLOCK-----").rstrip("\n").split("\n")
+        lits = []
+        for ln in lines:
+            lits += ['"' + p + '"' for p in ln.split("\x00")[:-1]] + ['"' + ln.split("\x00")[-1] + '\\n"']
+        src = "KEY = (" + "\n       ".join(lits + ['"-----END PGP " "PRIVATE KEY BLOCK-----\\n"']) + ")\nprint(len(KEY))\n"
+        self.assertEqual(src.count("-----END PGP PRIVATE KEY BLOCK-----"), 1)   # only the comment's: the real footer is split
+        self.assert_hidden(src, bits, "adjacent literals")
+
+    def test_ordinary_code_built_blocks_still_end(self):   # guard: JSON lists of lines, notebooks and code keep what follows
+        raw = ed25519_pkcs8()
+        p = pem("", raw)
+        b = base64.b64encode(raw).decode()
+        for name, text in (("JSON lines", json.dumps({"lines": [ln + "\n" for ln in p.rstrip("\n").split("\n")], "after": "visible"})),
+                           ("code", 'K = ("-----BEGIN PRIVATE KEY-----\\n"\n     "' + b + '\\n"\n     "-----END PRIVATE KEY-----\\n")\nvisible = 1\n'),
+                           ("notebook", json.dumps({"cells": [{"source": ['key = ("-----BEGIN PRIVATE KEY-----\\n"\n',
+                                                                          '       "' + b + '\\n"\n',
+                                                                          '       "-----END PRIVATE KEY-----\\n")\n',
+                                                                          'print("visible")']}]}, indent=1))):
+            out = wt.mask_secrets(text)
+            self.assertEqual(kept(bits_of(raw), out), 0, name)
+            self.assertTrue("visible" in out, f"the text after the block was hidden: {name}")
+            (_, _, _, es, _, _, hide), = wt.armor_blocks(text)
+            self.assertTrue(es is not None and hide == es, name)
+
     def test_the_known_false_alarm_hides_the_rest(self):   # guard (new): KNOWN-LIMITS, open false alarms (batch 7a)
         raw = ed25519_pkcs8()
         block = pem("", raw).rstrip("\n")
@@ -334,8 +404,8 @@ class IgnoredPackets(_Keys):
         self.assertEqual(wt.plain(got[0])["title"], "Keys left in files")
 
     def test_public_packets_only_are_still_noted(self):   # guard: a public key labelled PRIVATE is what the note is for
-        uid = b"FAKE Example <fake@example.invalid>"
-        for raw in (public_packet(), public_packet() + b"\xb4" + bytes([len(uid)]) + uid + IGNORED["marker"],
+        # fix round 2: a public key, a public subkey and a marker (a user ID's free bytes prove nothing: test_unread_payloads_…)
+        for raw in (public_packet(), public_packet() + public_subkey() + IGNORED["marker"],
                     public_key_packet(300)):   # fix round 1: a whole packet (a cut one is a key, test_a_cut_public_packet_…)
             block = pgp_armor(raw)
             self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "example", raw[:3].hex())
@@ -373,6 +443,44 @@ class IgnoredPackets(_Keys):
         self.assertNotIn(NOTE, got[0]["fix"])
         block = pgp_armor(raw)
         self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real")
+
+    def test_a_public_envelope_around_a_secret_key_is_real(self):   # replay (037c0e1: "public", an example with the note)
+        fields = b"\x04" + int(time.time()).to_bytes(4, "big") + b"\x01" + mpi(128) + b"\x00\x11\x01\x00\x01"
+        raw = old_packet(6, fields + secret_packet())   # its declared length is exact; the secret packet rides in its payload
+        self.assertIsNone(wt.pgp_packets(raw))
+        got = t011("Key:\n" + pem("", raw))
+        self.assertEqual([(f["rule"], f["severity"]) for f in got], [("WT-T011", "critical")])
+        self.assertNotIn(NOTE, got[0]["fix"])
+        block = pgp_armor(raw)
+        self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real")
+
+    def test_public_key_structures_are_read_exactly(self):   # guard (new)
+        t = int(time.time()).to_bytes(4, "big")
+        p256 = b"\x08" + bytes.fromhex("2a8648ce3d030107")
+        ecdsa = b"\x04" + t + b"\x13" + p256 + b"\x02\x03\x04" + secrets.token_bytes(64)            # v4 ECDSA P-256: OID, point
+        ecdh = b"\x04" + t + b"\x12" + p256 + b"\x02\x03\x04" + secrets.token_bytes(64) + b"\x03\x01\x08\x07"   # and KDF
+        ed6 = b"\x06" + t + b"\x1b" + (32).to_bytes(4, "big") + secrets.token_bytes(32)              # v6 Ed25519
+        for raw in (public_key_packet(120), public_key_packet(300), old_packet(6, ecdsa), old_packet(14, ecdh), old_packet(6, ed6),
+                    public_packet() + public_subkey()):
+            self.assertEqual(wt.pgp_packets(raw), "public", raw[:4].hex())
+        rsa = public_packet()[3:]
+        for raw in (old_packet(6, rsa + b"\x00"),                     # a byte left over
+                    old_packet(6, rsa[:-1]),                          # a field cut short
+                    old_packet(6, b"\x03" + rsa[1:]),                 # version 3
+                    old_packet(6, rsa[:5] + b"\x63" + rsa[6:]),       # algorithm 99
+                    old_packet(6, b"\x06" + t + b"\x1b" + (33).to_bytes(4, "big") + secrets.token_bytes(33)),   # v6 length off
+                    old_packet(6, b"\x04" + t + b"\x13\x00" + b"\x02\x03\x04" + secrets.token_bytes(64))):    # an empty OID
+            self.assertIsNone(wt.pgp_packets(raw), raw[:8].hex())
+
+    def test_unread_payloads_prove_nothing(self):   # guard (new): a payload whose bytes aren't read can hold a secret key
+        uid = b"FAKE Example <fake@example.invalid>"
+        pk = public_packet()
+        for name, raw in (("user ID", pk + bytes([0xb4, len(uid)]) + uid), ("signature", pk + old_packet(2, b"\x04" * 40)),
+                          ("trust", pk + IGNORED["trust"]), ("padding", pk + IGNORED["padding"]), ("tag 61", pk + IGNORED["tag 61"]),
+                          ("another marker", pk + b"\xa8\x03XYZ")):
+            self.assertIsNone(wt.pgp_packets(raw), name)
+            block = pgp_armor(raw)
+            self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real", name)
 
     def test_100000_marker_packets_are_read_in_bounded_time(self):   # guard (new)
         raw = IGNORED["marker"] * 100_000 + secret_packet()

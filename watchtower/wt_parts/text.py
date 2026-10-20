@@ -231,18 +231,49 @@ def der_key_structure(b, at=0):
 
 
 _PGP_SECRET = (5, 7)   # secret key, secret subkey
-_PGP_PUBLIC = frozenset((2, 6, 13, 14, 17))   # signature, public key, user id, public subkey, user attribute
-_PGP_IGNORED = frozenset((10, 12, 21, *range(40, 64)))   # marker, trust, padding, and the tags readers skip (RFC 9580 §5)
+_PGP_PUBLIC = (6, 14)   # public key, public subkey: the only public packets whose whole payload is read (_pgp_public_key)
+_PGP_MARKER = 10   # read only as the marker packet RFC 4880 §5.8 defines: exactly "PGP"
 _PGP_MAX = 64
+# fix round 2 (Codex 2): each public-key algorithm's public fields, in order: m an MPI, o a curve OID, k ECDH's KDF
+# parameters, a number that many raw bytes (RFC 9580 §5.5.5)
+_PGP_FIELDS = {1: "mm", 2: "mm", 3: "mm", 16: "mmm", 20: "mmm", 17: "mmmm", 18: "omk", 19: "om", 22: "om",
+               25: 32, 26: 56, 27: 32, 28: 57}
+
+
+def _pgp_public_key(raw, i, end):
+    """True when raw[i:end] is exactly a version 4, 5 or 6 public-key (or subkey) packet's payload: version, creation time,
+    algorithm (_PGP_FIELDS), for 5 and 6 the key material's length (which must be the rest), then that algorithm's public
+    fields, ending exactly at `end`. Any other version or algorithm, a field cut short or a byte left over is False."""
+    if end - i < 6 or raw[i] not in (4, 5, 6) or raw[i + 5] not in _PGP_FIELDS:
+        return False
+    v, fields, i = raw[i], _PGP_FIELDS[raw[i + 5]], i + 6
+    if v != 4:
+        if end - i < 4 or int.from_bytes(raw[i:i + 4], "big") != end - i - 4:
+            return False
+        i += 4
+    for f in (fields if isinstance(fields, str) else [fields]):
+        if isinstance(f, int):
+            i += f
+        elif f == "m":
+            i = i + 2 + (int.from_bytes(raw[i:i + 2], "big") + 7) // 8 if i + 2 <= end else end + 1
+        else:
+            i = i + 1 + raw[i] if i < end and (f == "k" or raw[i] not in (0, 0xFF)) else end + 1
+        if i > end:
+            return False
+    return i == end
 
 
 def pgp_packets(raw):
     """Batch 7a (PR2 Codex round 4, high 3): raw read as OpenPGP packets (old and new headers, their lengths), at most
     _PGP_MAX: "secret" when a secret-key or secret-subkey packet is among them; "public" only when every packet is a public one
-    (_PGP_PUBLIC) or one readers ignore (_PGP_IGNORED: a marker, trust or padding packet), at least one is public, and they end
+    or one readers ignore (until fix round 2: a marker, trust or padding packet), at least one is public, and they end
     exactly at the end of raw; None for anything else (another or reserved tag, a partial or indeterminate length, bytes after
     them that aren't a packet, more than _PGP_MAX). Fix round 1 (Codex 2): a packet whose declared length runs past the end of
-    raw is None too, public or not: a cut walk proves nothing about the bytes it skipped (a secret key may lie in them)."""
+    raw is None too, public or not: a cut walk proves nothing about the bytes it skipped (a secret key may lie in them).
+    Fix round 2 (Codex 2): a payload proves something only when it is read whole, so "public" needs every packet to be a
+    public key or subkey whose payload is exactly its algorithm's public fields (_pgp_public_key) or a marker packet holding
+    exactly "PGP"; a signature, user ID or attribute, trust, padding or any other packet (whose bytes could hold a secret key)
+    is None, as is a byte left over in any payload."""
     i, n, public = 0, len(raw), False
     for _ in range(_PGP_MAX):
         if i >= n:
@@ -266,11 +297,12 @@ def pgp_packets(raw):
             size = int.from_bytes(raw[i + 1:i + head], "big") if kind != 3 and i + head <= n else None
         if tag in _PGP_SECRET:
             return "secret"
-        if size is None or tag not in _PGP_PUBLIC and tag not in _PGP_IGNORED:
+        if size is None or i + head + size > n:
             return None
-        public = public or tag in _PGP_PUBLIC
-        i += head + size
-        if i > n:
+        start, i = i + head, i + head + size
+        if tag in _PGP_PUBLIC and _pgp_public_key(raw, start, i):
+            public = True
+        elif tag != _PGP_MARKER or raw[start:i] != b"PGP":
             return None
     return "public" if i == n and public else None
 
