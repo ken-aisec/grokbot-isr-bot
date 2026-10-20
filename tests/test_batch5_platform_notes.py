@@ -267,7 +267,7 @@ class ShippedReviewedList(unittest.TestCase):
             doc = json.load(f)
         with open(os.path.join(ROOT, "rules", "platform-release.lock")) as f:
             lock = set(f.read().splitlines())
-        self.assertEqual(len(doc["entries"]), 2)
+        self.assertEqual(len(doc["entries"]), 4)
         for e in doc["entries"]:
             for rel in e["paths"]:
                 self.assertIn(f"{e['sha256']}  {rel}", lock, rel)

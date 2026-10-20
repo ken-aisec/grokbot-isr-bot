@@ -529,7 +529,7 @@ class Lock(unittest.TestCase):
                  if l.strip() and not l.lstrip().startswith("#")}
         for rel in CACHES:
             self.assertIn((rel, KEN_CACHE), lines)
-        self.assertEqual(len(self.entries()), 622)
+        self.assertEqual(len(self.entries()), 624)
 
     def test_e_the_lock_keeps_the_plugin_loaders_files(self):
         """lock-trim round 1 (high): Ken's 4 lines for the bucket's manifest.json, .meta.json and .marketplaces.json are back
@@ -538,13 +538,17 @@ class Lock(unittest.TestCase):
                  if l.strip() and not l.lstrip().startswith("#")}
         for rel, digest in RESTORED.items():
             self.assertIn((rel, digest), lines)
-        self.assertEqual(len(self.entries()), 616 + len(RESTORED))
+        self.assertEqual(len(self.entries()), 618 + len(RESTORED))
 
     def test_e_the_count_line_is_the_real_count(self):
-        m = re.search(r"leaving (\d+)\.", read_lock())
-        self.assertIsNotNone(m, "no count line")
-        self.assertEqual(int(m.group(1)), len(self.entries()))
-        self.assertEqual(len(self.entries()), 623 - len(REMOVED))
+        """The newest "leaving N." line is the real count, and each later line's N is the one before plus the lines it added."""
+        counts = re.findall(r"(?:(\d+) lines added .*?)?leaving (\d+)\.", read_lock())
+        self.assertTrue(counts, "no count line")
+        for (_, before), (added, after) in zip(counts, counts[1:]):
+            self.assertTrue(added, after)
+            self.assertEqual(int(before) + int(added), int(after))
+        self.assertEqual(int(counts[-1][1]), len(self.entries()))
+        self.assertEqual(len(self.entries()), 625 - len(REMOVED))
 
     def test_e_the_header_names_the_exception_not_an_impossible_rule(self):
         text = read_lock()
