@@ -39,7 +39,7 @@ def audit(roots, exports, quick=False):
                 t, manifest[p] = read_scanned(p)
                 if t is not None:
                     kind = "vendor" if is_vendor(p) else ("skill" if os.path.basename(p) == "SKILL.md" else "reference")
-                    batch = scan_text(t, p, rules, kind=kind, keep_ev256=True)   # batch 6 fix round 1: for held dismissals
+                    batch = scan_text(t, p, rules, kind=kind)
                     if is_vendor_template_file(p):   # DQ-024: story text in a built-in deck template is not a hidden-action hit
                         for f in batch:
                             if f["rule"] in ("WT-T008", "WT-T016"):   # story wording only; never exfil/pipe/override (R2)
@@ -51,7 +51,7 @@ def audit(roots, exports, quick=False):
     for p in inv["plugin_files"] + inv["mcp_configs"]:
         t, h = read_scanned(p)
         if t is not None:
-            fs += scanned_from(scan_text(t, p, rules, kind="reference", keep_ev256=True), h)
+            fs += scanned_from(scan_text(t, p, rules, kind="reference"), h)
             manifest[p] = h
             for m in re.finditer(r'"command"\s*:\s*"([^"]+)"', t):
                 if re.search(r"(?i)\b(npx|uvx|bunx)\b", m.group(1)) and "@" not in t[m.end():m.end() + 200]:
@@ -67,8 +67,8 @@ def audit(roots, exports, quick=False):
                     scanned.add(rp)
                     t, manifest[p] = read_scanned(p)
                     if t is not None:
-                        fs += scanned_from(scan_text(t, p, rules, kind="vendor" if is_vendor(p) else ("skill" if os.path.basename(p) == "SKILL.md" else "reference"),
-                                                     keep_ev256=True), manifest[p])
+                        fs += scanned_from(scan_text(t, p, rules, kind="vendor" if is_vendor(p) else ("skill" if os.path.basename(p) == "SKILL.md" else "reference")),
+                                           manifest[p])
                 else:
                     manifest[p] = sha256_file(p)
     # item 8 review 2 (high 1): every file name in the platform folders, found by their own walk, is fingerprinted
@@ -199,12 +199,26 @@ def audit(roots, exports, quick=False):
             if cp:
                 fs.append(cp)
         rule = next(r for r in rules["rules"] if r["id"] == SECRET_RULE)
-        hits = [m for m in rule["rx"].finditer(t) if real_secret_at(t, m)]   # batch 6 (B5): the shared content check
+        # batch 6 (B5): the shared content check (secret_at); fix round 2: example-looking values are one low finding of their
+        # own, every line named, never left out
+        hits, examples = [], []
+        for m in rule["rx"].finditer(t):
+            why = secret_at(t, m)[1]
+            (examples if why else hits).append((m, why))
         if hits:
-            m = hits[0]
+            m = hits[0][0]
             fs.append(finding("WT-S001", "Secret stored in a file on the shared computer", secret_severity(p, False), ["ASI03", "LLM02"],
                               f"{p}:{line_of(t, m.start())}", f"{mask(m.group(0))} ({len(hits)} in file)",
                               "Every Bot can read this file. Revoke the key, delete the file, and use the secure secret request instead.", path=p))
+        if examples:
+            m, why = examples[0]
+            nums, ln, pos = [], 1, 0
+            for x, _ in examples:   # one pass over the text, however many there are
+                ln, pos = ln + t.count("\n", pos, x.start()), x.start()
+                nums.append(str(ln))
+            lines = ", ".join(nums)
+            fs.append(example_finding(finding("WT-S001", EXAMPLE_TITLE, "low", ["ASI03", "LLM02"], f"{p}:{line_of(t, m.start())}",
+                                              f"{mask(m.group(0))} ({len(examples)} in file, line {lines})", "", path=p), why))
 
     export_rules = ""
     # 5. exports the user pastes in (routines, descriptions, Auto Review rules, settings)

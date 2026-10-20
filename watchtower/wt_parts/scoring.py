@@ -60,7 +60,8 @@ PLACE_WHOLE_RULES = frozenset(("WT-S003", "WT-S004", "WT-S005", "WT-T001r", "WT-
 def _corrob_sig(g):
     """Everything corroborated() reads about a finding. Findings that share it give the same answer (Codex, batch 4 round 2)."""
     return (g["rule"], g.get("title") if g["rule"] in ("WT-S001", "WT-S002", "WT-S005") else None, _place(g),
-            g.get("source", "watchtower"), g["severity"], g.get("severity_was"), bool(g.get("guarded")), tuple(sorted(g.get("kinds") or ())))
+            g.get("source", "watchtower"), g["severity"], g.get("severity_was"), bool(g.get("guarded")), tuple(sorted(g.get("kinds") or ())),
+            bool(g.get("example")))
 
 
 def _covers(a, b):
@@ -188,7 +189,7 @@ class CorrobIndex:
         return held[1]
 
 
-def corroborated(f, findings, index=None, ignore_drift=False):
+def corroborated(f, findings, index=None):
     """A pattern finding is backed up (v0.7.1 item 2: two votes about the same file and the same kind of risk) when
     - a wording hit (override, weaken approvals, secrecy, quiet action) has a behavior signal in the same file: a credential read,
       a send to an outside address, a pipe-to-shell, hidden Unicode, an encoded blob, dynamic code. Wording alone never is;
@@ -200,8 +201,8 @@ def corroborated(f, findings, index=None, ignore_drift=False):
     - a behavior hit in a skill that changed after approval (WT-I001/I002) is backed up by the change; wording is not;
     - anything inside a new plugin the owner hasn't kept yet (WT-I004) counts until they decide, as before.
     A WT-S005 cookie-only note stays Worth a look even when a real sign-in is at the same shared-browser place.
-    `ignore_drift` (batch 6, B6): the change is not counted as a backer, so False means only the change backs f up."""
-    if f["rule"] == "WT-S005" and f.get("title") != NEW_SIGN_IN:
+    Batch 6 fix round 2: an example-looking secret (example_finding) is never Confirmed and backs nothing up."""
+    if (f["rule"] == "WT-S005" and f.get("title") != NEW_SIGN_IN) or f.get("example"):
         return False
     here, src, skill = _place(f), f.get("source", "watchtower"), (index.skill(f) if index is not None else _skill_of(f))
     skill_of = index.skill if index is not None else _skill_of
@@ -217,7 +218,7 @@ def corroborated(f, findings, index=None, ignore_drift=False):
             return False   # nothing else confirms one: an engine's "webhook", a change or a folder verdict is the owner's own chat
     fk = kinds_of(f)
     for g in findings:
-        if g is f or g["rule"] in NO_OPINION or g.get("guarded"):
+        if g is f or g["rule"] in NO_OPINION or g.get("guarded") or g.get("example"):
             continue                            # a scanner that didn't finish says nothing about the content (DQ-014); defensive text backs up nothing
         gp, gk = _place(g), kinds_of(g)
         other = is_evidence(g) or g.get("source", "watchtower") != src
@@ -242,21 +243,11 @@ def corroborated(f, findings, index=None, ignore_drift=False):
             return True
         if other and gp != here and _covers(gp, here) and fk & gk:
             return True                          # a verdict on the folder this file is in, about the same kind of risk
-        if is_evidence(g) and not gk and g["rule"] in DRIFT_RULES and _covers(gp, here) and not ignore_drift:
+        if is_evidence(g) and not gk and g["rule"] in DRIFT_RULES and _covers(gp, here):
             return True                          # the live skill changed after approval and now does this: reach plus behavior
         if not other and same_file and loud(f) and loud(g) and g["rule"] != f["rule"] and g["rule"] in RISK_KIND:
             return True
     return False
-
-
-def drift_only_keys(findings):
-    """Batch 6 (B6): the keys of labelled corroborated findings that only a change to their file (WT-I001/I002) backs up. Read
-    before findings are grouped, so a backer folded into another line is still seen."""
-    cands = [f for f in findings if f.get("class") == "corroborated"]
-    if not cands:
-        return set()
-    index = CorrobIndex(findings) if CORROB_INDEX else None
-    return {f["key"] for f in cands if not corroborated(f, findings, index, ignore_drift=True)}
 
 
 def ask_first_covered(findings):

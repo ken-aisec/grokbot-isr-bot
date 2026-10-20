@@ -1,11 +1,13 @@
-"""Batch 6 PR2, B5 (DQ-043/044): example keys are never secrets, and a real key is one wherever it sits.
+"""Batch 6 PR2, B5 (DQ-043/044): example-looking keys are listed low, and a real key is critical wherever it sits.
 
 One content check (secret_kind) for Watchtower's own rule (WT-T011, WT-S001) and every gitleaks hit, on the secret value only:
 FAKE or placeholder text, an environment-variable reference, a key block whose structure isn't a key, and (gitleaks
-generic-api-key) a file's checksum in a name -> digest list are examples. gitleaks runs with --redact; its secret is found again
-in the file from its Match, judged in memory and never stored. Example hits are left out before the per-file and folder grouping
-and counted in one note. The tests/, fixtures/ and *.test.* path skips, the line rule that hid a whole line next to a $VAR and
-FIXTURE_PATH (a file name lowering a key to low) are gone (Ken: no name-based skips); .pem files are read as text.
+generic-api-key) a file's checksum by its line's format look like examples. gitleaks runs with --redact; its secret is found
+again in the file from its Match, judged in memory and never stored. Fix round 2 (Codex 3, 4; Ken's rule): anyone can write a
+real key in those forms, so an example-looking hit is never left out: it is a low finding, "Looks like an example or checksum
+value - check it", never Confirmed, never offered for revoking or clearing, kept apart from the per-file and folder grouping of
+real hits, every file and line named. The tests/, fixtures/ and *.test.* path skips, the line rule that hid a whole line next
+to a $VAR and FIXTURE_PATH (a file name lowering a key to low) are gone (Ken: no name-based skips); .pem files are read as text.
 
 The gitleaks used here is a stand-in that reports the hits each test names, applying Watchtower's gitleaks config (its path and
 line allowlists) the way gitleaks does, with Match redacted and gitleaks' Entropy. Fake keys contain FAKE or are documentation
@@ -18,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, SCANNERS, wt
 
 ALNUM = string.ascii_letters + string.digits
+EXAMPLE = "Looks like an example or checksum value - check it"   # wt.EXAMPLE_TITLE, written out so a replay fails on its assertion
 PLACEHOLDER_WORDS = re.compile(r"(?i)(example|sample|placeholder|your|dummy|fake|test|xxxx|0000|1234|abcd)")
 
 FAKE_GITLEAKS = r"""#!/usr/bin/env python3
@@ -61,8 +64,9 @@ for f in files:   # by content, as gitleaks reads: a hit named for this file, or
         if any((not b["rules"] or h["rule"] in b["rules"]) and (any(x.search(f) for x in b["paths"])
                or any(x.search(target[b["target"]]) for x in b["regexes"])) for b in blocks):
             continue
+        sc, ec = h.get("cols") or (column(data, i), column(data, j, True))   # "cols": what a later piece of a long file counts
         report.append({"File": f, "StartLine": h["line"], "EndLine": h["line"] + h["match"].count("\n"), "RuleID": h["rule"],
-                       "StartColumn": column(data, i), "EndColumn": column(data, j, True),
+                       "StartColumn": sc, "EndColumn": ec,
                        "Match": h["match"].replace(h["secret"], "REDACTED"), "Secret": "REDACTED", "Entropy": entropy(h["secret"])})
         if h.get("then") is not None and h["file"] == f:
             later.append((f, h["then"]))
@@ -136,12 +140,13 @@ class _Keys(Box):
             f.write(text)
         return p
 
-    def leak(self, path, match, secret=None, rule="generic-api-key", then=None):
-        """gitleaks reports `match` (its secret `secret`, the whole match when not given) where it is in the file."""
+    def leak(self, path, match, secret=None, rule="generic-api-key", then=None, cols=None, line=None):
+        """gitleaks reports `match` (its secret `secret`, the whole match when not given) where it is in the file (`line`: on
+        that line, for a match not in the file yet; `cols`: the columns it reports instead of the match's own)."""
         text = open(path).read()
-        i = text.index(match)
-        self.cands.append({"file": path, "line": text.count("\n", 0, i) + 1, "rule": rule, "match": match,
-                           "secret": match if secret is None else secret, "then": then})
+        i = text.find(match)
+        self.cands.append({"file": path, "line": line or text.count("\n", 0, i) + 1, "rule": rule, "match": match,
+                           "secret": match if secret is None else secret, "then": then, "cols": cols})
 
     def scan(self):
         cf =os.path.join(self.tmp, "cands.json")
@@ -151,7 +156,7 @@ class _Keys(Box):
         return self.snap()["findings"], r["notes"]
 
     def keys(self, findings, under):
-        return [f for f in findings if f["rule"] in ("WT-S001", "WT-S002", "WT-T011") and f["where"].startswith(under)]
+        return [f for f in findings if f["rule"] in ("WT-S001", "WT-S002", "WT-T011", "WT-T011x") and f["where"].startswith(under)]
 
 
 class ExampleKeysAreNotSecrets(_Keys):
@@ -161,25 +166,36 @@ class ExampleKeysAreNotSecrets(_Keys):
                 "aws.md": ("aws key AKIAFAKE" + "Q7" * 6, "AKIAFAKE" + "Q7" * 6, "aws-access-token"),
                 "conf.md": ('api_key = "your-api-key-here"', "your-api-key-here", "generic-api-key")}
 
-    def test_fake_keys_in_a_live_skills_examples_are_not_reported(self):   # replay (5dcd0a2: critical "secrets in 4 files under examples")
+    def examples_only(self, got):
+        """True when every finding in `got` is an example-looking one: low, Worth a look, never critical or Confirmed."""
+        return bool(got) and all(f["title"] == EXAMPLE and (f.get("severity_was") or f["severity"]) == "low"
+                                 and f["label"] == wt.MAYBE_FINE for f in got)
+
+    def test_fake_keys_in_a_live_skills_examples_are_listed_low(self):   # replay (5dcd0a2: critical "secrets in 4 files under examples")
+        paths = []
         for name, (line, secret, rule) in self.fakes().items():
             p = self.put(f"sand-data/workflows/setup-dev-tools/examples/{name}", f"# Example\n\n{line}\n")
             self.leak(p, line.split(" ")[-1].split("=")[-1] if rule != "generic-api-key" else line, secret, rule)
+            paths.append(p)
         fs, notes = self.scan()
-        self.assertEqual(self.keys(fs, self.skill), [])
+        got = self.keys(fs, self.skill)
+        self.assertTrue(self.examples_only(got), got)
+        self.assertEqual(sorted(f["where"] for f in got if f["rule"] == "WT-S002"), sorted(p + ":3" for p in paths))   # each file
         self.assertFalse([f for f in fs if f["where"].startswith(self.skill) and (f.get("severity_was") or f["severity"]) == "critical"])
-        self.assertIn("gitleaks: 4 hit(s) were example values (FAKE or placeholder text, an environment variable name, a key block that "
-                      "isn't a real key, or a file's checksum), not listed.", notes)
+        self.assertIn("gitleaks: 4 hit(s) look like example or checksum values; each is listed at low, to check (anyone can write a "
+                      "real key that way).", self.snap()["notes"])
 
-    def test_key_blocks_that_arent_keys_are_not_reported(self):   # replay (5dcd0a2: WT-T011 critical on each BEGIN line, and gitleaks)
+    def test_key_blocks_that_arent_keys_are_listed_low(self):   # replay (5dcd0a2: WT-T011 critical on each BEGIN line, and gitleaks)
         for name, block in fake_pems().items():
             p = self.put(f"sand-data/workflows/setup-dev-tools/references/{name}.md", "Your key file looks like this:\n\n" + block)
             self.leak(p, block.rstrip("\n"), rule="private-key")
         fs, notes = self.scan()
-        self.assertEqual(self.keys(fs, self.skill), [])
-        self.assertTrue(any("4 hit(s) were example values" in n for n in notes), notes)
+        got = self.keys(fs, self.skill)
+        self.assertTrue(self.examples_only(got), got)
+        self.assertEqual(len([f for f in got if f["rule"] == "WT-S002"]), 4)
         for block in fake_pems().values():
-            self.assertNotIn("WT-T011", {f["rule"] for f in wt.scan_text("Key:\n" + block, "/s/SKILL.md", wt.load_rules())}, block[:60])
+            t11 = [f for f in wt.scan_text("Key:\n" + block, "/s/SKILL.md", wt.load_rules()) if f["rule"] in ("WT-T011", "WT-T011x")]
+            self.assertEqual([(f["rule"], f["title"], f["severity"]) for f in t11], [("WT-T011x", EXAMPLE, "low")], block[:60])
 
     def test_environment_references_in_a_ci_log(self):   # replay (5dcd0a2: S002 critical, and the log was on the scrub list)
         lines = {"GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}": "${{ secrets.GITHUB_TOKEN }}", "export API_TOKEN=$GITHUB_TOKEN": "$GITHUB_TOKEN",
@@ -189,10 +205,12 @@ class ExampleKeysAreNotSecrets(_Keys):
         for line, secret in lines.items():
             self.leak(p, line, secret)
         fs, notes = self.scan()
-        self.assertEqual(self.keys(fs, p), [])
+        got = self.keys(fs, p)
+        self.assertTrue(self.examples_only(got), got)
+        self.assertEqual([f["evidence"] for f in got], ["6 hit(s): generic-api-key at line 2, 3, 4, 5, 6, 7"])
         self.assertNotIn(p, wt.scrub_targets_from_findings())
 
-    def test_a_checksum_list_is_not_keys(self):   # replay (5dcd0a2: S002 for each line)
+    def test_a_checksum_list_is_listed_low(self):   # replay (5dcd0a2: S002 for each line)
         # fix round 1 (Codex 3): a checksum by its line's own format (sha256sum's "<hex>  <path>", pip's --hash=sha256:), no
         # longer a name -> hex map: a name never makes a value a checksum (test_batch6_codex_r1 has that one counted)
         h1, h2 = secrets.token_hex(32), secrets.token_hex(32)
@@ -201,8 +219,8 @@ class ExampleKeysAreNotSecrets(_Keys):
         self.leak(p, "%s  skills/auth/tokens.md" % h1, h1)
         self.leak(q, "--hash=sha256:%s" % h2, h2)
         fs, _ = self.scan()
-        self.assertEqual(self.keys(fs, p), [])
-        self.assertEqual(self.keys(fs, q), [])
+        self.assertTrue(self.examples_only(self.keys(fs, p)), self.keys(fs, p))
+        self.assertTrue(self.examples_only(self.keys(fs, q)), self.keys(fs, q))
 
     def test_fakes_never_make_a_folder_group(self):   # replay (5dcd0a2: one critical finding for the 6 files)
         d = "sand-data/workflows/setup-dev-tools/examples"
@@ -214,12 +232,15 @@ class ExampleKeysAreNotSecrets(_Keys):
         self.leak(rp, real, rule="github-pat")
         fs, _ = self.scan()
         s2 = [f for f in self.keys(fs, self.skill) if f["rule"] == "WT-S002"]
-        self.assertEqual([f["where"] for f in s2], [rp + ":1"])
-        self.assertEqual((s2[0].get("severity_was") or s2[0]["severity"]), "critical")
+        self.assertEqual([f["where"] for f in s2 if f["title"] != EXAMPLE], [rp + ":1"])
+        self.assertEqual([(f.get("severity_was") or f["severity"]) for f in s2 if f["title"] != EXAMPLE], ["critical"])
+        self.assertEqual(sorted(f["where"] for f in s2 if f["title"] == EXAMPLE),
+                         sorted(os.path.join(self.home, d, f"fake{i}.md:1") for i in range(5)))   # each fake its own low line
 
-    def test_fake_akia_stays_dropped_and_a_real_one_stays(self):   # guard (as on 5dcd0a2)
+    def test_fake_akia_is_listed_low_and_a_real_one_critical(self):   # replay of fix round 2 (de3b328 left the fake out)
         rules = wt.load_rules()
-        self.assertNotIn("WT-T011", {f["rule"] for f in wt.scan_text("Use AKIAFAKE" + "Q7" * 6 + " to call it.", "/s/SKILL.md", rules)})
+        self.assertEqual([(f["rule"], f["title"], f["severity"]) for f in wt.scan_text("Use AKIAFAKE" + "Q7" * 6 + " to call it.", "/s/SKILL.md", rules)
+                          if f["rule"].startswith("WT-T011")], [("WT-T011x", EXAMPLE, "low")])
         self.assertIn("WT-T011", {f["rule"] for f in wt.scan_text("Use " + token("AKIA", 0) + "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ234567") for _ in range(16)) + " to call it.", "/s/SKILL.md", rules)})
 
 

@@ -38,25 +38,82 @@ def is_document_blob(b64):
 
 
 # Batch 6 (B5, DQ-043/044): one content check for every secret hit (WT-T011, WT-S001 and each gitleaks hit), on the secret value
-# only, never its line or its file's name: an example value is never a secret, wherever it sits, and a real one is one anywhere.
+# only, never its line or its file's name. Fix round 2 (Codex 3, 4; Ken's rule): a value that looks like an example (FAKE or
+# placeholder text, an environment-variable reference, a key block whose body isn't a key, a checksum by its line's format) can
+# still be a working credential, so it is never left out: it is listed as a low finding, EXAMPLE_TITLE, never Confirmed, never
+# offered for revoking or clearing, at every place it was found. A real one is critical anywhere.
 ENV_REF = re.compile(r"\$[A-Za-z_]\w*|\$\{[A-Za-z_]\w*\}|\$\{\{\s*(?:secrets|env|vars)\.[A-Za-z_][\w-]*\s*\}\}|%[A-Za-z_]\w*%"
                      r"|process\.env\.[A-Za-z_]\w*|process\.env\[(['\"])[A-Za-z_]\w*\1\]|\*{3,}")
-PEM_HEAD = re.compile(r"-----BEGIN ([A-Z0-9 _-]*?)PRIVATE KEY( BLOCK)?-----")
-PEM_END = re.compile(r"-----END [A-Z0-9 _-]*PRIVATE KEY(?: BLOCK)?-----")
+# fix round 2 (Codex 10): a label of at most 64 characters, so a run of BEGIN lines is never read as one long label
+PEM_HEAD = re.compile(r"-----BEGIN ([A-Z0-9 _-]{0,64}?)PRIVATE KEY( BLOCK)?-----")
+PEM_END = re.compile(r"-----END [A-Z0-9 _-]{0,64}?PRIVATE KEY(?: BLOCK)?-----")
 PEM_CAP = 16384
 EXAMPLE_WHY = {"placeholder": "FAKE or placeholder text", "env": "an environment variable name", "pem": "a key block that isn't a real key",
                "digest": "a file's checksum"}
+EXAMPLE_TITLE = "Looks like an example or checksum value - check it"
+EXAMPLE_T011 = "WT-T011x"   # WT-T011's example-looking hits: listed beside it, as WT-T006k beside WT-T006; WT-T011 stays for real ones
+EXAMPLE_FIX = ("Watchtower read this as {why}, not a working key, but can't be sure: anyone can write a real key that way. "
+               "Check it; if it is a real key, turn it off at its provider.")
+
+
+def example_finding(f, why):
+    """Fix round 2: finding f (a secret hit) as an example-looking value: low, EXAMPLE_TITLE, its why kept (`example`)."""
+    return dict(f, title=EXAMPLE_TITLE, severity="low", fix=EXAMPLE_FIX.format(why=why), example=why)
+
+
 # Batch 6 fix round 1 (Codex 2): a placeholder is a whole value of one of these forms, never a word inside a value (a real key
 # can have "test" or "abcd" in it) and never a guess from how varied its characters are. After an optional provider prefix:
 # FAKE or EXAMPLE right at the start (the convention this project's fake keys follow: ghp_FAKE…, sk_live_FAKE…, AKIAFAKE…), only
 # placeholder words (your-api-key-here, YOUR_TOKEN, xxxx), or one unit of 1 to 4 characters repeated (aaaa…, a1B2a1B2…). Also
-# <…> as the whole value.
-KEY_PREFIX = (r"(?:sk-(?:proj|ant(?:-[a-z]{2,6}\d\d)?|svcacct|admin)-|sk-|[sr]k_(?:live|test)_|gh[pousr]_|github_pat_|glpat-"
-              r"|xox[baprs]-|xai-|AKIA|ASIA|AIza|npm_|pypi-)")
-_PH_WORD = (r"(?:your|my|the|api|access|secret|private|key|token|password|passwd|pass|here|goes|insert|replace|put|example|sample"
-            r"|placeholder|dummy|fake|redacted|changeme|change|me|value|x{3,}|\*{3,})")
-COMPLETE_PLACEHOLDER = re.compile(r"<[^<>\n]{1,80}>|" + KEY_PREFIX + r"?(?:(?:FAKE|EXAMPLE)\S*|(?i:" + _PH_WORD + r"(?:[-_. ]?"
-                                  + _PH_WORD + r")*)|(?P<unit>\S{1,4}?)(?P=unit){3,})")
+# <…> as the whole value. Fix round 2 (Codex 9): read by is_placeholder, left to right, never by a regular expression whose
+# repetitions overlap (x{3,} inside repeated words backtracked exponentially).
+KEY_PREFIXES = tuple(re.compile(p) for p in (r"sk-(?:proj|ant|svcacct|admin)-", r"sk-ant-[a-z]{2,6}\d\d-", r"sk-", r"[sr]k_(?:live|test)_",
+                                             r"gh[pousr]_", r"github_pat_", r"glpat-", r"xox[baprs]-", r"xai-", r"AKIA", r"ASIA", r"AIza",
+                                             r"npm_", r"pypi-"))
+PH_WORDS = ("your", "my", "the", "api", "access", "secret", "private", "key", "token", "password", "passwd", "pass", "here", "goes",
+            "insert", "replace", "put", "example", "sample", "placeholder", "dummy", "fake", "redacted", "changeme", "change", "me", "value")
+
+
+def _placeholder_words(s):
+    """True when s is placeholder words only (PH_WORDS, any case, or a run of 3 or more x or *), each joined to the next by at
+    most one of - _ . or a space. One pass left to right over where a word may start: no word starts with x or *, so a run of
+    them is taken whole."""
+    low, n = s.lower(), len(s)
+    run = [0] * (n + 1)
+    for i in range(n - 1, -1, -1):
+        run[i] = run[i + 1] + 1 if low[i] in "x*" and (i + 1 == n or low[i + 1] == low[i]) else (1 if low[i] in "x*" else 0)
+    start = [False] * (n + 1)
+    start[0] = n > 0
+    for i in range(n):
+        if not start[i]:
+            continue
+        ends = [i + len(w) for w in PH_WORDS if low.startswith(w, i)] + ([i + run[i]] if run[i] >= 3 else [])
+        for e in ends:
+            if e == n:
+                return True
+            start[e] = True
+            if low[e] in "-_. " and e + 1 < n:
+                start[e + 1] = True
+    return False
+
+
+def _repeated_unit(s):
+    """True when s is one unit of 1 to 4 characters (no space) repeated at least 4 times."""
+    n = len(s)
+    return not any(c.isspace() for c in s) and any(n % k == 0 and n // k >= 4 and s == s[:k] * (n // k) for k in (1, 2, 3, 4))
+
+
+def is_placeholder(u):
+    """True when u, a whole value, is a placeholder: <…> (1 to 80 characters, no <, > or line break inside), or after no prefix or
+    one of KEY_PREFIXES: FAKE or EXAMPLE then no space, placeholder words only, or a repeated unit. Linear in len(u)."""
+    if len(u) >= 3 and u[0] == "<" and u[-1] == ">" and len(u) <= 82 and not any(c in "<>\n" for c in u[1:-1]):
+        return True
+    for k in {0} | {m.end() for m in (p.match(u) for p in KEY_PREFIXES) if m}:
+        rest = u[k:]
+        if rest and ((rest.startswith(("FAKE", "EXAMPLE")) and not any(c.isspace() for c in rest))
+                     or _placeholder_words(rest) or _repeated_unit(rest)):
+            return True
+    return False
 # Batch 6 fix round 1 (Codex 3): a hex value is a checksum only when its own line says so; its name never does.
 DIGEST_LEN = {"md5": 32, "sha1": 40, "sha224": 56, "sha256": 64, "sha384": 96, "sha512": 128}
 _SUM_LINE = re.compile(r" [ *]\S+")                                              # sha256sum: <hex>  <path> or <hex> *<path>
@@ -111,54 +168,108 @@ def _der_seq(b):
     return 32 <= n and h + n <= len(b) and b[h:h + 1] in (b"\x02", b"\x30")
 
 
+_ESCAPED_BREAK = re.compile(r"\\+[nrt]")
+_ARMOR_HEADER = re.compile(r"(?:Version|Comment|Hash|Charset|MessageID):(?: |$)")   # a PGP armor's own headers
+
+
+def _code_literals(s, opened):
+    """Fix round 2 (Codex 5): `s` (what is between a key block's BEGIN and END lines) read as string literals in code, or None
+    unless it is exactly that: literals ('…' or "…", no line break inside, a backslash only before n, r or t), with only
+    whitespace, +, comma and semicolon between them. `opened`: the quote already open where s starts (the BEGIN line's own
+    literal), or None. Each literal's content is one line; one still open at the end is the END line's. One pass."""
+    out, i, n, q = [], 0, len(s), opened
+    while i < n:
+        if q is None:
+            if s[i] in " \t\r\n+,;":
+                i += 1
+            elif s[i] in "\"'":
+                q, i = s[i], i + 1
+            else:
+                return None
+            continue
+        j = i
+        while j < n and s[j] != q:
+            if s[j] in "\r\n" or (s[j] == "\\" and s[j + 1:j + 2] not in ("n", "r", "t", "\\")):
+                return None
+            j += 2 if s[j] == "\\" else 1
+        out.append(s[i:j])
+        q, i = (None, j + 1) if j < n else (q, n)
+    return out
+
+
+def _pem_body(lines):
+    """A key block's body lines (escaped line breaks already split) judged: "real", "example", or None when a line isn't read
+    plainly. A Proc-Type or DEK-Info header (an old encrypted key, ciphertext) is real; a PGP armor's own headers before the body
+    and its checksum line after it are its syntax. Every other line must be base64, nothing in it left out."""
+    import base64, binascii
+    body = []
+    for ln in lines:
+        s = ln.strip()
+        if not body and re.match(r"(?i)(proc-type|dek-info):", s):
+            return "real"
+        if not body and _ARMOR_HEADER.match(s):
+            continue
+        if s:
+            body.append(s)
+    if body and re.fullmatch(r"=[A-Za-z0-9+/]{4}", body[-1]):
+        body.pop()
+    if not body or not all(re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", s) for s in body):
+        return None
+    try:
+        raw = base64.b64decode("".join(body), validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    if not raw:
+        return None
+    b = raw[0]
+    if b & 0x80 and ((b & 0x3F) if b & 0x40 else ((b & 0x3C) >> 2)) in (5, 7):
+        return "real"   # a PGP secret-key packet
+    # fix round 2: a DER or OpenSSH key where any line starts (on a whole base64 group) is a key, so lines of other bytes put
+    # before a real key never make it an example
+    at = 0
+    for s in body:
+        if at % 4 == 0 and at // 4 * 3 < len(raw):
+            rest = raw[at // 4 * 3:]
+            if _der_seq(rest) or rest.startswith(b"openssh-key-v1\x00"):
+                return "real"
+        at += len(s)
+    return "example"
+
+
 def pem_kind(label, tail):
     """A private key block's kind from its decoded body alone, never its BEGIN label (fix round 1, Codex 4: a PKCS#8 key framed
     as OPENSSH or ENCRYPTED is still a key): "real" or "example". `tail` is the text after the BEGIN line, read to its END line
     (at most PEM_CAP characters). Real: any body that is a private key structure (a DER SEQUENCE starting with an INTEGER or a
     SEQUENCE: PKCS#1, PKCS#8, SEC1, encrypted PKCS#8; openssh-key-v1; a PGP secret-key packet), and any block whose framing
-    isn't plainly read (no END, another BEGIN before it, a Proc-Type/DEK-Info encrypted body, a body line that isn't base64,
-    base64 that doesn't decode). Example only when the body holds too few base64 characters for any key (under 64, 48 bytes),
-    or decodes cleanly to bytes that are none of those structures. A FAKE word in it decides nothing. `label` is not read."""
-    import base64, binascii
+    isn't plainly read (no END, another BEGIN before it, a Proc-Type/DEK-Info encrypted body, a line that isn't base64,
+    base64 that doesn't decode). Example only when the whole text between BEGIN and END holds too few base64 characters for
+    any key (under 64, 48 bytes), or one reading of it decodes cleanly to bytes that are none of those structures and none does
+    to a key. Fix round 2 (Codex 5): nothing on a line is ever left out. The readings are the text as it is (its lines, \\n
+    escapes as line breaks: a .pem, YAML, a JSON string) and, only when the whole of it is exactly string literals in code
+    ("MIIE…\\n" + "…"), their contents; `<base64> # ""` is neither, so it is real. A FAKE word decides nothing; `label` is not
+    read."""
     end = PEM_END.search(tail, 0, PEM_CAP)
     if not end or PEM_HEAD.search(tail, 0, end.start()):
         return "real"
-    body = re.sub(r"\\+[nrt]", "\n", tail[:end.start()])   # a key kept in JSON or code, its line breaks written \n
-    lines = []
-    for ln in body.split("\n"):
-        s = ln.strip()
-        if "'" in s or '"' in s:   # a key written in code ("MIIE…" + "…"): only what is inside the quotes
-            s = "".join(a or b for a, b in re.findall(r"\"([^\"]*)\"|'([^']*)'", s)).strip()
-        if not lines and re.match(r"[A-Za-z][A-Za-z0-9-]*:\s", s):   # Proc-Type:, DEK-Info:, Version:, Comment: (before the body)
-            if re.match(r"(?i)(proc-type|dek-info):", s):
-                return "real"   # an old encrypted key: its body is ciphertext, there is no structure to read
-            continue
-        if s:
-            lines.append(s)
-    if len(re.findall(r"[A-Za-z0-9+/]", "".join(lines))) < 64:
-        return "example"   # too few characters for the smallest private key (48 bytes)
-    if lines and re.fullmatch(r"=[A-Za-z0-9+/]{4}", lines[-1]):
-        lines.pop()   # a PGP armor's checksum line
-    if not all(re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", s) for s in lines):
-        return "real"   # framing Watchtower doesn't read plainly
-    b64 = "".join(lines)
-    try:
-        raw = base64.b64decode(b64, validate=True)
-    except (binascii.Error, ValueError):
-        return "real"
-    if _der_seq(raw) or raw.startswith(b"openssh-key-v1\x00"):
-        return "real"
-    b = raw[0]
-    tag = (b & 0x3F) if b & 0x40 else ((b & 0x3C) >> 2)
-    return "real" if b & 0x80 and tag in (5, 7) else "example"
+    region = tail[:end.start()]
+    if len(re.findall(r"[A-Za-z0-9+/]", _ESCAPED_BREAK.sub("", region))) < 64:
+        return "example"   # too few characters anywhere in it for the smallest private key (48 bytes)
+    readings = [_ESCAPED_BREAK.sub("\n", region).split("\n")]
+    for q in (None, '"', "'"):
+        lits = _code_literals(region, q)
+        if lits is not None:
+            readings.append([x for lit in lits for x in _ESCAPED_BREAK.sub("\n", lit).split("\n")])
+    verdicts = {_pem_body(r) for r in readings}
+    return "example" if verdicts == {"example"} or verdicts == {"example", None} else "real"
 
 
 def secret_kind(value, tail="", line=None, at=None):
     """("real" | "example", why) for one secret value. Example: a key block whose decoded body isn't a key (pem_kind; its
     label and a FAKE word in it are ignored), a whole environment-variable reference ($X, ${X}, ${{ secrets.X }}, %X%,
-    process.env.X, ***), a whole placeholder (COMPLETE_PLACEHOLDER), or (when `line`, the value's whole source line, and `at`,
-    its start there, are given) a checksum by its line's format (checksum_provenance). Everything else is real. `tail`: the
-    text after the value, for a key block's body (none: only the value itself is read)."""
+    process.env.X, ***), a whole placeholder (is_placeholder), or (when `line`, the value's whole source line, and `at`, its
+    start there, are given) a checksum by its line's format (checksum_provenance). Everything else is real. `tail`: the text
+    after the value, for a key block's body (none: only the value itself is read). Fix round 2: "example" lowers a hit to a
+    listed low finding (example_finding), never more; nothing is left out on it."""
     v = (value or "").strip()
     h = PEM_HEAD.match(v)
     if h:
@@ -168,26 +279,14 @@ def secret_kind(value, tail="", line=None, at=None):
         return "example", EXAMPLE_WHY["env"]
     if line is not None and at is not None and checksum_provenance(line, at, at + len(value or "")):
         return "example", EXAMPLE_WHY["digest"]
-    if COMPLETE_PLACEHOLDER.fullmatch(u):
+    if is_placeholder(u):
         return "example", EXAMPLE_WHY["placeholder"]
     return "real", ""
 
 
-def command_span(text, start, end):
-    """Batch 6 fix round 1 (Codex 6): the whole source text a match at [start, end) was read from, for ev256: its lines from
-    the first one's start to the last one's end, a command joined over lines (a line ending in a backslash) included both ways."""
-    s = text.rfind("\n", 0, start) + 1
-    while s >= 2 and text[s - 2] == "\\":
-        s = text.rfind("\n", 0, s - 1) + 1
-    e = text.find("\n", max(start, end - 1))
-    while e > 0 and text[e - 1] == "\\":
-        e = text.find("\n", e + 1)
-    return text[s:len(text) if e < 0 else e]
-
-
-def real_secret_at(text, m):
-    """True when the T011 match m in text is a real secret (secret_kind, with the text after it for a key block)."""
-    return secret_kind(m.group(0), tail=text[m.end():m.end() + PEM_CAP])[0] == "real"
+def secret_at(text, m):
+    """secret_kind of the T011 match m in text (with the text after it, for a key block's body)."""
+    return secret_kind(m.group(0), tail=text[m.end():m.end() + PEM_CAP])
 
 
 # Hardening batch 2 (review R1; guard redesign after fix round 3): a guarded match is kept as a "Warning or example text" record,
@@ -1163,15 +1262,13 @@ def sentence_of(text, m):
 VET_MATCH_CAP = 200_000   # matches of one rule in one file that vet looks at; past it the file is not fully checked
 
 
-def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None, keep_ev256=False):
+def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None):
     """Apply text rules plus document-level logic. kind: skill|reference|template|routine|description.
     Codex, batch 4 round 3 (vet): `limit` bounds the findings one file keeps, never what is looked at. Every match is still
     read; past the limit a match is kept only when it is a kind this file hasn't kept yet (rule, severity, warning or not), so
     a dangerous match after thousands of harmless ones is never lost, and labels come out as they would with all of them.
     `cut` (a list) is told when a repeat was left out. Detection has its own budget: past VET_MATCH_CAP matches of one rule
-    the file is not fully read, and `stop` (a list) is told, so vet says it couldn't finish instead of giving a verdict.
-    `keep_ev256` (batch 6 fix round 1): keep each finding's ev256 (finding(span=)); only the audit's own scans and `dismiss` ask,
-    and the audit drops it once dismissals are judged, so it is never stored or shown."""
+    the file is not fully read, and `stop` (a list) is told, so vet says it couldn't finish instead of giving a verdict."""
     out, kinds = [], set()
     guarded = set(rules.get("guarded_rules", []))
     is_ref = attack_reference(text, rules, where)
@@ -1207,8 +1304,7 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None,
                 out.append(finding(rule["id"], rule["title"] + " (in an attack-pattern reference)", "low", rule["owasp"],
                                    f"{where}:{line_of(text, m.start())}", f"U+{ord(m.group(0)):04X}" if rule["id"] == "WT-T002" else m.group(0)[:140],
                                    "Documentation or detector text. Confirm the file is what it claims to be.",
-                                   shown=None if rule["id"] == "WT-T002" else mask(m.group(0)) if rule["id"] == SECRET_RULE else m.group(0),
-                                   span=command_span(text, m.start(), m.end())))
+                                   shown=None if rule["id"] == "WT-T002" else mask(m.group(0)) if rule["id"] == SECRET_RULE else m.group(0)))
                 if rule["id"] == "WT-T002":
                     break
                 continue
@@ -1216,8 +1312,9 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None,
                 continue   # look past the short regex match so -G with @ or $(...) still counts; later | tr -d stays out
             if rule["id"] == "WT-T016" and not rules["write_verbs"].search(sentence_of(text, m)):
                 continue   # "failed silently", "quietly refresh the cache": quiet wording only matters next to an outward action
-            if rule["id"] == SECRET_RULE and not real_secret_at(text, m):
-                continue   # batch 6 (B5): an example value (secret_kind), judged on the value, never the line or the file name
+            # batch 6 (B5): the value judged on itself, never the line or the file name; fix round 2: an example-looking one is
+            # listed low (example_finding), never left out
+            example = secret_at(text, m)[1] if rule["id"] == SECRET_RULE else ""
             if rule["id"] == "WT-T003" and is_document_blob(m.group(0)):
                 continue
             ev = m.group(0)
@@ -1225,20 +1322,16 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None,
             reason = in_warning(text, m, rules, rule["id"], prev_end) if rule["id"] in guarded else ""
             if reason:
                 prev_end = m.end()
-            sig = ("WT-T006k" if installer else rule["id"], bool(reason))   # severity follows from these two
+            sig = ("WT-T006k" if installer else rule["id"], bool(reason), bool(example))   # severity follows from these
             if limit is not None and len(out) >= limit and sig in kinds:
                 if cut is not None:
                     cut.append(where)   # a repeat of a kind already kept: read, not stored
                 continue
             kinds.add(sig)
-            # batch 6 fix round 1 (Codex 6): what a held dismissal is bound to: the match's whole lines, and for T017 the 400
-            # characters sends_data read past its start (the file it uploads, where it sends it)
-            span = command_span(text, m.start(), max(m.end(), m.start() + 400) if rule["id"] == "WT-T017" else m.end())
             if installer:
                 f = finding("WT-T006k", "Known installer piped to shell", "medium" if kind != "vendor" else "low",
                             ["ASI05", "AST02"], f"{where}:{line_of(text, m.start())}", ev[:140],
-                            "A well-known installer, but still unpinned. Prefer a package manager or a pinned, checksummed download.", shown=ev,
-                            span=span)
+                            "A well-known installer, but still unpinned. Prefer a package manager or a pinned, checksummed download.", shown=ev)
             else:
                 if rule["id"] == SECRET_RULE:
                     ev = mask(ev)
@@ -1246,8 +1339,10 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None,
                     ev = f"U+{ord(ev):04X}"
                 elif rule["id"] == "WT-T003":
                     ev = ev[:24] + f"… ({len(m.group(0))} chars)"
-                f = finding(rule["id"], rule["title"], rule["severity"], rule["owasp"], f"{where}:{line_of(text, m.start())}", ev, rule["fix"],
-                            span=span)
+                f = finding(EXAMPLE_T011 if example else rule["id"], rule["title"], rule["severity"], rule["owasp"],
+                            f"{where}:{line_of(text, m.start())}", ev, rule["fix"])
+                if example:
+                    f = example_finding(f, example)
             if reason:   # batch 2 (R1): downgraded to a record, never dropped
                 f = guard_record(f, reason, danger=rule["id"] in GUARD_CODE_RULES)
             out.append(f)
@@ -1271,11 +1366,7 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None,
         if hf:
             out.append(finding("WT-R003", "High-frequency schedule", "low", ["ASI08"], where, hf.group(0),
                                "Hourly routines burn the weekly allowance; prefer daily or an event trigger."))
-    out = dedupe(out)
-    if not keep_ev256:   # fix round 1: ev256 is for the audit's dismissal check (and dismiss) only, never in what vet shows
-        for f in out:
-            f.pop("ev256", None)
-    return out
+    return dedupe(out)
 
 
 STRONG_VERBS = re.compile(r"(?i)\b(send|sends|sending|publish|publishes|purchase|purchases|buy|buys|pay|pays|transfer|transfers|submit|submits|deploy|deploys|invite|invites|tweet|tweets)\b")

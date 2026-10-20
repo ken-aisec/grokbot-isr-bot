@@ -1,10 +1,13 @@
-"""Batch 6 PR2, B6 (DQ-045): a dismissed Worth-a-look finding stays dismissed after an unrelated edit to its file.
+"""Batch 6 PR2, B6 (DQ-045): a dismissed Worth-a-look finding after an unrelated edit to its file.
 
 The edit's own WT-I001 (a reviewed skill changed: high, evidence, never dismissible) backed the dismissed finding up, so it came
-back Confirmed in the next daily. Ken's decision: a dismissal (state/dismissed.jsonl, which a Bot can write) now holds for a
-finding that only the change backs up, while its text is unchanged (its key, and ev256 when the key doesn't cover the whole
-evidence), and never for a critical one. The change itself is still reported. Anything else that backs it up, an edit to the
-dismissed line, or a planted record with another digest brings it back. The fix's re-approval never reads dismissals that way.
+back Confirmed in the next daily. Ken's B6 decision made a dismissal hold for a finding only the change backs up. Codex round 2
+(6, 7): state/dismissed.jsonl can be written by a Bot, and a Bot can compute any digest of the source, so that hold let a
+planted record hide a counted finding. Ken's rule (a Bot-writable signal never lowers or hides a finding) decides: a dismissal
+sets aside only a Worth-a-look finding, as at 5dcd0a2; one the change backs up counts again, and its fix starts "You dismissed
+this before; it is back because the file changed (see WT-I001)". DQ-045 itself (a dismissal that survives an unrelated edit)
+needs a dismissal authority a Bot can't write: not done (docs/KNOWN-LIMITS.md). These tests show it back; the guards that a
+planted record hides nothing stay.
 
 Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's watchtower/ sources, this file in place); the
 ones marked "guard" pass there too. Every planted value is FAKE; the box is a temp folder."""
@@ -51,23 +54,25 @@ class DismissalHolds(Box):
         self.assertEqual(code, 0, err)
         return json.loads(out)
 
-    def test_an_unrelated_edit_keeps_it_dismissed(self):   # replay (5dcd0a2: T006k back in new, Confirmed)
+    def test_an_unrelated_edit_brings_it_back_and_says_why(self):   # round 2 (Codex 6): held before, back now, with the reason
         self.dismissed_one()
         self.write("Keep the notes short.\n", "a")
         r = self.daily()
-        self.assertEqual([(f["rule"], f["title"]) for f in r["new"]], [("WT-I001", "Reviewed skill or plugin changed")])
-        self.assertEqual(self.mine("WT-T006k"), [])
-        self.assertEqual([f["rule"] for f in self.mine()], ["WT-I001"])
-        self.assertTrue(wt.counts(self.mine("WT-I001")[0]))   # the change itself still counts
+        self.assertEqual(sorted((f["rule"], f["title"]) for f in r["new"]),
+                         [("WT-I001", "Reviewed skill or plugin changed"), ("WT-T006k", "Known installer piped to shell")])
+        got = self.mine("WT-T006k")
+        self.assertEqual([f["class"] for f in got], ["corroborated"])
+        self.assertTrue(wt.counts(got[0]) and wt.counts(self.mine("WT-I001")[0]))
+        self.assertTrue(got[0]["fix"].startswith("You dismissed this before; it is back because the file changed (see WT-I001). "), got[0]["fix"])
         code, out, _ = self.run_cmd("dismiss", "--list")
-        self.assertIn("WT-T006k", out)
+        self.assertIn("WT-T006k", out)   # the owner's dismissal is still on record
 
-    def test_it_holds_in_the_audit_too(self):   # replay (5dcd0a2: Confirmed medium in the audit)
+    def test_it_is_back_in_the_audit_too(self):   # round 2 (Codex 6): held before, back now
         self.dismissed_one()
         self.write("Keep the notes short.\n", "a")
         r = self.audit()
-        self.assertFalse([f for f in r.get("new", []) if f["rule"] == "WT-T006k"])
-        self.assertEqual(self.mine("WT-T006k"), [])
+        self.assertTrue([f for f in r.get("new", []) if f["rule"] == "WT-T006k"])
+        self.assertEqual([f["class"] for f in self.mine("WT-T006k")], ["corroborated"])
 
     def test_editing_the_dismissed_line_brings_it_back(self):   # guard
         self.dismissed_one()
@@ -99,15 +104,16 @@ class DismissalHolds(Box):
         self.daily()
         self.assertEqual([x["class"] for x in self.mine("WT-T006k")], ["corroborated"])
 
-    def test_a_long_line_dismissed_by_the_owner_holds(self):   # replay (5dcd0a2: back, Confirmed)
+    def test_a_long_line_dismissed_by_the_owner_comes_back(self):   # round 2 (Codex 6): held before, back now
         f = self.dismissed_one(BUN.replace("curl -fsSL https://bun.sh/install | bash", LONG))
         self.write("Keep the notes short.\n", "a")
         self.daily()
-        self.assertEqual(self.mine("WT-T006k"), [])
-        # fix round 1: the digest (of its whole line) is made by dismiss from the file, never stored with the finding
+        self.assertEqual([x["key"] for x in self.mine("WT-T006k")], [f["key"]])
+        self.assertEqual([x["class"] for x in self.mine("WT-T006k")], ["corroborated"])
+        # no digest is made at all now (the round 1 assertion that one was, by length, is moot)
         self.assertIsNone(f.get("ev256"))
         rec = [json.loads(x) for x in open(wt.state_path(wt.DISMISS_LOG))][-1]
-        self.assertEqual(len(rec["ev256"]), 64)
+        self.assertNotIn("ev256", rec)
 
     def test_a_legacy_record_holds_only_when_the_key_covers_the_evidence(self):   # guard. Fix round 1 (Codex 5): a record with
         # no ev256 (what 5dcd0a2 wrote, or a Bot's key-only plant) never holds over a change: every medium or lower finding

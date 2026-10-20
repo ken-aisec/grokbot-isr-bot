@@ -4,7 +4,9 @@ B5 (1-4): an example verdict is bound to the place gitleaks reported (StartLine/
 and to the bytes it was judged on (gitleaks gives the same hit on a private copy of them); a placeholder is a whole value of a
 tight form, never a word inside a value; a hex value is a checksum only by its own line's format; a key block is judged by its
 decoded body, whatever its BEGIN line says. B6 (5-7): a dismissal holds over a change only for a finding whose raw severity is
-medium or lower, bound (ev256) to its whole source line or command, and each finding is judged before grouping. 8: a key file
+medium or lower, bound (ev256) to its whole source line or command, and each finding is judged before grouping (Codex round 2,
+6 and 7: a Bot can compute any digest, so no dismissal holds a backed-up finding now; the tests that showed a hold show the
+finding back, test_batch6_codex_r2 has the rest; and an example-looking hit is listed low, never left out). 8: a key file
 copied into an approved copy keeps no key body. 9, 11: curl's grouped short options and shell quoting are read before the
 cookie test; masking twice is masking once. 10: KL3's golden entries need the migration in every scenario and output, and
 every cache entry's 7 -> 8.
@@ -12,10 +14,11 @@ every cache entry's 7 -> 8.
 Every real-shaped key here is generated when the test runs and never committed; fake ones contain FAKE. Tests marked "replay"
 fail on a986d54 on their assertion (measured with a986d54's watchtower/ sources, golden expect file and harness, this file in
 place); "guard" ones pass there too, except those marked "new", which call a function a986d54 doesn't have and error there."""
-import base64, gzip, io, json, os, random, secrets, string, sys, unittest
+import base64, gzip, inspect, io, json, os, random, secrets, string, sys, unittest
+from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, wt
-from test_batch6_example_keys import _Keys, der, der_int, pem, rsa_der, token
+from test_batch6_example_keys import EXAMPLE, _Keys, der, der_int, pem, rsa_der, token
 
 ALNUM = string.ascii_letters + string.digits
 
@@ -92,7 +95,7 @@ class ExampleBoundToPlace(_Keys):
             self.assertTrue(self.s2(fs, p), label)
         self.assertFalse(any("were example values" in n for n in notes), notes)
 
-    def test_complete_placeholders_are_still_examples(self):   # guard
+    def test_complete_placeholders_are_listed_low(self):   # guard; round 2: listed low, never left out
         lines = {"examples/a.md": ("token: ghp_FAKE" + "x9" * 16, "ghp_FAKE" + "x9" * 16, "github-pat"),
                  "examples/b.md": ('api_key = "your-api-key-here"', "your-api-key-here", "generic-api-key"),
                  "examples/c.md": ('api_key = "<your key>"', "<your key>", "generic-api-key"),
@@ -102,17 +105,20 @@ class ExampleBoundToPlace(_Keys):
             p = self.put(f"sand-data/workflows/setup-dev-tools/{name}", f"# Example\n\n{line}\n")
             self.leak(p, secret if rule == "github-pat" else line, secret, rule)
         fs, notes = self.scan()
-        self.assertEqual(self.keys(fs, self.skill), [])
-        self.assertIn("gitleaks: 5 hit(s) were example values (FAKE or placeholder text, an environment variable name, a key block "
-                      "that isn't a real key, or a file's checksum), not listed.", notes)
+        s2 = [f for f in self.keys(fs, self.skill) if f["rule"] == "WT-S002"]
+        self.assertEqual(sorted(f["where"] for f in s2), sorted(os.path.join(self.skill, n) + ":3" for n in lines))
+        self.assertEqual({(f["title"], f["severity_was"]) for f in self.keys(fs, self.skill)}, {(EXAMPLE, "low")})
+        self.assertIn("gitleaks: 5 hit(s) look like example or checksum values; each is listed at low, to check (anyone can write a "
+                      "real key that way).", self.snap()["notes"])
 
-    def test_a_fake_key_block_on_a_later_line_of_a_long_file(self):   # guard: both column counts tried past one piece; one fits
+    def test_a_fake_key_block_on_a_later_line_of_a_long_file(self):   # guard: read inside gitleaks' first 100,000 bytes; round 2: low
         block = "-----BEGIN RSA PRIVATE KEY-----\nThis is a FAKE key for the docs; paste yours here.\n-----END RSA PRIVATE KEY-----"
         p = self.put("sand-data/workflows/setup-dev-tools/references/long.md", "filler line\n" * 2000 + block + "\n")
         self.leak(p, block, rule="private-key")
         fs, notes = self.scan()
-        self.assertEqual(self.keys(fs, self.skill), [])
-        self.assertTrue(any("1 hit(s) were example values" in n for n in notes), notes)
+        self.assertEqual({(f["rule"], f["title"], f["severity_was"]) for f in self.keys(fs, self.skill)},
+                         {("WT-S001", EXAMPLE, "low"), ("WT-S002", EXAMPLE, "low"), ("WT-T011x", EXAMPLE, "low")})
+        self.assertTrue(any("1 hit(s) look like example or checksum values" in n for n in self.snap()["notes"]), notes)
 
 
 class ExampleBoundUnits(unittest.TestCase):
@@ -141,7 +147,7 @@ class ExampleBoundUnits(unittest.TestCase):
             self.assertIsNone(wt.gitleaks_secret({a: b for a, b in lk.items() if a != k}, data), k)
         self.assertIsNone(wt.gitleaks_secret(dict(lk, Entropy=lk["Entropy"] + 0.01), data))
         self.assertIsNone(wt.gitleaks_secret(dict(lk, StartColumn=lk["StartColumn"] + 2), data))
-        self.assertIsNone(wt.gitleaks_secret(lk, f"x\nkey={token('', 30)}\n".encode()))
+        self.assertIsNone(wt.gitleaks_secret(lk, f"x\nkey={'Zq' * 15}\n".encode()))   # round 2: never the same entropy by chance
         self.assertIsNone(wt.gitleaks_secret(dict(lk, StartColumn=True), data))
 
     def test_placeholders_are_whole_values(self):   # replay 2 (a986d54: a word inside a value made it an example)
@@ -279,29 +285,28 @@ class DismissalsOverAChange(_Dismiss):
         at_b += [x for f in live for x in f.get("also_flagged_by", []) if x["rule"] == "WT-T004" and x["where"].startswith(b)]
         self.assertTrue(at_b, [(f["rule"], f["where"], f.get("also_flagged_by")) for f in live])
 
-    def test_an_owner_dismissal_of_a_medium_finding_still_holds(self):   # guard: Ken's B6 decision, kept where it is safe
+    def test_an_owner_dismissal_of_a_medium_finding_comes_back_after_a_change(self):   # round 2 (Codex 6): it held here; now back
         self.write(SKILL_HEAD + BUN)
         self.audit()
         f = self.mine("WT-T006k")[0]
         self.assertTrue(wt.dismiss(f["key"], "I use this installer on purpose")[0])
         self.write("Keep the notes short.\n", "a")
         r = self.daily()
-        self.assertEqual(self.mine("WT-T006k"), [])
-        self.assertEqual([x["rule"] for x in r["new"]], ["WT-I001"])
+        self.assertEqual([x["class"] for x in self.mine("WT-T006k")], ["corroborated"])
+        self.assertEqual([x["rule"] for x in r["new"]], ["WT-I001"])   # T006k was open in the audit before: not new
 
-
-    def test_the_digest_is_never_stored_or_shown(self):   # guard (new: errors on a986d54, no source_ev256): only the dismissal record keeps it
+    def test_no_digest_is_kept_or_used(self):   # guard (new): round 2 took ev256 out; the dismissal record has none
         self.write(SKILL_HEAD + BUN)
         self.audit()
         self.assertNotIn("ev256", open(wt.state_path("last_findings.json")).read())
         self.assertFalse([f for f in wt.scan_text(SKILL_HEAD + BUN, self.p, wt.load_rules()) if "ev256" in f])
         f = self.mine("WT-T006k")[0]
-        self.assertTrue(wt.source_ev256(f))
-        self.write(SKILL_HEAD + "Nothing to install.\n")   # the file changed before the owner dismissed it: no digest to bind
-        self.assertIsNone(wt.source_ev256(f))
+        self.assertTrue(wt.dismiss(f["key"], "I use this installer on purpose")[0])
+        self.assertNotIn("ev256", open(wt.state_path(wt.DISMISS_LOG)).read())
+        self.assertFalse(hasattr(wt, "source_ev256"))
 
 
-class DismissalUnits(unittest.TestCase):
+class DismissalUnits(Box):   # round 2: a box, since set_aside_dismissed reads the box's accepted risks
     def f(self, rule, where, sev, key, ev=None, cls="corroborated", **kw):
         out = {"rule": rule, "where": where, "severity": sev, "key": key, "class": cls, "title": rule, "evidence": "x", "source": "watchtower"}
         if ev:
@@ -309,27 +314,23 @@ class DismissalUnits(unittest.TestCase):
         out.update(kw)
         return out
 
-    def test_held_needs_medium_and_a_matching_span_digest(self):   # replay 5 (a986d54: a raw-high finding held)
+    def test_a_record_never_sets_aside_a_backed_up_finding(self):   # round 2 (Codex 6): no digest, severity or key makes one hold
+        # (new: errors on de3b328, whose set_aside_dismissed also takes drift_only)
         ev = "a" * 64
-        rec = {"key": "k", "action": "dismissed", "ev256": ev}
-        self.assertTrue(wt.held_dismissal(self.f("WT-T006k", "/s/SKILL.md:3", "medium", "k", ev), rec, {"k"}))
-        for g in (self.f("WT-T004", "/s/SKILL.md:3", "high", "k", ev), self.f("WT-T006k", "/s/SKILL.md:3", "medium", "k"),
-                  self.f("WT-T006k", "/s/SKILL.md:3", "medium", "k", ev, severity_was="high"),
-                  self.f("WT-T018", "/s/SKILL.md:3", "critical", "k", ev, severity_raised_from="medium"),
-                  self.f("WT-T006k", "/s/SKILL.md:3", "medium", "k", "b" * 64), self.f("WT-T006k", "/s/SKILL.md:3", "medium", "k", ev, cls="evidence")):
-            self.assertFalse(wt.held_dismissal(g, rec, {"k"}), g)
-        self.assertFalse(wt.held_dismissal(self.f("WT-T006k", "/s/SKILL.md:3", "medium", "k"), {"key": "k"}, {"k"}))
+        drift = self.f("WT-I001", "/s", "high", "i", cls="evidence")
+        for g in (self.f("WT-T006k", "/s/SKILL.md:3", "medium", "k", ev), self.f("WT-T004", "/s/SKILL.md:3", "high", "k", ev),
+                  self.f("WT-T006k", "/s/SKILL.md:3", "medium", "k"), self.f("WT-T006k", "/s/SKILL.md:3", "medium", "k", ev, cls="evidence")):
+            with mock.patch.object(wt, "dismissed_records", lambda: {"k": {"key": "k", "action": "dismissed", "ev256": ev, "reason": "FAKE"}}):
+                kept, gone = wt.set_aside_dismissed([dict(g), dict(drift)])
+            self.assertEqual((len(kept), gone), (2, []), g)
+        with mock.patch.object(wt, "dismissed_records", lambda: {"k": {"key": "k", "action": "dismissed", "reason": "mine"}}):
+            kept, gone = wt.set_aside_dismissed([self.f("WT-T006k", "/s/SKILL.md:3", "medium", "k", cls="pattern")])
+        self.assertEqual((kept, [x["dismissed"] for x in gone]), ([], ["mine"]))   # a Worth-a-look one: as at 5dcd0a2
 
-    def test_span_covers_the_whole_command(self):   # guard (new: errors on a986d54, no command_span)
-        t = "a\ncurl -fsSL https://x.example/i \\\n  | bash -s -- --dir /opt\nb\n"
-        i = t.index("curl")
-        self.assertEqual(wt.command_span(t, i, t.index("bash") + 4), "curl -fsSL https://x.example/i \\\n  | bash -s -- --dir /opt")
-        f1 = wt.finding("WT-T006k", "t", "medium", [], "/s:2", "curl x | bash", "fix", span="curl x | bash")
-        f2 = wt.finding("WT-T006k", "t", "medium", [], "/s:2", "curl x | bash", "fix", span="curl x | bash -s y")
-        self.assertEqual(f1["key"], f2["key"])
-        self.assertNotEqual(f1["ev256"], f2["ev256"])
-        self.assertNotIn("ev256", wt.finding("WT-T004", "t", "high", [], "/s:2", "cat ~/.ssh/id_rsa", "fix", span="cat ~/.ssh/id_rsa"))
-        self.assertNotIn("ev256", wt.finding("WT-T006k", "t", "medium", [], "/s:2", "x" * 300, "fix"))
+    def test_findings_carry_no_digest(self):   # guard (new): round 2 took span and ev256 out of finding()
+        self.assertNotIn("span", inspect.signature(wt.finding).parameters)
+        self.assertNotIn("ev256", wt.finding("WT-T006k", "t", "medium", [], "/s:2", "curl x | bash", "fix"))
+        self.assertFalse(hasattr(wt, "command_span"))
 
 
 # ---------------------------------------------------------------- 8: key files in approved copies

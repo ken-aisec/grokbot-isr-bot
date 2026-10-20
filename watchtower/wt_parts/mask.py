@@ -26,17 +26,40 @@ KEY_SHAPE = re.compile(   # the lookahead names every shape's first letter, so m
     r"|\bgh[pousr]_[A-Za-z0-9]{8,}|\bgithub_pat_[A-Za-z0-9_]{8,}|\bxox[baprs]-[A-Za-z0-9-]{8,}|\bglpat-[A-Za-z0-9_-]{8,}"
     r"|\bsq0(atp|csp)-[0-9A-Za-z_-]{8,}|\bEAAA[A-Za-z0-9_+=-]{20,}|\b[rs]k_live_[0-9A-Za-z]{8,}|AIza[0-9A-Za-z_-]{8,}"
     r"|\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{4,}(\.[A-Za-z0-9_-]*)?)")
-# A private key's body; "-----B…----" is the header as an older version stored it (mask() of the T011 match), so a body kept
-# after it is hidden too. The body may run over several lines, or be serialized with literal \n (a JSON key file, Codex round 2).
+# A private key's body after "-----B…----", the header as an older version stored it (mask() of the T011 match), so a body
+# kept after it is hidden too. The body may run over several lines, or be serialized with literal \n (a JSON key file, Codex
+# round 2).
 _PEM_GAP = r"(?:[ \t\r\n]|\\[nrt])"
 _B64 = r"(?:[A-Za-z0-9+]|\\?/)"
-PEM_BODY = re.compile(rf"(?:-----BEGIN [A-Z ]*PRIVATE KEY-----|-----B…----){_PEM_GAP}*(?P<body>(?:{_B64}|=){{8,}}"
+PEM_BODY = re.compile(rf"-----B…----{_PEM_GAP}*(?P<body>(?:{_B64}|=){{8,}}"
                       rf"(?:{_PEM_GAP}+(?:{_B64}{{16,}}={{0,2}}|{_B64}{{1,15}}={{1,2}}))*)")
 # Batch 6 fix round 1 (Codex 8): a whole key block, BEGIN to END, whatever is inside: an old encrypted key's Proc-Type and
 # DEK-Info headers, a PGP armor's (… PRIVATE KEY BLOCK), OpenSSH, PKCS#8 and encrypted PKCS#8 bodies. Everything between the
-# two lines is hidden (its line breaks kept), so a .pem copied into an approved copy keeps no key body.
-PEM_BLOCK = re.compile(rf"-----BEGIN [A-Z0-9 _-]*PRIVATE KEY(?: BLOCK)?-----(?P<inner>[\s\S]{{1,65536}}?)-----END [A-Z0-9 _-]*PRIVATE KEY(?: BLOCK)?-----")
+# two lines is hidden (its line breaks kept), so a .pem copied into an approved copy keeps no key body. Fix round 2 (Codex 8,
+# 10): read by pem_spans in one pass, with no size cap (a valid key padded past 64 KB kept its body) and a BEGIN or END label
+# of at most 64 characters (a run of BEGIN lines no longer made one label, read again from each of them).
+PEM_BEGIN = re.compile(r"-----BEGIN [A-Z0-9 _-]{0,64}?PRIVATE KEY(?: BLOCK)?-----")
+PEM_FINISH = re.compile(r"-----END [A-Z0-9 _-]{0,64}?PRIVATE KEY(?: BLOCK)?-----")
 _PEM_EDGE = re.compile(rf"{_PEM_GAP}*")
+
+
+def pem_spans(s):
+    """The key blocks' insides in s, as spans to hide: from the first character after a BEGIN line's gap to the last before its
+    END line's (headers and every line of the body; another BEGIN inside is part of it). A block with no END is hidden to the
+    end of the text, so an unfinished or cut one keeps nothing either. One pass: each search starts where the last one ended."""
+    out, pos, n = [], 0, len(s)
+    while pos < n:
+        m = PEM_BEGIN.search(s, pos)
+        if not m:
+            break
+        a = _PEM_EDGE.match(s, m.end()).end()
+        e = PEM_FINISH.search(s, m.end())
+        b, pos = (e.start(), e.end()) if e else (n, n)
+        while b > a and (s[b - 1] in " \t\r\n" or (s[b - 2:b - 1] == "\\" and s[b - 1] in "nrt")):
+            b -= 2 if s[b - 1] in "nrt" and s[b - 2:b - 1] == "\\" else 1
+        if b > a:
+            out.append((a, b))
+    return out
 # Codex, batch 4 round 1: one tokenizer instead of regex special cases. A shell word keeps its quotes ('…', "…", $'…') and
 # backslash escapes whole; one left open (evidence cut short) runs to the end of the line, so all of it is hidden. Separators
 # (| || && ; & and a line break) end a command. Round 2: text with line breaks is read twice, once with quotes kept to their
@@ -838,12 +861,7 @@ def mask_spans(s):
     """What masking replaces in `s`, merged and in order: (start, end, replacement), None meaning [hidden]. Overlapping spans
     (a word and the same value read inside its quotes, a key shape inside a hidden value) are one [hidden]."""
     spans = [(m.start("body"), m.end("body"), None) for m in PEM_BODY.finditer(s)]
-    for m in PEM_BLOCK.finditer(s):   # fix round 1 (Codex 8): from the first character after BEGIN's gap to the last before END's
-        a, b = _PEM_EDGE.match(s, m.start("inner")).end(), m.end("inner")
-        while b > a and (s[b - 1] in " \t\r\n" or (s[b - 2:b - 1] == "\\" and s[b - 1] in "nrt")):
-            b -= 2 if s[b - 1] in "nrt" else 1
-        if b > a:
-            spans.append((a, b, None))
+    spans += [(a, b, None) for a, b in pem_spans(s)]   # fix round 1 (Codex 8), round 2 (Codex 8, 10): every key block, one pass
     spans += [(m.start(), m.end(), mask(m.group(0))) for m in KEY_SHAPE.finditer(s)]
     words = []
     _urls(s, words)

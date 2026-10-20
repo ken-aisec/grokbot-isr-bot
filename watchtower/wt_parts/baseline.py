@@ -164,58 +164,49 @@ def is_accepted(f, sup, today):
     return False
 
 
-HOLD_SEVERITIES = ("medium", "low", "info")
+DISMISSED_BACK = "You dismissed this before; it is back because {why}. "
 
 
-def held_dismissal(f, rec, drift_only):
-    """Batch 6 (B6, Ken's decision): an owner's dismissal still holds for a finding that only a change to its file backs up
-    (drift_only: WT-I001/I002, the change, is reported on its own) while its source is the one dismissed. state/dismissed.jsonl
-    can be written by a Bot, so (fix round 1, Codex 5, 6) it holds only for a finding whose raw severity is medium or lower
-    (its rule's own, any it was raised to, and now: none high or critical), and only when the finding has an ev256, the digest
-    of its whole source line or command (finding(span=)), equal to the record's. A finding with no ev256 never holds; anything
-    else backing it up brings it back."""
-    ev = f.get("ev256")
-    return (f.get("class") == "corroborated" and f.get("key") in drift_only and not is_evidence(f)
-            and all(s in HOLD_SEVERITIES for s in (f.get("severity"), f.get("severity_was") or "info", f.get("severity_raised_from") or "info"))
-            and isinstance(ev, str) and len(ev) == 64 and rec.get("ev256") == ev)
-
-
-def dismissed_now(f, rec, drift_only):
-    """True when the owner's dismissal `rec` (or None) sets f aside: a Worth-a-look finding, or one held over a change."""
-    return (rec is not None and not f.get("unverified_platform")
-            and (f.get("class") == "pattern" or held_dismissal(f, rec, drift_only)))   # the disprove step; never evidence
-
-
-def set_aside_dismissed(findings, drift_only):
+def set_aside_dismissed(findings):
     """Batch 6 fix round 1 (Codex 7): (kept, dismissed), each finding judged on its own before findings are grouped, so a
     dismissed line that would have led a group never takes another file's finding with it; the audit groups the kept ones. An
-    accepted risk is left for active() (it shows under accepted risks, not as dismissed)."""
+    accepted risk is left for active() (it shows under accepted risks, not as dismissed).
+    Fix round 2 (Codex 6, 7; Ken's rule): a dismissal sets aside only a Worth-a-look finding, as at 5dcd0a2. state/dismissed.jsonl
+    can be written by a Bot, and a Bot can compute any digest, so no record holds a finding something backs up: one dismissed
+    before and backed up now (most often by a change to its file, WT-I001/I002) counts again, and its fix says so (DQ-045, a
+    dismissal that survives an unrelated edit, needs a dismissal authority a Bot can't write: not done, see KNOWN-LIMITS)."""
     sup = load_json(state_path("suppressions.json"), [])
     today = dt.date.today().isoformat()
     gone = dismissed_records()
+    drift = [(_place(g), g["rule"]) for g in findings if g.get("rule") in DRIFT_RULES] if gone else []
     kept, out = [], []
     for f in findings:
         rec = gone.get(f.get("key"))
-        if rec is not None and dismissed_now(f, rec, drift_only) and not is_accepted(f, sup, today):
+        if rec is None or f.get("unverified_platform") or is_accepted(f, sup, today):
+            kept.append(f)
+        elif f.get("class") == "pattern":   # the disprove step; never evidence
             f["dismissed"] = rec.get("reason", "")
             out.append(f)
         else:
+            fix = f.get("fix") or ""
+            if f.get("class") == "corroborated" and not fix.startswith(DISMISSED_BACK[:30]):   # a line a daily carries keeps one
+                here = _place(f)
+                changed = next((r for p, r in drift if _covers(p, here)), None)
+                f["fix"] = DISMISSED_BACK.format(why=f"the file changed (see {changed})" if changed else "something else now backs it up") + fix
             kept.append(f)
     return kept, out
 
 
-def active(findings, drift_only=frozenset()):
-    """(open, set aside): accepted risks and the owner's dismissals set aside. `drift_only`: keys of findings only a change backs
-    up (drift_only_keys); the audit judges dismissals before grouping (set_aside_dismissed) and passes none here. Other callers
-    (the fix's re-approval) pass none: there a dismissal never sets a backed-up finding aside."""
+def active(findings):
+    """(open, set aside): accepted risks and the owner's dismissals (Worth-a-look findings only) set aside. The audit judges
+    dismissals before grouping (set_aside_dismissed); the fix's re-approval reads the findings as they are."""
     sup = load_json(state_path("suppressions.json"), [])
     today = dt.date.today().isoformat()
     flags = [is_accepted(f, sup, today) for f in findings]   # per finding, never by shared key
-    gone = dismissed_records()
+    gone = dismissed_keys()
     for i, f in enumerate(findings):
-        rec = gone.get(f.get("key"))
-        if not flags[i] and dismissed_now(f, rec, drift_only):
-            f["dismissed"], flags[i] = rec.get("reason", ""), True
+        if not flags[i] and f.get("class") == "pattern" and f.get("key") in gone and not f.get("unverified_platform"):   # the disprove step; never evidence
+            f["dismissed"], flags[i] = gone[f["key"]], True
     for f, a in zip(findings, flags):
         if isinstance(a, dict):
             f["exception"] = {"kind": "security tool", "until": a.get("expires"), "reason": a.get("reason", "")}
@@ -389,14 +380,11 @@ def run_audit_locked(args, quick):
             f["severity"] = "medium"   # one scanner flagging a skill in a plugin nobody has reviewed yet is worth a look
     # Label before platform-refresh summary so a built-in that turns Confirmed critical/high alerts (Claude v0.7.1 F4).
     fs = label_findings(fs, ask_first_covered(fs))
-    drift_only = drift_only_keys(fs)   # batch 6 (B6): read before grouping folds any backer into another line
-    # fix round 1 (Codex 7): each finding's dismissal is judged on its own, then only the kept ones are grouped
-    fs, gone = set_aside_dismissed(mark_platform(summarize_refresh(mark_reviewed(fs, meta.get("manifest")))), drift_only)
+    # batch 6 fix round 1 (Codex 7): each finding's dismissal is judged on its own, then only the kept ones are grouped
+    fs, gone = set_aside_dismissed(mark_platform(summarize_refresh(mark_reviewed(fs, meta.get("manifest")))))
     fs = sort_findings(group_changed_skills(group_root_causes(fs)))
     live, suppressed = active(fs)
     suppressed = sort_findings(gone + suppressed)
-    for f in expand_groups(live) + suppressed:
-        f.pop("ev256", None)   # judged: never stored or shown (dismiss computes it again from the file)
     prev = load_json(state_path("last_findings.json"), {"findings": []})
     note_earlier_auto_allow(prev, live)
     prev_keys, cur_keys = keys_of(prev.get("findings", [])), keys_of(live)
