@@ -2,6 +2,44 @@
 
 Open findings that dev carries knowingly. Each one is **must-fix before any release**.
 
+## Must-fix before release (batch 6 PR3, Codex round 3 highs 1-7)
+
+Ken's decision (Oct 20): highs 8-10 are fixed in PR3; highs 1-7 ship open. Each is a document where a chat webhook URL is
+lowered from the critical WT-T005 (an alternate destination, Do not install, 80) to the medium WT-T018 (Install with changes,
+40) while the code actually sends somewhere else. In each case the scanner's destination proof (`_code_facts`, `resolved()`,
+`settled()`, the empty-map and builtin `dict()`/`str()` proofs) accepts the send as going to the webhook.
+
+1. **Sender rebinding hidden by comment parsing.** Python reads `//` as floor division, but the scanner reads the rest of the
+   line as a comment, so a rebinding of the sender placed after `x = 1 // 1;` is not seen when it is parenthesized
+   (`(send) = …`) or a tuple target (`(send,) = …`). The call `send("<webhook>")` still lowers to WT-T018.
+2. **A rebinding inside an f-string.** An f-string's replacement field runs code, but the scanner skips the whole string, so a
+   rebinding of `dict` there (in a non-ASCII spelling Python normalizes) goes unseen and `dict().get("hook", "<webhook>")` is
+   still read as an empty map's default: WT-T018.
+3. **Any imported module trusted as the sender's module.** After `import helpers`, `helpers.send("<webhook>", …)` lowers to
+   WT-T018, because a module named in a plain import is treated like an HTTP module; the helper may send anywhere.
+4. **A patched sender implementation.** Writing to an attribute of the sender (its function code) doesn't count against it, so
+   `requests.post("<webhook>", …)` after such a write still lowers to WT-T018.
+5. **Cross-block reassignment of the destination.** `hook = "<webhook>"` in one code block and `hook = <something else>` plus
+   `requests.post(hook, …)` in another lowers to WT-T018 (the same code in one block is WT-T005): the check that a name is bound
+   once only looks at the current block.
+6. **A quoted shell alias.** `alias "curl=…"` (the whole argument quoted) isn't recognized as an alias for curl, so a later
+   `curl … "<webhook>"` lowers to WT-T018 (with WT-T017).
+7. **A module-search-path change through an import alias.** `from sys import path` then `path.insert(0, "vendor")` isn't seen
+   as a `sys.path` change, so a vendored copy can replace `requests` and `requests.post("<webhook>", …)` lowers to WT-T018.
+
+**What still lowers T005 to T018:** any send whose destination the proof machinery accepts (a literal argument, a name bound
+to one, a dict or list element, a `{}`/`dict()` lookup default, a `str()` of a literal) when one of the gaps above hides what
+the sender or the name really is.
+
+**Chosen fix direction (Ken):** stop proving destinations altogether. Remove the proof machinery; a chat webhook is WT-T018
+only when its address is one plain string literal written directly as the URL argument of a recognised send, with nothing in
+the document able to change what that send calls (no binding, attribute write or import alias of the sender or its module, no
+unrecognised module as the sender, no search-path or PATH change, no shell alias or function for the command, no
+f-string/eval/exec). Everything else stays WT-T005. This flips several pre-batch T018 guards to WT-T005 (approved by Ken as
+Option A: `test_batch5_codex_r3::test_safe_forms_stay_chat_webhooks` and `test_batch4_codex_review4::test_standalone_urls_stay_chat_webhooks`);
+those tests are unchanged in PR3 because the fix is not in it. The new false alarms that fix will add must be listed here
+when it lands.
+
 ## Batch 5 (merged to dev Oct 19, 2026: #15 and #16)
 
 Ken approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Codex highs open. Forge fixes them after the freeze, before release. They're worded as Codex wrote them in its final checks after fix round 3: #15 at 62ccd0e and #16 at c3b0257. File links point at the code as merged.

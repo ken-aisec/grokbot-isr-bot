@@ -589,12 +589,25 @@ def _other_urls(text):
     return memo["other_urls"]
 _CRED_WORD = re.compile(r"(?i)token|secret|passw(?:or)?d|api_?key|private_?key|credential|cookie|(?<![\w$])\.(?:ssh|aws|netrc|env)\b"
                         r"|\bid_(?:rsa|ed25519)\b")
-_STR_RX = (r"[rRbBuUfF]{0,2}(?:'''[\s\S]*?(?:'''|\Z)|\"\"\"[\s\S]*?(?:\"\"\"|\Z)|'(?:[^'\\\n]|\\.)*'|\"(?:[^\"\\\n]|\\.)*\"%s)")
+def _str_rx(tail, sq=True, dq=True):
+    """A string literal: triple quotes (to their end or the text's), one line in ' or " (each left out once it can't close on
+    this line), then `tail`."""
+    return (r"[rRbBuUfF]{0,2}(?:'''[\s\S]*?(?:'''|\Z)|\"\"\"[\s\S]*?(?:\"\"\"|\Z)" + (r"|'(?:[^'\\\n]|\\.)*'" if sq else "")
+            + (r"|\"(?:[^\"\\\n]|\\.)*\"" if dq else "") + tail + ")")
+
+
 _TOK_TAIL = (r"|(?P<name>[A-Za-z_$][\w$]*(?:'[A-Za-z]+)*)|(?P<num>\d[\w.]*)|(?P<open>[(\[{])|(?P<close>[)\]}])"
              r"|(?P<op>\*\*|&&|\|\||==|!=|<=|>=|[-+*/%=<>!&|^~?:;,.@])|(?P<bad>[\s\S])")
-_CODE_TOK = re.compile(r"(?P<nl>\n)|(?P<ws>[ \t\r\f\v]+|\\\r?\n)|(?P<com>(?<![^\s])#[^\n]*|(?<![:/])//[^\n]*|/\*[\s\S]*?\*/)"
-                       r"|(?P<ucom>/\*)|(?P<str>" + _STR_RX % r"|`(?:[^`\\]|\\[\s\S])*(?:`|\Z)" + r")" + _TOK_TAIL)
-_PROSE_TOK = re.compile(r"(?P<nl>\n)|(?P<ws>[ \t\r\f\v`]+|\\\r?\n)|(?P<str>" + _STR_RX % "" + r")" + _TOK_TAIL)   # markdown: ` is inline code
+# Batch 6 PR3, Codex round 3 (H10): one pattern for each set of quotes whose one-line strings can't close on the current line
+# (bit 1: ', bit 2: "). A ' or " string that doesn't close before the line ends means none starting later on that line does
+# (each quote it passed was escaped, so a later start reads the same tail), so the reading never retries one there: the same
+# tokens, in one pass. Before, every escaped quote after an unterminated one rescanned the rest of the line.
+_CODE_TOKS = [re.compile(r"(?P<nl>\n)|(?P<ws>[ \t\r\f\v]+|\\\r?\n)|(?P<com>(?<![^\s])#[^\n]*|(?<![:/])//[^\n]*|/\*[\s\S]*?\*/)"
+                         r"|(?P<ucom>/\*)|(?P<str>" + _str_rx(r"|`(?:[^`\\]|\\[\s\S])*(?:`|\Z)", not v & 1, not v & 2) + r")" + _TOK_TAIL)
+              for v in range(4)]
+_PROSE_TOKS = [re.compile(r"(?P<nl>\n)|(?P<ws>[ \t\r\f\v`]+|\\\r?\n)|(?P<str>" + _str_rx("", not v & 1, not v & 2) + r")" + _TOK_TAIL)
+               for v in range(4)]   # markdown: ` is inline code
+_CODE_TOK, _PROSE_TOK = _CODE_TOKS[0], _PROSE_TOKS[0]
 _REGION_MEMO = []   # [text, {(start, end, prose): parsed region}]: every match of one text shares one reading
 
 
@@ -624,14 +637,21 @@ def _memo(text):
 
 def _region(text, start, end, prose):
     """The tokens of text[start:end]: kinds, starts, ends, `nl` (a line break before the token), the bracket each token is in
-    (`parent`) and each bracket's partner (`match`), and where the reading broke (an unterminated string or comment), if it did."""
+    (`parent`) and each bracket's partner (`match`), and where the reading broke (an unterminated string or comment), if it did.
+    One pass (_CODE_TOKS: a one-line string that never closes is a "bad" token for its quote, as before, and isn't retried)."""
     key = (start, end, prose)
     memo = _memo(text)
     if key in memo:
         return memo[key]
     kinds, starts, ends, nl, comments, broke, pending = [], [], [], [], [], None, False
-    for m in (_PROSE_TOK if prose else _CODE_TOK).finditer(text, start, end):
+    pats, pos, dead = _PROSE_TOKS if prose else _CODE_TOKS, start, {"'": -1, '"': -1}
+    while pos < end:
+        m = pats[(pos < dead["'"]) | (pos < dead['"']) << 1].match(text, pos, end)
+        pos = m.end()
         k = m.lastgroup
+        if k == "bad" and m.group(0) in dead and m.start() >= dead[m.group(0)]:
+            le = text.find("\n", m.start(), end)
+            dead[m.group(0)] = end if le == -1 else le   # no string in this quote closes before the line ends
         if k == "nl" or (k == "com" and "\n" in m.group(0)):
             pending = True
         if k in ("nl", "ws"):

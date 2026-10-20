@@ -128,13 +128,13 @@ def _mcp_options(w, i, name, fetched):
     return i, None
 
 
-def mcp_package(words):
-    """(launcher, [the packages it fetches], why it couldn't read the launch or None) when the words (a server's command and
-    args) run a package launcher, else None. Its packages are the values of each --package (uvx: --from and --with), or else
-    the first word after its options; env's own options and assignments, and npm's and pnpm's options before their
-    subcommand, are read with their arity. Any doubt is a reason it couldn't read the launch, never a pinned launch."""
-    w = [x for x in words if isinstance(x, str)]
-    n, i = len(w), 0
+def mcp_package(w, i=0):
+    """(launcher, [the packages it fetches], why it couldn't read the launch or None, what it runs) when the words w[i:] (a
+    server's command and args, strings) run a package launcher, else None. Its packages are the values of each --package (uvx:
+    --from and --with), or else the first word after its options; env's own options and assignments, and npm's and pnpm's
+    options before their subcommand, are read with their arity. Any doubt is a reason it couldn't read the launch, never a
+    pinned launch. What it runs (round 3, H8): (the index of the command word, whether that word is a package spec), or None."""
+    n = len(w)
     while i < n and _launcher_name(w[i]) == "env":   # /usr/bin/env [options] [VAR=value …] npx …
         i, opts = i + 1, True
         while i < n:
@@ -148,7 +148,7 @@ def mcp_package(words):
             elif opts and (x.startswith(("--unset=", "--chdir=")) or (x[:2] in _ENV_VALUES and len(x) > 2)):
                 i += 1
             elif opts and x.startswith("-"):
-                return "env", [], x   # -S splits a string into more words; any other option: not read
+                return "env", [], x, None   # -S splits a string into more words; any other option: not read
             elif "=" in x:
                 i += 1   # VAR=value
             else:
@@ -159,14 +159,14 @@ def mcp_package(words):
     if name not in MCP_LAUNCHERS:
         for j in range(i + 1, n):   # a launcher word further on (cmd /c npx …, sh -c "npx …"): a launch it can't read
             if any(_launcher_name(t) in MCP_LAUNCHERS for t in w[j].split()):
-                return name, [], w[j]
+                return name, [], w[j], None
         return None
     label, fetched = name, []
     i += 1
     if MCP_LAUNCHERS[name] is not None:   # npm, pnpm: their own options, then the subcommand
         i, bad = _mcp_options(w, i, name, fetched)
         if bad is not None:
-            return label, [], bad
+            return label, [], bad, None
         if i >= n or w[i] not in MCP_LAUNCHERS[name]:
             return None   # npm run, pnpm install: not a launch of a fetched package
         label = "npm exec" if name == "npm" else f"{name} {w[i]}"
@@ -177,6 +177,7 @@ def mcp_package(words):
     first = w[i] if bad is None and i < n else ""
     pkgs = [v for o, v in fetched if o != "--from"] if name == "uvx" else [v for o, v in fetched]
     froms = [v for o, v in fetched if o == "--from"]
+    spec = not (froms if name == "uvx" else pkgs)   # the first word is the package itself (else a command of the packages)
     if name == "uvx":
         pkgs += froms or ([first] if bad is None else [])   # with --from, the first word is the command it runs
     elif not pkgs and bad is None:
@@ -186,7 +187,51 @@ def mcp_package(words):
         import itertools
         bad = next((x for x in itertools.takewhile(lambda y: y != "--", w[i + 1:])
                     if x.startswith("-") and x != "-" and x not in MCP_OPTIONS["npm"][0]), None)
-    return label, pkgs, bad
+    return label, pkgs, bad, ((i, spec) if bad is None and first else None)
+
+
+# PR3, Codex round 3 (H8): a pinned outer package never vouches for what it runs. `npm exec --package=npm@11.21.0 -- npx -y
+# mutable` runs npx, which fetches mutable; `npx -y npm@11.21.0 exec mutable` runs npm exec. The command after the package
+# options (or the package's own command) is read again: a launcher or env as a launch of its own; yarn, pipx, uv, bun, deno or
+# a shell (what it runs isn't read), npm or pnpm without a launch subcommand, or a launcher word among a command's arguments,
+# as "couldn't read the launch". A chain of nested launchers is read 16 deep, then is "couldn't read the launch" too.
+_NESTED_UNREAD = frozenset(("yarn", "pipx", "pnpx", "uv", "bun", "deno", "sh", "bash", "zsh", "dash", "ksh", "fish", "cmd", "powershell",
+                            "pwsh"))
+_NESTED_WORDS = frozenset(MCP_LAUNCHERS) | frozenset(("yarn", "pipx", "pnpx", "uv", "bun", "deno"))
+_NESTING = 16
+
+
+def mcp_launches(words):
+    """[(launcher, [the packages it fetches], why it couldn't read the launch or None)] for a server's command and args: the
+    launch (mcp_package) and each launch nested in what it runs (round 3, H8), outermost first; [] when it isn't a launch."""
+    w = [x for x in words if isinstance(x, str)]
+    out, i, nested = [], 0, None
+    for _ in range(_NESTING):
+        got = mcp_package(w, i)
+        if got is None:
+            if nested in ("npm", "pnpm"):
+                out.append((nested, [], nested))   # npm run, pnpm install inside a launch: what it runs isn't read
+            return out
+        label, pkgs, bad, run = got
+        out.append((label, pkgs, bad))
+        if run is None:
+            return out
+        i, spec = run
+        cmd = w[i]
+        nested = _launcher_name(re.split(r"(?<=.)[@=<>~!\[]", cmd, maxsplit=1)[0] if spec else cmd)
+        if nested in _NESTED_UNREAD:
+            out.append((nested, [], cmd))
+            return out
+        if nested not in MCP_LAUNCHERS and nested != "env":
+            for x in w[i + 1:]:   # a launcher word among the command's arguments
+                if any(_launcher_name(t) in _NESTED_WORDS for t in x.split()):
+                    out.append((nested, [], x))
+                    break
+            return out
+        if spec:
+            w, i = [nested] + w[i + 1:], 0   # the package's own command (npx@10.0.0 runs npx)
+    out.append((out[-1][0], [], "(launchers nested over %d deep)" % _NESTING))
+    return out
 
 
 def mcp_pin_problem(launcher, spec):
@@ -210,6 +255,38 @@ def mcp_pin_problem(launcher, spec):
 
 _JSONC_TOKEN = re.compile(r'"(?:[^"\\\n]|\\.)*"|//[^\n]*|/\*|[,}\]]|[^"/,}\]]+|/')
 _JSON_KEY = re.compile(r'"((?:[^"\\\n]|\\.)*)"\s*:')
+_COLON_AFTER = re.compile(r"\s*:")
+
+
+def _json_keys(text):
+    """PR3, Codex round 3 (H9): [(offset, body)] of each "…": key in `text`, exactly the matches of _JSON_KEY.finditer, in one
+    pass. A string that starts at a quote ends at the first later quote on its line with an even run of backslashes before it
+    (escapes pair the same way from any start after a quote), so every start before that quote shares its end, and whether a
+    colon follows an end is read once. The regex restarted at every escaped quote and rescanned the line: quadratic."""
+    import bisect
+    qs = [m.start() for m in re.finditer('"', text)]
+    nls = [m.start() for m in re.finditer("\n", text)]
+    nxt, after = [None] * len(qs), None
+    for k in range(len(qs) - 1, -1, -1):   # nxt[k]: the next quote after quote k that ends a string
+        nxt[k] = after
+        b = qs[k]
+        while b > 0 and text[b - 1] == "\\":
+            b -= 1
+        if (qs[k] - b) % 2 == 0:
+            after = k
+    out, last, colon = [], 0, {}
+    for k, s in enumerate(qs):
+        if s < last or nxt[k] is None:
+            continue
+        e = qs[nxt[k]]
+        if bisect.bisect_left(nls, e) != bisect.bisect_left(nls, s):
+            continue   # a line break first: no string starts here
+        if e not in colon:
+            colon[e] = _COLON_AFTER.match(text, e + 1)
+        if colon[e]:
+            out.append((s, text[s + 1:e]))
+            last = colon[e].end()
+    return out
 
 
 def _jsonc_to_json(text):
@@ -263,9 +340,9 @@ def _mcp_servers(text):
             except (ValueError, RecursionError):
                 doc = None
         if doc is None:
-            for m in _JSON_KEY.finditer(norm if norm is not None else text):
-                if _json_str(m.group(1)) == "command":
-                    out.append((m.start(), None))
+            for at, key in _json_keys(norm if norm is not None else text):   # round 3 (H9): one pass, the same keys
+                if _json_str(key) == "command":
+                    out.append((at, None))
             return out
     if isinstance(doc, (dict, list)):
         import collections
@@ -312,19 +389,19 @@ def mcp_unpinned(text):
     package it fetches, and one for a launch it couldn't read whole (PR3, Codex round 1, 12)."""
     out, line, pos = [], 1, 0
     for at, words in sorted(_mcp_servers(text), key=lambda x: x[0]):
-        got = mcp_package(words) if words is not None else ("(launch)", [], MCP_NOT_JSON)   # round 2 (H8): never a pass
-        if got is None:
+        got = mcp_launches(words) if words is not None else [("(launch)", [], MCP_NOT_JSON)]   # round 2 (H8): never a pass
+        if not got:
             continue
-        launcher, specs, bad = got
         line += text.count("\n", pos, at)
         pos = at
-        for spec in specs:
-            why = mcp_pin_problem(launcher.split()[0], spec)
-            if why is not None:
-                name = re.split(r"(?<=.)[@=<>~!]", spec, maxsplit=1)[0]
-                out.append((line, f"{launcher} {name or '(no package named)'} ({why})"))
-        if bad is not None:
-            out.append((line, f"{launcher} (couldn't read the launch at {bad[:40]!r}; treated as unpinned)"))
+        for launcher, specs, bad in got:   # round 3 (H8): and each launch nested in what it runs
+            for spec in specs:
+                why = mcp_pin_problem(launcher.split()[0], spec)
+                if why is not None:
+                    name = re.split(r"(?<=.)[@=<>~!]", spec, maxsplit=1)[0]
+                    out.append((line, f"{launcher} {name or '(no package named)'} ({why})"))
+            if bad is not None:
+                out.append((line, f"{launcher} (couldn't read the launch at {bad[:40]!r}; treated as unpinned)"))
     return out
 
 
