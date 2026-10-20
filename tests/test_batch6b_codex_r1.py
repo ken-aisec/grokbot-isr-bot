@@ -117,7 +117,7 @@ class ExampleBoundToPlace(_Keys):
 
     def test_a_fake_key_block_on_a_later_line_of_a_long_file(self):   # guard: read inside gitleaks' first 100,000 bytes; round 2: low
         # round 3 (Codex 3): a body that isn't base64 is a key now, so the block is one that decodes to bytes that start no key
-        block = pem("RSA ", b"\x99" + secrets.token_bytes(299)).rstrip("\n")
+        block = pem("RSA ", b"\x99\xff\xff" + secrets.token_bytes(297)).rstrip("\n")   # batch 7a: a cut public-key packet
         p = self.put("sand-data/workflows/setup-dev-tools/references/long.md", "filler line\n" * 2000 + block + "\n")
         self.leak(p, block, rule="private-key")
         fs, notes = self.scan()

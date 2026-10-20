@@ -124,7 +124,7 @@ def real_pems():
 
 def fake_pems():
     """Key blocks that aren't keys: text in the body, random bytes that aren't DER, a body too short to be one."""
-    junk = b"\x99" + secrets.token_bytes(299)
+    junk = b"\x99\xff\xff" + secrets.token_bytes(297)   # batch 7a: a public-key packet cut short, whatever the random bytes
     return {"words": "-----BEGIN RSA PRIVATE KEY-----\nThis is a FAKE key for the docs; paste yours here.\n-----END RSA PRIVATE KEY-----\n",
             "random": pem("RSA ", junk), "short": pem("", secrets.token_bytes(16)),
             "random8": pem("", b"\x30\x82\x01\x00" + secrets.token_bytes(60))}

@@ -230,17 +230,63 @@ def der_key_structure(b, at=0):
     return "encrypted-pkcs8" if tags == [0x30, 0x04] else None
 
 
+_PGP_SECRET = (5, 7)   # secret key, secret subkey
+_PGP_PUBLIC = frozenset((2, 6, 13, 14, 17))   # signature, public key, user id, public subkey, user attribute
+_PGP_IGNORED = frozenset((10, 12, 21, *range(40, 64)))   # marker, trust, padding, and the tags readers skip (RFC 9580 §5)
+_PGP_MAX = 64
+
+
+def pgp_packets(raw):
+    """Batch 7a (PR2 Codex round 4, high 3): raw read as OpenPGP packets (old and new headers, their lengths), at most
+    _PGP_MAX: "secret" when a secret-key or secret-subkey packet is among them; "public" only when every packet is a public one
+    (_PGP_PUBLIC) or one readers ignore (_PGP_IGNORED: a marker, trust or padding packet), at least one is public, and they end
+    exactly at the end of raw or with a public packet cut short; None for anything else (another or reserved tag, a partial or
+    indeterminate length, bytes after them that aren't a packet, more than _PGP_MAX)."""
+    i, n, public = 0, len(raw), False
+    for _ in range(_PGP_MAX):
+        if i >= n:
+            return "public" if public else None
+        b = raw[i]
+        if not b & 0x80:
+            return None
+        if b & 0x40:
+            tag, o = b & 0x3F, raw[i + 1] if i + 1 < n else None
+            if o is None or 224 <= o < 255:
+                return None if tag not in _PGP_SECRET else "secret"
+            if o < 192:
+                head, size = 2, o
+            elif o < 224:
+                head, size = 3, ((o - 192) << 8) + raw[i + 2] + 192 if i + 2 < n else None
+            else:
+                head, size = 6, int.from_bytes(raw[i + 2:i + 6], "big") if i + 5 < n else None
+        else:
+            tag, kind = (b & 0x3C) >> 2, b & 3
+            head = 1 + (1, 2, 4, 0)[kind]
+            size = int.from_bytes(raw[i + 1:i + head], "big") if kind != 3 and i + head <= n else None
+        if tag in _PGP_SECRET:
+            return "secret"
+        if size is None or tag not in _PGP_PUBLIC and tag not in _PGP_IGNORED:
+            return None
+        public = public or tag in _PGP_PUBLIC
+        i += head + size
+        if i > n:
+            return "public" if tag in _PGP_PUBLIC else None
+    return "public" if i == n and public else None
+
+
 def _key_shaped(raw, at):
     """Fix round 3 (Codex 3): True when raw[at:] is a private key's start: a structure der_key_structure names, or
     openssh-key-v1, anywhere; and at the body's start (at 0) anything shaped like one: any DER SEQUENCE (0x30, the first byte
     of every structure der_key_structure names, whole or not, so a cut or odd key still counts) or a PGP secret-key or
-    secret-subkey packet. Reads raw at `at`, never a copy of the rest."""
+    secret-subkey packet. Reads raw at `at`, never a copy of the rest. Batch 7a (round 4, high 3): at 0, any byte that may
+    start an OpenPGP packet (0x80 set) counts unless the body reads as public packets only (pgp_packets), so a secret key behind
+    a marker or another ignored packet, or a structure Watchtower can't read, is a key."""
     if at >= len(raw):
         return False
     if raw.startswith(b"openssh-key-v1", at) or der_key_structure(raw, at) is not None:
         return True
     b = raw[at]
-    return at == 0 and (b == 0x30 or bool(b & 0x80 and ((b & 0x3F) if b & 0x40 else ((b & 0x3C) >> 2)) in (5, 7)))
+    return at == 0 and (b == 0x30 or bool(b & 0x80 and pgp_packets(raw) != "public"))
 
 
 def split_escaped_breaks(s):
@@ -347,13 +393,14 @@ def pem_kind(text, at=0, complete=True):
     5). The readings are the text as it is (its lines, \\n escapes as line breaks: a .pem, YAML, a JSON string) and, only when
     the whole of it is exactly string literals in code ("MIIE…\\n" + "…"), their contents; `<base64> # ""` is neither, so it is
     real. A FAKE word decides nothing; the label is not read. Each block's body lies before the next BEGIN, so the hits of one
-    text are read in one pass between them."""
+    text are read in one pass between them. Batch 7a (round 4, high 1): the END is the strict reading's, and a block that
+    masking hides past it (the readings disagree on where it ends) is real."""
     blocks, starts = _armor_index(text)
     k = bisect.bisect_left(starts, at)
     if k == len(starts) or starts[k] != at:
         return "real"
-    _, be, _, es, _, nxt = blocks[k]
-    if es is None or (nxt is not None and es > nxt) or (nxt is None and not complete):
+    _, be, _, es, _, nxt, hide = blocks[k]
+    if es is None or hide != es or (nxt is not None and es > nxt) or (nxt is None and not complete):
         return "real"
     region = text[be:es]
     readings = [list(split_escaped_breaks(region))]

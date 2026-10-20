@@ -281,7 +281,7 @@ class KeyBlockLines(unittest.TestCase):
             self.assertEqual(wt.secret_kind(v, tail=text[i + 27:])[0], "real", text[:80])
 
     def test_fake_blocks_in_code_and_prose_stay_examples(self):   # guard
-        junk = base64.b64encode(b"\x99" + secrets.token_bytes(119)).decode()
+        junk = base64.b64encode(b"\x99\xff\xff" + secrets.token_bytes(117)).decode()   # batch 7a: a cut public-key packet
         # round 3 (Codex 3): a body that isn't base64 (words) can't be read, so it is a key; one that decodes to bytes starting no key
         # is still an example
         for text, want in (("-----BEGIN PRIVATE KEY-----\n" + junk + "\n-----END PRIVATE KEY-----", "example"),

@@ -235,7 +235,7 @@ class KeyStructures(unittest.TestCase):
             self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real", block[:60])
 
     def test_a_long_body_that_is_no_key_is_still_noted(self):   # guard (new: b621cf4 lowered it): what B5 still says, as a note only
-        block = pem("RSA ", b"\x99" + secrets.token_bytes(299))
+        block = pem("RSA ", b"\x99\xff\xff" + secrets.token_bytes(297))   # batch 7a: a cut public-key packet
         got = t011("Key:\n" + block)
         self.assertEqual([(f["rule"], f["severity"]) for f in got], [("WT-T011x", "critical")])
         self.assertIn("(a key block that isn't a real key)", got[0]["fix"])
@@ -365,7 +365,7 @@ class EscapedBreaks(unittest.TestCase):
         text = json.dumps({"k": pem("", raw)})
         i = text.index("-----BEGIN")
         self.assertEqual(wt.secret_kind(text[i:i + 27], tail=text[i + 27:])[0], "real")
-        junk = base64.b64encode(b"\x99" + secrets.token_bytes(119)).decode()
+        junk = base64.b64encode(b"\x99\xff\xff" + secrets.token_bytes(117)).decode()   # batch 7a: a cut public-key packet
         text = json.dumps({"k": "-----BEGIN PRIVATE KEY-----\n" + junk + "\n-----END PRIVATE KEY-----\n"})
         i = text.index("-----BEGIN")
         self.assertEqual(wt.secret_kind(text[i:i + 27], tail=text[i + 27:])[0], "example")
