@@ -63,7 +63,7 @@ def vet_files(d, entry, undone):
 
 
 def vet_read(d, entry, files, notes, undone):
-    """Each file as (where, absolute path, text, kind), read one at a time. `where` is the identity 857ab38 gave a finding
+    """Each file as (where, absolute path, text, kind, sha256 of the bytes read), read one at a time. `where` is the identity 857ab38 gave a finding
     (SKILL.md for the entry point, the path inside the folder for the rest), so keys don't change; the absolute path is only
     for labelling. Every text file that isn't read is named in `notes`. A link is never followed: it may lead anywhere.
     Codex, round 3: the findings cap no longer stops reading (a later file's exfiltration host was never seen); past it each
@@ -83,7 +83,7 @@ def vet_read(d, entry, files, notes, undone):
             skipped.append(f"{rel} (over the {VET_BYTES_CAP:,} bytes one vet reads)")
             undone.append(rel)
             continue
-        t = read_text(p)
+        t, h = read_scanned(p)   # batch 6 (B7): the text and the fingerprint of the very bytes it was read from
         if t is None:
             if p == entry:
                 raise OSError(f"could not read {p}")
@@ -91,15 +91,58 @@ def vet_read(d, entry, files, notes, undone):
             undone.append(rel)
             continue
         total += len(t)
-        yield rel, p, t, "template" if p == entry else "reference"
+        yield rel, p, t, "template" if p == entry else "reference", h
     if skipped:
         notes.append("not read: " + ", ".join(skipped[:10]) + (f" and {len(skipped) - 10} more" if len(skipped) > 10 else ""))
+
+
+# Batch 6 (B7): a vetted file whose bytes are, exactly, a file on Grok Bot's release list (any listed path: same bytes, same
+# text) is Grok Bot's own released file. Its findings get the audit's platform labels: a rules/platform-reviewed.json entry for
+# those bytes, that rule and that line makes a checked note, and the rest become Platform lines (mark_platform). None of them
+# moves the verdict or the score, except a Confirmed critical (the audit's rug-pull rule). One byte more is another digest, so
+# the file is vetted as anyone's. The release list and the reviewed list are release files held to MANIFEST.sha256.
+def released_digests():
+    """Every sha256 the usable release list has a raw-bytes line for (none when it can't be used)."""
+    return {h for hs in platform_lock().values() for h in hs}
+
+
+def vet_released(labelled, released):
+    """Label the findings from released bytes (`released`: finding key -> the file's sha256) as the audit labels Grok Bot's own."""
+    entries = _platform_reviewed_state()[0]
+    for f in labelled:
+        h = released.get(f["key"])
+        if h is None:
+            continue
+        f["scope"] = "platform"
+        ln = str(f.get("where") or "").rpartition(":")[2]
+        e = None if f.get("guarded") or not ln.isdigit() else next(
+            (e for e in entries if e["sha256"] == h and e["rule"] == f["rule"] and e["line"] == int(ln)), None)
+        if e is not None:
+            f.update({"class": "platform", "label": REVIEWED_LABEL, "severity_was": f.get("severity_was") or f["severity"], "severity": "info",
+                      "fix": e["note"], "reviewed": True})
+    return mark_platform(labelled)
+
+
+def vet_counts(f, released):
+    """A finding that moves vet's verdict and score: not from released bytes, unless it is a Confirmed critical or a key (keys
+    count wherever they sit, as in the audit: SECRET_RULES)."""
+    return f["key"] not in released or (f.get("label") == CONFIRMED and f["severity"] == "critical") or f["rule"] in SECRET_RULES
+
+
+def vet_label(f):
+    """The label vet prints: a finding shown without its severity also says what Watchtower would call it ("Worth a look (might
+    be fine), would call high", "Platform (Grok Bot's own file), would call high")."""
+    was, label = f.get("severity_was"), f["label"]
+    if label == CONFIRMED or f["severity"] != "info" or was not in ("critical", "high", "medium", "low"):
+        return label
+    return f"{label}, would call {was}"
 
 
 def cmd_vet(args):
     rules = load_rules()
     folder = vet_folder(args.path)
     absolute = {}   # finding key -> its where with the absolute path, for labelling only
+    released, lock = {}, released_digests()   # batch 6 (B7): finding key -> the released file's sha256
     if folder is not None:
         entry = os.path.abspath(args.path) if not os.path.isdir(args.path) else os.path.join(folder, "SKILL.md")
         entry = entry if os.path.lexists(entry) or not os.path.isdir(args.path) else None
@@ -109,10 +152,12 @@ def cmd_vet(args):
                 raise OSError(args.path)
             cut, stop, undone = [], [], []
             files, notes_ = vet_files(folder, entry, undone)
-            for where, p, t, k in vet_read(folder, entry, files, notes_, undone):
+            for where, p, t, k, h in vet_read(folder, entry, files, notes_, undone):
                 # Codex, round 2: the findings cap holds inside a file too; round 3: it limits what is kept, never what is read
                 got = scan_text(t, where, rules, kind=k, limit=max(0, VET_FINDINGS_CAP - len(fs)), cut=cut, stop=stop)
                 absolute.update((f["key"], p + f["where"][len(where):]) for f in got)
+                if h in lock:
+                    released.update((f["key"], h) for f in got)
                 fs += got
                 if k == "template":
                     main_ = t
@@ -130,13 +175,15 @@ def cmd_vet(args):
         text = main_ if main_ is not None and not parts else "\n".join(parts)
         name = os.path.basename(args.path.rstrip("/")) or "vetted"
     else:
-        text = sys.stdin.read() if args.path == "-" else read_text(args.path)
+        text, h = (sys.stdin.read(), None) if args.path == "-" else read_scanned(args.path)
         if text is None:
             print(f"ERROR could not read {args.path}", file=sys.stderr)
             return 2
         main_, urls_, plugin_, cut, stop, notes_, unread = text, None, None, [], [], [], False
         name = "stdin" if args.path == "-" else os.path.basename(args.path)
         fs = scan_text(text, name, rules, kind="template", limit=VET_FINDINGS_CAP, cut=cut, stop=stop)
+        if h in lock:
+            released.update((f["key"], h) for f in fs)
     # Codex, round 3: what was kept and what was read are said apart. Past the findings cap repeats aren't kept, but every match
     # was read; past the match budget a file was not read to its end, and then vet gives no installation verdict (below).
     if stop:
@@ -176,17 +223,18 @@ def cmd_vet(args):
         if not ran:
             engines["warning"] = "No outside scanner is installed, so this vet used Watchtower's own rules only. Say so."
     fs = sort_findings(dedupe(fs))
-    s, g = score(fs)
     # Batch 4 (FP2): labelled as the audit labels them, with full paths so "same file" means the same file; shown relative.
     # Codex, round 1: the full path is used for labelling only; each finding keeps the where (and so the key) 857ab38 gave it.
-    labelled = label_findings([dict(f, where=absolute.get(f["key"], f["where"])) for f in fs])
-    v = vet_verdict(labelled)
+    labelled = vet_released(label_findings([dict(f, where=absolute.get(f["key"], f["where"])) for f in fs]), released)
+    s, g = score([f for f, lf in zip(fs, labelled) if vet_counts(lf, released)])   # batch 6 (B7): Grok Bot's released bytes aside
+    v = vet_verdict([lf for lf in labelled if vet_counts(lf, released)])
     if incomplete and v != "Do not install":
         v = NOT_FINISHED   # Codex, round 3: what wasn't read can't be called safe to install
     risk = max(100 - s, {"Do not install": 80, NOT_FINISHED: 50, "Install with changes": 40}.get(v, 0))   # a high finding never reads as "risk 6"
     rel = lambda w: (name if w == folder else w[len(folder) + 1:] if w.startswith(folder + "/") else w) if folder else w
-    fs = sort_findings([dict(lf if lf["label"] == CONFIRMED else dict(f, label=lf["label"], **{"class": lf["class"]}), where=rel(f["where"]))
-                        for f, lf in zip(fs, labelled)])
+    # batch 6 (B7): each finding as the audit shows it: its label and labelled severity (info for Worth a look, a Tip, warning
+    # text and platform notes), the rule's own kept as severity_was; the where (and key) as 857ab38 gave it
+    fs = sort_findings([dict(lf, where=rel(f["where"])) for f, lf in zip(fs, labelled)])
     urls = sorted(urls_ if urls_ is not None else set(urls_in(text, limit=1000)))
     result = {"tool": "watchtower", "version": VERSION, "target": name, "verdict": v,
               "risk_score": risk, "posture_score": s, "grade": g, "autonomy": autonomy(main_ if main_ is not None else text, rules),
@@ -206,7 +254,7 @@ def cmd_vet(args):
     else:
         print(f"Verdict: {result['verdict']} · risk {result['risk_score']}/100 · autonomy {result['autonomy']}")
         for f in fs:
-            print(f"  [{f['severity'].upper()}] {f['label']}: {f['rule']} {f['title']} @ {f['where']} :: {f['evidence']}")
+            print(f"  [{f['severity'].upper()}] {vet_label(f)}: {f['rule']} {f['title']} @ {f['where']} :: {f['evidence']}")
             print(f"      fix: {f['fix']}")
         if urls:
             print("  External URLs: " + ", ".join(urls[:10]))

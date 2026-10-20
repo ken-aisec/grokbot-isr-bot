@@ -86,7 +86,7 @@ if [[ -n "$ga" ]]; then
   curl -fsSL -o "$DL/$tgz" "$base/$tgz" \
     && curl -fsSL -o "$DL/gitleaks_checksums.txt" "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt" \
     && (cd "$DL" && grep " $tgz\$" gitleaks_checksums.txt | sha256sum -c -) \
-    && tar -xzf "$DL/$tgz" -C "$SB" gitleaks && rm -f "$WT_HOME/bin/gitleaks" \
+    && tar --no-same-owner -xzf "$DL/$tgz" -C "$SB" gitleaks && rm -f "$WT_HOME/bin/gitleaks" \
     || echo "gitleaks did not install; Watchtower works without it."
   # TruffleHog: tells live keys from dead ones (asks each key's own provider)
   th="trufflehog_${TRUFFLEHOG_VERSION}_linux_$( [ "$ga" = x64 ] && echo amd64 || echo arm64 ).tar.gz"
@@ -94,7 +94,7 @@ if [[ -n "$ga" ]]; then
   curl -fsSL -o "$DL/$th" "$tb/$th" \
     && curl -fsSL -o "$DL/trufflehog_checksums.txt" "$tb/trufflehog_${TRUFFLEHOG_VERSION}_checksums.txt" \
     && (cd "$DL" && grep " $th\$" trufflehog_checksums.txt | sha256sum -c -) \
-    && tar -xzf "$DL/$th" -C "$SB" trufflehog && rm -f "$WT_HOME/bin/trufflehog" \
+    && tar --no-same-owner -xzf "$DL/$th" -C "$SB" trufflehog && rm -f "$WT_HOME/bin/trufflehog" \
     || echo "TruffleHog did not install; Watchtower works without it."
   # OSV-Scanner: known holes in Node, Go and other project dependencies
   ob="osv-scanner_linux_$( [ "$ga" = x64 ] && echo amd64 || echo arm64 )"

@@ -340,8 +340,12 @@ def _ax_open(p, bases=()):
 
 
 def _ax_listdir(d):
-    """(the names in folder d, read through _ax_open_at; whether it could be read). ([], True) when there is no such folder."""
-    if not os.path.lexists(d):
+    """(the names in folder d, read through _ax_open_at; whether it could be read). ([], True) when there is no such folder;
+    ([], False) when Watchtower couldn't look (batch 6, KL5: os.path.lexists said "no such folder" for that too)."""
+    st = _look(d)
+    if st is None:
+        return [], False
+    if not st:
         return [], True
     try:
         fd = _ax_open_at(d, os.O_RDONLY | os.O_DIRECTORY, stat.S_ISDIR)
@@ -411,14 +415,21 @@ def _ax_seed_now(roots):
     cands = [os.path.expanduser("~/sand-data"), os.path.expanduser("~/agent-data")] + [os.path.expanduser(x) for x in roots]
     for r in [r for r in cands if not os.path.islink(r)] + [r for r in cands if os.path.islink(r)]:   # a folder's own name before a link to it
         try:
-            if not os.path.isdir(r) or os.path.realpath(r) in seen:
+            st = _look(r, follow=True)   # batch 6 (KL5): a folder Watchtower couldn't look at is not one without a seed
+            if st is None:
+                ok = False
+                continue
+            if not st or not stat.S_ISDIR(st.st_mode) or os.path.realpath(r) in seen:
                 continue
             seen.add(os.path.realpath(r))
         except OSError:
             ok = False
             continue
         for fn in SESSION_FILES:
-            if not os.path.lexists(os.path.join(r, fn)):
+            st = _look(os.path.join(r, fn))
+            if st is None:
+                ok = False
+            if not st:
                 continue
             data = _ax_json_file(os.path.join(r, fn), (), 64 * ACCESS_JSON_MAX_BYTES)
             if data is None:
@@ -453,11 +464,14 @@ def _ax_browser(seed, vocab, jar):
 def _ax_jar_now():
     """(the hosts with a login-style cookie in the shared browser's cookie jar, whether Watchtower could look), read now the way the
     sign-in check reads it (host and cookie name, never a value), but through _ax_open: a jar reached through a link is not read.
-    (None, True) when there is no jar."""
+    (None, True) when there is no jar; (None, False) when Watchtower couldn't look where one would be (batch 6, KL5)."""
     import sqlite3
     for j in BROWSER_JARS:
         p = os.path.expanduser(j)
-        if not os.path.lexists(p):
+        st = _look(p)
+        if st is None:
+            return None, False
+        if not st:
             continue
         fd = _ax_open(p, _ax_bases())
         if fd is None:
@@ -524,7 +538,10 @@ def _ax_auto_allow(bases):
     refused = []
 
     def read(p):
-        if not os.path.lexists(p):
+        st = _look(p)
+        if st is None:   # batch 6 (KL5): couldn't look, so not "missing"
+            refused.append(p)
+        if not st:
             return None
         doc = _ax_json_file(p, bases)
         if not isinstance(doc, dict):
@@ -638,7 +655,10 @@ def _ax_hooks(roots, plugin_files, bases):
     ok, seen = True, set()
     for p in files:
         p = os.path.normpath(p)
-        if p in seen or not os.path.lexists(p):
+        st = None if p in seen else _look(p)
+        if st is None and p not in seen:   # batch 6 (KL5): a hooks file Watchtower couldn't look for may hold anything
+            ok = False
+        if not st:
             continue
         seen.add(p)
         data = _ax_json_file(p, bases)
@@ -686,7 +706,9 @@ def _ax_known_bots(bases):
             if not _AX_AGENT_ID.fullmatch(i):
                 continue
             p = os.path.join(d, i, "profile.json")
-            if not os.path.lexists(p):
+            st = _look(p)
+            bad += st is None   # batch 6 (KL5): a profile Watchtower couldn't look for is unreadable, never no profile
+            if not st:
                 continue
             prof = _ax_json_file(p, bases)
             if prof is None:
@@ -775,8 +797,9 @@ def _ax_scope(roots, walk_errors=0, walk_skipped=0):
     rs = [os.path.normpath(os.path.abspath(os.path.expanduser(r))) for r in roots if isinstance(r, str)]
     for want in audit_default_roots():
         w = os.path.normpath(os.path.abspath(want))
-        if os.path.lexists(w) and not any(w == r or w.startswith(r.rstrip("/") + "/") for r in rs):
-            return "scope"
+        st = _look(w)   # batch 6 (KL5): one Watchtower couldn't look at may be there
+        if st is not False and not any(w == r or w.startswith(r.rstrip("/") + "/") for r in rs):
+            return "scope" if st else "unreadable"
     return "unreadable" if walk_errors else "skipped" if walk_skipped else None
 
 
@@ -804,10 +827,13 @@ def build_access_map(snapshot, meta):
     scope = _ax_scope(roots, src.get("walk_errors", 0), src.get("walk_skipped", 0))
     inc.update({f: scope for f in ACCESS_SCANNED if scope})
     persist = meta.get("persistence") if isinstance(meta.get("persistence"), dict) else {}
+    folders = (SYSTEM_CRON, os.path.expanduser("~/.config/systemd/user"))
     if src.get("crontab", "ok") == "failed":
         inc["scheduled"] = "failed"
-    elif SYSTEM_CRON not in persist and os.path.lexists(SYSTEM_CRON):   # round 3 (5): there, but the audit didn't list it
-        inc["scheduled"] = "unreadable"
+    elif any(d in (src.get("persist_unknown") or []) or (d not in persist and _look(d) is not False) for d in folders):
+        inc["scheduled"] = "unreadable"   # round 3 (5): there, but the audit didn't list it; batch 6 (KL5): or couldn't look
+    if src.get("cli_unknown"):
+        inc["cli_logins"] = "unreadable"   # batch 6 (KL5): a sign-in file Watchtower couldn't look at
     inc["key_files"] = "depth"   # the key scans read files to a depth and leave some out: never "no file has a key"
     m = _ax_map(fs, roots, src.get("mcp") or [], src.get("plugin_files") or [], jar, seed,
                 dict(_ax_scheduled(persist), system=_ax_system_cron(persist.get(SYSTEM_CRON))), ACCESS_SHARED, inc, "audit")
@@ -832,14 +858,18 @@ def access_map_now():
     last = [f for k in ("findings", "suppressed") for f in (snap.get(k) if isinstance(snap.get(k), list) else []) if isinstance(f, dict)]
     errors, skipped = [], []
     inv = collect_inventory(roots, errors=errors, skipped=skipped)
-    stores = [p for p in sorted(secret_store_places()) if any(_under(p, {os.path.normpath(os.path.expanduser(r))}, strict=True) for r in roots)
-              and os.path.lexists(p)]
-    fs = ([f for f in last if f.get("rule") in ("WT-T018", "WT-T005", "WT-S001", "WT-S002")] + cli_credentials()
+    places = [p for p in sorted(secret_store_places()) if any(_under(p, {os.path.normpath(os.path.expanduser(r))}, strict=True) for r in roots)]
+    looks = {p: _look(p) for p in places}   # batch 6 (KL5): a store or sign-in file Watchtower couldn't look at is unknown
+    stores = [p for p in places if looks[p]]
+    cli_unknown = [p for p in places if looks[p] is None]
+    fs = ([f for f in last if f.get("rule") in ("WT-T018", "WT-T005", "WT-S001", "WT-S002")] + cli_credentials(cli_unknown)
           + [platform_secret_store_note(p) for p in stores])
     jar, jar_ok = _ax_jar_now()
     seed, seed_ok = _ax_seed_now(roots)
     scheduled, sched_why = _ax_scheduled_now()
     inc = {} if jar_ok and seed_ok else {"browser": "unreadable"}
+    if cli_unknown:
+        inc["cli_logins"] = "unreadable"
     scope = _ax_scope(roots, len(errors), len(skipped))
     inc.update({f: scope for f in ACCESS_SCANNED if scope and f not in ACCESS_CACHED})
     if sched_why:

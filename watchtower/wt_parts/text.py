@@ -376,6 +376,12 @@ def _wording_guard(text, m, rules, prev_end):
     return ""
 
 
+# Batch 6 PR3 added guards here for false alarms vet showed; Codex rounds 1 and 2 showed each also exempted real attacks, so all
+# are removed: an override that names a config file or a reviewer's output (T001), an env file copied into another (T004), and
+# (round 2, H2) "Do not debug with `env`, `printenv` …", whose negation a trailing "unless …" makes conditional. Those false
+# alarms are open (docs/KNOWN-LIMITS.md, B7).
+
+
 def in_warning(text, m, rules, rule_id, prev_end=None):
     """Why the match reads as defensive prose, or "" when it doesn't: quoted, negated, one more item in a guarded list, reported
     ("if a page says to ..."), scoped to untrusted content, described as an attack, or detector code. `prev_end`: where the
@@ -416,7 +422,10 @@ def guard_record(f, reason, danger=False):
 
 def sends_data(ev):
     """WT-T017: the curl/wget segment itself (up to a pipe, ;, && or ||) carries a data flag.
-    -G/--get is harmless only when the data is not a file (@) or a command substitution."""
+    -G/--get is harmless only when the data is not a file (@) or a command substitution. Batch 6 PR3 exempted a command whose
+    data, headers, method and URL were all literal; Codex round 2 (H1) removed it: curl and wget read a config file the
+    command never names (~/.curlrc, .wgetrc: a credential header, an upload), so no visible command proves what is sent. The
+    false alarm is open (docs/KNOWN-LIMITS.md, B7)."""
     m = re.search(r"(?i)\b(curl|wget)\b", ev)
     if not m:
         return True   # the prose form; its object words are checked by the rule
@@ -555,9 +564,9 @@ _URL_KEYS = frozenset(("url", "uri", "endpoint"))   # PR A, Codex round 1 (1): t
 _LOOKUPS = frozenset(("getattr", "getenv", "setdefault", "pop", "getOrDefault", "get_or", "getdefault"))
 _LOOKUP_DEFAULTS = frozenset(("default", "fallback"))
 _BOOL_OPS = frozenset(("or", "and", "if", "else", "not", "||", "&&", "?"))
-# PR A, Codex round 3 (5): the receivers `get` is an HTTP GET on (requests.get, httpx.get, session.get, self.client.get, https.get,
-# axios.get, $.get, …); on any other receiver it is a lookup (round 3 (1))
-_HTTP_CLIENT = re.compile(r"(?i)requests|httpx|aiohttp|urllib3|https?|axios|got|ky|needle|superagent|\$|jquery|\$http|[\w$]*(?:session|client)")
+# PR A, Codex round 3 (5): the receivers `get` is an HTTP GET on (requests.get, httpx.get, https.get, axios.get, $.get, …); on any
+# other receiver it is a lookup (round 3 (1)). Batch 6 (KL2): a session or client only when the code binds it to one
+# (_CLIENT_MAKERS, http_client), never by its name
 _CONFIG_PARSER = re.compile(r"(?i)configparser")
 _ANY_URL = re.compile(r"(?i)\b[a-z][a-z0-9+.\-]*://[^\s'\"`<>()\[\]{}|\\,]*|(?<=['\"`])//[^\s'\"`<>()\[\]{}|\\,]+")
 
@@ -580,12 +589,25 @@ def _other_urls(text):
     return memo["other_urls"]
 _CRED_WORD = re.compile(r"(?i)token|secret|passw(?:or)?d|api_?key|private_?key|credential|cookie|(?<![\w$])\.(?:ssh|aws|netrc|env)\b"
                         r"|\bid_(?:rsa|ed25519)\b")
-_STR_RX = (r"[rRbBuUfF]{0,2}(?:'''[\s\S]*?(?:'''|\Z)|\"\"\"[\s\S]*?(?:\"\"\"|\Z)|'(?:[^'\\\n]|\\.)*'|\"(?:[^\"\\\n]|\\.)*\"%s)")
+def _str_rx(tail, sq=True, dq=True):
+    """A string literal: triple quotes (to their end or the text's), one line in ' or " (each left out once it can't close on
+    this line), then `tail`."""
+    return (r"[rRbBuUfF]{0,2}(?:'''[\s\S]*?(?:'''|\Z)|\"\"\"[\s\S]*?(?:\"\"\"|\Z)" + (r"|'(?:[^'\\\n]|\\.)*'" if sq else "")
+            + (r"|\"(?:[^\"\\\n]|\\.)*\"" if dq else "") + tail + ")")
+
+
 _TOK_TAIL = (r"|(?P<name>[A-Za-z_$][\w$]*(?:'[A-Za-z]+)*)|(?P<num>\d[\w.]*)|(?P<open>[(\[{])|(?P<close>[)\]}])"
              r"|(?P<op>\*\*|&&|\|\||==|!=|<=|>=|[-+*/%=<>!&|^~?:;,.@])|(?P<bad>[\s\S])")
-_CODE_TOK = re.compile(r"(?P<nl>\n)|(?P<ws>[ \t\r\f\v]+|\\\r?\n)|(?P<com>(?<![^\s])#[^\n]*|(?<![:/])//[^\n]*|/\*[\s\S]*?\*/)"
-                       r"|(?P<ucom>/\*)|(?P<str>" + _STR_RX % r"|`(?:[^`\\]|\\[\s\S])*(?:`|\Z)" + r")" + _TOK_TAIL)
-_PROSE_TOK = re.compile(r"(?P<nl>\n)|(?P<ws>[ \t\r\f\v`]+|\\\r?\n)|(?P<str>" + _STR_RX % "" + r")" + _TOK_TAIL)   # markdown: ` is inline code
+# Batch 6 PR3, Codex round 3 (H10): one pattern for each set of quotes whose one-line strings can't close on the current line
+# (bit 1: ', bit 2: "). A ' or " string that doesn't close before the line ends means none starting later on that line does
+# (each quote it passed was escaped, so a later start reads the same tail), so the reading never retries one there: the same
+# tokens, in one pass. Before, every escaped quote after an unterminated one rescanned the rest of the line.
+_CODE_TOKS = [re.compile(r"(?P<nl>\n)|(?P<ws>[ \t\r\f\v]+|\\\r?\n)|(?P<com>(?<![^\s])#[^\n]*|(?<![:/])//[^\n]*|/\*[\s\S]*?\*/)"
+                         r"|(?P<ucom>/\*)|(?P<str>" + _str_rx(r"|`(?:[^`\\]|\\[\s\S])*(?:`|\Z)", not v & 1, not v & 2) + r")" + _TOK_TAIL)
+              for v in range(4)]
+_PROSE_TOKS = [re.compile(r"(?P<nl>\n)|(?P<ws>[ \t\r\f\v`]+|\\\r?\n)|(?P<str>" + _str_rx("", not v & 1, not v & 2) + r")" + _TOK_TAIL)
+               for v in range(4)]   # markdown: ` is inline code
+_CODE_TOK, _PROSE_TOK = _CODE_TOKS[0], _PROSE_TOKS[0]
 _REGION_MEMO = []   # [text, {(start, end, prose): parsed region}]: every match of one text shares one reading
 
 
@@ -615,14 +637,21 @@ def _memo(text):
 
 def _region(text, start, end, prose):
     """The tokens of text[start:end]: kinds, starts, ends, `nl` (a line break before the token), the bracket each token is in
-    (`parent`) and each bracket's partner (`match`), and where the reading broke (an unterminated string or comment), if it did."""
+    (`parent`) and each bracket's partner (`match`), and where the reading broke (an unterminated string or comment), if it did.
+    One pass (_CODE_TOKS: a one-line string that never closes is a "bad" token for its quote, as before, and isn't retried)."""
     key = (start, end, prose)
     memo = _memo(text)
     if key in memo:
         return memo[key]
     kinds, starts, ends, nl, comments, broke, pending = [], [], [], [], [], None, False
-    for m in (_PROSE_TOK if prose else _CODE_TOK).finditer(text, start, end):
+    pats, pos, dead = _PROSE_TOKS if prose else _CODE_TOKS, start, {"'": -1, '"': -1}
+    while pos < end:
+        m = pats[(pos < dead["'"]) | (pos < dead['"']) << 1].match(text, pos, end)
+        pos = m.end()
         k = m.lastgroup
+        if k == "bad" and m.group(0) in dead and m.start() >= dead[m.group(0)]:
+            le = text.find("\n", m.start(), end)
+            dead[m.group(0)] = end if le == -1 else le   # no string in this quote closes before the line ends
         if k == "nl" or (k == "com" and "\n" in m.group(0)):
             pending = True
         if k in ("nl", "ws"):
@@ -654,6 +683,181 @@ def _region(text, start, end, prose):
     return r
 
 
+# Batch 6 (KL1, KL2): what a region binds. A name's identity (an HTTP client, an empty map) comes only from how the region binds
+# it, never from the name itself (cfg_client is not a client); a name bound twice is whatever the second binding made it.
+_BIND_OPS = frozenset(("+", "-", "*", "/", "%", "|", "&", "^", ":"))
+_SELF_WRITES = frozenset(("globals", "locals", "vars", "exec", "eval", "setattr", "__dict__", "__setitem__"))
+
+
+def _region_names(text, start, end, prose):
+    """{"binds": {name or a.b chain: [(first token, kind, token after "=")]}, "uses": {plain name: [token]}, "self_writes": bool}
+    for the region's tokens, read once per region (one pass). kind: "=" (also +=, :=), "as", "for" or "other" (global, del)."""
+    memo = _memo(text)
+    k = ("names", start, end, prose)
+    if k in memo:
+        return memo[k]
+    r = _region(text, start, end, prose)
+    kinds, starts, ends, parent = r["kinds"], r["starts"], r["ends"], r["parent"]
+    n = len(kinds)
+    tok = lambda i: text[starts[i]:ends[i]] if 0 <= i < n else None
+    binds, uses, writes = {}, {}, False
+    for i in range(n):
+        if kinds[i] != "name":
+            continue
+        t = tok(i)
+        writes = writes or t in _SELF_WRITES
+        if tok(i - 1) != ".":
+            uses.setdefault(t, []).append(i)
+        nx = tok(i + 1)
+        if nx == "." or (i + 1 < n and kinds[i + 1] == "open"):
+            continue   # not the end of a chain, or a call or an index
+        c = i
+        while c >= 2 and tok(c - 1) == "." and kinds[c - 2] == "name":
+            c -= 2
+        if parent[c] is not None and text[starts[parent[c]]] == "(":
+            continue   # a keyword argument or a parameter's default
+        chain = ".".join(tok(j) for j in range(c, i + 1, 2))
+        prev = tok(c - 1)
+        if nx == "=" or (nx in _BIND_OPS and tok(i + 2) == "=" and ends[i + 1] == starts[i + 2]):
+            binds.setdefault(chain, []).append((c, "=", i + 2 if nx == "=" else i + 3))
+        elif prev in ("as", "for"):
+            binds.setdefault(chain, []).append((c, prev, None))
+        elif prev in ("global", "nonlocal", "del"):
+            binds.setdefault(chain, []).append((c, "other", None))
+    memo[k] = out = {"binds": binds, "uses": uses, "self_writes": writes}
+    return out
+
+
+# The modules whose own get is an HTTP GET, and the calls that make an HTTP client (KL2)
+_CLIENT_MODULES = frozenset(("requests", "httpx", "aiohttp", "urllib3", "http", "https", "axios", "got", "ky", "needle", "superagent",
+                             "$", "jquery", "$http"))
+_CLIENT_MAKERS = frozenset(("requests.Session", "requests.session", "httpx.Client", "httpx.AsyncClient", "aiohttp.ClientSession",
+                            "urllib3.PoolManager", "axios.create"))
+_CHOICE_BEFORE = frozenset(("or", "and", "else", "||", "&&", "?"))   # one side of a choice made at run time (KL1)
+_CHOICE_AFTER = frozenset(("or", "and", "if", "||", "&&", "?"))
+_USES_FOLLOWED = 50   # a destination name used more often than this is in doubt: never a chat webhook
+
+
+# Codex round 2 (H4-H6): code that writes names, modules or builtins at run time, so no name in the document is certain
+_REBINDS_ANY = re.compile(r"\b(?:exec|eval|globals|locals|vars|setattr|delattr|builtins|__builtins__|__import__|importlib|__dict__|"
+                          r"__setattr__|__main__|__class__|__globals__|f_globals|f_locals|monkeypatch|globalThis|Reflect|defineProperty|"
+                          r"__proto__|prototype)\b|\bimport\s*\*|\bsys\s*\.\s*modules\b")
+_GLOBAL_INDEX = re.compile(r"\b(?:window|global|globalThis|self|this)\s*\[")   # window['config'], a map written under a string
+_DEFINERS = frozenset(("def", "class", "function"))
+_MAP_INTERVENES = frozenset(("import", "from", "await", "yield", "del", "exec", "with", "global", "nonlocal", "lambda", "def", "class",
+                        "function", "new", "async", "raise", "assert", "return", "require"))   # between a map's binding and its lookup
+_FROM_MODULES = frozenset(("requests", "httpx", "aiohttp", "urllib3", "urllib.request"))   # from M import post: M's own
+_SHELL_SHADOW = re.compile(r"(?m)\bfunction\s+(?:curl|wget|https?|xh)\b|(?<![\w-])(?:curl|wget|https?|xh)\s*\(\s*\)|\balias\s+(?:curl|wget|https?|xh)="
+                           r"|\bPATH\s*\+?=|\bhash\s+-p\b|\bsys\s*\.\s*path\b|\b(?:PYTHONPATH|NODE_PATH|NODE_OPTIONS)\b")   # another curl, requests
+# What a comment may hide: the reader takes // for a comment, and Python for floor division (x = 1 // 1; send = evil); # starts
+# a JS private field (#send = …). Its names are counted, and these are loose.
+_COMMENT_BINDS = re.compile(r"(?<![\w$])([A-Za-z_$][\w$]*)\s*(?:[-+*/%|&^:]?=)(?!=)"
+                            r"|\b(?:def|function|class|import|as|for|global)\s+([A-Za-z_$][\w$]*)")
+_COMMENT_WORD = re.compile(r"[A-Za-z_$][\w$]*")
+
+
+def _builtin_name(text, name):
+    """Batch 6 PR3, Codex round 1 (10): `name` (dict, str) is certainly the builtin in this document: it appears exactly once in
+    the whole text (the call itself: nothing anywhere binds, imports or shadows it), and nothing in it writes names or builtins
+    at run time (exec, globals, setattr, builtins, `import *`). Round 2 (H6): and no identifier in its code is anything but
+    ASCII (Python reads ｄｉｃｔ as dict). Read once per text and name."""
+    memo = _memo(text)
+    k = ("builtin", name)
+    if k not in memo:
+        memo[k] = (len(re.findall(r"(?<![\w$.])" + name + r"(?![\w$])", text)) == 1 and not _REBINDS_ANY.search(text)
+                   and not _code_facts(text)["unsure"])
+    return memo[k]
+
+
+def _code_blocks(text):
+    """[(start, end)] of the text's code: its fenced blocks, or the whole text when it has none (a .py or .js file, a bare
+    snippet). Prose outside fences is not code (Codex #15 medium 5)."""
+    fences = _fences(text)
+    return [(f[0], f[1]) for f in fences] if fences else [(0, len(text))]
+
+
+def _code_facts(text):
+    """Batch 6 PR3, Codex round 2 (H4-H6): what every code block of the document (_code_blocks, read as code) says about names,
+    read once per text (one pass over each block's tokens):
+    "unsure": no destination in the document can be proven: an identifier (or anything outside a string or comment) that isn't
+      ASCII (Python reads ｄｉｃｔ as dict, ｓｅｎｄ as send), a block whose reading broke before non-ASCII text, code that writes
+      names, modules or builtins at run time (_REBINDS_ANY), or a shell function or alias named curl, wget, http or xh;
+    "loose": {name: how often it appears other than as a call or the head of an a.b chain}: bound, defined, assigned, passed,
+      imported (`import requests` at a statement's start, `from requests import post`, `const axios = require('axios')` and
+      `import axios from 'axios'` for an HTTP module of its own name are the module's own, not loose);
+    "count": {name: how often it appears at all}; "call_blocks": the start of each block that calls anything;
+    "index": a block writes under a string key of window, global, self or this."""
+    memo = _memo(text)
+    if "code_facts" in memo:
+        return memo["code_facts"]
+    unsure, loose, count, call_blocks, index = False, {}, {}, [], False
+    for s, e in _code_blocks(text):
+        r = _region(text, s, e, False)
+        kinds, starts, ends, nl, match = r["kinds"], r["starts"], r["ends"], r["nl"], r["match"]
+        n = len(kinds)
+        tok = lambda i: text[starts[i]:ends[i]] if 0 <= i < n else None
+        stmt = lambda i: i == 0 or nl[i] or tok(i - 1) == ";"   # token i starts a statement
+        if r["broke"] is not None and not text[r["broke"]:e].isascii():
+            unsure = True
+        if _REBINDS_ANY.search(text, s, e) or _SHELL_SHADOW.search(text, s, e):
+            unsure = True
+        index = index or bool(_GLOBAL_INDEX.search(text, s, e))
+        own, calls = set(), False   # the names of an import of the module's own
+        for cs, ce in r["comments"]:   # what may not be a comment (_COMMENT_BINDS): its words count, its bindings are loose
+            body = text[cs:ce]
+            if not body.startswith("#") and not body.isascii():
+                unsure = True   # a // or /* */ "comment" may be Python code with a name that isn't ASCII
+            for w in _COMMENT_WORD.findall(body):
+                count[w] = count.get(w, 0) + 1
+            for x in _COMMENT_BINDS.finditer(body):
+                w = x.group(1) or x.group(2)
+                loose[w] = loose.get(w, 0) + 1
+            calls = calls or bool(re.search(r"[\w$)\]]\s*\(", body))
+        for i in range(n):
+            t = tok(i)
+            if kinds[i] != "str" and not t.isascii():
+                unsure = True
+            if kinds[i] != "name":
+                continue
+            count[t] = count.get(t, 0) + 1
+            pv, nx = tok(i - 1), tok(i + 1)
+            if t in ("from", "import") and stmt(i):   # the module's own names: import a.b, from a.b import c, d
+                j, mod = i + 1, []
+                while j < n and not nl[j] and (kinds[j] == "name" if len(mod) % 2 == 0 else tok(j) == "."):
+                    mod.append(j)
+                    j += 1
+                if mod and kinds[mod[-1]] == "name" and tok(mod[-1]) != "import":
+                    if t == "import" and tok(j) != "from":
+                        own.update(mod)   # import requests, import urllib.request (then as x, or the line's end)
+                    elif t == "from" and tok(j) == "import":
+                        own.update(mod)   # from M: binds nothing itself
+                        if "".join(tok(x) for x in mod) in _FROM_MODULES:
+                            j += 1
+                            while j < n and kinds[j] == "name" and not nl[j] and tok(j + 1) != "as":
+                                own.add(j)   # from requests import post, get: requests' own
+                                if tok(j + 1) != "," or (j + 2 < n and nl[j + 2]):
+                                    break
+                                j += 2
+            if i in own:
+                continue
+            if (t in _CLIENT_MODULES and ((pv == "import" and stmt(i - 1) and nx == "from" and tok(i + 2) is not None
+                                          and tok(i + 2)[1:-1] == t and kinds[i + 2] == "str")
+                                         or (pv in ("const", "let", "var") and nx == "=" and tok(i + 2) == "require"
+                                             and tok(i + 3) == "(" and tok(i + 4) is not None and tok(i + 4)[1:-1] == t
+                                             and tok(i + 5) == ")"))):
+                continue   # import axios from 'axios', const axios = require('axios')
+            if nx == "(" and i + 1 < n and kinds[i + 1] == "open":
+                calls = True
+            if (pv not in _DEFINERS and i + 1 < n and nx in ("(", ".") and kinds[i + 1] in ("open", "op")
+                    and not (nx == "(" and tok(match.get(i + 1, n) + 1) == "{")):
+                continue   # a call, or the head (or a link) of an a.b chain; not a JS method's definition (post(url) { … })
+            loose[t] = loose.get(t, 0) + 1
+        if calls:
+            call_blocks.append(s)
+    memo["code_facts"] = out = {"unsure": unsure, "loose": loose, "count": count, "call_blocks": call_blocks, "index": index}
+    return out
+
+
 def _code_standalone(text, a, b, start, end, prose, natural=True):
     """The code reading (see above) of the literal text[a:b] in the region text[start:end]."""
     import bisect
@@ -661,6 +865,9 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
     kinds, starts, ends, nl, parent, match = r["kinds"], r["starts"], r["ends"], r["nl"], r["parent"], r["match"]
     if r["broke"] is not None and r["broke"] < b:
         return False   # an unterminated string or comment before the end of the URL: nothing is certain
+    facts = _code_facts(text)
+    if facts["unsure"]:
+        return False   # Codex round 2 (H6): a name that isn't ASCII, or code that rewrites names at run time: no name is certain
     c = bisect.bisect_right(r["comments"], (a, len(text))) - 1
     if c >= 0 and r["comments"][c][1] > a:   # in a comment: nothing there runs, but its words are read as prose
         ca, cb = r["comments"][c]
@@ -731,6 +938,130 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
             b -= 2
         return tok(o - 1) in _SENDERS or tok(b) == "axios"
 
+    names = lambda: _region_names(text, start, end, prose)
+
+    def maker(i):
+        """The a.b chain starting at token i is a call that makes an HTTP client (_CLIENT_MAKERS)."""
+        j = i
+        while j + 2 < n and tok(j + 1) == "." and kinds[j + 2] == "name":
+            j += 2
+        return (kinds[i] == "name" and j + 1 < n and kinds[j + 1] == "open" and text[starts[j + 1]] == "("
+                and ".".join(tok(x) for x in range(i, j + 1, 2)) in _CLIENT_MAKERS)
+
+    def http_client(c, o):
+        """Batch 6 (KL2): the receiver of the call opened at o (tokens c..o-3, before .get) is an HTTP client: a module whose get
+        is a GET (requests, httpx, https, axios, …), or a name (self.x too) the region binds exactly once, to a call that makes
+        one (x = requests.Session(), with httpx.Client() as x). Never from the name: cfg_client and session are anything."""
+        chain = ".".join(tok(x) for x in range(c, o - 2, 2))
+        if o - 3 == c and chain.lower() in _CLIENT_MODULES:
+            return True
+        b = names()["binds"].get(chain, [])
+        if len(b) != 1:
+            return False
+        first, kind, v = b[0]
+        if kind == "=":
+            return v is not None and v < n and maker(v)
+        if kind == "as" and first >= 2 and kinds[first - 2] == "close" and first - 2 in match:
+            m = match[first - 2]
+            s = m - 1
+            while s >= 2 and tok(s - 1) == "." and kinds[s - 2] == "name":
+                s -= 2
+            return s >= 0 and maker(s)
+        return False
+
+    def resolved(c, e):
+        """Batch 6 PR3, Codex round 2 (H4): the sender call's name, tokens c..e (send, requests.post, s.post), is what it says. Its
+        method or function name is never loose anywhere in the document's code (a def send(url), a post = …, a JS post(u) { … }
+        or an import of it from anywhere but the HTTP module itself makes it a helper); its receiver is a module never loose
+        (requests, `import requests` aside) or a name the region binds once to an HTTP client (http_client) and nothing else
+        binds; each other link of the chain is never loose either."""
+        lo_ = facts["loose"]
+        if lo_.get(tok(e), 0):
+            return False
+        if e == c:
+            return True
+        if e - 2 == c and tok(c).lower() in _CLIENT_MODULES:
+            return not lo_.get(tok(c), 0)   # requests.post, axios.post (const axios = require('axios') is its own)
+        chain = ".".join(tok(x) for x in range(c, e - 1, 2))
+        b = names()["binds"].get(chain, [])
+        if len(b) == 1 and http_client(c, e + 1):
+            return lo_.get(tok(e - 2), 0) == 1   # x = requests.Session(): its one binding, and no other
+        return all(not lo_.get(tok(x), 0) for x in range(c, e - 1, 2))
+
+    def empty_map(o, c, lo):
+        """Batch 6 (KL1): the call opened at o is NAME.get(key, default) with the URL as that default, and NAME is proven an empty
+        map: the region binds it exactly once, before this, to {} or dict() as a whole statement, never uses it anywhere else (no
+        write, no alias, not passed to anything), and nothing in the region writes names at run time (exec, globals, setattr).
+        Only then is the default certainly what the lookup returns. Codex round 2 (H5): nor does any other code block mention
+        NAME (its two uses are the whole document's) or call anything (a helper defined there runs here), nothing writes under a
+        string key of window, global, self or this, and nothing runs between the binding and the lookup (no call that completes
+        there, no import, no operator: only names, literals, commas and the calls the lookup is an argument of)."""
+        if o - 3 != c or tok(o - 1) != "get" or kinds[c] != "name":
+            return False
+        al = args(o)
+        if len(al) != 2 or any(x[2] for x in al) or not al[1][0] <= lo <= al[1][1]:
+            return False
+        nm = names()
+        b = nm["binds"].get(tok(c), [])
+        if nm["self_writes"] or len(b) != 1 or len(nm["uses"].get(tok(c), [])) != 2:
+            return False
+        if facts["count"].get(tok(c), 0) != 2 or facts["index"]:
+            return False
+        if any(s != start for s in facts["call_blocks"]):
+            return False   # another block (or, for a line of prose, any block) calls something
+        first, kind, v = b[0]
+        if kind != "=" or first >= c or v is None or v >= n or tok(first + 1) != "=":
+            return False
+        if tok(v) == "{" and match.get(v) == v + 1:
+            last = v + 1
+        elif tok(v) == "dict" and tok(v + 1) == "(" and match.get(v + 1) == v + 2 and _builtin_name(text, "dict"):
+            last = v + 2   # PR3, Codex round 1 (10): only the builtin dict (`dict = lambda: json.load(…)` makes it anything)
+        else:
+            return False
+        k = bisect.bisect_left(r["comments"], (ends[last], 0))
+        if k < len(r["comments"]) and r["comments"][k][0] < starts[c]:
+            return False   # a comment between them (x = 1 // 1; configure() is Python code)
+        for j in range(last + 1, c):
+            if kinds[j] == "open" and match.get(j, -1) > c:
+                continue   # a call or bracket the lookup is inside
+            if kinds[j] in ("str", "num") or tok(j) in (".", ",", "=", ";"):
+                continue
+            if kinds[j] == "name" and tok(j) not in _MAP_INTERVENES:
+                continue
+            return False   # something that runs between the binding and the lookup (configure(), import x, a + b)
+        return ((first == 0 or nl[first] or tok(first - 1) in (";", "const", "let", "var"))
+                and (last + 1 >= n or nl[last + 1] or tok(last + 1) == ";"))
+
+    def settled(a, lo):
+        """Batch 6 (KL1): when the statement starting at token a assigns the URL to a name, that name is bound only there, and
+        no use of it is one side of a choice (or, ||, a conditional) or a lookup's argument (os.environ.get('HOOK', WEBHOOK)):
+        each would let something else be chosen at run time."""
+        k = a + 1 if tok(a) in ("const", "let", "var") else a
+        e = k
+        while e + 2 < n and tok(e + 1) == "." and kinds[e + 2] == "name":
+            e += 2
+        if kinds[k] != "name" or tok(e + 1) != "=" or e + 1 >= lo:
+            return True   # not an assignment of the URL to a name
+        chain = ".".join(tok(x) for x in range(k, e + 1, 2))
+        nm = names()
+        if len(nm["binds"].get(chain, [])) > 1:
+            return False
+        uses = [u for u in nm["uses"].get(tok(k), []) if u != k] if e == k else []
+        if len(uses) > _USES_FOLLOWED:
+            return False
+        for u in uses:
+            if tok(u - 1) in _CHOICE_BEFORE or tok(u + 1) in _CHOICE_AFTER:
+                return False
+            o2 = parent[u]
+            if o2 is not None and o2 >= 1 and text[starts[o2]] == "(" and kinds[o2 - 1] == "name" and o2 in match:
+                c2 = o2 - 1
+                while c2 >= 2 and tok(c2 - 1) == "." and kinds[c2 - 2] == "name":
+                    c2 -= 2
+                role = lookup(o2, c2, tok(o2 - 1), u)
+                if role and not (role == "default" and empty_map(o2, c2, u)):
+                    return False
+        return True
+
     def lookup(o, c, bt, lo):
         """PR A, Codex round 2 (1, 7): None when the call at o (its name starting at c) sends or wraps; else the role of the
         argument at lo in the lookup: "default" (a default= or fallback= keyword, or the last positional argument after the key)
@@ -744,9 +1075,9 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
         if bt == "get":
             # PR A, Codex round 3 (1, 5): `get` is an HTTP GET only on an HTTP client (requests.get, session.get, https.get,
             # self.client.get, …, whatever its other arguments: params, a named callback) or as a bare get(url, …) with the URL
-            # first; on anything else (config.get, os.environ.get, cfg.get) it is a lookup, its arguments keys and a default
-            recv = tok(o - 3) if o - 3 >= c else None
-            http = _HTTP_CLIENT.fullmatch(recv) is not None if recv is not None else bool(pos) and mine is pos[0]
+            # first; on anything else (config.get, os.environ.get, cfg.get) it is a lookup, its arguments keys and a default.
+            # Batch 6 (KL2): a client is a module's own (requests.get) or a name the region binds once to one (http_client)
+            http = http_client(c, o) if o - 3 >= c else bool(pos) and mine is pos[0]
             if http and not calls_out(c):
                 return None
         elif bt not in _LOOKUPS:
@@ -777,15 +1108,24 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
         return a, b
 
     def quiet():
-        """PR A, Codex round 2 (1): a destination that is only maybe the chat webhook (a lookup's default, a helper's argument,
-        one side of an or, an element of a dict or list) can't be a way to send something somewhere else. Round 3 (1): what
-        overrides it may be anywhere (config = {'hook': 'https://collector…'} two lines up), so nothing in the whole text is
-        another URL (_other_urls), and no string or name in the whole region is a credential's."""
+        """PR A, Codex round 2 (1): a destination that is only maybe the chat webhook (a lookup's default, a helper's argument
+        until batch 6 PR3 round 1, one side of an or, an element of a dict or list) can't be a way to send something somewhere else. Round 3 (1): what
+        overrides it may be anywhere in the code (config = {'hook': 'https://collector…'} two lines up), so nothing in the region
+        is another URL (_other_urls), and no string or name in it is a credential's. Batch 6 (#15 medium 5): the region of the
+        send (its code block, or the whole file when it has none), not the whole text: a docs link in the prose around a code
+        block is not where the code sends. PR3, Codex round 1 (9): but every code block is (one block may define what another
+        calls), so the URLs counted are those of the region and of every code block in the text (_code_blocks)."""
         memo = _memo(text)
         ck = ("cred", start, end, prose)
         if ck not in memo:
             memo[ck] = [i for i in range(n) if kinds[i] in ("str", "name") and _CRED_WORD.search(tok(i))]
-        return all(i == li for i in memo[ck]) and all(a <= s < b for s in _other_urls(text))
+        if "code_urls" not in memo:
+            import bisect
+            blocks = _code_blocks(text)
+            bs = [x[0] for x in blocks]
+            memo["code_urls"] = [s for s in _other_urls(text) if (lambda k: k >= 0 and s < blocks[k][1])(bisect.bisect_right(bs, s) - 1)]
+        return (all(i == li for i in memo[ck]) and all(a <= s < b for s in _other_urls(text) if start <= s < end)
+                and all(a <= s < b for s in memo["code_urls"]))
 
     def sent(lo, hi):
         """The call text[lo..hi] sends to the URL: true when nothing makes its result one piece of something else, up to the
@@ -853,7 +1193,10 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
                 return False   # it closes a bracket opened before the region, or the reading broke after it
             if not prose:   # code: one side of an or, an and or a conditional (prose reads these words as English)
                 a, b = statement(lo, hi)
-                maybe = maybe or any(parent[i] is None and tok(i) in _BOOL_OPS for i in range(a, b + 1))
+                if any(parent[i] is None and tok(i) in _BOOL_OPS for i in range(a, b + 1)):
+                    return False   # batch 6 (KL1): another value may be chosen at run time (os.environ.get('HOOK') or URL)
+                if not settled(a, lo):
+                    return False   # batch 6 (KL1): the name it is kept under is bound again, or chosen between at run time
             if pk is None:
                 return natural and (not maybe or quiet())
             return not (pt == "," or pk == "close" or pt == ".") and (not maybe or quiet())
@@ -883,21 +1226,31 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
             role = lookup(o, c, bt, lo)
             if role == "key" or (role and keys):
                 return False   # PR A, Codex round 2 (1): a lookup's key: what is found under it is where it goes, not this URL
-            if role and _CONFIG_PARSER.search(text):
+            memo = _memo(text)
+            if role and "configparser" not in memo:   # batch 6: once per text (it was a search of the whole text per lookup)
+                memo["configparser"] = bool(_CONFIG_PARSER.search(text))
+            if role and memo["configparser"]:
                 return False   # PR A, Codex round 3 (1): a ConfigParser reads its options from a file (cfg.get(section, option))
+            if role and not empty_map(o, c, lo):
+                return False   # batch 6 (KL1): the environment, a file, getattr, setdefault, pop or an unknown map may hold the key
             if role:
                 # PR A, Codex round 2 (7): a lookup's default is what it returns when the key isn't there, followed outward to the
                 # sender like any operand. Round 3 (1): only maybe (the key may be there: config = {'hook': …} above), whatever
-                # the key is
+                # the key is. Batch 6 (KL1): only from a map proven empty (empty_map), and still only maybe
                 maybe = True
                 lo, hi = c, match[o]
                 continue
             if bt in _SENDERS or tok(c) == "axios":
                 # PR A, Codex round 1 (1): a call named like a sender sends to one argument (config.get('hook', URL) is a lookup's
-                # default); the URL must be that argument, and the call itself must be the whole statement's sending
-                return destination(o, p, pt, bt, keys) and sent(c, match[o]) and (not maybe or quiet())
-            maybe = maybe or len(args(o)) > 1   # PR A, Codex round 2 (1): a helper's argument: it may send to another one
-            lo, hi = c, match[o]   # a wrapper call: the call is the operand now
+                # default); the URL must be that argument, and the call itself must be the whole statement's sending. Codex
+                # round 2 (H4): and its names are what they say (resolved): a send() defined here is a helper
+                return resolved(c, bb) and destination(o, p, pt, bt, keys) and sent(c, match[o]) and (not maybe or quiet())
+            if not (bt == "str" and c == bb and len(args(o)) == 1 and _builtin_name(text, "str")):
+                # PR A, Codex round 2 (1) read a helper's argument as maybe the destination. Batch 6 PR3, Codex round 1 (9): a
+                # helper (defined in another block, imported, not defined at all, or even defined here: its body may read the
+                # environment) may send to or return any destination, so it never proves one
+                return False
+            lo, hi = c, match[o]   # the builtin str() of a string is that string: the call is the operand now
             continue
         if ob == "[" and (bk in ("name", "str") or bt in (")", "]", "}")):
             return False   # a subscript, not a list
@@ -922,6 +1275,8 @@ def _standalone(text, a, b, quoted):
     tick = text.rfind("`", ls, a)
     cs = tick + 1 if tick != -1 and not (fence and fence[2] in _SHELL_FENCES) else ls
     if (fence and fence[2] in _SHELL_FENCES) or _SHELL_TOOL.match(text, cs) or _SHELL_TOOL.match(text, ls):
+        if _code_facts(text)["unsure"]:
+            return False   # PR3, Codex round 2 (H4, H6): a curl function or alias, a name that isn't ASCII: nothing is certain
         inline = cs != ls and _SHELL_TOOL.match(text, cs)
         for wa, wb, _ in _logical_words(text, cs if inline else ls):
             if wb > a:   # `inline code` ends at its closing backtick
@@ -1124,6 +1479,12 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None)
             out.append(finding("WT-R003", "High-frequency schedule", "low", ["ASI08"], where, hf.group(0),
                                "Hourly routines burn the weekly allowance; prefer daily or an event trigger."))
     return dedupe(out)
+
+
+# Batch 6 PR3 exempted a T013 action whose only recipient was the user, the owner, me or this chat ("send updates to the user").
+# Codex round 2 (H3) removed it: a recipient wrapped onto the next line ("to the user⏎at partners@…") and an object read as the
+# recipient ("Send user data to Mallory") passed, and no word list proves the owner is the only one told. The false alarm is
+# open (docs/KNOWN-LIMITS.md, B7); PR3's other T007 exemption, "without asking the user which…", went in round 1 (7).
 
 
 STRONG_VERBS = re.compile(r"(?i)\b(send|sends|sending|publish|publishes|purchase|purchases|buy|buys|pay|pays|transfer|transfers|submit|submits|deploy|deploys|invite|invites|tweet|tweets)\b")
