@@ -176,7 +176,12 @@ def audit(roots, exports, quick=False):
     # 4. secrets in files (known CLI credential files reported separately)
     cli_unknown = []   # batch 6 (KL5): a credential file Watchtower couldn't look at leaves the access map's sign-ins incomplete
     fs += cli_credentials(cli_unknown)
-    known = {os.path.join(os.path.expanduser("~"), k) for k in KNOWN_CRED_FILES}
+    # batch 6 PR3, Codex round 1 (11): the platform's sign-in and secret-store places under the roots are looked up too, as
+    # access_map_now does (a stat, never opened or read): one Watchtower couldn't look at (a folder it may not search) leaves
+    # the sign-ins unknown, never "none found"
+    cli_unknown += [p for p in sorted(secret_store_places()) if any(_under(p, {os.path.normpath(os.path.expanduser(r))}, strict=True)
+                                                                    for r in roots) and _look(p) is None]
+    known ={os.path.join(os.path.expanduser("~"), k) for k in KNOWN_CRED_FILES}
     fs += browser_sessions(roots)
     jar = {}
     sign_ins = new_sign_ins(jar)   # kept open EVENT_DAYS with the other one-time events below

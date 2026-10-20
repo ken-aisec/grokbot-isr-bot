@@ -63,46 +63,124 @@ def find_key(obj, keys):
 # bunx, `pnpm dlx` and `npm exec` alike (also behind /usr/bin/env); "@latest", a range and a dist-tag can each change what runs.
 # Read from the command and args of every object in the file that has a "command" (mcpServers, servers, …); a file that isn't
 # JSON is read for its "command" and "args" strings. The old "an @ within 200 characters" test let `npx -y @scope/pkg` (or an email nearby) pass as pinned.
-MCP_LAUNCHERS = {"npx": 1, "uvx": 1, "bunx": 1, "pnpm": ("dlx",), "npm": ("exec",)}
-MCP_SKIP_FLAGS = frozenset(("-y", "--yes", "--quiet", "-q", "--"))
-MCP_VALUE_FLAGS = frozenset(("-p", "--package", "--from"))
-MCP_SERVERS_MAX = 2000   # servers looked at in one file; past it the rest are not
+# PR3, Codex round 1 (12-14): each launcher's options are read with their arity (a value option takes the next word, a switch
+# doesn't), before and after its subcommand (`npm --yes exec`, `pnpm --silent dlx`) and behind env's own options (`env -u X`);
+# every package it fetches is checked (each --package, uvx's --from and --with), and an option it doesn't know, a shell string
+# (-c), or a launcher word it can't place is "couldn't read the launch": a finding, never a pass. One pass over the words (an
+# index, no copies), every server in the file (no cap).
+MCP_LAUNCHERS = {"npx": None, "uvx": None, "bunx": None, "pnpm": frozenset(("dlx",)), "npm": frozenset(("exec", "exe", "x"))}
+_NPM_SWITCHES = frozenset(("-y", "--yes", "-n", "--no", "-q", "--quiet", "-s", "--silent", "-d", "--verbose", "--offline", "--prefer-offline",
+                           "--prefer-online", "--ignore-scripts", "--workspaces", "-ws", "--include-workspace-root", "-g", "--global"))
+_NPM_VALUES = frozenset(("--registry", "--loglevel", "--cache", "--prefix", "--userconfig", "--workspace", "-w", "--node-options",
+                         "--script-shell"))
+MCP_OPTIONS = {   # launcher: (switches, options with a value, options whose value is a package it fetches, options it can't read)
+    "npx": (_NPM_SWITCHES, _NPM_VALUES, frozenset(("-p", "--package")), frozenset(("-c", "--call"))),
+    "npm": (_NPM_SWITCHES, _NPM_VALUES, frozenset(("-p", "--package")), frozenset(("-c", "--call"))),
+    "pnpm": (frozenset(("-s", "--silent", "-r", "--recursive", "-w", "--workspace-root", "--verbose")),
+             frozenset(("--dir", "-C", "--filter", "-F", "--reporter", "--loglevel", "--allow-build")), frozenset(("--package",)),
+             frozenset(("-c", "--shell-mode"))),
+    "bunx": (frozenset(("--bun", "--silent", "--verbose", "--no-install")), frozenset(()), frozenset(("-p", "--package")), frozenset(())),
+    "uvx": (frozenset(("-q", "--quiet", "-v", "--verbose", "--offline", "--isolated", "--refresh", "--no-cache", "-n", "--native-tls",
+                       "--reinstall", "--no-config", "--no-progress")),
+            frozenset(("-p", "--python", "--index", "--index-url", "--default-index", "--extra-index-url", "--cache-dir", "--directory",
+                       "--project", "--config-file", "--python-preference", "--refresh-package", "--color")),
+            frozenset(("--from", "--with")), frozenset(("--with-requirements", "--with-editable", "--constraints", "--overrides"))),
+}
+_ENV_SWITCHES = frozenset(("-i", "--ignore-environment", "-0", "--null", "-v", "--debug", "-"))
+_ENV_VALUES = frozenset(("-u", "--unset", "-C", "--chdir", "-P"))
 _NPM_EXACT = re.compile(r"(?:@[A-Za-z0-9._~-]+/)?[A-Za-z0-9._~-]+@v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]*)?")
 _PY_EXACT = re.compile(r"[A-Za-z0-9._-]+(?:\[[^\]]*\])?(?:===?|@)v?\d[0-9A-Za-z.+-]*")
 _NPM_RANGE = re.compile(r"[\^~<>=*| ]|^[\dxX*]+(?:\.[\dxX*]+){0,2}$")
 _JSON_STR = r'"((?:[^"\\\n]|\\.)*)"'
 
 
-def mcp_package(words):
-    """(launcher, package spec) when the words (a server's command and args) run a package launcher, else None. The package is
-    the value of -p/--package/--from, or the first word after the launcher that isn't a flag."""
-    w = [x for x in words if isinstance(x, str)]
-    if w and os.path.basename(w[0]) == "env":   # /usr/bin/env [VAR=value …] npx …
-        w = w[1:]
-        while w and (w[0].startswith("-") or ("=" in w[0] and not w[0].startswith(("@", ".", "/")))):
-            w = w[1:]
-    if not w:
-        return None
-    name = os.path.basename(w[0]).lower()
-    sub = MCP_LAUNCHERS.get(name)
-    if sub is None:
-        return None
-    if sub != 1:
-        if len(w) < 2 or w[1] not in sub:
-            return None
-        name, w = f"{name} {w[1]}", w[1:]
-    rest, i = w[1:], 0
-    while i < len(rest):
-        x = rest[i]
-        if x in MCP_VALUE_FLAGS:
-            return name, rest[i + 1] if i + 1 < len(rest) else ""
-        if x.split("=", 1)[0] in MCP_VALUE_FLAGS and "=" in x:
-            return name, x.split("=", 1)[1]
-        if x in MCP_SKIP_FLAGS or x.startswith("-"):
+def _launcher_name(word):
+    """A command word's program name: its base name, lower case, without a Windows .cmd/.exe/.bat/.ps1 (npx.cmd is npx)."""
+    b = os.path.basename(word).lower()
+    return re.sub(r"\.(cmd|exe|bat|ps1)$", "", b)
+
+
+def _mcp_options(w, i, name, fetched):
+    """Read launcher `name`'s options from w[i]: (index of the first word that isn't one, None) or (i, the option it couldn't
+    read). `fetched` (a list) gets (option, package) for each option whose value is a package it fetches."""
+    switches, values, pkgs, unread = MCP_OPTIONS[name]
+    n = len(w)
+    while i < n and w[i].startswith("-") and w[i] not in ("-", "--"):
+        x = w[i]
+        opt, eq, val = x.partition("=") if x.startswith("--") else (x, "", "")
+        if opt in unread:
+            return i, x   # a shell string or a requirements file: what it runs isn't in the words
+        if opt in pkgs or opt in values:
+            if not eq:
+                if i + 1 >= n:
+                    return i, x   # its value is missing
+                val, i = w[i + 1], i + 1
+            if opt in pkgs:
+                fetched.append((opt, val))
             i += 1
-            continue
-        return name, x
-    return name, ""
+        elif opt in switches or (eq and opt.startswith("--")) or (name != "uvx" and opt.startswith("--no-")):
+            i += 1   # a switch (npm's --no-x always is), or --name=value: one word whatever it is
+        else:
+            return i, x   # an option it doesn't know: whether it takes the next word is unknown
+    return i, None
+
+
+def mcp_package(words):
+    """(launcher, [the packages it fetches], why it couldn't read the launch or None) when the words (a server's command and
+    args) run a package launcher, else None. Its packages are the values of each --package (uvx: --from and --with), or else
+    the first word after its options; env's own options and assignments, and npm's and pnpm's options before their
+    subcommand, are read with their arity. Any doubt is a reason it couldn't read the launch, never a pinned launch."""
+    w = [x for x in words if isinstance(x, str)]
+    n, i = len(w), 0
+    while i < n and _launcher_name(w[i]) == "env":   # /usr/bin/env [options] [VAR=value …] npx …
+        i, opts = i + 1, True
+        while i < n:
+            x = w[i]
+            if opts and x == "--":
+                opts, i = False, i + 1
+            elif opts and (x in _ENV_SWITCHES or re.fullmatch(r"-[i0v]+", x)):
+                i += 1
+            elif opts and x in _ENV_VALUES:
+                i += 2
+            elif opts and (x.startswith(("--unset=", "--chdir=")) or (x[:2] in _ENV_VALUES and len(x) > 2)):
+                i += 1
+            elif opts and x.startswith("-"):
+                return "env", [], x   # -S splits a string into more words; any other option: not read
+            elif "=" in x:
+                i += 1   # VAR=value
+            else:
+                break
+    if i >= n:
+        return None
+    name = _launcher_name(w[i])
+    if name not in MCP_LAUNCHERS:
+        for j in range(i + 1, n):   # a launcher word further on (cmd /c npx …, sh -c "npx …"): a launch it can't read
+            if any(_launcher_name(t) in MCP_LAUNCHERS for t in w[j].split()):
+                return name, [], w[j]
+        return None
+    label, fetched = name, []
+    i += 1
+    if MCP_LAUNCHERS[name] is not None:   # npm, pnpm: their own options, then the subcommand
+        i, bad = _mcp_options(w, i, name, fetched)
+        if bad is not None:
+            return label, [], bad
+        if i >= n or w[i] not in MCP_LAUNCHERS[name]:
+            return None   # npm run, pnpm install: not a launch of a fetched package
+        label = "npm exec" if name == "npm" else f"{name} {w[i]}"
+        i += 1
+    i, bad = _mcp_options(w, i, name, fetched)
+    dashes = bad is None and i < n and w[i] == "--"
+    i += dashes
+    first = w[i] if bad is None and i < n else ""
+    pkgs = [v for o, v in fetched if o != "--from"] if name == "uvx" else [v for o, v in fetched]
+    froms = [v for o, v in fetched if o == "--from"]
+    if name == "uvx":
+        pkgs += froms or ([first] if bad is None else [])   # with --from, the first word is the command it runs
+    elif not pkgs and bad is None:
+        pkgs = [first]   # with --package, the first word is a command of those packages
+    if name == "npm" and bad is None and not dashes:   # npm reads its options after the command's name too (npx doesn't)
+        bad = next((x for x in w[i + 1:] if x.partition("=")[0] in MCP_OPTIONS["npm"][2] | MCP_OPTIONS["npm"][3] or x == MCP_UNREAD), None)
+    return label, pkgs, bad
 
 
 def mcp_pin_problem(launcher, spec):
@@ -139,10 +217,9 @@ def _mcp_servers(text):
                 where[json.loads('"' + m.group(1) + '"')].append((j, m.start()))
             except ValueError:
                 pass
-        used, found, stack, seen = 0, [], [doc], 0
-        while stack and seen < 200_000 and len(found) < MCP_SERVERS_MAX:   # every object with a "command", in the file's order
+        used, found, stack = 0, [], [doc]
+        while stack:   # every object with a "command", in the file's order; all of them (PR3, Codex round 1, 13: no cap)
             x = stack.pop()
-            seen += 1
             if isinstance(x, dict):
                 if isinstance(x.get("command"), str):
                     found.append(x)
@@ -159,34 +236,59 @@ def _mcp_servers(text):
                 used = j + 1
             out.append((at, cfg["command"].split() + [a for a in args if isinstance(a, str)]))
         return out
-    # not JSON (comments, a trailing comma): each "command" with the "args" list after it, before the next "command"
-    cmds = list(re.finditer(r'"command"\s*:\s*' + _JSON_STR, text))[:MCP_SERVERS_MAX]
+    # not JSON (comments, a trailing comma): each "command" with the "args" list after it, before the next "command"; every one,
+    # to the end of the text (PR3, Codex round 1, 13). Strings are decoded like JSON's; an args list it can't read to its ]
+    # (a comment or a number in it) ends with a word no launcher option is, so the launch is never read as pinned.
+    cmds = list(re.finditer(r'"command"\s*:\s*' + _JSON_STR, text))
     for k, m in enumerate(cmds):
-        stop = cmds[k + 1].start() if k + 1 < len(cmds) else min(len(text), m.end() + 20000)
-        words = m.group(1).split()
-        a = re.compile(r'"args"\s*:\s*\[').search(text, m.end(), stop)
+        stop = cmds[k + 1].start() if k + 1 < len(cmds) else len(text)
+        words = _json_str(m.group(1)).split()
+        a = _ARGS_OPEN.search(text, m.end(), stop)
         if a:
-            close = text.find("]", a.end(), stop)
-            words += [s.group(1) for s in re.finditer(_JSON_STR, text[a.end():close if close != -1 else stop])]
+            p = a.end()
+            while True:
+                s = _ARG_ITEM.match(text, p, stop)
+                if not s:
+                    break
+                words.append(_json_str(s.group(1)))
+                p = s.end()
+            if not re.compile(r"\s*\]").match(text, p, stop):
+                words.append(MCP_UNREAD)
         out.append((m.start(), words))
     return out
 
 
+MCP_UNREAD = "-(args not read)"
+_ARGS_OPEN = re.compile(r'"args"\s*:\s*\[')
+_ARG_ITEM = re.compile(r'\s*' + _JSON_STR + r'\s*,?')
+
+
+def _json_str(s):
+    """A JSON string's body decoded (\\u006e is n), or as written when it isn't valid JSON."""
+    try:
+        return json.loads('"' + s + '"')
+    except ValueError:
+        return s
+
+
 def mcp_unpinned(text):
-    """[(line, evidence)] for each MCP server in `text` that a package launcher runs without an exact version."""
+    """[(line, evidence)] for each MCP server in `text` that a package launcher runs without an exact version, one for each
+    package it fetches, and one for a launch it couldn't read whole (PR3, Codex round 1, 12)."""
     out, line, pos = [], 1, 0
     for at, words in sorted(_mcp_servers(text), key=lambda x: x[0]):
         got = mcp_package(words)
         if got is None:
             continue
-        launcher, spec = got
-        why = mcp_pin_problem(launcher.split()[0], spec)
-        if why is None:
-            continue
+        launcher, specs, bad = got
         line += text.count("\n", pos, at)
         pos = at
-        name = re.split(r"(?<=.)[@=<>~!]", spec, maxsplit=1)[0]
-        out.append((line, f"{launcher} {name or '(no package named)'} ({why})"))
+        for spec in specs:
+            why = mcp_pin_problem(launcher.split()[0], spec)
+            if why is not None:
+                name = re.split(r"(?<=.)[@=<>~!]", spec, maxsplit=1)[0]
+                out.append((line, f"{launcher} {name or '(no package named)'} ({why})"))
+        if bad is not None:
+            out.append((line, f"{launcher} (couldn't read the launch at {bad[:40]!r}; treated as unpinned)"))
     return out
 
 

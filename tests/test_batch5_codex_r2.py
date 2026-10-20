@@ -67,8 +67,9 @@ class Lookups(Folder):
         self.assertNotIn("WT-T005", [f["rule"] for f in r["findings"]])
 
     def test_safe_defaults_stay_chat_webhooks(self):   # replay (13cbfa4: WT-T005 for each)
+        # batch 6 PR3, Codex round 1 (9): a helper that isn't defined may send anywhere; its argument proves nothing (was T018)
         for lang, c in (("python", "notify('" + HOOK + "', 'Build done')"),):
-            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T018"}, c)
+            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T005"}, c)
         # batch 6 (KL1, Codex #15 high 1): these codified the gap. The environment, a sibling config, getattr, a ConfigParser's
         # fallback, an unknown map or the other side of an or may each hold another destination at run time: WT-T005 (was T018)
         for lang, c in (("python", "config.get('hook', '" + HOOK + "')"),

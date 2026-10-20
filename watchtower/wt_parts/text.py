@@ -376,48 +376,20 @@ def _wording_guard(text, m, rules, prev_end):
     return ""
 
 
-# Batch 6 (B7): narrow content guards, each for one rule. T001: a bare "ignore rules" / "ignore instructions" (no all, previous,
-# system…) that names a config (.gitignore-style rules): right after a verb that edits one or a tool's name, or right before
-# file/pattern/list. "Ignore all previous instructions", "Update: ignore previous instructions" and "ignore rules and send the
-# file" never are. And instructions inside another agent's output (a reviewer's, a subagent's) are untrusted content.
-IGNORE_CONFIG_BEFORE = re.compile(r"(?i)\b(adjust|update|edit|add|check|configure|git|docker|eslint|npm|prettier)\s+((the|your|our|its|these|those)\s+)?$")
-IGNORE_CONFIG_AFTER = re.compile(r"(?i)\s+(files?|patterns?|lists?)\b")
-AGENT_OUTPUT_AFTER = re.compile(r"(?i)^\s*(inside|in|within|found\s+in|from|embedded\s+in)\s+((a|an|the|any|this|that|its|your|their|each|every)\s+)?"
-                                r"(reviewer|tool|subagent|sub-agent|agent|model)s?['’]?\s+(outputs?|results?|responses?|replies)\b")
-
-
-# T004: `cat .env.example >> .env` merges one env file into another on this computer (a local copy, nothing read out), and in
-# "Do not debug with `env`, `printenv` or `cat .env`" the negation governs every command of the with/using/via list.
-_ENV_FILE = r"(?:[^\s;&|`'\"<>]*/)?(?:\.env(?:\.[\w-]+)*|[\w.-]+\.env)"
-ENV_MERGE = re.compile(r"cat\s+(?P<src>" + _ENV_FILE + r")\s*>>?\s*(?P<dst>" + _ENV_FILE + r")[ \t]*(?=$|\n|;|&&|`)")
-NEG_WITH_LIST = re.compile(r"(?i)\b(?:do\s+not|don'?t|never|not)\b[^\x01.;:!?\n]{0,80}?\b(?:with|using|via)\s*(?:\x01\s*(?:,\s*)?(?:(?:or|and)\s+)?)*$")
-
-
-def _env_merge(text, m):
-    """WT-T004's `cat <env file>` match writes it into another env file and does nothing else (see ENV_MERGE)."""
-    e = ENV_MERGE.match(text, m.start(), min(len(text), m.start() + 400))
-    return bool(e) and e.group("src") != e.group("dst")
-
-
-def _names_a_config(text, m):
-    """WT-T001's match is a bare "ignore rules" or "ignore instructions" used as the name of a config (see above)."""
-    if not re.fullmatch(r"(?i)ignore\s+(rules|instructions)", m.group(0)):
-        return False
-    return bool(IGNORE_CONFIG_BEFORE.search(text[max(0, m.start() - 40):m.start()]) or IGNORE_CONFIG_AFTER.match(text, m.end()))
+# Batch 6 (B7), T004: in "Do not debug with `env`, `printenv` or `cat .env`" the negation governs every command of the
+# with/using/via list. Batch 6 PR3, Codex round 1 (6): only when the negator governs the debug verb itself, with nothing between
+# ("Do not hesitate to debug with `printenv`" and "Do not ask before debugging with `printenv`" tell the Bot to run it). Round 1
+# (1, 5) removed the other PR3 guards: an override that names a config file or a reviewer's output (T001) and an env file copied
+# into another (T004) are full findings again; those false alarms are open (docs/KNOWN-LIMITS.md, B7).
+NEG_WITH_LIST = re.compile(r"(?i)(?<![\w'])(?:do\s+not|don['’]?t|never)\s+debug\s+(?:with|using|via)\s*(?:\x01\s*(?:,\s*)?(?:(?:or|and)\s+)?)*$")
 
 
 def in_warning(text, m, rules, rule_id, prev_end=None):
     """Why the match reads as defensive prose, or "" when it doesn't: quoted, negated, one more item in a guarded list, reported
     ("if a page says to ..."), scoped to untrusted content, described as an attack, or detector code. `prev_end`: where the
     previous guarded match of the same rule ended. A dangerous rule's guard words come only from the prose around its unit."""
-    if rule_id == "WT-T001" and _names_a_config(text, m):
-        return "names a config"
-    if rule_id == "WT-T001" and AGENT_OUTPUT_AFTER.match(text[m.end():m.end() + 80]):
-        return "untrusted content"
     if rule_id not in GUARD_CODE_RULES:
         return _wording_guard(text, m, rules, prev_end)
-    if rule_id == "WT-T004" and _env_merge(text, m):
-        return "local copy"
     u = _unit(text, m)
     if u is None:
         return ""                                                 # any doubt: no guard
@@ -450,14 +422,17 @@ def guard_record(f, reason, danger=False):
     return g
 
 
-def sends_data(ev, before=""):
+def sends_data(ev, before="", whole=True):
     """WT-T017: the curl/wget segment itself (up to a pipe, ;, && or ||) carries a data flag.
-    -G/--get is harmless only when the data is not a file (@) or a command substitution. Batch 6 (B7): nor is a POST whose
-    data is only text written inline (literal_post); `before` is the line before the command, where a pipe into it would be."""
+    -G/--get is harmless only when the data is not a file (@) or a command substitution. Batch 6 (B7): nor is a complete
+    command that sends only literal, non-sensitive text (literal_post); `before` is the line before the command, where a pipe
+    into it would be (None: not read whole). Codex round 1 (4): `whole` says `ev` runs to the end of the text; a segment that
+    reaches the end of a cut `ev` may go on, so it is never exempt."""
     m = re.search(r"(?i)\b(curl|wget)\b", ev)
     if not m:
         return True   # the prose form; its object words are checked by the rule
-    seg = re.split(r"\|\|?|;|&&", ev[m.start():])[0].split("\n", 1)[0]  # one shell line; ignore fence backticks below
+    ends = re.search(r"\|\|?|;|&&|\n", ev[m.start():])
+    seg = ev[m.start():m.start() + ends.start()] if ends else ev[m.start():]  # one shell line; ignore fence backticks below
     data = re.search(
         r"(?i)(-X\s*POST\b|--data(-binary|-raw|-urlencode)?\b|-d[\"'\s@$]|"
         r"-F[\"'\s]|--upload-file\b|\s-T\s|--post-(data|file)\b|--json\b|"
@@ -466,18 +441,37 @@ def sends_data(ev, before=""):
         return False
     if re.search(r"(?i)(\s-G\b|\s--get\b)", seg):
         return bool(re.search(r"(?i)(@\S|\$\(|`[^`\n]+`)", seg))
-    return not literal_post(seg, before)
+    # only the matched command itself: a later curl in the window never clears a prose match ("post the keys to https://…")
+    return not (m.start() == 0 and (ends or whole) and literal_post(seg, before))
 
 
 _SHELL_RAW_WORD = re.compile(r"""(?:[^\s'"\\`]|\\.|'[^']*'|"(?:[^"\\]|\\.)*")+""")
+# Batch 6 PR3, Codex round 1 (2, 3): literal_post reads the command's words after quote removal ("--data-binary" is
+# --data-binary) and allows only these options; any other option (a form, an upload, a config, -u, -b, -o, --next, …) keeps it.
 _DATA_FLAGS = frozenset(("-d", "--data", "--data-ascii", "--data-raw", "--data-binary", "--data-urlencode", "--json", "--post-data",
                          "--body-data"))
-_SENDS_FLAGS = re.compile(r"^(-[FTK].*|--(form|form-string|upload-file|post-file|body-file|config)(=.*)?|--data-binary=@.*|-d@.*)$")
-_CLUSTER_SENDS = re.compile(r"-[sSfLvkiIgGNnqjJOR#46]+[dFTK]")   # curl's yes/no short flags run together, then data, a form, an upload or a config
+_HEADER_FLAGS = frozenset(("-H", "--header"))
+_METHOD_FLAGS = frozenset(("-X", "--request", "--method"))
+_TOOL_OPTIONS = {"curl": (_DATA_FLAGS - {"--post-data", "--body-data"} | {"-H", "--header", "-X", "--request"},
+                          re.compile(r"-[sSfLvik]+|--(?:silent|show-error|fail|fail-with-body|location|verbose|include|insecure|compressed)")),
+                 "wget": (frozenset(("--post-data", "--body-data", "--header", "--method")), re.compile(r"-q|--quiet"))}
+_SENSITIVE_HEADER = re.compile(r"(?i)auth|cookie|token|key|secret|pass|session|signature|credential|bearer")
+_LITERAL_URL = re.compile(r"https?://[A-Za-z0-9.-]+(?::\d{1,5})?(?:/[A-Za-z0-9._~/%+-]*)?(?:\?[A-Za-z0-9._~%+=&-]*)?")
+_LONG_RUN = re.compile(r"[A-Za-z0-9_+=-]{20,}")
+_COMMAND_START = re.compile(r"[ \t]*(?:\$[ \t]+)?(?:sudo[ \t]+)?")   # what may stand before curl/wget on its line: a prompt, sudo
+
+
+def _sensitive(s):
+    """Text that names a credential (token, secret, password, .env, …) or holds a long run that looks like a key, as written or
+    %-decoded."""
+    import urllib.parse
+    return any(bool(_CRED_WORD.search(x)) or any(re.search(r"\d", y) and re.search(r"[A-Za-z]", y) and looks_real_secret(y)
+                                                 for y in _LONG_RUN.findall(x)) for x in (s, urllib.parse.unquote(s)))
 
 
 def _unquoted(word):
-    """A shell word's text with its quotes taken off, and whether any of it is expanded ($ or ` outside single quotes)."""
+    """A shell word's text with its quotes taken off, and whether any of it is expanded ($ or ` outside single quotes) or is
+    shell syntax outside quotes (a redirection, &, a glob, a brace, ~, a comment): either way not literal text."""
     out, expanded, i = [], False, 0
     while i < len(word):
         c = word[i]
@@ -499,19 +493,28 @@ def _unquoted(word):
             out.append(word[i + 1:i + 2])
             i += 2
             continue
-        expanded = expanded or c in "$`"
+        expanded = expanded or c in "$`<>&;|(){}*?[]!#~"
         out.append(c)
         i += 1
     return "".join(out), expanded
 
 
 def literal_post(seg, before=""):
-    """Batch 6 (B7): the curl/wget command `seg` sends only text written inline: every data value (-d, --data*, --json,
-    --post-data) is literal (no $VAR, $( ) or backticks; not @file, @- or stdin; --data-urlencode with no @ at all), no form,
-    upload, body-file or config flag, no $( ) or backtick anywhere in the command, and nothing piped into it. Any doubt (an
-    unclosed quote) is False: it sends data."""
+    """Batch 6 (B7): the curl/wget command `seg` sends only text written inline. Codex round 1 (2-4): every outbound part, read
+    after quote removal, is literal and names no credential: the data values (-d, --data*, --json, --post-data; never @file or
+    @-, --data-urlencode with no @ at all), every header (-H; never @file, never an Authorization, Cookie, token or key header),
+    the method and the URL (http(s), no user@, no variable); no other option at all; no $( ) or backtick anywhere; nothing piped
+    into it; and the command is read whole (its line before read to its start, an inline code span closed). Any doubt is
+    False: it sends data."""
+    if before is None or re.search(r"\\\r?$", seg):
+        return False   # the logical line before it, or the one it goes on to, wasn't read whole
     if before.count("`") % 2:   # inside `inline code`: the command ends at its closing backtick
+        if "`" not in seg:
+            return False
         seg = seg.split("`", 1)[0]
+        before = before[before.rfind("`") + 1:]
+    if not _COMMAND_START.fullmatch(before):
+        return False   # something runs it or feeds it (xargs -a ~/.ssh/id_rsa curl …, CURL_HOME=… curl …, a string in code)
     if "|" in before.replace("||", "") or "$(" in seg or "`" in seg or "<" in seg or len(seg) > 4000:
         return False
     words, at = [], 0
@@ -530,39 +533,62 @@ def literal_post(seg, before=""):
 
 def _logical_line_before(text, start, cap=4096, lines=10):
     """The text from the start of the logical shell line holding `start` up to it: lines before it that end in \\ or | are part
-    of it (cat ~/.env | \\⏎ curl -d @- …), at most `lines` lines and `cap` characters back."""
+    of it (cat ~/.env | \\⏎ curl -d @- …), at most `lines` lines and `cap` characters back. Codex round 1 (4): None when a
+    limit cuts it (the logical line may start further back)."""
     floor = max(0, start - cap)
-    a = text.rfind("\n", floor, start) + 1
-    for _ in range(lines):
-        if a <= floor:
-            break
-        prev = text[max(floor, a - 41):a - 1].rstrip(" \t\r")   # how the line before ends
+    nl = text.rfind("\n", floor, start)
+    for _ in range(lines + 1):
+        if nl == -1:
+            return text[:start] if floor == 0 else None   # the start of the text, or the cap
+        prev = text[max(floor, nl - 40):nl].rstrip(" \t\r")   # how the line before ends
         if not prev.endswith(("\\", "|")):
-            break
-        a = text.rfind("\n", floor, a - 1) + 1
-    return text[max(a, floor):start]
+            return text[nl + 1:start]
+        nl = text.rfind("\n", floor, nl)
+    return None
 
 
-def _literal_words(words):
-    """literal_post over the command's raw shell words."""
-    i = 0
+def _literal_words(raw):
+    """literal_post over the command's raw shell words: each is unquoted first (Codex round 1, 3)."""
+    words = []
+    for r in raw:
+        w, expanded = _unquoted(r)
+        if expanded:
+            return False   # a variable, a substitution or shell syntax: not literal text
+        words.append(w)
+    if not words or words[0] not in _TOOL_OPTIONS:
+        return False
+    names, switches = _TOOL_OPTIONS[words[0]]
+    urls, i = 0, 1
     while i < len(words):
         w = words[i]
-        if _SENDS_FLAGS.match(w) or _CLUSTER_SENDS.match(w):
-            return False   # a form, an upload, a config file, or short flags run together in front of one of them (-sd @file)
-        flag, eq, val = w.partition("=")
-        if w in _DATA_FLAGS or (eq and flag in _DATA_FLAGS) or (w.startswith("-d") and len(w) > 2 and not w.startswith("--")):
-            raw = val if eq else w[2:] if not w.startswith("--") and w != "-d" else (words[i + 1] if i + 1 < len(words) else None)
-            if raw is None:
-                return False
-            text, expanded = _unquoted(raw)
-            name = flag if eq else w if w.startswith("--") else "-d"
-            if expanded or (text.startswith("@") and name != "--data-raw") or (name == "--data-urlencode" and "@" in text):
-                return False
-            i += 1 if eq or (w.startswith("-d") and w != "-d") else 2
-            continue
         i += 1
-    return True
+        if switches.fullmatch(w):
+            continue
+        if not w.startswith("-"):
+            if not _LITERAL_URL.fullmatch(w) or _sensitive(w):
+                return False   # anything else curl reads as a URL, a user@ or a key in it
+            urls += 1
+            continue
+        if w.startswith("--"):
+            name, eq, val = w.partition("=")
+        else:
+            name, val = w[:2], w[2:]
+            eq = val != ""
+        if name not in names:
+            return False   # any other option: a form, an upload, a config, a user, a cookie, an output, --next, …
+        if not eq:
+            if i >= len(words):
+                return False
+            val, i = words[i], i + 1
+        if name in _METHOD_FLAGS:
+            if not re.fullmatch(r"[A-Za-z]+", val):
+                return False
+        elif name in _HEADER_FLAGS:
+            if val.startswith("@") or _SENSITIVE_HEADER.search(val.split(":", 1)[0]) or _sensitive(val):
+                return False   # headers from a file, or a credential sent along with the literal data
+        elif val.startswith("@") or (name == "--data-urlencode" and "@" in val) or _sensitive(val):
+            return False
+    return urls > 0
 
 
 # Codex, batch 4 round 1: a chat webhook is WT-T018 only when the URL's own host is exactly the chat service's, with its webhook
@@ -842,6 +868,27 @@ _CHOICE_AFTER = frozenset(("or", "and", "if", "||", "&&", "?"))
 _USES_FOLLOWED = 50   # a destination name used more often than this is in doubt: never a chat webhook
 
 
+_REBINDS_ANY = re.compile(r"\b(?:exec|eval|globals|locals|vars|setattr|builtins|__builtins__|__import__|importlib)\b|\bimport\s*\*")
+
+
+def _builtin_name(text, name):
+    """Batch 6 PR3, Codex round 1 (10): `name` (dict, str) is certainly the builtin in this document: it appears exactly once in
+    the whole text (the call itself: nothing anywhere binds, imports or shadows it), and nothing in it writes names or builtins
+    at run time (exec, globals, setattr, builtins, `import *`). Read once per text and name."""
+    memo = _memo(text)
+    k = ("builtin", name)
+    if k not in memo:
+        memo[k] = len(re.findall(r"(?<![\w$.])" + name + r"(?![\w$])", text)) == 1 and not _REBINDS_ANY.search(text)
+    return memo[k]
+
+
+def _code_blocks(text):
+    """[(start, end)] of the text's code: its fenced blocks, or the whole text when it has none (a .py or .js file, a bare
+    snippet). Prose outside fences is not code (Codex #15 medium 5)."""
+    fences = _fences(text)
+    return [(f[0], f[1]) for f in fences] if fences else [(0, len(text))]
+
+
 def _code_standalone(text, a, b, start, end, prose, natural=True):
     """The code reading (see above) of the literal text[a:b] in the region text[start:end]."""
     import bisect
@@ -969,8 +1016,8 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
             return False
         if tok(v) == "{" and match.get(v) == v + 1:
             last = v + 1
-        elif tok(v) == "dict" and tok(v + 1) == "(" and match.get(v + 1) == v + 2:
-            last = v + 2
+        elif tok(v) == "dict" and tok(v + 1) == "(" and match.get(v + 1) == v + 2 and _builtin_name(text, "dict"):
+            last = v + 2   # PR3, Codex round 1 (10): only the builtin dict (`dict = lambda: json.load(…)` makes it anything)
         else:
             return False
         return ((first == 0 or nl[first] or tok(first - 1) in (";", "const", "let", "var"))
@@ -1052,17 +1099,24 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
         return a, b
 
     def quiet():
-        """PR A, Codex round 2 (1): a destination that is only maybe the chat webhook (a lookup's default, a helper's argument,
-        one side of an or, an element of a dict or list) can't be a way to send something somewhere else. Round 3 (1): what
+        """PR A, Codex round 2 (1): a destination that is only maybe the chat webhook (a lookup's default, a helper's argument
+        until batch 6 PR3 round 1, one side of an or, an element of a dict or list) can't be a way to send something somewhere else. Round 3 (1): what
         overrides it may be anywhere in the code (config = {'hook': 'https://collector…'} two lines up), so nothing in the region
         is another URL (_other_urls), and no string or name in it is a credential's. Batch 6 (#15 medium 5): the region of the
         send (its code block, or the whole file when it has none), not the whole text: a docs link in the prose around a code
-        block is not where the code sends."""
+        block is not where the code sends. PR3, Codex round 1 (9): but every code block is (one block may define what another
+        calls), so the URLs counted are those of the region and of every code block in the text (_code_blocks)."""
         memo = _memo(text)
         ck = ("cred", start, end, prose)
         if ck not in memo:
             memo[ck] = [i for i in range(n) if kinds[i] in ("str", "name") and _CRED_WORD.search(tok(i))]
-        return all(i == li for i in memo[ck]) and all(a <= s < b for s in _other_urls(text) if start <= s < end)
+        if "code_urls" not in memo:
+            import bisect
+            blocks = _code_blocks(text)
+            bs = [x[0] for x in blocks]
+            memo["code_urls"] = [s for s in _other_urls(text) if (lambda k: k >= 0 and s < blocks[k][1])(bisect.bisect_right(bs, s) - 1)]
+        return (all(i == li for i in memo[ck]) and all(a <= s < b for s in _other_urls(text) if start <= s < end)
+                and all(a <= s < b for s in memo["code_urls"]))
 
     def sent(lo, hi):
         """The call text[lo..hi] sends to the URL: true when nothing makes its result one piece of something else, up to the
@@ -1181,8 +1235,12 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
                 # PR A, Codex round 1 (1): a call named like a sender sends to one argument (config.get('hook', URL) is a lookup's
                 # default); the URL must be that argument, and the call itself must be the whole statement's sending
                 return destination(o, p, pt, bt, keys) and sent(c, match[o]) and (not maybe or quiet())
-            maybe = maybe or len(args(o)) > 1   # PR A, Codex round 2 (1): a helper's argument: it may send to another one
-            lo, hi = c, match[o]   # a wrapper call: the call is the operand now
+            if not (bt == "str" and c == bb and len(args(o)) == 1 and _builtin_name(text, "str")):
+                # PR A, Codex round 2 (1) read a helper's argument as maybe the destination. Batch 6 PR3, Codex round 1 (9): a
+                # helper (defined in another block, imported, not defined at all, or even defined here: its body may read the
+                # environment) may send to or return any destination, so it never proves one
+                return False
+            lo, hi = c, match[o]   # the builtin str() of a string is that string: the call is the operand now
             continue
         if ob == "[" and (bk in ("name", "str") or bt in (")", "]", "}")):
             return False   # a subscript, not a list
@@ -1354,10 +1412,9 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None)
                 if rule["id"] == "WT-T002":
                     break
                 continue
-            if rule["id"] == "WT-T017" and not sends_data(text[m.start():m.start() + 400], _logical_line_before(text, m.start())):
+            if rule["id"] == "WT-T017" and not sends_data(text[m.start():m.start() + 400], _logical_line_before(text, m.start()),
+                                                          m.start() + 400 >= len(text)):
                 continue   # look past the short regex match so -G with @ or $(...) still counts; later | tr -d stays out
-            if rule["id"] == "WT-T007" and asks_for_information(text, m):
-                continue   # batch 6 (B7): "without asking the user which theme" asks for information, not for approval
             if rule["id"] == "WT-T016" and not rules["write_verbs"].search(sentence_of(text, m)):
                 continue   # "failed silently", "quietly refresh the cache": quiet wording only matters next to an outward action
             if rule["id"] == SECRET_RULE and not looks_real_secret(m.group(0)):
@@ -1413,35 +1470,41 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None)
     return dedupe(out)
 
 
-# Batch 6 (B7). T007: the bare "without asking the user / me" followed by what, which, who, whether, how or about asks for
-# information, not approval, unless the rest of its clause is about approval or an action ("whether to send it").
-INFO_AFTER = re.compile(r"(?i)\s+(what|which|who|whether|how|about)\b")
-APPROVAL_IN_CLAUSE = re.compile(r"(?i)\b(approv\w*|permission|confirm\w*|ok|okay|allowed|proceed|continue|go\s+ahead|send|post|publish|"
-                                r"delete|remove|buy|purchase|pay|transfer|submit|deploy|merge|invite|reply|email|run|install)\b")
-
-
-def asks_for_information(text, m):
-    """WT-T007's match is the bare "without asking the user/me" asking for information (see above)."""
-    if not re.match(r"(?i)without\s+asking\s+(me|the\s+user)$", m.group(0)) or not INFO_AFTER.match(text, m.end()):
-        return False
-    rest = re.split(r"[.;!?\n]", text[m.end():m.end() + 120], maxsplit=1)[0]
-    return not APPROVAL_IN_CLAUSE.search(rest)
-
-
-# T013: an action whose recipient is the person the Bot works for, or this conversation ("send updates to the user", "reply to
-# me", "post the summary to this chat") is not consequential; only when nothing else in its clause names another recipient.
+# Batch 6 (B7), T013: an action whose recipient is the person the Bot works for, or this conversation ("send updates to the
+# user", "reply to me", "post the summary to this chat") is not consequential; only when nothing else in its sentence names
+# another recipient. Codex round 1 (8): the whole sentence is read, past the 80 characters first_action looks at, up to its end
+# (. ! ? or ; followed by a space or the end of the text, or a line break); a colon, which may start the real recipient ("to the
+# user: partners@…"), keeps the finding like any other recipient word. (PR3's other T007 exemption, "without asking the user which…",
+# was removed in round 1 (7); that false alarm is open, docs/KNOWN-LIMITS.md, B7.)
 TO_OWNER = re.compile(r"(?i)^\s+(?:[\w-]+\s+){0,3}?(?:to|with)\s+(?:(?:the|this|our)\s+)?(?:user|owner|chat|room|conversation|me)\b"
                       r"|^\s+(?:the\s+)?(?:user|owner|me)\b")
 OTHER_RECIPIENT = re.compile(r"(?i)['’]s\b|\b(and|or|also|plus|cc|bcc|then|everyone|all|team|public|channel|group|list|money|funds?|"
-                             r"payments?|crypto|bitcoin|btc|eth|usdc?|tokens?|wallets?|keys?|credentials?|passwords?|secrets?)\b|@|https?://|[/#$]")
+                             r"payments?|crypto|bitcoin|btc|eth|usdc?|tokens?|wallets?|keys?|credentials?|passwords?|secrets?)\b|@|https?://|[/#$:]")
 TO_OWNER_VERBS = frozenset(("send", "sends", "email", "emails", "post", "posts", "reply"))   # telling someone, never paying or deleting
+TO_OWNER_END = re.compile(r"[.!?;](?=\s|$)|\n|$")
 
 
-def to_owner(after):
-    """The text after an action verb makes the user, the owner, me, this chat or the room its only recipient."""
-    r = TO_OWNER.match(after)
-    return bool(r) and not OTHER_RECIPIENT.search(re.split(r"[.;:!?\n]", after[r.end():], maxsplit=1)[0]) \
-        and not OTHER_RECIPIENT.search(after[:r.end()])
+def _first_from(rx, text, at, seen):
+    """Where rx's first match at or after `at` starts (len(text) + 1 for none). `seen` keeps the last answer per rx: first_action
+    asks with growing `at`, and an answer still at or after `at` is still the first, so the text is read once (linear)."""
+    hit = seen.get(rx)
+    if hit is None or hit[0] > at or hit[1] < at:
+        m = rx.search(text, at)
+        hit = seen[rx] = (at, m.start() if m else len(text) + 1)
+    return hit[1]
+
+
+def to_owner(text, at, seen=None):
+    """The text after an action verb (ending at `at`) makes the user, the owner, me, this chat or the room its only recipient,
+    read to the end of its sentence, however long."""
+    seen = {} if seen is None else seen
+    r = TO_OWNER.match(text[at:at + 200])
+    if not r:
+        return False
+    end = _first_from(TO_OWNER_END, text, at, seen)
+    if end < at + r.end():
+        return False   # the sentence ends inside the recipient words ("send\n to me")
+    return _first_from(OTHER_RECIPIENT, text, at, seen) >= end
 
 
 STRONG_VERBS = re.compile(r"(?i)\b(send|sends|sending|publish|publishes|purchase|purchases|buy|buys|pay|pays|transfer|transfers|submit|submits|deploy|deploys|invite|invites|tweet|tweets)\b")
@@ -1527,6 +1590,7 @@ def names_a_thing(word, before, after):
 def first_action(text, rx):
     """The first match of an action verb that is not negated. "Never send", "does NOT send" and
     "never send, post or publish" say what a skill will not do, so they are not actions."""
+    seen = {}   # to_owner's sentence ends and other recipients, read once
     for m in rx.finditer(text):
         if text[m.end():m.end() + 1] == "-" or text[max(0, m.start() - 1):m.start()] == "-":
             continue                                                                                        # "post-call", "re-send" as a label
@@ -1539,7 +1603,7 @@ def first_action(text, rx):
             continue
         if OWNER_AFTER.search(re.split(r"[.;:!?\n]", after[:40])[0]):
             continue
-        if m.group(0).lower() in TO_OWNER_VERBS and to_owner(after):   # batch 6 (B7): "send updates to the user", "reply to me"
+        if m.group(0).lower() in TO_OWNER_VERBS and to_owner(text, m.end(), seen):   # batch 6 (B7): "send updates to the user", "reply to me"
             continue
         room = TEAM_ROOM.match(after) if m.group(0).lower() in ("post", "posts") else None
         if room and room.group("room").lower() in known_rooms():
