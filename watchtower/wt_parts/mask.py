@@ -36,25 +36,123 @@ PEM_BODY = re.compile(rf"-----B…----{_PEM_GAP}*(?P<body>(?:{_B64}|=){{8,}}"
 # Batch 6 fix round 1 (Codex 8): a whole key block, BEGIN to END, whatever is inside: an old encrypted key's Proc-Type and
 # DEK-Info headers, a PGP armor's (… PRIVATE KEY BLOCK), OpenSSH, PKCS#8 and encrypted PKCS#8 bodies. Everything between the
 # two lines is hidden (its line breaks kept), so a .pem copied into an approved copy keeps no key body. Fix round 2 (Codex 8,
-# 10): read by pem_spans in one pass, with no size cap (a valid key padded past 64 KB kept its body) and a BEGIN or END label
-# of at most 64 characters (a run of BEGIN lines no longer made one label, read again from each of them).
-PEM_BEGIN = re.compile(r"-----BEGIN [A-Z0-9 _-]{0,64}?PRIVATE KEY(?: BLOCK)?-----")
-PEM_FINISH = re.compile(r"-----END [A-Z0-9 _-]{0,64}?PRIVATE KEY(?: BLOCK)?-----")
+# 10): no size cap (a valid key padded past 64 KB kept its body).
+# Fix round 3 (Codex 4, 5): the blocks are found by armor_blocks, one linear reading shared by masking (pem_spans) and the
+# example check (pem_kind), with no label length cap (a 65-character label kept a whole body) and an END that counts only as a
+# whole line (an END inside a PGP armor's Comment: header ended the block before its body).
 _PEM_EDGE = re.compile(rf"{_PEM_GAP}*")
+ARMOR_DASHES = "-----"
+_ARMOR_QUOTES = "\"'`"
+_ARMOR_COMMENT = "#/*;>!%"   # a line prefix BEGIN and END may share: # -----BEGIN …, // -----END …
+_ARMOR_AFTER = " \t\"'`,;)]}+"   # what may follow an END marker on its line: a closing quote and the code around it
+
+
+def _armor_markers(s, word):
+    """(start, end, label) of each complete `-----<word> <label>-----` in s whose label (any length, no line break) ends in
+    PRIVATE KEY or PRIVATE KEY BLOCK, any case. Linear: a label is read up to the next five dashes, where the next marker could
+    start at the earliest, so no character is read as part of two labels."""
+    out, head = [], ARMOR_DASHES + word + " "
+    i = s.find(head)
+    while i >= 0:
+        a = i + len(head)
+        j = s.find(ARMOR_DASHES, a)
+        if j < 0:
+            break
+        label = s[a:j]
+        if "\n" not in label and "\r" not in label and label.upper().endswith(("PRIVATE KEY", "PRIVATE KEY BLOCK")):
+            out.append((i, j + len(ARMOR_DASHES), label))
+        i = s.find(head, j)
+    return out
+
+
+def _armor_prefix(s, i):
+    """What stands before s[i] on its line, spaces and tabs left out, when it is only comment characters (_ARMOR_COMMENT):
+    "" for nothing. None when anything else does (a header name, code, an escape). Reads back only over those characters."""
+    j = i
+    while j > 0 and (s[j - 1] in " \t" or s[j - 1] in _ARMOR_COMMENT):
+        j -= 1
+    if j > 0 and s[j - 1] not in "\r\n":
+        return None
+    return "".join(c for c in s[j:i] if c not in " \t")
+
+
+def _escaped_edge_before(s, i):
+    """True when, past spaces and tabs, s[i] follows the start of the text, a line break, a quote, or an escaped \\n or \\r."""
+    j = i
+    while j > 0 and s[j - 1] in " \t":
+        j -= 1
+    return j == 0 or s[j - 1] in "\r\n" + _ARMOR_QUOTES or (j > 1 and s[j - 1] in "nr" and s[j - 2] == "\\")
+
+
+def _end_after_ok(s, k, escaped):
+    """True when an END marker ending at k ends its line: past spaces and tabs, the end of the text or a line break; or a
+    closing quote and the code around it (",;)]}+") up to the line's end; or, in a block written with escapes, an escaped
+    \\n, \\r or \\t. Reads forward only over those characters."""
+    n = len(s)
+    while k < n and s[k] in " \t":
+        k += 1
+    if escaped and k < n and s[k] == "\\":
+        while k < n and s[k] == "\\":
+            k += 1
+        return k < n and s[k] in "nrt"
+    quoted = k < n and s[k] in _ARMOR_QUOTES
+    while quoted and k < n and s[k] in _ARMOR_AFTER:
+        k += 1
+    return k == n or s[k] in "\r\n" or (quoted and escaped and s[k] == "\\")
+
+
+def armor_blocks(s):
+    """The private key blocks in s, in order: (BEGIN start, BEGIN end, label, END start or None, END end or None, next BEGIN
+    start or None). A block begins at any complete BEGIN marker (_armor_markers). Its lines are real lines when a line break
+    follows that marker, else escapes (\\n in a JSON string) or string literals. It ends only at an END marker with the same
+    label that is a whole line: written with real lines, nothing before it on its line but the BEGIN line's own comment prefix
+    (none, # or //) and nothing after it but a closing quote; written with escapes, a quote, a line break or an escaped one on
+    each side. So no header line (Comment: -----END …-----, Version: …) ever ends one. Of those, the last before the next BEGIN
+    marker; with none there, the first after it; with none at all, None: the block runs to the end of the text. One pass over
+    the markers, each END found by bisection."""
+    begins, ends, n = _armor_markers(s, "BEGIN"), _armor_markers(s, "END"), len(s)
+    index = {}
+    for a, b, label in ends:
+        p = _armor_prefix(s, a)
+        if p is not None and _end_after_ok(s, b, False):
+            index.setdefault((label, "line", p), []).append((a, b))
+        if _escaped_edge_before(s, a) and _end_after_ok(s, b, True):
+            index.setdefault((label, "escaped"), []).append((a, b))
+    out = []
+    for k, (a, b, label) in enumerate(begins):
+        nxt = begins[k + 1][0] if k + 1 < len(begins) else None
+        j = b
+        while j < n and s[j] in " \t":
+            j += 1
+        if j < n and s[j] in "\r\n":
+            p = _armor_prefix(s, a)
+            keys = [(label, "line", "")] + ([(label, "line", p)] if p else [])
+        else:
+            keys = [(label, "escaped")]
+        cands = []
+        for key in keys:
+            lst = index.get(key, ())
+            lo = bisect.bisect_left(lst, (b,))
+            hi = bisect.bisect_left(lst, (nxt,)) if nxt is not None else len(lst)
+            if hi > lo:
+                cands.append((0, lst[hi - 1]))    # the last before the next BEGIN
+            elif lo < len(lst):
+                cands.append((1, lst[lo]))        # none there: the first after it
+        before = [e for w, e in cands if w == 0]
+        after = [e for w, e in cands if w == 1]
+        e = max(before) if before else (min(after) if after else None)
+        out.append((a, b, label, e[0] if e else None, e[1] if e else None, nxt))
+    return out
 
 
 def pem_spans(s):
-    """The key blocks' insides in s, as spans to hide: from the first character after a BEGIN line's gap to the last before its
-    END line's (headers and every line of the body; another BEGIN inside is part of it). A block with no END is hidden to the
-    end of the text, so an unfinished or cut one keeps nothing either. One pass: each search starts where the last one ended."""
-    out, pos, n = [], 0, len(s)
-    while pos < n:
-        m = PEM_BEGIN.search(s, pos)
-        if not m:
-            break
-        a = _PEM_EDGE.match(s, m.end()).end()
-        e = PEM_FINISH.search(s, m.end())
-        b, pos = (e.start(), e.end()) if e else (n, n)
+    """The key blocks' insides in s (armor_blocks), as spans to hide: from the first character after a BEGIN marker's gap to
+    the last before its END marker's (headers and every line of the body; another BEGIN inside is part of it). A block with no
+    END is hidden to the end of the text, so an unfinished, cut or uncertain one keeps nothing either."""
+    out, n = [], len(s)
+    for _, be, _, es, _, _ in armor_blocks(s):
+        a = _PEM_EDGE.match(s, be).end()
+        b = n if es is None else es
         while b > a and (s[b - 1] in " \t\r\n" or (s[b - 2:b - 1] == "\\" and s[b - 1] in "nrt")):
             b -= 2 if s[b - 1] in "nrt" and s[b - 2:b - 1] == "\\" else 1
         if b > a:

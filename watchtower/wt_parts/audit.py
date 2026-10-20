@@ -199,26 +199,15 @@ def audit(roots, exports, quick=False):
             if cp:
                 fs.append(cp)
         rule = next(r for r in rules["rules"] if r["id"] == SECRET_RULE)
-        # batch 6 (B5): the shared content check (secret_at); fix round 2: example-looking values are one low finding of their
-        # own, every line named, never left out
-        hits, examples = [], []
-        for m in rule["rx"].finditer(t):
-            why = secret_at(t, m)[1]
-            (examples if why else hits).append((m, why))
+        # batch 6 (B5): the shared content check (secret_at). Fix round 3 (Codex 1, 2): every hit counts, an example-looking one
+        # as any other; the finding names a real-looking one first, and gets the example note only when every hit looks like one
+        hits = [(m, secret_at(t, m)[1]) for m in rule["rx"].finditer(t)]
         if hits:
-            m = hits[0][0]
-            fs.append(finding("WT-S001", "Secret stored in a file on the shared computer", secret_severity(p, False), ["ASI03", "LLM02"],
-                              f"{p}:{line_of(t, m.start())}", f"{mask(m.group(0))} ({len(hits)} in file)",
-                              "Every Bot can read this file. Revoke the key, delete the file, and use the secure secret request instead.", path=p))
-        if examples:
-            m, why = examples[0]
-            nums, ln, pos = [], 1, 0
-            for x, _ in examples:   # one pass over the text, however many there are
-                ln, pos = ln + t.count("\n", pos, x.start()), x.start()
-                nums.append(str(ln))
-            lines = ", ".join(nums)
-            fs.append(example_finding(finding("WT-S001", EXAMPLE_TITLE, "low", ["ASI03", "LLM02"], f"{p}:{line_of(t, m.start())}",
-                                              f"{mask(m.group(0))} ({len(examples)} in file, line {lines})", "", path=p), why))
+            m, why = next((h for h in hits if not h[1]), hits[0])
+            f = finding("WT-S001", "Secret stored in a file on the shared computer", secret_severity(p, False), ["ASI03", "LLM02"],
+                        f"{p}:{line_of(t, m.start())}", f"{mask(m.group(0))} ({len(hits)} in file)",
+                        "Every Bot can read this file. Revoke the key, delete the file, and use the secure secret request instead.", path=p)
+            fs.append(annotate_example(f, why) if why else f)
 
     export_rules = ""
     # 5. exports the user pastes in (routines, descriptions, Auto Review rules, settings)

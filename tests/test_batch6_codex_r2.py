@@ -10,6 +10,9 @@ report are in a private folder, read through its descriptor, never from state/. 
 out. B6 (6, 7): a dismissal sets aside only a Worth-a-look finding, as at 5dcd0a2; one backed up by a change counts again and
 says so. 8, 10: key blocks are masked by one pass with no size cap, to the end of the text when unfinished. 9, 11: placeholders
 are read without backtracking; no per-finding command span. 12: KL3's marker entry needs the exact -7/+8 transition.
+Fix round 3 (test_batch6_codex_r3): "listed low" was itself too weak; an example-looking hit now keeps its rule's severity,
+title, counting and Confirmed rules, with a note in its fix, and the assertions here that said low are changed to that (each
+listed in CHANGELOG).
 
 Every real-shaped key here is generated when the test runs and never committed; fake ones contain FAKE. Tests marked "replay" fail
 on de3b328 on their assertion (measured with de3b328's watchtower/ sources and golden expect file, this file in place); "guard"
@@ -21,7 +24,8 @@ from test_boxes import Box, ROOT, wt
 from test_batch6_example_keys import _Keys, der, der_int, pem, rsa_der, token
 from test_batch6_codex_r1 import (_Dismiss, BUN, GSIDS, MARKER, SKILL_HEAD, body_bits, golden, gl_key, pkcs8, scenario)
 
-TITLE = "Looks like an example or checksum value - check it"
+TITLE = "Looks like an example or checksum value - check it"   # round 2's title; round 3 keeps each finding's own
+NOTE = "This looks like an example or checksum value"   # round 3: the note an example-looking hit gets in its fix
 
 
 def ed25519_pkcs8():
@@ -72,22 +76,24 @@ class ExamplesAreListed(_Keys):
         got = self.mine(fs, p)
         self.assertEqual([(f["title"], raw_sev(f)) for f in got], [("gitleaks: secrets in file", "critical")], got)
 
-    def test_fake_shaped_credentials_are_listed_low(self):   # replay 3 (de3b328: each judged an example and left out)
+    def test_fake_shaped_credentials_are_noted(self):   # replay 3 (de3b328: each judged an example and left out)
+        # round 3 (Codex 1): listed at the generic rule's own severity, with the example note, never lowered
         vals = {"a.env": "FAKE" + secrets.token_hex(32), "b.env": "<" + token("", 20) + ">", "c.env": "$K" + token("", 20),
                 "d.env": token("", 3) * 6}   # FAKE then 64 random hex; <…>; a $NAME; one unit repeated
         for name, v in vals.items():
             p = self.put(f"projects/app/{name}", f'api_key = "{v}"\n')
             self.leak(p, f'api_key = "{v}"', v)
         fs, notes = self.scan()
-        for name in vals:
-            p = os.path.join(self.home, "projects/app", name)
-            got = self.mine(fs, p)
-            self.assertEqual([(f["title"], raw_sev(f), f["label"]) for f in got], [(TITLE, "low", wt.MAYBE_FINE)], (name, got))
-            self.assertIn("at line 1", got[0]["evidence"])
-        self.assertIn("gitleaks: 4 hit(s) look like example or checksum values; each is listed at low, to check (anyone can write a "
-                      "real key that way).", self.snap()["notes"])
+        d = os.path.join(self.home, "projects/app")
+        got = self.mine(fs, d)   # four files in one folder: one folder finding, as four real hits are
+        self.assertEqual([(f["where"], f["title"], raw_sev(f), f["label"]) for f in got],
+                         [(d, "gitleaks: secrets in 4 files under app", "medium", wt.MAYBE_FINE)], got)
+        self.assertIn(NOTE, got[0]["fix"])
+        self.assertIn("gitleaks: 4 hit(s) look like example or checksum values; each is scored as any other hit and noted, to check "
+                      "(anyone can write a real key that way).", self.snap()["notes"])
 
-    def test_checksum_framing_is_listed_low(self):   # replay 4 (de3b328: "sha256:" in front made a credential a checksum)
+    def test_checksum_framing_is_noted(self):   # replay 4 (de3b328: "sha256:" in front made a credential a checksum)
+        # round 3 (Codex 2): listed at the generic rule's own severity, with the checksum note, never lowered
         hx = secrets.token_hex(32)
         p = self.put("projects/app/settings.conf", f"api_key sha256:{hx}\n")
         q = self.put("projects/app/SHA256SUMS", f"{secrets.token_hex(32)}  tools/x.tar.gz\n")
@@ -96,9 +102,12 @@ class ExamplesAreListed(_Keys):
         self.leak(q, open(q).read().rstrip("\n"), hq)
         fs, _ = self.scan()
         for path in (p, q):
-            self.assertEqual([(f["title"], raw_sev(f)) for f in self.mine(fs, path)], [(TITLE, "low")], path)
+            got = self.mine(fs, path)
+            self.assertEqual([(f["title"], raw_sev(f)) for f in got], [("gitleaks: secrets in file", "medium")], path)
+            self.assertIn("(a file's checksum)", got[0]["fix"])
 
-    def test_every_line_and_file_is_named(self):   # guard (new): a fake in each of 5 files, two in one: none folded, none left out
+    def test_every_line_and_file_is_named(self):   # guard (new): a fake in each of 5 files, two in one: none left out
+        # round 3 (Codex 1): five files in one folder are one folder finding, as real hits are, naming each file and line
         d = "sand-data/workflows/setup-dev-tools/examples"
         for i in range(5):
             text = "".join(f"token: ghp_FAKE{i}{j}" + "y8" * 15 + "\n" for j in range(2 if i == 0 else 1))
@@ -106,51 +115,56 @@ class ExamplesAreListed(_Keys):
             for j in range(2 if i == 0 else 1):
                 self.leak(p, f"ghp_FAKE{i}{j}" + "y8" * 15, rule="github-pat")
         fs, notes = self.scan()
-        got = {f["where"]: f for f in self.keys(fs, self.skill) if f["rule"] == "WT-S002"}
-        self.assertEqual(sorted(got), sorted(os.path.join(self.home, d, f"fake{i}.md:1") for i in range(5)))
-        self.assertIn("2 hit(s): github-pat at line 1, 2", got[os.path.join(self.home, d, "fake0.md:1")]["evidence"])
-        self.assertTrue(all(f["title"] == TITLE and raw_sev(f) == "low" for f in got.values()))
+        got = [f for f in self.keys(fs, self.skill) if f["rule"] == "WT-S002"]
+        self.assertEqual([(f["where"], raw_sev(f)) for f in got], [(os.path.join(self.home, d), "critical")])
+        self.assertEqual(got[0]["evidence"], "6 hit(s): github-pat at fake0.md:1, fake0.md:2, fake1.md:1 and 3 more")
+        self.assertIn(NOTE, got[0]["fix"])
 
     def test_an_example_is_never_confirmed_or_offered_for_clearing(self):   # guard (new)
+        # round 3 (Codex 1): Confirmed or not by the same rules as any key; never offered for clearing or revoking
         p = self.put("projects/app/logs/session.log", '{"text": "token: ghp_FAKE' + "z7" * 16 + '"}\n')   # a log: on the scrub list if real
         self.leak(p, "ghp_FAKE" + "z7" * 16, rule="github-pat")
         fs, _ = self.scan()
         mine = self.keys(fs, p)
         self.assertTrue(mine)
-        self.assertTrue(all(f["label"] == wt.MAYBE_FINE and f["title"] == TITLE for f in mine), mine)
+        self.assertTrue(all(f["label"] == wt.CONFIRMED and NOTE in f["fix"] for f in mine), mine)   # two engines agree, as on any key
         self.assertNotIn(p, wt.scrub_targets_from_findings())
         self.assertEqual(wt.revoke_targets(mine), [])
-        self.assertEqual(wt.plain(mine[0])["title"], "Values that look like examples or checksums")
+        self.assertEqual(wt.plain(mine[0])["title"], "Keys that look like examples or checksums")
         self.assertNotIn("fix it", wt.plain(mine[0])["how"])
 
     def test_a_live_key_where_an_example_was_read_is_critical(self):   # guard (new): the provider's answer decides
-        f = wt.example_finding(wt.finding("WT-S002", "gitleaks: secrets in file", "critical", [], "/w/k.md:3", "1 hit(s): github-pat", "x",
-                                          source="gitleaks"), "FAKE or placeholder text")
+        f = wt.annotate_example(wt.finding("WT-S002", "gitleaks: secrets in file", "critical", [], "/w/k.md:3", "1 hit(s): github-pat", "x",
+                                           source="gitleaks"), "FAKE or placeholder text")
         live = {"/w/k.md": [{"status": "live", "detector": "Github", "line": 3}]}
         dead = {"/w/k.md": [{"status": "dead", "detector": "Github", "line": 3}]}
         self.assertEqual((wt.apply_key_status([f], live, ran=True)[0]["severity"]), "critical")
         out = wt.apply_key_status([f], dead, ran=True)[0]
-        self.assertEqual((out["severity"], out["title"]), ("low", TITLE))   # not raised to medium, not "fix it" to clear
+        # round 3: the provider's "dead" lowers it as any key, but the fix never clears it on its own
+        self.assertEqual((out["severity"], out["title"], wt.fix_class(out)), ("low", wt.KEY_DEAD, "only_you"))
 
 
 class ExamplesInWatchtowersRules(unittest.TestCase):
-    def test_t011_examples_are_listed_low(self):   # replay 3 (de3b328: no T011 at all)
+    def test_t011_examples_are_noted(self):   # replay 3 (de3b328: no T011 at all)
         rules = wt.load_rules()
         for v in ("ghp_FAKE" + "x9" * 16, "AKIAFAKE" + "Q7" * 6, "sk-proj-EXAMPLEKEY1234567890abcdefgh"):
             got = [f for f in wt.scan_text(f"Use {v} here.\n", "/s/SKILL.md", rules) if f["rule"].startswith("WT-T011")]
-            # its own rule id beside WT-T011, so a placeholder never raises WT-T011 (test_watchtower's test_placeholder_keys_ignored)
-            self.assertEqual([(f["rule"], f["title"], f["severity"]) for f in got], [("WT-T011x", TITLE, "low")], v)
+            # its own rule id beside WT-T011, so a placeholder never raises WT-T011 (test_watchtower's test_placeholder_keys_ignored);
+            # round 3 (Codex 1): WT-T011's title and severity, with the note
+            self.assertEqual([(f["rule"], f["title"], f["severity"]) for f in got], [("WT-T011x", "Secret or key in text", "critical")], v)
 
     def test_a_real_t011_beside_an_example_one(self):   # replay 3 (de3b328: the example one left out): each its own severity
         real = "ghp_" + token("", 36)
         got = sorted((f["rule"], f["severity"], f["title"]) for f in wt.scan_text(f"a ghp_FAKE{'x9' * 16}\nb {real}\n", "/s/SKILL.md", wt.load_rules())
                      if f["rule"].startswith("WT-T011"))
-        self.assertEqual(got, [("WT-T011", "critical", "Secret or key in text"), ("WT-T011x", "low", TITLE)])
+        self.assertEqual(got, [("WT-T011", "critical", "Secret or key in text"), ("WT-T011x", "critical", "Secret or key in text")])
 
-    def test_an_example_backs_nothing_and_nothing_backs_it(self):   # guard (new: de3b328 has no example_finding)
-        fs = wt.label_findings([wt.example_finding(wt.finding("WT-S001", TITLE, "low", [], "/w/a.md:2", "x", ""), "FAKE or placeholder text"),
+    def test_an_example_backs_up_and_is_backed_up(self):   # guard (new: de3b328 has no example_finding)
+        # round 3 (Codex 1): two engines at one place agree, whether or not one value looks like an example
+        fs = wt.label_findings([wt.annotate_example(wt.finding("WT-S001", "Secret stored in a file on the shared computer", "critical", [],
+                                                               "/w/a.md:2", "x", ""), "FAKE or placeholder text"),
                                 wt.finding("WT-T011", "Secret or key in text", "critical", ["AST04"], "/w/a.md:2", "y", "f", source="other")])
-        self.assertEqual([f["class"] for f in fs], ["pattern", "pattern"])   # two engines at one place, but one vote is an example
+        self.assertEqual([f["class"] for f in fs], ["corroborated", "corroborated"])
 
 
 # ---------------------------------------------------------------- 2: no answer or config read from state/
@@ -268,12 +282,14 @@ class KeyBlockLines(unittest.TestCase):
 
     def test_fake_blocks_in_code_and_prose_stay_examples(self):   # guard
         junk = base64.b64encode(b"\x99" + secrets.token_bytes(119)).decode()
-        for text in ("-----BEGIN PRIVATE KEY-----\n" + junk + "\n-----END PRIVATE KEY-----",
-                     '"-----BEGIN PRIVATE KEY-----\\n" +\n"' + junk + '\\n" +\n"-----END PRIVATE KEY-----"',
-                     "-----BEGIN RSA PRIVATE KEY-----\nThis is a FAKE key for the docs; paste yours here.\n-----END RSA PRIVATE KEY-----"):
+        # round 3 (Codex 3): a body that isn't base64 (words) can't be read, so it is a key; one that decodes to bytes starting no key
+        # is still an example
+        for text, want in (("-----BEGIN PRIVATE KEY-----\n" + junk + "\n-----END PRIVATE KEY-----", "example"),
+                           ('"-----BEGIN PRIVATE KEY-----\\n" +\n"' + junk + '\\n" +\n"-----END PRIVATE KEY-----"', "example"),
+                           ("-----BEGIN RSA PRIVATE KEY-----\nThis is a FAKE key for the docs; paste yours here.\n-----END RSA PRIVATE KEY-----", "real")):
             i = text.index("-----BEGIN")
             j = text.index("-----", i + 11) + 5
-            self.assertEqual(wt.secret_kind(text[i:j], tail=text[j:])[0], "example", text[:60])
+            self.assertEqual(wt.secret_kind(text[i:j], tail=text[j:])[0], want, text[:60])
 
 
 # ---------------------------------------------------------------- 6, 7: dismissals never hold a backed-up finding

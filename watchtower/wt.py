@@ -546,10 +546,10 @@ def cmd_codescan(args):
                 out.append(finding(f"WT-W{cid}", f"OWASP {cid}:2021 {title}", sev, [f"{cid}:2021"], f"{p}:{line_of(t, m.start())}",
                                    m.group(0).strip()[:120], CODE_FIX[cid]))
         for m in secret["rx"].finditer(t):
-            why = secret_at(t, m)[1]   # batch 6 (B5): the shared content check; fix round 2: an example-looking one is listed low
+            why = secret_at(t, m)[1]   # batch 6 (B5): the shared content check; fix round 3: an example-looking one gets a note only
             f = finding("WT-WA07s", "OWASP A07:2021 Hard-coded secret", "critical", ["A07:2021"], f"{p}:{line_of(t, m.start())}",
                         mask(m.group(0)), "Move it to an environment variable or secret store and revoke the exposed one.")
-            out.append(example_finding(f, why) if why else f)
+            out.append(annotate_example(f, why) if why else f)
     semgrep = tool("semgrep")
     note = "Watchtower patterns only (semgrep isn't one of Watchtower's checked scanners)"
     # Codex, batch 3 final review: a semgrep refused at launch (exit 126), failed (non-zero exit, time out) or with no results

@@ -77,9 +77,6 @@ PLAIN_BY_TITLE = {
     KEY_DEAD: ("Old key copies (they no longer work)", "Nothing to revoke; they're just clutter.", "Tell Watchtower \"fix it\" to clear them.", "auto"),
     KEY_UNSURE: ("Keys we couldn't check", "The provider didn't answer, so we can't say if they work.", "If you recognize one, turn it off; otherwise ignore.", "you"),
     KEY_MAYBE: ("Strings that look like keys", "A pattern matched, but no provider confirmed a working key. Usually test data or docs.", "Skim the list; only act if one is a real key.", "you"),
-    # batch 6 fix round 2: never a revoke link, never cleared by the fix; the owner checks each place listed
-    EXAMPLE_TITLE: ("Values that look like examples or checksums", "Watchtower read them as example or checksum values, not working keys, but can't be sure.",
-                    "Check each one; if one is a real key, turn it off at its provider.", "you"),
     # DQ-026: visit-only sensitive domains use the cookies title; signed-in sensitive keep the login headline
     "Logged-in browser sessions shared by every Bot": (
         "The shared browser is logged in to sensitive sites", "Every Bot uses the same logins.",
@@ -91,8 +88,14 @@ PLAIN_BY_TITLE = {
 }
 
 
+# batch 6 fix round 3 (Codex 1, 2): a key finding whose hits all look like examples or checksums (annotate_example) keeps its
+# severity and label, but the to-do never offers to clear it or names a provider to revoke it at: the owner checks it
+EXAMPLE_PLAIN = ("Keys that look like examples or checksums", "Watchtower can't tell an example value from a real key written the same way.",
+                 "Check each one; if one is a real key, rotate it at its provider.", "you")
+
+
 def plain(f):
-    t = PLAIN_BY_TITLE.get(f["title"]) or PLAIN.get(f["rule"])
+    t = (EXAMPLE_PLAIN if f.get("example") else None) or PLAIN_BY_TITLE.get(f["title"]) or PLAIN.get(f["rule"])
     if t:
         return {"title": t[0], "why": t[1], "how": t[2], "who": t[3], "label": label_of(f)}
     return {"title": f["title"], "why": "", "how": f["fix"], "who": "you", "label": label_of(f)}
@@ -101,7 +104,7 @@ def plain(f):
 def revoke_targets(findings):
     kinds = set()
     for f in findings:
-        if f["rule"] in ("WT-S001", "WT-S002") and f["severity"] in ("critical", "high"):
+        if f["rule"] in ("WT-S001", "WT-S002") and f["severity"] in ("critical", "high") and not f.get("example"):   # batch 6 r3: checked, not revoked
             kinds |= {k.strip().lower() for k in re.split(r"[,:]", f["evidence"].split("hit(s):")[-1])}
             kinds |= {w.lower() for w in re.findall(r"(AKIA|ASIA|ghp_|xox|sq0|sk-ant|sk-proj|AIza)", f["evidence"])}
     hits = []
@@ -422,9 +425,6 @@ def key_status_severity(findings, status, ran=None):
                 keys = [k for k in keys if str(k.get("line")) == ln.split(":")[0]]
             f = dict(f)
             live = [k for k in keys if k["status"] == "live"]
-            if f.get("example") and not live:   # batch 6 fix round 2: stays low and listed; a live key here is critical as anywhere
-                out.append(f)
-                continue
             dead = [k for k in keys if k["status"] == "dead"]
             unsure = [k for k in keys if k["status"] in ("unknown", "unverified")]
             names = lambda ks: ", ".join(sorted({k["detector"] for k in ks}))
@@ -441,11 +441,15 @@ def key_status_severity(findings, status, ran=None):
                 f["evidence"] = f"{names(dead)} ({len(dead)} dead)"
                 f["fix"] = "Nothing to revoke. Tell Watchtower \"fix it\" to clear the copies."
             else:
-                # batch 6 (B5, Ken): a file's name no longer lowers a key (FIXTURE_PATH is gone): an example-looking value is its
-                # own low finding (secret_kind; fix round 2), so what is here is judged like a key anywhere else
+                # batch 6 (B5, Ken): a file's name no longer lowers a key (FIXTURE_PATH is gone); what is here is judged like a
+                # key anywhere else
                 f["severity"] = "medium" if SEV_ORDER.index(f["severity"]) < SEV_ORDER.index("medium") else f["severity"]
                 f["title"] = KEY_MAYBE
-                f["fix"] = "Pattern match only. If one is a real key, turn it off at its provider; example-looking values are listed on their own."
+                f["fix"] = "Pattern match only. If one is a real key, turn it off at its provider."
+            # batch 6 fix round 3 (Codex 1, 2): an example-looking key is judged as any other, keeping only its note; one the
+            # provider says works is a working key, so its note goes
+            if f.get("example"):
+                f = annotate_example(f, f["example"]) if not live else {k: v for k, v in f.items() if k != "example"}
         out.append(f)
     return out
 
@@ -522,7 +526,7 @@ def scrub_targets_from_findings():
     snap = load_json(state_path("last_findings.json"), {"findings": []})
     files = set()
     for f in snap.get("findings", []):
-        if f["rule"] not in ("WT-S001", "WT-S002") or f.get("title") == EXAMPLE_TITLE:   # batch 6 fix round 2: never cleared
+        if f["rule"] not in ("WT-S001", "WT-S002") or f.get("example"):   # batch 6 fix round 3: an example-looking one is checked, never cleared
             continue
         p = f["where"].split(":")[0]
         cands = [p] if os.path.isfile(p) else ([os.path.join(dp, fn) for dp, _, fns in os.walk(p) for fn in fns] if os.path.isdir(p) else [])
@@ -585,7 +589,7 @@ ACCEPTABLE_RULES = ("WT-I004", "WT-X001", "WT-X002", "WT-T012", "WT-T013", "WT-T
 def acceptable(f):
     """Findings a person can reasonably accept as fine on purpose. Never: two engines agreeing a skill is dangerous,
     a decoy being touched, a working key, a memory acting as an order, a remote shell."""
-    return f["rule"] in ACCEPTABLE_RULES or (f["rule"] in ("WT-S001", "WT-S002") and f["title"] in (KEY_MAYBE, KEY_UNSURE, EXAMPLE_TITLE))
+    return f["rule"] in ACCEPTABLE_RULES or (f["rule"] in ("WT-S001", "WT-S002") and f["title"] in (KEY_MAYBE, KEY_UNSURE))
 
 
 # Hardening batch 1 (R2/R10, Oct 16): the one-at-a-time `accept` follows the same line as the fix. A decoy alarm, or something
@@ -674,7 +678,7 @@ def fix_class(f):
         return "upgrade"
     if f["rule"] in ("WT-A003", "WT-A005"):
         return "ask_first"
-    if f["title"] == KEY_DEAD:
+    if f["title"] == KEY_DEAD and not f.get("example"):   # batch 6 fix round 3: an example-looking one is checked, never cleared
         return "auto"
     if f["rule"] == "WT-I001" and (f.get("members") or skill_root(f["where"].split(":")[0])):
         return "revet"

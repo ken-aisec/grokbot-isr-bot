@@ -347,7 +347,7 @@ def gather_brief(cfg, offline=None):
 
 
 EXPOSURE_AREAS = [
-    ("Secrets on the shared computer", ("WT-S001", "WT-S002", "WT-S003", "WT-T011")),
+    ("Secrets on the shared computer", ("WT-S001", "WT-S002", "WT-S003", "WT-T011", "WT-T011x")),   # batch 6: T011x is T011
     ("Logged-in browser sessions", ("WT-S004",)),
     ("Skills and templates", ("WT-X001", "WT-X002", "WT-X003", "WT-T001", "WT-T002", "WT-T003", "WT-T004", "WT-T005", "WT-T006", "WT-T007", "WT-T008", "WT-T018", "WT-I001")),
     ("Approvals and settings", ("WT-A001", "WT-A002", "WT-A003", "WT-A004", "WT-A005", "WT-C001", "WT-C003", "WT-C005")),

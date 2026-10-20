@@ -6,7 +6,8 @@ tight form, never a word inside a value; a hex value is a checksum only by its o
 decoded body, whatever its BEGIN line says. B6 (5-7): a dismissal holds over a change only for a finding whose raw severity is
 medium or lower, bound (ev256) to its whole source line or command, and each finding is judged before grouping (Codex round 2,
 6 and 7: a Bot can compute any digest, so no dismissal holds a backed-up finding now; the tests that showed a hold show the
-finding back, test_batch6_codex_r2 has the rest; and an example-looking hit is listed low, never left out). 8: a key file
+finding back, test_batch6_codex_r2 has the rest; and an example-looking hit is listed low, never left out; round 3: it keeps
+its rule's severity and only gets a note, test_batch6_codex_r3). 8: a key file
 copied into an approved copy keeps no key body. 9, 11: curl's grouped short options and shell quoting are read before the
 cookie test; masking twice is masking once. 10: KL3's golden entries need the migration in every scenario and output, and
 every cache entry's 7 -> 8.
@@ -95,7 +96,7 @@ class ExampleBoundToPlace(_Keys):
             self.assertTrue(self.s2(fs, p), label)
         self.assertFalse(any("were example values" in n for n in notes), notes)
 
-    def test_complete_placeholders_are_listed_low(self):   # guard; round 2: listed low, never left out
+    def test_complete_placeholders_are_scored_and_noted(self):   # guard; round 2: listed low; round 3: scored as any hit, noted
         lines = {"examples/a.md": ("token: ghp_FAKE" + "x9" * 16, "ghp_FAKE" + "x9" * 16, "github-pat"),
                  "examples/b.md": ('api_key = "your-api-key-here"', "your-api-key-here", "generic-api-key"),
                  "examples/c.md": ('api_key = "<your key>"', "<your key>", "generic-api-key"),
@@ -106,18 +107,25 @@ class ExampleBoundToPlace(_Keys):
             self.leak(p, secret if rule == "github-pat" else line, secret, rule)
         fs, notes = self.scan()
         s2 = [f for f in self.keys(fs, self.skill) if f["rule"] == "WT-S002"]
-        self.assertEqual(sorted(f["where"] for f in s2), sorted(os.path.join(self.skill, n) + ":3" for n in lines))
-        self.assertEqual({(f["title"], f["severity_was"]) for f in self.keys(fs, self.skill)}, {(EXAMPLE, "low")})
-        self.assertIn("gitleaks: 5 hit(s) look like example or checksum values; each is listed at low, to check (anyone can write a "
-                      "real key that way).", self.snap()["notes"])
+        # five files in one folder are one folder finding, as five real hits are; a GitHub token makes it critical
+        self.assertEqual([(f["where"], f["title"], f.get("severity_was") or f["severity"]) for f in s2],
+                         [(os.path.join(self.skill, "examples"), "gitleaks: secrets in 5 files under examples", "critical")])
+        self.assertTrue(all("This looks like an example or checksum value" in f["fix"] for f in self.keys(fs, self.skill)))
+        self.assertNotIn(EXAMPLE, {f["title"] for f in self.keys(fs, self.skill)})
+        self.assertIn("gitleaks: 5 hit(s) look like example or checksum values; each is scored as any other hit and noted, to check "
+                      "(anyone can write a real key that way).", self.snap()["notes"])
 
     def test_a_fake_key_block_on_a_later_line_of_a_long_file(self):   # guard: read inside gitleaks' first 100,000 bytes; round 2: low
-        block = "-----BEGIN RSA PRIVATE KEY-----\nThis is a FAKE key for the docs; paste yours here.\n-----END RSA PRIVATE KEY-----"
+        # round 3 (Codex 3): a body that isn't base64 is a key now, so the block is one that decodes to bytes that start no key
+        block = pem("RSA ", b"\x99" + secrets.token_bytes(299)).rstrip("\n")
         p = self.put("sand-data/workflows/setup-dev-tools/references/long.md", "filler line\n" * 2000 + block + "\n")
         self.leak(p, block, rule="private-key")
         fs, notes = self.scan()
-        self.assertEqual({(f["rule"], f["title"], f["severity_was"]) for f in self.keys(fs, self.skill)},
-                         {("WT-S001", EXAMPLE, "low"), ("WT-S002", EXAMPLE, "low"), ("WT-T011x", EXAMPLE, "low")})
+        got = self.keys(fs, self.skill)
+        self.assertEqual({(f["rule"], f["title"], f.get("severity_was") or f["severity"]) for f in got},
+                         {("WT-S001", "Secret stored in a file on the shared computer", "critical"),
+                          ("WT-S002", "gitleaks: secrets in file", "critical"), ("WT-T011x", "Secret or key in text", "critical")})
+        self.assertTrue(all("(a key block that isn't a real key)" in f["fix"] for f in got), got)
         self.assertTrue(any("1 hit(s) look like example or checksum values" in n for n in self.snap()["notes"]), notes)
 
 
