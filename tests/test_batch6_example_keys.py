@@ -8,7 +8,7 @@ real key in those forms, so an example-looking hit is never left out: it is a lo
 value - check it", never Confirmed, never offered for revoking or clearing, kept apart from the per-file and folder grouping of
 real hits, every file and line named. The tests/, fixtures/ and *.test.* path skips, the line rule that hid a whole line next
 to a $VAR and FIXTURE_PATH (a file name lowering a key to low) are gone (Ken: no name-based skips); .pem files are read as text.
-Fix round 3 (Codex 1, 2, 3; test_batch6_codex_r3): an example-looking hit lowers nothing. It keeps its rule's severity, title,
+Fix round 3 (Codex 1, 2, 3; test_batch6b_codex_r3): an example-looking hit lowers nothing. It keeps its rule's severity, title,
 counting, grouping and Confirmed rules, and only its fix gets "This looks like an example or checksum value (…); if it is real,
 rotate it."; a key block that can't be read, is short or starts like a key is a key. The assertions changed here are listed in
 CHANGELOG.
@@ -225,7 +225,7 @@ class ExampleKeysAreNotSecrets(_Keys):
 
     def test_a_checksum_list_is_noted(self):   # replay (5dcd0a2: S002 for each line)
         # fix round 1 (Codex 3): a checksum by its line's own format (sha256sum's "<hex>  <path>", pip's --hash=sha256:), no
-        # longer a name -> hex map: a name never makes a value a checksum (test_batch6_codex_r1 has that one counted)
+        # longer a name -> hex map: a name never makes a value a checksum (test_batch6b_codex_r1 has that one counted)
         h1, h2 = secrets.token_hex(32), secrets.token_hex(32)
         p = self.put("projects/app/release/SHA256SUMS", "%s  skills/auth/tokens.md\n" % h1)
         q = self.put("projects/app/requirements.txt", "requests==2.32.3 --hash=sha256:%s\n" % h2)

@@ -31,7 +31,8 @@ class SenderDestination(Folder):
         p = self.write("SKILL.md", HEAD + "```python\n" + self.CODEX + "\n```\n")
         code, r = vet_json(p)
         self.assertEqual(r["verdict"], "Do not install")
-        self.assertIn(("WT-T005", "critical"), [(f["rule"], f["severity"]) for f in r["findings"]])
+        # batch 6 (B7): vet shows the audit's labelled severity; the rule's own is severity_was
+        self.assertIn(("WT-T005", "critical"), [(f["rule"], f.get("severity_was", f["severity"])) for f in r["findings"]])
         self.assertNotIn("WT-T018", [f["rule"] for f in r["findings"]])
 
     def test_a_chat_url_in_another_argument_of_a_sender_is_critical(self):   # replay (aa771f5: WT-T018 for each)

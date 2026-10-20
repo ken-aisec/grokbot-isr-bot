@@ -30,7 +30,8 @@ class EnclosingExpression(Folder):
             p = self.write("SKILL.md", HEAD + f"```{lang}\n" + code_ + "\n```\n")
             code, r = vet_json(p)
             self.assertEqual(r["verdict"], "Do not install", code_)
-            self.assertIn(("WT-T005", "critical"), [(f["rule"], f["severity"]) for f in r["findings"]], code_)
+            # batch 6 (B7): vet shows the audit's labelled severity; the rule's own is severity_was
+            self.assertIn(("WT-T005", "critical"), [(f["rule"], f.get("severity_was", f["severity"])) for f in r["findings"]], code_)
             self.assertNotIn("WT-T018", [f["rule"] for f in r["findings"]], code_)
 
     SHELL = ("curl --header 'Content-Type: application/json' '" + HOOK + "'",
