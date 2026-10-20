@@ -61,18 +61,21 @@ def find_key(obj, keys):
 
 # Batch 6 (B8): an MCP server a package launcher fetches and runs is pinned only by an exact version of that package. npx, uvx,
 # bunx, `pnpm dlx` and `npm exec` alike (also behind /usr/bin/env); "@latest", a range and a dist-tag can each change what runs.
-# Read from the command and args of every object in the file that has a "command" (mcpServers, servers, …); a file that isn't
-# JSON is read for its "command" and "args" strings. The old "an @ within 200 characters" test let `npx -y @scope/pkg` (or an email nearby) pass as pinned.
+# Read from the command and args of every object in the file that has a "command" (mcpServers, servers, …); a JSONC file is
+# read as JSON with its comments and trailing commas blanked (round 2, H8). The old "an @ within 200 characters" test let `npx -y @scope/pkg` (or an email nearby) pass as pinned.
 # PR3, Codex round 1 (12-14): each launcher's options are read with their arity (a value option takes the next word, a switch
 # doesn't), before and after its subcommand (`npm --yes exec`, `pnpm --silent dlx`) and behind env's own options (`env -u X`);
 # every package it fetches is checked (each --package, uvx's --from and --with), and an option it doesn't know, a shell string
 # (-c), or a launcher word it can't place is "couldn't read the launch": a finding, never a pass. One pass over the words (an
 # index, no copies), every server in the file (no cap).
+# Codex round 2 (H7): only the options in these tables are read, each exactly as written. Anything else is "couldn't read the
+# launch", --name=value and --no-name forms included: npm takes any unambiguous abbreviation (`--c="npx mutable"` is --call), so
+# an option it doesn't list is never one word of no consequence. Options that point the launcher at other configuration or code
+# (npm's --userconfig, --node-options, --script-shell; uvx's --config-file, --directory, --project) are not read either.
 MCP_LAUNCHERS = {"npx": None, "uvx": None, "bunx": None, "pnpm": frozenset(("dlx",)), "npm": frozenset(("exec", "exe", "x"))}
 _NPM_SWITCHES = frozenset(("-y", "--yes", "-n", "--no", "-q", "--quiet", "-s", "--silent", "-d", "--verbose", "--offline", "--prefer-offline",
                            "--prefer-online", "--ignore-scripts", "--workspaces", "-ws", "--include-workspace-root", "-g", "--global"))
-_NPM_VALUES = frozenset(("--registry", "--loglevel", "--cache", "--prefix", "--userconfig", "--workspace", "-w", "--node-options",
-                         "--script-shell"))
+_NPM_VALUES = frozenset(("--registry", "--loglevel", "--cache", "--prefix", "--workspace", "-w"))
 MCP_OPTIONS = {   # launcher: (switches, options with a value, options whose value is a package it fetches, options it can't read)
     "npx": (_NPM_SWITCHES, _NPM_VALUES, frozenset(("-p", "--package")), frozenset(("-c", "--call"))),
     "npm": (_NPM_SWITCHES, _NPM_VALUES, frozenset(("-p", "--package")), frozenset(("-c", "--call"))),
@@ -82,8 +85,8 @@ MCP_OPTIONS = {   # launcher: (switches, options with a value, options whose val
     "bunx": (frozenset(("--bun", "--silent", "--verbose", "--no-install")), frozenset(()), frozenset(("-p", "--package")), frozenset(())),
     "uvx": (frozenset(("-q", "--quiet", "-v", "--verbose", "--offline", "--isolated", "--refresh", "--no-cache", "-n", "--native-tls",
                        "--reinstall", "--no-config", "--no-progress")),
-            frozenset(("-p", "--python", "--index", "--index-url", "--default-index", "--extra-index-url", "--cache-dir", "--directory",
-                       "--project", "--config-file", "--python-preference", "--refresh-package", "--color")),
+            frozenset(("-p", "--python", "--index", "--index-url", "--default-index", "--extra-index-url", "--cache-dir",
+                       "--python-preference", "--refresh-package", "--color")),
             frozenset(("--from", "--with")), frozenset(("--with-requirements", "--with-editable", "--constraints", "--overrides"))),
 }
 _ENV_SWITCHES = frozenset(("-i", "--ignore-environment", "-0", "--null", "-v", "--debug", "-"))
@@ -118,10 +121,10 @@ def _mcp_options(w, i, name, fetched):
             if opt in pkgs:
                 fetched.append((opt, val))
             i += 1
-        elif opt in switches or (eq and opt.startswith("--")) or (name != "uvx" and opt.startswith("--no-")):
-            i += 1   # a switch (npm's --no-x always is), or --name=value: one word whatever it is
+        elif opt in switches and not eq:
+            i += 1   # a switch it knows, as written
         else:
-            return i, x   # an option it doesn't know: whether it takes the next word is unknown
+            return i, x   # an option it doesn't know (an abbreviation, an alias, --name=value, --no-name): unknown is never safe
     return i, None
 
 
@@ -179,7 +182,10 @@ def mcp_package(words):
     elif not pkgs and bad is None:
         pkgs = [first]   # with --package, the first word is a command of those packages
     if name == "npm" and bad is None and not dashes:   # npm reads its options after the command's name too (npx doesn't)
-        bad = next((x for x in w[i + 1:] if x.partition("=")[0] in MCP_OPTIONS["npm"][2] | MCP_OPTIONS["npm"][3] or x == MCP_UNREAD), None)
+        # round 2 (H7): every one of them; only a switch it knows, as written, is not a reason
+        import itertools
+        bad = next((x for x in itertools.takewhile(lambda y: y != "--", w[i + 1:])
+                    if x.startswith("-") and x != "-" and x not in MCP_OPTIONS["npm"][0]), None)
     return label, pkgs, bad
 
 
@@ -202,13 +208,65 @@ def mcp_pin_problem(launcher, spec):
     return ("range " if _NPM_RANGE.search(v) else "tag ") + v[:40]
 
 
+_JSONC_TOKEN = re.compile(r'"(?:[^"\\\n]|\\.)*"|//[^\n]*|/\*|[,}\]]|[^"/,}\]]+|/')
+_JSON_KEY = re.compile(r'"((?:[^"\\\n]|\\.)*)"\s*:')
+
+
+def _jsonc_to_json(text):
+    """PR3, Codex round 2 (H8): `text` (JSON with // and /* */ comments and trailing commas) as JSON: each comment and each comma
+    before a } or ] blanked to spaces outside strings, line breaks kept, so every offset and line number stays where it was.
+    None when a string or a comment never ends. One pass, a token at a time."""
+    out, i, n, comma = [], 0, len(text), None
+    while i < n:
+        m = _JSONC_TOKEN.match(text, i)
+        if not m:
+            return None   # a string that never ends (or one with a raw line break)
+        t = m.group(0)
+        if t == "/*":
+            j = text.find("*/", i + 2)
+            if j == -1:
+                return None
+            t = re.sub(r"[^\n]", " ", text[i:j + 2])
+            i = j + 2
+            out.append(t)
+            continue
+        i = m.end()
+        if t.startswith("//"):
+            out.append(" " * len(t))
+            continue
+        if t == ",":
+            comma = len(out)
+        elif t in ("}", "]"):
+            if comma is not None:
+                out[comma] = " "   # a trailing comma
+            comma = None
+        elif t.strip():
+            comma = None
+        out.append(t)
+    return "".join(out)
+
+
 def _mcp_servers(text):
-    """[(the offset of its "command", [command, *args])] for each MCP server in `text`."""
+    """[(the offset of its "command", [command, *args], or None when they couldn't be read)] for each MCP server in `text`.
+    PR3, Codex round 2 (H8): a file that isn't JSON is read as JSON once its comments and trailing commas are blanked
+    (_jsonc_to_json), so each command and its args come from the same object whatever their order; a file that still isn't
+    JSON gives each "command" key None (its args can't be told from another server's)."""
     out = []
     try:
         doc = json.loads(text)
     except (ValueError, RecursionError):
         doc = None
+        norm = _jsonc_to_json(text)
+        if norm is not None:
+            try:
+                doc, text = json.loads(norm), norm
+            except (ValueError, RecursionError):
+                doc = None
+        if doc is None:
+            for m in _JSON_KEY.finditer(norm if norm is not None else text):
+                if _json_str(m.group(1)) == "command":
+                    out.append((m.start(), None))
+            return out
     if isinstance(doc, (dict, list)):
         import collections
         where = collections.defaultdict(collections.deque)   # each "command" value -> its places in the text, in order
@@ -235,32 +293,10 @@ def _mcp_servers(text):
                 j, at = q.popleft()
                 used = j + 1
             out.append((at, cfg["command"].split() + [a for a in args if isinstance(a, str)]))
-        return out
-    # not JSON (comments, a trailing comma): each "command" with the "args" list after it, before the next "command"; every one,
-    # to the end of the text (PR3, Codex round 1, 13). Strings are decoded like JSON's; an args list it can't read to its ]
-    # (a comment or a number in it) ends with a word no launcher option is, so the launch is never read as pinned.
-    cmds = list(re.finditer(r'"command"\s*:\s*' + _JSON_STR, text))
-    for k, m in enumerate(cmds):
-        stop = cmds[k + 1].start() if k + 1 < len(cmds) else len(text)
-        words = _json_str(m.group(1)).split()
-        a = _ARGS_OPEN.search(text, m.end(), stop)
-        if a:
-            p = a.end()
-            while True:
-                s = _ARG_ITEM.match(text, p, stop)
-                if not s:
-                    break
-                words.append(_json_str(s.group(1)))
-                p = s.end()
-            if not re.compile(r"\s*\]").match(text, p, stop):
-                words.append(MCP_UNREAD)
-        out.append((m.start(), words))
     return out
 
 
-MCP_UNREAD = "-(args not read)"
-_ARGS_OPEN = re.compile(r'"args"\s*:\s*\[')
-_ARG_ITEM = re.compile(r'\s*' + _JSON_STR + r'\s*,?')
+MCP_NOT_JSON = "(the file isn't JSON)"
 
 
 def _json_str(s):
@@ -276,7 +312,7 @@ def mcp_unpinned(text):
     package it fetches, and one for a launch it couldn't read whole (PR3, Codex round 1, 12)."""
     out, line, pos = [], 1, 0
     for at, words in sorted(_mcp_servers(text), key=lambda x: x[0]):
-        got = mcp_package(words)
+        got = mcp_package(words) if words is not None else ("(launch)", [], MCP_NOT_JSON)   # round 2 (H8): never a pass
         if got is None:
             continue
         launcher, specs, bad = got
