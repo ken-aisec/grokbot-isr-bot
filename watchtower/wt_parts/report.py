@@ -19,16 +19,21 @@ def dismiss_context(f):
     return text
 
 
-def dismissed_keys():
+def dismissed_records():
+    """Each dismissed key's last dismissal record (batch 6: the whole record; a line that isn't one is skipped)."""
     out = {}
     for l in (read_text(state_path(DISMISS_LOG)) or "").splitlines():
         try:
             e_ = json.loads(l)
         except ValueError:
             continue
-        if e_.get("action") == "dismissed":
-            out[e_["key"]] = e_.get("reason", "")
+        if isinstance(e_, dict) and e_.get("action") == "dismissed" and isinstance(e_.get("key"), str):
+            out[e_["key"]] = e_
     return out
+
+
+def dismissed_keys():
+    return {k: e_.get("reason", "") for k, e_ in dismissed_records().items()}
 
 
 def dismiss(key, reason):
@@ -96,7 +101,7 @@ def cmd_show(args):
     for f in rows:
         print(f"{f['severity']} {f['rule']} [{label_of(f)}] {f['where']}\n  evidence: {mask_secrets(str(f.get('evidence') or ''))}")
         path, _, ln = f["where"].rpartition(":")
-        if args.rule in ("WT-T011", "WT-S001", "WT-S002", "WT-S003") or not ln.isdigit():
+        if args.rule in ("WT-T011", "WT-T011x", "WT-S001", "WT-S002", "WT-S003") or not ln.isdigit():
             continue
         if path not in masked:
             masked[path] = mask_lines(read_text(path) or "")

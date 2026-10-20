@@ -164,7 +164,42 @@ def is_accepted(f, sup, today):
     return False
 
 
+DISMISSED_BACK = "You dismissed this before; it is back because {why}. "
+
+
+def set_aside_dismissed(findings):
+    """Batch 6 fix round 1 (Codex 7): (kept, dismissed), each finding judged on its own before findings are grouped, so a
+    dismissed line that would have led a group never takes another file's finding with it; the audit groups the kept ones. An
+    accepted risk is left for active() (it shows under accepted risks, not as dismissed).
+    Fix round 2 (Codex 6, 7; Ken's rule): a dismissal sets aside only a Worth-a-look finding, as at 5dcd0a2. state/dismissed.jsonl
+    can be written by a Bot, and a Bot can compute any digest, so no record holds a finding something backs up: one dismissed
+    before and backed up now (most often by a change to its file, WT-I001/I002) counts again, and its fix says so (DQ-045, a
+    dismissal that survives an unrelated edit, needs a dismissal authority a Bot can't write: not done, see KNOWN-LIMITS)."""
+    sup = load_json(state_path("suppressions.json"), [])
+    today = dt.date.today().isoformat()
+    gone = dismissed_records()
+    drift = [(_place(g), g["rule"]) for g in findings if g.get("rule") in DRIFT_RULES] if gone else []
+    kept, out = [], []
+    for f in findings:
+        rec = gone.get(f.get("key"))
+        if rec is None or f.get("unverified_platform") or is_accepted(f, sup, today):
+            kept.append(f)
+        elif f.get("class") == "pattern":   # the disprove step; never evidence
+            f["dismissed"] = rec.get("reason", "")
+            out.append(f)
+        else:
+            fix = f.get("fix") or ""
+            if f.get("class") == "corroborated" and not fix.startswith(DISMISSED_BACK[:30]):   # a line a daily carries keeps one
+                here = _place(f)
+                changed = next((r for p, r in drift if _covers(p, here)), None)
+                f["fix"] = DISMISSED_BACK.format(why=f"the file changed (see {changed})" if changed else "something else now backs it up") + fix
+            kept.append(f)
+    return kept, out
+
+
 def active(findings):
+    """(open, set aside): accepted risks and the owner's dismissals (Worth-a-look findings only) set aside. The audit judges
+    dismissals before grouping (set_aside_dismissed); the fix's re-approval reads the findings as they are."""
     sup = load_json(state_path("suppressions.json"), [])
     today = dt.date.today().isoformat()
     flags = [is_accepted(f, sup, today) for f in findings]   # per finding, never by shared key
@@ -345,8 +380,11 @@ def run_audit_locked(args, quick):
             f["severity"] = "medium"   # one scanner flagging a skill in a plugin nobody has reviewed yet is worth a look
     # Label before platform-refresh summary so a built-in that turns Confirmed critical/high alerts (Claude v0.7.1 F4).
     fs = label_findings(fs, ask_first_covered(fs))
-    fs = sort_findings(group_changed_skills(group_root_causes(mark_platform(summarize_refresh(mark_reviewed(fs, meta.get("manifest")))))))
+    # batch 6 fix round 1 (Codex 7): each finding's dismissal is judged on its own, then only the kept ones are grouped
+    fs, gone = set_aside_dismissed(mark_platform(summarize_refresh(mark_reviewed(fs, meta.get("manifest")))))
+    fs = sort_findings(group_changed_skills(group_root_causes(fs)))
     live, suppressed = active(fs)
+    suppressed = sort_findings(gone + suppressed)
     prev = load_json(state_path("last_findings.json"), {"findings": []})
     note_earlier_auto_allow(prev, live)
     prev_keys, cur_keys = keys_of(prev.get("findings", [])), keys_of(live)

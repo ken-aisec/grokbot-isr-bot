@@ -204,12 +204,15 @@ def audit(roots, exports, quick=False):
             if cp:
                 fs.append(cp)
         rule = next(r for r in rules["rules"] if r["id"] == SECRET_RULE)
-        hits = [m for m in rule["rx"].finditer(t) if looks_real_secret(m.group(0))]
+        # batch 6 (B5): the shared content check (secret_at). Fix round 3 (Codex 1, 2): every hit counts, an example-looking one
+        # as any other; the finding names a real-looking one first, and gets the example note only when every hit looks like one
+        hits = [(m, secret_at(t, m)[1]) for m in rule["rx"].finditer(t)]
         if hits:
-            m = hits[0]
-            fs.append(finding("WT-S001", "Secret stored in a file on the shared computer", secret_severity(p, False), ["ASI03", "LLM02"],
-                              f"{p}:{line_of(t, m.start())}", f"{mask(m.group(0))} ({len(hits)} in file)",
-                              "Every Bot can read this file. Revoke the key, delete the file, and use the secure secret request instead.", path=p))
+            m, why = next((h for h in hits if not h[1]), hits[0])
+            f = finding("WT-S001", "Secret stored in a file on the shared computer", secret_severity(p, False), ["ASI03", "LLM02"],
+                        f"{p}:{line_of(t, m.start())}", f"{mask(m.group(0))} ({len(hits)} in file)",
+                        "Every Bot can read this file. Revoke the key, delete the file, and use the secure secret request instead.", path=p)
+            fs.append(annotate_example(f, why) if why else f)
 
     export_rules = ""
     # 5. exports the user pastes in (routines, descriptions, Auto Review rules, settings)

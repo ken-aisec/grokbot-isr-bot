@@ -76,7 +76,7 @@ NO_OPINION = frozenset(("WT-X004", "WT-R010"))   # "couldn't finish" / "didn't p
 
 # v0.7.1 precision item 2 (Ken, Oct 12): Confirmed means dangerous and reachable. Two votes count only when they are about the
 # same file and the same kind of risk; a wording hit alone is never Confirmed, it needs a behavior signal in the same file.
-RISK_KIND = {"WT-T004": "credential", "WT-T011": "credential", "WT-S001": "credential", "WT-S002": "credential", "WT-K003": "credential",
+RISK_KIND = {"WT-T004": "credential", "WT-T011": "credential", "WT-T011x": "credential", "WT-S001": "credential", "WT-S002": "credential", "WT-K003": "credential",
              "WT-T005": "exfil", "WT-T017": "exfil", "WT-T006": "pipe", "WT-T006k": "pipe", "WT-T002": "obfuscation",
              "WT-T003": "obfuscation", "WT-T012": "exec", "WT-T008": "secrecy", "WT-T016": "secrecy", "WT-T001": "override",
              "WT-T007": "override", "WT-T018": "exfil"}
@@ -127,6 +127,14 @@ def engine_kinds(texts):
     """The kinds of risk a scanner's own words name ("Exfil: Upload", "obfuscated loader"). Unknown wording names none."""
     t = " ".join(str(x) for x in texts or ()).lower()
     return {k for k, rx in ENGINE_KIND_WORDS if re.search(rx, t)}
+
+
+RULE_ALIAS = {"WT-T011x": "WT-T011"}   # batch 6 fix round 3: WT-T011's example-looking hits are WT-T011 to every rule here
+
+
+def same_rule(g, f):
+    """True when g and f are hits of one rule (WT-T011x counted as WT-T011)."""
+    return RULE_ALIAS.get(g["rule"], g["rule"]) == RULE_ALIAS.get(f["rule"], f["rule"])
 
 
 def kinds_of(f):
@@ -199,7 +207,9 @@ def corroborated(f, findings, index=None):
     - a rule with no kind of risk keeps the v0.6.8 test: evidence or another engine at the same place;
     - a behavior hit in a skill that changed after approval (WT-I001/I002) is backed up by the change; wording is not;
     - anything inside a new plugin the owner hasn't kept yet (WT-I004) counts until they decide, as before.
-    A WT-S005 cookie-only note stays Worth a look even when a real sign-in is at the same shared-browser place."""
+    A WT-S005 cookie-only note stays Worth a look even when a real sign-in is at the same shared-browser place.
+    Batch 6 fix round 3 (Codex 1, 2): an example-looking secret is read like any other (its note changes nothing here), and
+    WT-T011x is WT-T011 (same_rule)."""
     if f["rule"] == "WT-S005" and f.get("title") != NEW_SIGN_IN:
         return False
     here, src, skill = _place(f), f.get("source", "watchtower"), (index.skill(f) if index is not None else _skill_of(f))
@@ -229,7 +239,7 @@ def corroborated(f, findings, index=None):
         if not fk:                               # no kind of risk to match: the v0.6.8 rule, unchanged
             if _covers(here, gp) and other:
                 return True
-            if loud(f) and loud(g) and g["rule"] != f["rule"] and not is_evidence(g) and _covers(skill, skill_of(g)):
+            if loud(f) and loud(g) and not same_rule(g, f) and not is_evidence(g) and _covers(skill, skill_of(g)):
                 return True
             continue
         same_file = gp == here
@@ -243,7 +253,7 @@ def corroborated(f, findings, index=None):
             return True                          # a verdict on the folder this file is in, about the same kind of risk
         if is_evidence(g) and not gk and g["rule"] in DRIFT_RULES and _covers(gp, here):
             return True                          # the live skill changed after approval and now does this: reach plus behavior
-        if not other and same_file and loud(f) and loud(g) and g["rule"] != f["rule"] and g["rule"] in RISK_KIND:
+        if not other and same_file and loud(f) and loud(g) and not same_rule(g, f) and g["rule"] in RISK_KIND:
             return True
     return False
 
@@ -614,7 +624,7 @@ def vet_verdict(labelled):
     raw = lambda f: f.get("severity_was") or f["severity"]
     live = [f for f in labelled if not f.get("guarded")]
     if any(f.get("label") == CONFIRMED and f["severity"] == "critical" for f in live) or \
-            any((f["rule"] in BEHAVIOR_RULES or f["rule"] == SECRET_RULE) and raw(f) == "critical" for f in live):
+            any((f["rule"] in BEHAVIOR_RULES or RULE_ALIAS.get(f["rule"], f["rule"]) == SECRET_RULE) and raw(f) == "critical" for f in live):
         return "Do not install"
     if (any(f.get("label") == CONFIRMED and f["severity"] == "high" for f in live) or any(warned_danger(f) for f in labelled)
             or any(f.get("class") == "pattern" and raw(f) in ("critical", "high") for f in live)

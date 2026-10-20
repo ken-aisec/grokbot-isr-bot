@@ -70,7 +70,6 @@ PLAIN = {
 
 KEY_LIVE, KEY_DEAD, KEY_UNSURE, KEY_MAYBE = ("Live key in a file every Bot can read", "Copies of keys that no longer work",
                                              "Keys the provider didn't answer for", "Looks like a key (pattern match, not confirmed)")
-FIXTURE_PATH = re.compile(r"(?i)(\.test\.|\.spec\.|/tests?/|/__tests__/|/fixtures?/|/testdata/|/docs?/|/examples?/|/references?/|\.md$|\.h$|\.eml$)")
 
 
 PLAIN_BY_TITLE = {
@@ -89,8 +88,14 @@ PLAIN_BY_TITLE = {
 }
 
 
+# batch 6 fix round 3 (Codex 1, 2): a key finding whose hits all look like examples or checksums (annotate_example) keeps its
+# severity and label, but the to-do never offers to clear it or names a provider to revoke it at: the owner checks it
+EXAMPLE_PLAIN = ("Keys that look like examples or checksums", "Watchtower can't tell an example value from a real key written the same way.",
+                 "Check each one; if one is a real key, rotate it at its provider.", "you")
+
+
 def plain(f):
-    t = PLAIN_BY_TITLE.get(f["title"]) or PLAIN.get(f["rule"])
+    t = (EXAMPLE_PLAIN if f.get("example") else None) or PLAIN_BY_TITLE.get(f["title"]) or PLAIN.get(f["rule"])
     if t:
         return {"title": t[0], "why": t[1], "how": t[2], "who": t[3], "label": label_of(f)}
     return {"title": f["title"], "why": "", "how": f["fix"], "who": "you", "label": label_of(f)}
@@ -99,7 +104,7 @@ def plain(f):
 def revoke_targets(findings):
     kinds = set()
     for f in findings:
-        if f["rule"] in ("WT-S001", "WT-S002") and f["severity"] in ("critical", "high"):
+        if f["rule"] in ("WT-S001", "WT-S002") and f["severity"] in ("critical", "high") and not f.get("example"):   # batch 6 r3: checked, not revoked
             kinds |= {k.strip().lower() for k in re.split(r"[,:]", f["evidence"].split("hit(s):")[-1])}
             kinds |= {w.lower() for w in re.findall(r"(AKIA|ASIA|ghp_|xox|sq0|sk-ant|sk-proj|AIza)", f["evidence"])}
     hits = []
@@ -404,7 +409,7 @@ def apply_key_status(findings, status, ran=None):
 def key_status_severity(findings, status, ran=None):
     """TruffleHog asks each key's own provider whether it works, so when it ran it is the authority:
     working key = critical. Provider said no = low (copies only). Provider didn't answer = medium.
-    Gitleaks matched a pattern but TruffleHog found no key = medium, low in tests and docs.
+    Gitleaks matched a pattern but TruffleHog found no key = medium, wherever the file is (batch 6: no file name lowers it).
     If every answer was 'didn't answer' (providers unreachable), don't guess: keep gitleaks' severity."""
     ran = bool(status) if ran is None else ran
     if not ran:
@@ -436,9 +441,15 @@ def key_status_severity(findings, status, ran=None):
                 f["evidence"] = f"{names(dead)} ({len(dead)} dead)"
                 f["fix"] = "Nothing to revoke. Tell Watchtower \"fix it\" to clear the copies."
             else:
-                f["severity"] = "low" if (FIXTURE_PATH.search(p) and os.path.basename(p) != "SKILL.md") else ("medium" if SEV_ORDER.index(f["severity"]) < SEV_ORDER.index("medium") else f["severity"])
+                # batch 6 (B5, Ken): a file's name no longer lowers a key (FIXTURE_PATH is gone); what is here is judged like a
+                # key anywhere else
+                f["severity"] = "medium" if SEV_ORDER.index(f["severity"]) < SEV_ORDER.index("medium") else f["severity"]
                 f["title"] = KEY_MAYBE
-                f["fix"] = "Pattern match only. If one is a real key, turn it off at its provider; test files and docs are usually safe."
+                f["fix"] = "Pattern match only. If one is a real key, turn it off at its provider."
+            # batch 6 fix round 3 (Codex 1, 2): an example-looking key is judged as any other, keeping only its note; one the
+            # provider says works is a working key, so its note goes
+            if f.get("example"):
+                f = annotate_example(f, f["example"]) if not live else {k: v for k, v in f.items() if k != "example"}
         out.append(f)
     return out
 
@@ -515,7 +526,7 @@ def scrub_targets_from_findings():
     snap = load_json(state_path("last_findings.json"), {"findings": []})
     files = set()
     for f in snap.get("findings", []):
-        if f["rule"] not in ("WT-S001", "WT-S002"):
+        if f["rule"] not in ("WT-S001", "WT-S002") or f.get("example"):   # batch 6 fix round 3: an example-looking one is checked, never cleared
             continue
         p = f["where"].split(":")[0]
         cands = [p] if os.path.isfile(p) else ([os.path.join(dp, fn) for dp, _, fns in os.walk(p) for fn in fns] if os.path.isdir(p) else [])
@@ -667,7 +678,7 @@ def fix_class(f):
         return "upgrade"
     if f["rule"] in ("WT-A003", "WT-A005"):
         return "ask_first"
-    if f["title"] == KEY_DEAD:
+    if f["title"] == KEY_DEAD and not f.get("example"):   # batch 6 fix round 3: an example-looking one is checked, never cleared
         return "auto"
     if f["rule"] == "WT-I001" and (f.get("members") or skill_root(f["where"].split(":")[0])):
         return "revet"

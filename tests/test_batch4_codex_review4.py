@@ -159,8 +159,9 @@ class WholeShellWords(History):
                 "curl -u admin:FAKEu5 https://x.example": "curl -u admin:[hidden] https://x.example",
                 "curl --token 'FAKEt6' https://x.example": "curl --token [hidden] https://x.example",
                 "curl -H 'Authorization: Bearer FAKEh7' https://x.example": "curl -H 'Authorization: Bearer [hidden]' https://x.example",
-                "curl -d 'token=FAKEd8&user=bob' https://x.example": "curl -d 'token=[hidden] https://x.example",
-                'export "API_TOKEN=FAKEe9" && make': 'export "API_TOKEN=[hidden] && make',
+                # batch 6 (KL3, #15 medium 6): these two codified the quote-eating bug; the closing quote now stays
+                "curl -d 'token=FAKEd8&user=bob' https://x.example": "curl -d 'token=[hidden]' https://x.example",
+                'export "API_TOKEN=FAKEe9" && make': 'export "API_TOKEN=[hidden]" && make',
                 "'API_TOKEN'='FAKEq10' make": "'API_TOKEN'=[hidden] make",
                 "API_TOKEN='prefix'\"FAKEp11\" && make": "API_TOKEN=[hidden] && make"}
 

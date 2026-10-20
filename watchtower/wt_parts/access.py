@@ -126,14 +126,26 @@ def access_connectors(names, other=0):
 ACCESS_CONNECTORS_UNKNOWN = ("unsaid", "partial")   # round 3 (2): the Bot didn't say; it said something Watchtower couldn't read
 
 
+def connector_answer(raw, other=0):
+    """Batch 6 (KL6, #16 high 2): one reading of a Bot's connector answer, for a fresh reply (shape_reply) and a kept one (_ax_said,
+    from rollcall_findings.json, which the Bot can write) alike: (labels, other connectors, unknown). A string is a name, a list's
+    strings are names; a list member that isn't a string ({"name": "Gmail"}, 123), or an answer that is neither, makes it "partial";
+    no answer (none, an empty string) is "unsaid". Never an empty, complete list from something Watchtower couldn't read."""
+    items = raw if isinstance(raw, list) else [] if raw is None or (isinstance(raw, str) and not raw.strip()) else [raw]
+    labels, n = access_connectors([c for c in items if isinstance(c, str)], other)
+    unknown = "unsaid" if not items and not isinstance(raw, list) else "partial" if any(not isinstance(c, str) for c in items) else None
+    return labels, n, unknown
+
+
 def _ax_said(x):
     """What one Bot said it can reach, as kept: vocabulary labels and a count of other connectors, each routine's trigger and
     flags (never its name), the memory count, two yes/no answers and the reply's date. PR B, Codex round 3 (2): `connectors_unknown`
     when its connectors aren't known whole: "unsaid" (no list: an empty answer {} or one without connectors is not "no
-    connectors") or "partial" (an item that isn't a name); every routine counts, however many (the files they come from are capped)."""
-    raw = x.get("connectors")
-    labels, other = access_connectors(raw, x.get("connectors_other"))
-    unknown = "unsaid" if not isinstance(raw, list) else x.get("connectors_unknown") if x.get("connectors_unknown") in ACCESS_CONNECTORS_UNKNOWN else None
+    connectors") or "partial" (an item that isn't a name); every routine counts, however many (the files they come from are capped).
+    Batch 6 (KL6): the kept list is read by connector_answer, as a fresh reply is; a kept "unsaid" or "partial" mark stays."""
+    labels, other, unknown = connector_answer(x.get("connectors"), x.get("connectors_other"))
+    if unknown is None and x.get("connectors_unknown") in ACCESS_CONNECTORS_UNKNOWN:
+        unknown = x["connectors_unknown"]
     rts, more, sending = [], _ax_count(x.get("routines_more")), _ax_count(x.get("routines_more_sending"))
     for r in x.get("routines") if isinstance(x.get("routines"), list) else []:
         if not isinstance(r, dict):

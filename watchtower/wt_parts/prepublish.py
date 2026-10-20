@@ -71,7 +71,8 @@ def cmd_prepublish(args):
         texts = [(p, read_text(p) or "") for p in paths]
     fs = []
     for where, t in texts:
-        fs += [f for f in scan_text(t, where, rules, kind="template") if f["rule"] in ("WT-T011", "WT-T013", "WT-T007", "WT-T008", "WT-T005", "WT-T006", "WT-T018")]
+        fs += [f for f in scan_text(t, where, rules, kind="template")   # batch 6 fix round 3: WT-T011x is WT-T011 (an example-looking one)
+               if f["rule"] in ("WT-T011", "WT-T011x", "WT-T013", "WT-T007", "WT-T008", "WT-T005", "WT-T006", "WT-T018")]
         for rid, title, sev, rx in PREPUB_RULES:
             for m in re.finditer(rx, t):
                 ev = m.group(0)
