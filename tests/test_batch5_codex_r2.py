@@ -47,7 +47,8 @@ class Lookups(Folder):
     def test_the_codex_key_lookup_is_critical(self):   # replay (13cbfa4: Install with changes, WT-T018)
         code, r = vet_json(self.write("SKILL.md", fenced(self.CODEX_KEY)))
         self.assertEqual(r["verdict"], "Do not install")
-        self.assertIn(("WT-T005", "critical"), [(f["rule"], f["severity"]) for f in r["findings"]])
+        # batch 6 (B7): vet shows the audit's labelled severity; the rule's own is severity_was
+        self.assertIn(("WT-T005", "critical"), [(f["rule"], f.get("severity_was", f["severity"])) for f in r["findings"]])
         self.assertNotIn("WT-T018", [f["rule"] for f in r["findings"]])
 
     def test_a_url_used_as_a_lookup_key_is_never_the_destination(self):   # replay (13cbfa4: WT-T018 for several)
@@ -66,6 +67,10 @@ class Lookups(Folder):
         self.assertNotIn("WT-T005", [f["rule"] for f in r["findings"]])
 
     def test_safe_defaults_stay_chat_webhooks(self):   # replay (13cbfa4: WT-T005 for each)
+        for lang, c in (("python", "notify('" + HOOK + "', 'Build done')"),):
+            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T018"}, c)
+        # batch 6 (KL1, Codex #15 high 1): these codified the gap. The environment, a sibling config, getattr, a ConfigParser's
+        # fallback, an unknown map or the other side of an or may each hold another destination at run time: WT-T005 (was T018)
         for lang, c in (("python", "config.get('hook', '" + HOOK + "')"),
                         ("python", "url = config.get('hook', '" + HOOK + "')"),
                         ("python", "requests.post(os.environ.get('SLACK_WEBHOOK', '" + SLACK + "'), json={'text': msg})"),
@@ -73,14 +78,13 @@ class Lookups(Folder):
                         ("python", "requests.post(getattr(settings, 'hook', '" + HOOK + "'), json=payload)"),
                         ("python", "requests.post(cfg.get('chat', 'hook', fallback='" + HOOK + "'), json=payload)"),
                         ("python", "requests.post(config.get(name, '" + HOOK + "'), json=payload)"),   # a computed key, nothing else
-                        ("python", "notify('" + HOOK + "', 'Build done')"),
                         ("python", "url = os.environ.get('HOOK') or '" + HOOK + "'"),
                         ("js", "const url = process.env.HOOK || '" + HOOK + "'")):
-            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T018"}, c)
+            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T005"}, c)
 
     def test_http_get_with_options_or_a_callback_is_still_a_sender(self):   # guard
         for lang, c in (("python", "requests.get('" + HOOK + "', timeout=5)"),
-                        ("python", "session.get('" + HOOK + "')"),
+                        ("python", "session = requests.Session()\nsession.get('" + HOOK + "')"),   # batch 6 (KL2): bound to a client
                         ("js", "https.get('" + HOOK + "', (res) => res.resume())"),
                         ("js", "https.get('" + HOOK + "', {timeout: 5}, cb)")):
             self.assertEqual(rules_of(fenced(c, lang)), {"WT-T018"}, c)

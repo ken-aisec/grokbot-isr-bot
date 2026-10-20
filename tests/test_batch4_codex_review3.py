@@ -85,7 +85,8 @@ class StringExpressions(Folder):
             p = self.write("SKILL.md", HEAD + "```python\n" + code_ + "\n```\n")
             code, r = vet_json(p)
             self.assertEqual(r["verdict"], "Do not install", code_)
-            self.assertIn(("WT-T005", "critical"), [(f["rule"], f["severity"]) for f in r["findings"]], code_)
+            # batch 6 (B7): vet shows the audit's labelled severity; the rule's own is severity_was
+            self.assertIn(("WT-T005", "critical"), [(f["rule"], f.get("severity_was", f["severity"])) for f in r["findings"]], code_)
             self.assertNotIn("WT-T018", [f["rule"] for f in r["findings"]], code_)
 
     def test_a_standalone_chat_url_is_still_a_chat_webhook(self):   # guard
@@ -110,7 +111,8 @@ class DetectionIsNotStorage(Folder):
         p = self.write("SKILL.md", QUIET + "Ask before saving.\n" + INSTALLER * 5001 + EVIL_PIPE)
         code, r = vet_json(p)
         self.assertEqual(r["verdict"], "Do not install")
-        self.assertIn(("WT-T006", "critical"), [(f["rule"], f["severity"]) for f in r["findings"]])
+        # batch 6 (B7): vet shows the audit's labelled severity; the rule's own is severity_was
+        self.assertIn(("WT-T006", "critical"), [(f["rule"], f.get("severity_was", f["severity"])) for f in r["findings"]])
         self.assertLessEqual(len(r["findings"]), wt.VET_FINDINGS_CAP + 2 * len(wt.load_rules()["rules"]))
 
     def test_chat_urls_do_not_hide_a_later_exfiltration_host(self):   # replay (d6f227e: Install with changes)

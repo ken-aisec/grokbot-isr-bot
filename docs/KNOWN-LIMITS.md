@@ -6,7 +6,7 @@ Open findings that dev carries knowingly. Each one is **must-fix before any rele
 
 Ken approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Codex highs open. Forge fixes them after the freeze, before release. They're worded as Codex wrote them in its final checks after fix round 3: #15 at 62ccd0e and #16 at c3b0257. File links point at the code as merged.
 
-**Status: open, must-fix before any release** (except 4 and 7, fixed in batch 6 PR1, branch `fix/batch6a`; see each).
+**Status: open, must-fix before any release** (except 4 and 7, fixed in batch 6 PR1, branch `fix/batch6a`, and 1, 2 and 5, fixed in batch 6 PR3, branch `fix/batch6c`; see each).
 
 ### From #15 (batch 5 PR A: platform notes, reviewed list, #11 follow-ups)
 
@@ -17,6 +17,8 @@ Ken approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Codex hig
    The assertion conflict is real, but the two tests have different premises. The explicitly empty `config = {}` example can safely retain T018. The broader [safe-default assertions](../tests/test_batch5_codex_r2.py) include externally overridden values and codify this gap. The earlier blanket “fixed” assessment was too broad. Preserving those assertions does not establish safety.
 
    **Fix:** require evidence that the webhook is the selected destination. Preserve the proven empty-map case; correct assertions that treat unknown runtime defaults as established destinations.
+
+   **Fixed in batch 6 PR3 (`fix/batch6c`, Ken's decision 6):** a lookup's default is the destination only when the map is proven empty (bound once in the code region to `{}` or `dict()`, used nowhere else); the environment, a file-backed or unknown map, `getattr`, `setdefault`, `pop`, `fallback=`, one side of an `or`/`||`, and a destination name bound twice or passed to a lookup are WT-T005 (vet "Do not install"; in the audit a lone pattern, "Worth a look", unless backed). The assertions that codified the gap now expect T005. Replays in `tests/test_batch6_destinations.py`.
 
 2. **high — [text.py:748](../watchtower/wt_parts/text.py): Receiver naming introduces a new lookup bypass.**
 
@@ -31,6 +33,8 @@ Ken approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Codex hig
    It changes from T005 on `77dedd1` to T018/**Install with changes** on HEAD, despite the explicit collector URL. The `client` suffix makes the lookup appear to be HTTP GET. Conversely, `s = requests.Session(); s.get("<webhook>")` changes from T018 to critical T005.
 
    **Fix:** establish receiver identity from bindings/API use; a variable-name suffix must not authorize a destination downgrade.
+
+   **Fixed in batch 6 PR3 (`fix/batch6c`):** `get` is an HTTP GET only on a module (requests, httpx, https, axios, …) or on a name the code region binds exactly once to a client (`requests.Session()`, `httpx.Client()`, `aiohttp.ClientSession()`, `urllib3.PoolManager()`, `with … as x`, `self.x = …`); never from a name's suffix. With #15 medium 5: only another URL in the send's own code region makes the destination doubtful, not a docs link in the prose around it. Replays in `tests/test_batch6_destinations.py`.
 
 3. **high — [mask.py:689](../watchtower/wt_parts/mask.py): Additional credential flags still leak.**
 
@@ -64,6 +68,8 @@ Ken approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Codex hig
 
    **Fix:** distinguish confirmed absence from failed lookup. Propagate permission and other lookup errors through root collection, browser/seed checks, CLI discovery and scheduled-directory coverage.
 
+   **Fixed in batch 6 PR3 (`fix/batch6c`):** `_look` tells "no such name" from "couldn't look", and the scan roots, the scheduled-job folders and rc files (`PERSIST_UNKNOWN`), the CLI credential files and the platform secret store, the cookie jar and seed, the settings file, hooks files and Bot profiles all use it: what Watchtower couldn't look at makes its field incomplete, never "none". The scheduled-job folders are listed without following a link and without stopping the audit (the error/link half of #16 medium 2). Replays in `tests/test_batch6_failed_lookups.py`.
+
 6. **High — [access.py:136](../watchtower/wt_parts/access.py): Saved connector lists bypass malformed-answer validation.**
 
    A fresh reply with `connectors: [{"name":"Gmail"}]` becomes incomplete. The same value in saved `rollcall_findings.json` passes through `_ax_said()` as an empty, complete connector list.
@@ -83,4 +89,11 @@ Ken approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Codex hig
 ## Open mediums (batch 6 plan)
 
 - **#16 medium 1:** the access JSON can exceed 4 KB; fixing it means making nested display lists trimmable in `fit` (a JSON shape change, broad golden churn, no security impact).
-- **#16 medium 2, wording half:** "scheduled jobs" → "cron files / timers observed" would change every access line in every golden box; left for a wording-only batch. (The error/link half is planned for PR3.)
+- **#16 medium 2, wording half:** "scheduled jobs" → "cron files / timers observed" would change every access line in every golden box; left for a wording-only batch. (The error/link half is fixed in batch 6 PR3, `fix/batch6c`.)
+
+#15 medium 5 (a docs link anywhere in the file flipped a chat webhook to WT-T005) is fixed in batch 6 PR3 with KL2.
+
+Seen while building batch 6 PR3, not fixed (pre-existing, outside its items):
+
+- WT-T017's pattern needs a separate `-d`, so `curl -sd @notes.txt https://…` (short flags run together) is not WT-T017 at all; the PR3 literal-data check treats such clusters as sending data, but the pattern never reaches it.
+- `line_of` counts the lines up to each finding from the start of the file, so a file with tens of thousands of findings takes time quadratic in their number (12,000 chat-webhook lookups: about 2.4 s of 6.3 s).

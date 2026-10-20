@@ -53,11 +53,9 @@ def audit(roots, exports, quick=False):
         if t is not None:
             fs += scanned_from(scan_text(t, p, rules, kind="reference"), h)
             manifest[p] = h
-            for m in re.finditer(r'"command"\s*:\s*"([^"]+)"', t):
-                if re.search(r"(?i)\b(npx|uvx|bunx)\b", m.group(1)) and "@" not in t[m.end():m.end() + 200]:
-                    fs.append(finding("WT-M001", "MCP server launched unpinned", "medium", ["AST02", "ASI04"],
-                                      f"{p}:{line_of(t, m.start())}", m.group(1),
-                                      "Pin the package version (pkg@1.2.3) so an update cannot change what runs."))
+            for ln, ev in mcp_unpinned(t):   # batch 6 (B8): every launcher alike, read from the server's command and args
+                fs.append(finding("WT-M001", "MCP server launched unpinned", "medium", ["AST02", "ASI04"],
+                                  f"{p}:{ln}", ev, "Pin an exact version (pkg@1.2.3) so an update can't change what runs."))
     if inv["platform_aliases"]:   # item 8 review 1: a platform name of a file already scanned is fingerprinted, never dropped
         scanned = {os.path.realpath(p) for p in manifest}
         for a in inv["platform_aliases"]:
@@ -164,6 +162,7 @@ def audit(roots, exports, quick=False):
 
     # 3. persistence (ASI10)
     CRONTAB_SEEN.clear()   # batch 5 PR B, Codex round 2 (3): unless this look says otherwise, the crontab couldn't be read
+    PERSIST_UNKNOWN.clear()   # batch 6 (KL5): what this look couldn't see (a stand-in snapshot sees everything it returns)
     snap = persistence_snapshot()
     old = load_json(state_path("persistence.json"), None)
     if old is not None:
@@ -175,7 +174,8 @@ def audit(roots, exports, quick=False):
     save_json(state_path("persistence.json"), persistence_stored(snap))
 
     # 4. secrets in files (known CLI credential files reported separately)
-    fs += cli_credentials()
+    cli_unknown = []   # batch 6 (KL5): a credential file Watchtower couldn't look at leaves the access map's sign-ins incomplete
+    fs += cli_credentials(cli_unknown)
     known = {os.path.join(os.path.expanduser("~"), k) for k in KNOWN_CRED_FILES}
     fs += browser_sessions(roots)
     jar = {}
@@ -328,5 +328,7 @@ def audit(roots, exports, quick=False):
                                # round 2 (1, 3): the jar and the cookie seed looked at whole (or said not to be), the crontab's
                                # answer, the folders the scan couldn't list
                                "jar": _ax_jar_now(), "seed": _ax_seed_now(roots), "crontab": CRONTAB_SEEN.get("crontab", "failed"),
-                               "walk_errors": len(walk_errors), "walk_skipped": len(walk_skipped)}}   # round 3 (1): and those it left out
+                               "walk_errors": len(walk_errors), "walk_skipped": len(walk_skipped),   # round 3 (1): and those it left out
+                               # batch 6 (KL5): the sign-in files and scheduled-job folders it couldn't look at
+                               "cli_unknown": len(cli_unknown), "persist_unknown": sorted(PERSIST_UNKNOWN)}}
     return fs, meta

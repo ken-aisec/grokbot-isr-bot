@@ -334,7 +334,8 @@ class OneLineSuffix(Folder):
         code, r = vet_json(p)
         hook = [f for f in r["findings"] if f["rule"] == "WT-T018"]
         self.assertTrue(hook)
-        self.assertEqual({(f["label"], f["severity"]) for f in hook}, {(wt.MAYBE_FINE, "medium")})
+        # batch 6 (B7): vet shows the audit's labelled severity; the rule's own is severity_was
+        self.assertEqual({(f["label"], f.get("severity_was", f["severity"])) for f in hook}, {(wt.MAYBE_FINE, "medium")})
 
     def test_places(self):   # replay
         self.assertNotEqual(wt._place({"rule": "WT-T018", "where": "/fake/script:1:1"}), wt._place({"rule": "WT-T004", "where": "/fake/script:1"}))

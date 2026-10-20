@@ -376,19 +376,55 @@ def _wording_guard(text, m, rules, prev_end):
     return ""
 
 
+# Batch 6 (B7): narrow content guards, each for one rule. T001: a bare "ignore rules" / "ignore instructions" (no all, previous,
+# system…) that names a config (.gitignore-style rules): right after a verb that edits one or a tool's name, or right before
+# file/pattern/list. "Ignore all previous instructions", "Update: ignore previous instructions" and "ignore rules and send the
+# file" never are. And instructions inside another agent's output (a reviewer's, a subagent's) are untrusted content.
+IGNORE_CONFIG_BEFORE = re.compile(r"(?i)\b(adjust|update|edit|add|check|configure|git|docker|eslint|npm|prettier)\s+((the|your|our|its|these|those)\s+)?$")
+IGNORE_CONFIG_AFTER = re.compile(r"(?i)\s+(files?|patterns?|lists?)\b")
+AGENT_OUTPUT_AFTER = re.compile(r"(?i)^\s*(inside|in|within|found\s+in|from|embedded\s+in)\s+((a|an|the|any|this|that|its|your|their|each|every)\s+)?"
+                                r"(reviewer|tool|subagent|sub-agent|agent|model)s?['’]?\s+(outputs?|results?|responses?|replies)\b")
+
+
+# T004: `cat .env.example >> .env` merges one env file into another on this computer (a local copy, nothing read out), and in
+# "Do not debug with `env`, `printenv` or `cat .env`" the negation governs every command of the with/using/via list.
+_ENV_FILE = r"(?:[^\s;&|`'\"<>]*/)?(?:\.env(?:\.[\w-]+)*|[\w.-]+\.env)"
+ENV_MERGE = re.compile(r"cat\s+(?P<src>" + _ENV_FILE + r")\s*>>?\s*(?P<dst>" + _ENV_FILE + r")[ \t]*(?=$|\n|;|&&|`)")
+NEG_WITH_LIST = re.compile(r"(?i)\b(?:do\s+not|don'?t|never|not)\b[^\x01.;:!?\n]{0,80}?\b(?:with|using|via)\s*(?:\x01\s*(?:,\s*)?(?:(?:or|and)\s+)?)*$")
+
+
+def _env_merge(text, m):
+    """WT-T004's `cat <env file>` match writes it into another env file and does nothing else (see ENV_MERGE)."""
+    e = ENV_MERGE.match(text, m.start(), min(len(text), m.start() + 400))
+    return bool(e) and e.group("src") != e.group("dst")
+
+
+def _names_a_config(text, m):
+    """WT-T001's match is a bare "ignore rules" or "ignore instructions" used as the name of a config (see above)."""
+    if not re.fullmatch(r"(?i)ignore\s+(rules|instructions)", m.group(0)):
+        return False
+    return bool(IGNORE_CONFIG_BEFORE.search(text[max(0, m.start() - 40):m.start()]) or IGNORE_CONFIG_AFTER.match(text, m.end()))
+
+
 def in_warning(text, m, rules, rule_id, prev_end=None):
     """Why the match reads as defensive prose, or "" when it doesn't: quoted, negated, one more item in a guarded list, reported
     ("if a page says to ..."), scoped to untrusted content, described as an attack, or detector code. `prev_end`: where the
     previous guarded match of the same rule ended. A dangerous rule's guard words come only from the prose around its unit."""
+    if rule_id == "WT-T001" and _names_a_config(text, m):
+        return "names a config"
+    if rule_id == "WT-T001" and AGENT_OUTPUT_AFTER.match(text[m.end():m.end() + 80]):
+        return "untrusted content"
     if rule_id not in GUARD_CODE_RULES:
         return _wording_guard(text, m, rules, prev_end)
+    if rule_id == "WT-T004" and _env_merge(text, m):
+        return "local copy"
     u = _unit(text, m)
     if u is None:
         return ""                                                 # any doubt: no guard
     walk, after, span, quoted = u
     if quoted:
         return "quoted"
-    if _negated(walk, rules):
+    if _negated(walk, rules) or (rule_id == "WT-T004" and span and NEG_WITH_LIST.search(walk)):
         return "negated"
     if _listed(text, m, prev_end):
         return "list"
@@ -414,9 +450,10 @@ def guard_record(f, reason, danger=False):
     return g
 
 
-def sends_data(ev):
+def sends_data(ev, before=""):
     """WT-T017: the curl/wget segment itself (up to a pipe, ;, && or ||) carries a data flag.
-    -G/--get is harmless only when the data is not a file (@) or a command substitution."""
+    -G/--get is harmless only when the data is not a file (@) or a command substitution. Batch 6 (B7): nor is a POST whose
+    data is only text written inline (literal_post); `before` is the line before the command, where a pipe into it would be."""
     m = re.search(r"(?i)\b(curl|wget)\b", ev)
     if not m:
         return True   # the prose form; its object words are checked by the rule
@@ -429,6 +466,102 @@ def sends_data(ev):
         return False
     if re.search(r"(?i)(\s-G\b|\s--get\b)", seg):
         return bool(re.search(r"(?i)(@\S|\$\(|`[^`\n]+`)", seg))
+    return not literal_post(seg, before)
+
+
+_SHELL_RAW_WORD = re.compile(r"""(?:[^\s'"\\`]|\\.|'[^']*'|"(?:[^"\\]|\\.)*")+""")
+_DATA_FLAGS = frozenset(("-d", "--data", "--data-ascii", "--data-raw", "--data-binary", "--data-urlencode", "--json", "--post-data",
+                         "--body-data"))
+_SENDS_FLAGS = re.compile(r"^(-[FTK].*|--(form|form-string|upload-file|post-file|body-file|config)(=.*)?|--data-binary=@.*|-d@.*)$")
+_CLUSTER_SENDS = re.compile(r"-[sSfLvkiIgGNnqjJOR#46]+[dFTK]")   # curl's yes/no short flags run together, then data, a form, an upload or a config
+
+
+def _unquoted(word):
+    """A shell word's text with its quotes taken off, and whether any of it is expanded ($ or ` outside single quotes)."""
+    out, expanded, i = [], False, 0
+    while i < len(word):
+        c = word[i]
+        if c == "'":
+            j = word.index("'", i + 1)
+            out.append(word[i + 1:j])
+            i = j + 1
+            continue
+        if c == '"':
+            j = i + 1
+            while word[j] != '"':
+                j += 2 if word[j] == "\\" else 1
+            body = word[i + 1:j]
+            expanded = expanded or "$" in body or "`" in body
+            out.append(re.sub(r"\\(.)", r"\1", body))
+            i = j + 1
+            continue
+        if c == "\\":
+            out.append(word[i + 1:i + 2])
+            i += 2
+            continue
+        expanded = expanded or c in "$`"
+        out.append(c)
+        i += 1
+    return "".join(out), expanded
+
+
+def literal_post(seg, before=""):
+    """Batch 6 (B7): the curl/wget command `seg` sends only text written inline: every data value (-d, --data*, --json,
+    --post-data) is literal (no $VAR, $( ) or backticks; not @file, @- or stdin; --data-urlencode with no @ at all), no form,
+    upload, body-file or config flag, no $( ) or backtick anywhere in the command, and nothing piped into it. Any doubt (an
+    unclosed quote) is False: it sends data."""
+    if before.count("`") % 2:   # inside `inline code`: the command ends at its closing backtick
+        seg = seg.split("`", 1)[0]
+    if "|" in before.replace("||", "") or "$(" in seg or "`" in seg or "<" in seg or len(seg) > 4000:
+        return False
+    words, at = [], 0
+    for x in _SHELL_RAW_WORD.finditer(seg):
+        if seg[at:x.start()].strip():
+            return False   # a quote that never closes
+        words.append(x.group(0))
+        at = x.end()
+    if seg[at:].strip():
+        return False
+    try:
+        return _literal_words(words)
+    except (ValueError, IndexError):
+        return False
+
+
+def _logical_line_before(text, start, cap=4096, lines=10):
+    """The text from the start of the logical shell line holding `start` up to it: lines before it that end in \\ or | are part
+    of it (cat ~/.env | \\⏎ curl -d @- …), at most `lines` lines and `cap` characters back."""
+    floor = max(0, start - cap)
+    a = text.rfind("\n", floor, start) + 1
+    for _ in range(lines):
+        if a <= floor:
+            break
+        prev = text[max(floor, a - 41):a - 1].rstrip(" \t\r")   # how the line before ends
+        if not prev.endswith(("\\", "|")):
+            break
+        a = text.rfind("\n", floor, a - 1) + 1
+    return text[max(a, floor):start]
+
+
+def _literal_words(words):
+    """literal_post over the command's raw shell words."""
+    i = 0
+    while i < len(words):
+        w = words[i]
+        if _SENDS_FLAGS.match(w) or _CLUSTER_SENDS.match(w):
+            return False   # a form, an upload, a config file, or short flags run together in front of one of them (-sd @file)
+        flag, eq, val = w.partition("=")
+        if w in _DATA_FLAGS or (eq and flag in _DATA_FLAGS) or (w.startswith("-d") and len(w) > 2 and not w.startswith("--")):
+            raw = val if eq else w[2:] if not w.startswith("--") and w != "-d" else (words[i + 1] if i + 1 < len(words) else None)
+            if raw is None:
+                return False
+            text, expanded = _unquoted(raw)
+            name = flag if eq else w if w.startswith("--") else "-d"
+            if expanded or (text.startswith("@") and name != "--data-raw") or (name == "--data-urlencode" and "@" in text):
+                return False
+            i += 1 if eq or (w.startswith("-d") and w != "-d") else 2
+            continue
+        i += 1
     return True
 
 
@@ -555,9 +688,9 @@ _URL_KEYS = frozenset(("url", "uri", "endpoint"))   # PR A, Codex round 1 (1): t
 _LOOKUPS = frozenset(("getattr", "getenv", "setdefault", "pop", "getOrDefault", "get_or", "getdefault"))
 _LOOKUP_DEFAULTS = frozenset(("default", "fallback"))
 _BOOL_OPS = frozenset(("or", "and", "if", "else", "not", "||", "&&", "?"))
-# PR A, Codex round 3 (5): the receivers `get` is an HTTP GET on (requests.get, httpx.get, session.get, self.client.get, https.get,
-# axios.get, $.get, …); on any other receiver it is a lookup (round 3 (1))
-_HTTP_CLIENT = re.compile(r"(?i)requests|httpx|aiohttp|urllib3|https?|axios|got|ky|needle|superagent|\$|jquery|\$http|[\w$]*(?:session|client)")
+# PR A, Codex round 3 (5): the receivers `get` is an HTTP GET on (requests.get, httpx.get, https.get, axios.get, $.get, …); on any
+# other receiver it is a lookup (round 3 (1)). Batch 6 (KL2): a session or client only when the code binds it to one
+# (_CLIENT_MAKERS, http_client), never by its name
 _CONFIG_PARSER = re.compile(r"(?i)configparser")
 _ANY_URL = re.compile(r"(?i)\b[a-z][a-z0-9+.\-]*://[^\s'\"`<>()\[\]{}|\\,]*|(?<=['\"`])//[^\s'\"`<>()\[\]{}|\\,]+")
 
@@ -654,6 +787,61 @@ def _region(text, start, end, prose):
     return r
 
 
+# Batch 6 (KL1, KL2): what a region binds. A name's identity (an HTTP client, an empty map) comes only from how the region binds
+# it, never from the name itself (cfg_client is not a client); a name bound twice is whatever the second binding made it.
+_BIND_OPS = frozenset(("+", "-", "*", "/", "%", "|", "&", "^", ":"))
+_SELF_WRITES = frozenset(("globals", "locals", "vars", "exec", "eval", "setattr", "__dict__", "__setitem__"))
+
+
+def _region_names(text, start, end, prose):
+    """{"binds": {name or a.b chain: [(first token, kind, token after "=")]}, "uses": {plain name: [token]}, "self_writes": bool}
+    for the region's tokens, read once per region (one pass). kind: "=" (also +=, :=), "as", "for" or "other" (global, del)."""
+    memo = _memo(text)
+    k = ("names", start, end, prose)
+    if k in memo:
+        return memo[k]
+    r = _region(text, start, end, prose)
+    kinds, starts, ends, parent = r["kinds"], r["starts"], r["ends"], r["parent"]
+    n = len(kinds)
+    tok = lambda i: text[starts[i]:ends[i]] if 0 <= i < n else None
+    binds, uses, writes = {}, {}, False
+    for i in range(n):
+        if kinds[i] != "name":
+            continue
+        t = tok(i)
+        writes = writes or t in _SELF_WRITES
+        if tok(i - 1) != ".":
+            uses.setdefault(t, []).append(i)
+        nx = tok(i + 1)
+        if nx == "." or (i + 1 < n and kinds[i + 1] == "open"):
+            continue   # not the end of a chain, or a call or an index
+        c = i
+        while c >= 2 and tok(c - 1) == "." and kinds[c - 2] == "name":
+            c -= 2
+        if parent[c] is not None and text[starts[parent[c]]] == "(":
+            continue   # a keyword argument or a parameter's default
+        chain = ".".join(tok(j) for j in range(c, i + 1, 2))
+        prev = tok(c - 1)
+        if nx == "=" or (nx in _BIND_OPS and tok(i + 2) == "=" and ends[i + 1] == starts[i + 2]):
+            binds.setdefault(chain, []).append((c, "=", i + 2 if nx == "=" else i + 3))
+        elif prev in ("as", "for"):
+            binds.setdefault(chain, []).append((c, prev, None))
+        elif prev in ("global", "nonlocal", "del"):
+            binds.setdefault(chain, []).append((c, "other", None))
+    memo[k] = out = {"binds": binds, "uses": uses, "self_writes": writes}
+    return out
+
+
+# The modules whose own get is an HTTP GET, and the calls that make an HTTP client (KL2)
+_CLIENT_MODULES = frozenset(("requests", "httpx", "aiohttp", "urllib3", "http", "https", "axios", "got", "ky", "needle", "superagent",
+                             "$", "jquery", "$http"))
+_CLIENT_MAKERS = frozenset(("requests.Session", "requests.session", "httpx.Client", "httpx.AsyncClient", "aiohttp.ClientSession",
+                            "urllib3.PoolManager", "axios.create"))
+_CHOICE_BEFORE = frozenset(("or", "and", "else", "||", "&&", "?"))   # one side of a choice made at run time (KL1)
+_CHOICE_AFTER = frozenset(("or", "and", "if", "||", "&&", "?"))
+_USES_FOLLOWED = 50   # a destination name used more often than this is in doubt: never a chat webhook
+
+
 def _code_standalone(text, a, b, start, end, prose, natural=True):
     """The code reading (see above) of the literal text[a:b] in the region text[start:end]."""
     import bisect
@@ -731,6 +919,93 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
             b -= 2
         return tok(o - 1) in _SENDERS or tok(b) == "axios"
 
+    names = lambda: _region_names(text, start, end, prose)
+
+    def maker(i):
+        """The a.b chain starting at token i is a call that makes an HTTP client (_CLIENT_MAKERS)."""
+        j = i
+        while j + 2 < n and tok(j + 1) == "." and kinds[j + 2] == "name":
+            j += 2
+        return (kinds[i] == "name" and j + 1 < n and kinds[j + 1] == "open" and text[starts[j + 1]] == "("
+                and ".".join(tok(x) for x in range(i, j + 1, 2)) in _CLIENT_MAKERS)
+
+    def http_client(c, o):
+        """Batch 6 (KL2): the receiver of the call opened at o (tokens c..o-3, before .get) is an HTTP client: a module whose get
+        is a GET (requests, httpx, https, axios, …), or a name (self.x too) the region binds exactly once, to a call that makes
+        one (x = requests.Session(), with httpx.Client() as x). Never from the name: cfg_client and session are anything."""
+        chain = ".".join(tok(x) for x in range(c, o - 2, 2))
+        if o - 3 == c and chain.lower() in _CLIENT_MODULES:
+            return True
+        b = names()["binds"].get(chain, [])
+        if len(b) != 1:
+            return False
+        first, kind, v = b[0]
+        if kind == "=":
+            return v is not None and v < n and maker(v)
+        if kind == "as" and first >= 2 and kinds[first - 2] == "close" and first - 2 in match:
+            m = match[first - 2]
+            s = m - 1
+            while s >= 2 and tok(s - 1) == "." and kinds[s - 2] == "name":
+                s -= 2
+            return s >= 0 and maker(s)
+        return False
+
+    def empty_map(o, c, lo):
+        """Batch 6 (KL1): the call opened at o is NAME.get(key, default) with the URL as that default, and NAME is proven an empty
+        map: the region binds it exactly once, before this, to {} or dict() as a whole statement, never uses it anywhere else (no
+        write, no alias, not passed to anything), and nothing in the region writes names at run time (exec, globals, setattr).
+        Only then is the default certainly what the lookup returns."""
+        if o - 3 != c or tok(o - 1) != "get" or kinds[c] != "name":
+            return False
+        al = args(o)
+        if len(al) != 2 or any(x[2] for x in al) or not al[1][0] <= lo <= al[1][1]:
+            return False
+        nm = names()
+        b = nm["binds"].get(tok(c), [])
+        if nm["self_writes"] or len(b) != 1 or len(nm["uses"].get(tok(c), [])) != 2:
+            return False
+        first, kind, v = b[0]
+        if kind != "=" or first >= c or v is None or v >= n or tok(first + 1) != "=":
+            return False
+        if tok(v) == "{" and match.get(v) == v + 1:
+            last = v + 1
+        elif tok(v) == "dict" and tok(v + 1) == "(" and match.get(v + 1) == v + 2:
+            last = v + 2
+        else:
+            return False
+        return ((first == 0 or nl[first] or tok(first - 1) in (";", "const", "let", "var"))
+                and (last + 1 >= n or nl[last + 1] or tok(last + 1) == ";"))
+
+    def settled(a, lo):
+        """Batch 6 (KL1): when the statement starting at token a assigns the URL to a name, that name is bound only there, and
+        no use of it is one side of a choice (or, ||, a conditional) or a lookup's argument (os.environ.get('HOOK', WEBHOOK)):
+        each would let something else be chosen at run time."""
+        k = a + 1 if tok(a) in ("const", "let", "var") else a
+        e = k
+        while e + 2 < n and tok(e + 1) == "." and kinds[e + 2] == "name":
+            e += 2
+        if kinds[k] != "name" or tok(e + 1) != "=" or e + 1 >= lo:
+            return True   # not an assignment of the URL to a name
+        chain = ".".join(tok(x) for x in range(k, e + 1, 2))
+        nm = names()
+        if len(nm["binds"].get(chain, [])) > 1:
+            return False
+        uses = [u for u in nm["uses"].get(tok(k), []) if u != k] if e == k else []
+        if len(uses) > _USES_FOLLOWED:
+            return False
+        for u in uses:
+            if tok(u - 1) in _CHOICE_BEFORE or tok(u + 1) in _CHOICE_AFTER:
+                return False
+            o2 = parent[u]
+            if o2 is not None and o2 >= 1 and text[starts[o2]] == "(" and kinds[o2 - 1] == "name" and o2 in match:
+                c2 = o2 - 1
+                while c2 >= 2 and tok(c2 - 1) == "." and kinds[c2 - 2] == "name":
+                    c2 -= 2
+                role = lookup(o2, c2, tok(o2 - 1), u)
+                if role and not (role == "default" and empty_map(o2, c2, u)):
+                    return False
+        return True
+
     def lookup(o, c, bt, lo):
         """PR A, Codex round 2 (1, 7): None when the call at o (its name starting at c) sends or wraps; else the role of the
         argument at lo in the lookup: "default" (a default= or fallback= keyword, or the last positional argument after the key)
@@ -744,9 +1019,9 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
         if bt == "get":
             # PR A, Codex round 3 (1, 5): `get` is an HTTP GET only on an HTTP client (requests.get, session.get, https.get,
             # self.client.get, …, whatever its other arguments: params, a named callback) or as a bare get(url, …) with the URL
-            # first; on anything else (config.get, os.environ.get, cfg.get) it is a lookup, its arguments keys and a default
-            recv = tok(o - 3) if o - 3 >= c else None
-            http = _HTTP_CLIENT.fullmatch(recv) is not None if recv is not None else bool(pos) and mine is pos[0]
+            # first; on anything else (config.get, os.environ.get, cfg.get) it is a lookup, its arguments keys and a default.
+            # Batch 6 (KL2): a client is a module's own (requests.get) or a name the region binds once to one (http_client)
+            http = http_client(c, o) if o - 3 >= c else bool(pos) and mine is pos[0]
             if http and not calls_out(c):
                 return None
         elif bt not in _LOOKUPS:
@@ -779,13 +1054,15 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
     def quiet():
         """PR A, Codex round 2 (1): a destination that is only maybe the chat webhook (a lookup's default, a helper's argument,
         one side of an or, an element of a dict or list) can't be a way to send something somewhere else. Round 3 (1): what
-        overrides it may be anywhere (config = {'hook': 'https://collector…'} two lines up), so nothing in the whole text is
-        another URL (_other_urls), and no string or name in the whole region is a credential's."""
+        overrides it may be anywhere in the code (config = {'hook': 'https://collector…'} two lines up), so nothing in the region
+        is another URL (_other_urls), and no string or name in it is a credential's. Batch 6 (#15 medium 5): the region of the
+        send (its code block, or the whole file when it has none), not the whole text: a docs link in the prose around a code
+        block is not where the code sends."""
         memo = _memo(text)
         ck = ("cred", start, end, prose)
         if ck not in memo:
             memo[ck] = [i for i in range(n) if kinds[i] in ("str", "name") and _CRED_WORD.search(tok(i))]
-        return all(i == li for i in memo[ck]) and all(a <= s < b for s in _other_urls(text))
+        return all(i == li for i in memo[ck]) and all(a <= s < b for s in _other_urls(text) if start <= s < end)
 
     def sent(lo, hi):
         """The call text[lo..hi] sends to the URL: true when nothing makes its result one piece of something else, up to the
@@ -853,7 +1130,10 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
                 return False   # it closes a bracket opened before the region, or the reading broke after it
             if not prose:   # code: one side of an or, an and or a conditional (prose reads these words as English)
                 a, b = statement(lo, hi)
-                maybe = maybe or any(parent[i] is None and tok(i) in _BOOL_OPS for i in range(a, b + 1))
+                if any(parent[i] is None and tok(i) in _BOOL_OPS for i in range(a, b + 1)):
+                    return False   # batch 6 (KL1): another value may be chosen at run time (os.environ.get('HOOK') or URL)
+                if not settled(a, lo):
+                    return False   # batch 6 (KL1): the name it is kept under is bound again, or chosen between at run time
             if pk is None:
                 return natural and (not maybe or quiet())
             return not (pt == "," or pk == "close" or pt == ".") and (not maybe or quiet())
@@ -883,12 +1163,17 @@ def _code_standalone(text, a, b, start, end, prose, natural=True):
             role = lookup(o, c, bt, lo)
             if role == "key" or (role and keys):
                 return False   # PR A, Codex round 2 (1): a lookup's key: what is found under it is where it goes, not this URL
-            if role and _CONFIG_PARSER.search(text):
+            memo = _memo(text)
+            if role and "configparser" not in memo:   # batch 6: once per text (it was a search of the whole text per lookup)
+                memo["configparser"] = bool(_CONFIG_PARSER.search(text))
+            if role and memo["configparser"]:
                 return False   # PR A, Codex round 3 (1): a ConfigParser reads its options from a file (cfg.get(section, option))
+            if role and not empty_map(o, c, lo):
+                return False   # batch 6 (KL1): the environment, a file, getattr, setdefault, pop or an unknown map may hold the key
             if role:
                 # PR A, Codex round 2 (7): a lookup's default is what it returns when the key isn't there, followed outward to the
                 # sender like any operand. Round 3 (1): only maybe (the key may be there: config = {'hook': …} above), whatever
-                # the key is
+                # the key is. Batch 6 (KL1): only from a map proven empty (empty_map), and still only maybe
                 maybe = True
                 lo, hi = c, match[o]
                 continue
@@ -1069,8 +1354,10 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None)
                 if rule["id"] == "WT-T002":
                     break
                 continue
-            if rule["id"] == "WT-T017" and not sends_data(text[m.start():m.start() + 400]):
+            if rule["id"] == "WT-T017" and not sends_data(text[m.start():m.start() + 400], _logical_line_before(text, m.start())):
                 continue   # look past the short regex match so -G with @ or $(...) still counts; later | tr -d stays out
+            if rule["id"] == "WT-T007" and asks_for_information(text, m):
+                continue   # batch 6 (B7): "without asking the user which theme" asks for information, not for approval
             if rule["id"] == "WT-T016" and not rules["write_verbs"].search(sentence_of(text, m)):
                 continue   # "failed silently", "quietly refresh the cache": quiet wording only matters next to an outward action
             if rule["id"] == SECRET_RULE and not looks_real_secret(m.group(0)):
@@ -1124,6 +1411,37 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None)
             out.append(finding("WT-R003", "High-frequency schedule", "low", ["ASI08"], where, hf.group(0),
                                "Hourly routines burn the weekly allowance; prefer daily or an event trigger."))
     return dedupe(out)
+
+
+# Batch 6 (B7). T007: the bare "without asking the user / me" followed by what, which, who, whether, how or about asks for
+# information, not approval, unless the rest of its clause is about approval or an action ("whether to send it").
+INFO_AFTER = re.compile(r"(?i)\s+(what|which|who|whether|how|about)\b")
+APPROVAL_IN_CLAUSE = re.compile(r"(?i)\b(approv\w*|permission|confirm\w*|ok|okay|allowed|proceed|continue|go\s+ahead|send|post|publish|"
+                                r"delete|remove|buy|purchase|pay|transfer|submit|deploy|merge|invite|reply|email|run|install)\b")
+
+
+def asks_for_information(text, m):
+    """WT-T007's match is the bare "without asking the user/me" asking for information (see above)."""
+    if not re.match(r"(?i)without\s+asking\s+(me|the\s+user)$", m.group(0)) or not INFO_AFTER.match(text, m.end()):
+        return False
+    rest = re.split(r"[.;!?\n]", text[m.end():m.end() + 120], maxsplit=1)[0]
+    return not APPROVAL_IN_CLAUSE.search(rest)
+
+
+# T013: an action whose recipient is the person the Bot works for, or this conversation ("send updates to the user", "reply to
+# me", "post the summary to this chat") is not consequential; only when nothing else in its clause names another recipient.
+TO_OWNER = re.compile(r"(?i)^\s+(?:[\w-]+\s+){0,3}?(?:to|with)\s+(?:(?:the|this|our)\s+)?(?:user|owner|chat|room|conversation|me)\b"
+                      r"|^\s+(?:the\s+)?(?:user|owner|me)\b")
+OTHER_RECIPIENT = re.compile(r"(?i)['’]s\b|\b(and|or|also|plus|cc|bcc|then|everyone|all|team|public|channel|group|list|money|funds?|"
+                             r"payments?|crypto|bitcoin|btc|eth|usdc?|tokens?|wallets?|keys?|credentials?|passwords?|secrets?)\b|@|https?://|[/#$]")
+TO_OWNER_VERBS = frozenset(("send", "sends", "email", "emails", "post", "posts", "reply"))   # telling someone, never paying or deleting
+
+
+def to_owner(after):
+    """The text after an action verb makes the user, the owner, me, this chat or the room its only recipient."""
+    r = TO_OWNER.match(after)
+    return bool(r) and not OTHER_RECIPIENT.search(re.split(r"[.;:!?\n]", after[r.end():], maxsplit=1)[0]) \
+        and not OTHER_RECIPIENT.search(after[:r.end()])
 
 
 STRONG_VERBS = re.compile(r"(?i)\b(send|sends|sending|publish|publishes|purchase|purchases|buy|buys|pay|pays|transfer|transfers|submit|submits|deploy|deploys|invite|invites|tweet|tweets)\b")
@@ -1220,6 +1538,8 @@ def first_action(text, rx):
         if names_a_thing(m.group(0), before, after):
             continue
         if OWNER_AFTER.search(re.split(r"[.;:!?\n]", after[:40])[0]):
+            continue
+        if m.group(0).lower() in TO_OWNER_VERBS and to_owner(after):   # batch 6 (B7): "send updates to the user", "reply to me"
             continue
         room = TEAM_ROOM.match(after) if m.group(0).lower() in ("post", "posts") else None
         if room and room.group("room").lower() in known_rooms():

@@ -1,13 +1,30 @@
 # Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
 # ---------------------------------------------------------------- collection
+def _look(path, follow=False):
+    """What a lookup of `path` says (batch 6, KL5): its stat result (lstat, or stat with follow=True), False when it is
+    certainly not there (no such name, or a name on the way is not a folder), None when Watchtower couldn't look (no
+    permission on a folder on the way, a link loop, any other error). os.path.isdir, isfile and lexists say False for
+    both, so a folder Watchtower wasn't allowed to look into read as "there is none"."""
+    try:
+        return os.stat(path) if follow else os.lstat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    except (OSError, ValueError):
+        return None
+
+
 def walk(roots, max_depth=8, errors=None, skipped=None):
     """Every plain file under roots. `errors` (a list) gets each folder the walk couldn't list (batch 5 PR B, Codex round 2, 3:
     the access map then never says there is none). Round 3 (1): `errors` also gets each file it couldn't look at (not one that
     vanished), and `skipped` (a list) each folder it left out: a link to a folder, one past max_depth, one of the folders it never
-    scans (SKIP_DIRS, SKIP_PATH_PARTS). Watchtower's own folder is left out too, but not counted: it is Watchtower's, not the Bots'."""
+    scans (SKIP_DIRS, SKIP_PATH_PARTS). Watchtower's own folder is left out too, but not counted: it is Watchtower's, not the Bots'.
+    Batch 6 (KL5): a root Watchtower couldn't look at is an error too, never a root that isn't there."""
     for root in roots:
         root = os.path.expanduser(root)
-        if not os.path.isdir(root):
+        st = _look(root, follow=True)
+        if st is None and errors is not None:
+            errors.append(OSError(errno.EACCES, "couldn't look at a scan root", root))
+        if not st or not stat.S_ISDIR(st.st_mode):
             continue
         base = root.rstrip("/").count("/")
         for dirpath, dirnames, filenames in os.walk(root, onerror=errors.append if errors is not None else None):
@@ -152,17 +169,43 @@ CRONTAB_SEEN = {}   # "crontab": what the last persistence_snapshot's `crontab -
 SYSTEM_CRON = "/etc/cron.d"   # batch 5 PR B, Codex round 3 (5): the access map counts its jobs too (tests point it at their box)
 
 
+PERSIST_UNKNOWN = set()   # batch 6 (KL5): what the last persistence_snapshot couldn't look at (a folder or rc file), never "none"
+
+
+def _list_folder(d):
+    """The names in folder d, opened without following a link at d itself (O_NOFOLLOW): None when Watchtower couldn't list it (no
+    permission, a link, not a folder). Batch 6 (KL5, #16 medium 2): os.listdir followed a link and raised on no permission."""
+    try:
+        fd = os.open(d, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError:
+        return None
+    try:
+        return sorted(os.listdir(fd))
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+
+
 def persistence_snapshot():
     snap = {}
+    PERSIST_UNKNOWN.clear()
     code, out, err = run(["crontab", "-l"], 10)
     snap["crontab"] = out.strip() if code == 0 else ""
     CRONTAB_SEEN["crontab"] = crontab_state(code, err)
     for d in (SYSTEM_CRON, os.path.expanduser("~/.config/systemd/user")):
-        if os.path.isdir(d):
-            snap[d] = sorted(os.listdir(d))
+        st = _look(d)   # batch 6 (KL5): a folder that couldn't be looked at, or listed, is unknown, never empty
+        names = None if st is None else _list_folder(d) if st else []
+        if names is None:
+            PERSIST_UNKNOWN.add(d)
+        elif st:
+            snap[d] = names
     for rc in ("~/.bashrc", "~/.profile", "~/.bash_profile", "~/.zshrc"):
         p = os.path.expanduser(rc)
-        if os.path.isfile(p):
+        st = _look(p, follow=True)
+        if st is None:
+            PERSIST_UNKNOWN.add(rc)
+        elif st and stat.S_ISREG(st.st_mode):
             snap[rc] = sha256_file(p)
     return snap
 
@@ -199,11 +242,16 @@ KNOWN_CRED_FILES = {
 }
 
 
-def cli_credentials():
+def cli_credentials(unknown=None):
+    """WT-S003 for each known CLI credential file there. `unknown` (a list) gets each one Watchtower couldn't look at (batch 6,
+    KL5): the access map then never says there is no sign-in."""
     out = []
     for rel, what in KNOWN_CRED_FILES.items():
         p = os.path.join(os.path.expanduser("~"), rel)
-        if os.path.isfile(p):
+        st = _look(p, follow=True)
+        if st is None and unknown is not None:
+            unknown.append(p)
+        if st and stat.S_ISREG(st.st_mode):
             out.append(finding("WT-S003", f"CLI credential on the shared computer: {what}", "high", ["ASI03", "AST06"], p, what,
                                "Expected if a Bot uses this CLI, but every Bot (and anything injected into one) can use it. "
                                "Keep only the CLIs your Bots need, scope tokens to least privilege, and rotate them; sign out of unused ones."))

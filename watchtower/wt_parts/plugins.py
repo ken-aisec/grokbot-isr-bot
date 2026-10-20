@@ -59,6 +59,137 @@ def find_key(obj, keys):
     return None
 
 
+# Batch 6 (B8): an MCP server a package launcher fetches and runs is pinned only by an exact version of that package. npx, uvx,
+# bunx, `pnpm dlx` and `npm exec` alike (also behind /usr/bin/env); "@latest", a range and a dist-tag can each change what runs.
+# Read from the command and args of every object in the file that has a "command" (mcpServers, servers, …); a file that isn't
+# JSON is read for its "command" and "args" strings. The old "an @ within 200 characters" test let `npx -y @scope/pkg` (or an email nearby) pass as pinned.
+MCP_LAUNCHERS = {"npx": 1, "uvx": 1, "bunx": 1, "pnpm": ("dlx",), "npm": ("exec",)}
+MCP_SKIP_FLAGS = frozenset(("-y", "--yes", "--quiet", "-q", "--"))
+MCP_VALUE_FLAGS = frozenset(("-p", "--package", "--from"))
+MCP_SERVERS_MAX = 2000   # servers looked at in one file; past it the rest are not
+_NPM_EXACT = re.compile(r"(?:@[A-Za-z0-9._~-]+/)?[A-Za-z0-9._~-]+@v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]*)?")
+_PY_EXACT = re.compile(r"[A-Za-z0-9._-]+(?:\[[^\]]*\])?(?:===?|@)v?\d[0-9A-Za-z.+-]*")
+_NPM_RANGE = re.compile(r"[\^~<>=*| ]|^[\dxX*]+(?:\.[\dxX*]+){0,2}$")
+_JSON_STR = r'"((?:[^"\\\n]|\\.)*)"'
+
+
+def mcp_package(words):
+    """(launcher, package spec) when the words (a server's command and args) run a package launcher, else None. The package is
+    the value of -p/--package/--from, or the first word after the launcher that isn't a flag."""
+    w = [x for x in words if isinstance(x, str)]
+    if w and os.path.basename(w[0]) == "env":   # /usr/bin/env [VAR=value …] npx …
+        w = w[1:]
+        while w and (w[0].startswith("-") or ("=" in w[0] and not w[0].startswith(("@", ".", "/")))):
+            w = w[1:]
+    if not w:
+        return None
+    name = os.path.basename(w[0]).lower()
+    sub = MCP_LAUNCHERS.get(name)
+    if sub is None:
+        return None
+    if sub != 1:
+        if len(w) < 2 or w[1] not in sub:
+            return None
+        name, w = f"{name} {w[1]}", w[1:]
+    rest, i = w[1:], 0
+    while i < len(rest):
+        x = rest[i]
+        if x in MCP_VALUE_FLAGS:
+            return name, rest[i + 1] if i + 1 < len(rest) else ""
+        if x.split("=", 1)[0] in MCP_VALUE_FLAGS and "=" in x:
+            return name, x.split("=", 1)[1]
+        if x in MCP_SKIP_FLAGS or x.startswith("-"):
+            i += 1
+            continue
+        return name, x
+    return name, ""
+
+
+def mcp_pin_problem(launcher, spec):
+    """Why `spec` isn't an exact version for this launcher ("no version", "@latest", "range …", "tag …"), or None when it is."""
+    s = spec.strip()
+    if launcher == "uvx":
+        if _PY_EXACT.fullmatch(s):
+            return None
+        m = re.search(r"(===?|~=|!=|>=|<=|[<>@])", s)
+        return "no version" if not m else "@latest" if s.endswith("@latest") else "range " + s[m.start():][:40]
+    if _NPM_EXACT.fullmatch(s):
+        return None
+    at = s.find("@", 1)
+    if at == -1:
+        return "no version"
+    v = s[at + 1:]
+    if v == "latest":
+        return "@latest"
+    return ("range " if _NPM_RANGE.search(v) else "tag ") + v[:40]
+
+
+def _mcp_servers(text):
+    """[(the offset of its "command", [command, *args])] for each MCP server in `text`."""
+    out = []
+    try:
+        doc = json.loads(text)
+    except (ValueError, RecursionError):
+        doc = None
+    if isinstance(doc, (dict, list)):
+        import collections
+        where = collections.defaultdict(collections.deque)   # each "command" value -> its places in the text, in order
+        for j, m in enumerate(re.finditer(r'"command"\s*:\s*' + _JSON_STR, text)):
+            try:
+                where[json.loads('"' + m.group(1) + '"')].append((j, m.start()))
+            except ValueError:
+                pass
+        used, found, stack, seen = 0, [], [doc], 0
+        while stack and seen < 200_000 and len(found) < MCP_SERVERS_MAX:   # every object with a "command", in the file's order
+            x = stack.pop()
+            seen += 1
+            if isinstance(x, dict):
+                if isinstance(x.get("command"), str):
+                    found.append(x)
+                stack += reversed(list(x.values()))
+            elif isinstance(x, list):
+                stack += reversed(x)
+        for cfg in found:
+            args = cfg.get("args") if isinstance(cfg.get("args"), list) else []
+            q, at = where.get(cfg["command"]), 0
+            while q and q[0][0] < used:   # the next "command" in the text with this value
+                q.popleft()
+            if q:
+                j, at = q.popleft()
+                used = j + 1
+            out.append((at, cfg["command"].split() + [a for a in args if isinstance(a, str)]))
+        return out
+    # not JSON (comments, a trailing comma): each "command" with the "args" list after it, before the next "command"
+    cmds = list(re.finditer(r'"command"\s*:\s*' + _JSON_STR, text))[:MCP_SERVERS_MAX]
+    for k, m in enumerate(cmds):
+        stop = cmds[k + 1].start() if k + 1 < len(cmds) else min(len(text), m.end() + 20000)
+        words = m.group(1).split()
+        a = re.compile(r'"args"\s*:\s*\[').search(text, m.end(), stop)
+        if a:
+            close = text.find("]", a.end(), stop)
+            words += [s.group(1) for s in re.finditer(_JSON_STR, text[a.end():close if close != -1 else stop])]
+        out.append((m.start(), words))
+    return out
+
+
+def mcp_unpinned(text):
+    """[(line, evidence)] for each MCP server in `text` that a package launcher runs without an exact version."""
+    out, line, pos = [], 1, 0
+    for at, words in sorted(_mcp_servers(text), key=lambda x: x[0]):
+        got = mcp_package(words)
+        if got is None:
+            continue
+        launcher, spec = got
+        why = mcp_pin_problem(launcher.split()[0], spec)
+        if why is None:
+            continue
+        line += text.count("\n", pos, at)
+        pos = at
+        name = re.split(r"(?<=.)[@=<>~!]", spec, maxsplit=1)[0]
+        out.append((line, f"{launcher} {name or '(no package named)'} ({why})"))
+    return out
+
+
 PLATFORM_FILES = ("/sand-data/gateway.json", "/agent-data/gateway.json", "/sand-data/teach-queue-key.json", "/agent-data/teach-queue-key.json")   # Grok Bot's own config; the user can't change it
 
 

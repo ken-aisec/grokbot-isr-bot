@@ -33,7 +33,8 @@ class LookupsAndCollections(Folder):
     def test_the_codex_overridden_default_is_critical(self):   # replay (77dedd1: Install with changes, WT-T018)
         code, r = vet_json(self.write("SKILL.md", fenced(self.CODEX)))
         self.assertEqual(r["verdict"], "Do not install")
-        self.assertIn(("WT-T005", "critical"), [(f["rule"], f["severity"]) for f in r["findings"]])
+        # batch 6 (B7): vet shows the audit's labelled severity; the rule's own is severity_was
+        self.assertIn(("WT-T005", "critical"), [(f["rule"], f.get("severity_was", f["severity"])) for f in r["findings"]])
         self.assertNotIn("WT-T018", [f["rule"] for f in r["findings"]])
 
     def test_a_lookup_through_a_variable_is_not_the_destination(self):   # replay (77dedd1: WT-T018 for each)
@@ -49,8 +50,9 @@ class LookupsAndCollections(Folder):
             self.assertEqual(rules_of(fenced(c)), {"WT-T005"}, c)
 
     def test_safe_forms_stay_chat_webhooks(self):   # guard (round 2's safe defaults run unmodified in test_batch5_codex_r2)
+        # batch 6 (KL1, Codex #15 high 1): an unknown config may hold another destination: WT-T005 (was T018)
+        self.assertEqual(rules_of(fenced("url = config.get('hook', '" + HOOK + "')\nrequests.post(url, json=payload)")), {"WT-T005"})
         for c in ("config = {}\nrequests.post(config.get('hook', '" + HOOK + "'), json=payload)",
-                  "url = config.get('hook', '" + HOOK + "')\nrequests.post(url, json=payload)",
                   "config = {'hook': '" + HOOK + "'}\nrequests.post(config['hook'], json=payload)",
                   "hooks = ['" + HOOK + "', '" + r2.SLACK + "']\nfor h in hooks:\n    requests.post(h, json=payload)",
                   "WEBHOOK = '" + HOOK + "'\nrequests.post(WEBHOOK, json=payload)",
@@ -71,8 +73,9 @@ class HttpGets(Folder):
 
     def test_other_http_clients(self):   # replay (77dedd1: WT-T005 for each)
         for lang, c in (("python", "httpx.get('" + HOOK + "', params)"),
-                        ("python", "self.session.get('" + HOOK + "', params, timeout)"),
-                        ("python", "client.get('" + HOOK + "', headers)"),
+                        # batch 6 (KL2): a session or client is one only when the code binds it to one (never by its name)
+                        ("python", "self.session = requests.Session()\nself.session.get('" + HOOK + "', params, timeout)"),
+                        ("python", "client = httpx.Client()\nclient.get('" + HOOK + "', headers)"),
                         ("js", "http.get('" + HOOK + "', onResponse)"),
                         ("js", "axios.get('" + HOOK + "', config)")):
             self.assertEqual(rules_of(fenced(c, lang)), {"WT-T018"}, c)
