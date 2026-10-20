@@ -19,7 +19,7 @@ import base64, gzip, inspect, io, json, os, random, secrets, string, sys, unitte
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, wt
-from test_batch6_example_keys import EXAMPLE, _Keys, der, der_int, pem, rsa_der, token
+from test_batch6_example_keys import EXAMPLE, _Keys, der, der_int, pem, public_key_packet, rsa_der, token
 
 ALNUM = string.ascii_letters + string.digits
 
@@ -117,7 +117,7 @@ class ExampleBoundToPlace(_Keys):
 
     def test_a_fake_key_block_on_a_later_line_of_a_long_file(self):   # guard: read inside gitleaks' first 100,000 bytes; round 2: low
         # round 3 (Codex 3): a body that isn't base64 is a key now, so the block is one that decodes to bytes that start no key
-        block = pem("RSA ", b"\x99\xff\xff" + secrets.token_bytes(297)).rstrip("\n")   # batch 7a: a cut public-key packet
+        block = pem("RSA ", public_key_packet(300)).rstrip("\n")   # batch 7a fix round 1: a whole public-key packet
         p = self.put("sand-data/workflows/setup-dev-tools/references/long.md", "filler line\n" * 2000 + block + "\n")
         self.leak(p, block, rule="private-key")
         fs, notes = self.scan()

@@ -138,28 +138,11 @@ def _quote_before(s, i):
 def _strict_end(s, a, b):
     """(level or "edge", quote) under which a strict reading lets the END marker s[a:b] end a block written with escapes;
     None when it doesn't. Before it, past spaces and tabs: the start of the text or a line break ("edge"), an escaped \\n or
-    \\r (its level), or a quote (as written, _quote_before) itself after one of those, a quote or code (_ARMOR_CODE). After
-    it: what _end_after_ok reads, where an escape must be a whole break (its level). Both sides' levels and quotes agree."""
-    j = a
-    while j > 0 and s[j - 1] in " \t":
-        j -= 1
-    q1, lv1 = "", None
-    if j == 0 or s[j - 1] in "\r\n":
-        lv1 = "edge"
-    elif _esc_before(s, j):
-        lv1 = _esc_before(s, j)[0]
-    else:
-        q1, j = _quote_before(s, j)
-        if not q1:
-            return None
-        while j > 0 and s[j - 1] in " \t":
-            j -= 1
-        if j == 0 or s[j - 1] in "\r\n" + _ARMOR_CODE or (s[j - 1] in _ARMOR_QUOTES and not _back_run(s, j - 1) % 2):
-            lv1 = "edge"
-        elif _esc_before(s, j):
-            lv1 = _esc_before(s, j)[0]
-        else:
-            return None
+    \\r (its level), or a quote (as written, _quote_before). After it: what _end_after_ok reads, where an escape must be a
+    whole break (its level). Both sides' levels and quotes agree. Fix round 1 (Codex 1): the whole logical line before a quoted
+    END is read back to its start (the text's start, a line break, or an escaped break at the END's level), and it may hold
+    only spaces, quotes and code (_ARMOR_CODE: "…\\n" + "-----END …"): a header line (Comment: x + "-----END …) never ends a
+    block. Each END reads back only to the previous END or anything else, so all of them are read in linear time."""
     k, n, q2 = b, len(s), ""
     while k < n and s[k] in " \t":
         k += 1
@@ -172,6 +155,26 @@ def _strict_end(s, a, b):
     else:
         lv2 = _esc_level(s, k) if s[k] == "\\" else None
         if lv2 is None:
+            return None
+    j = a
+    while j > 0 and s[j - 1] in " \t":
+        j -= 1
+    q1, lv1 = "", None
+    if j > 0 and s[j - 1] in _ARMOR_QUOTES:
+        q1 = _quote_before(s, j)[0]
+    elif j and s[j - 1] not in "\r\n" and not _esc_before(s, j):
+        return None   # only a line start or a quote stands right before an END
+    while lv1 is None:   # back over the logical line to its start
+        if j == 0 or s[j - 1] in "\r\n":
+            lv1 = "edge"
+        elif _esc_before(s, j):
+            lv = _esc_before(s, j)[0]
+            if lv2 != "edge" and lv != lv2:
+                return None   # a backslash-n written at another level is text on this line
+            lv1 = lv
+        elif s[j - 1] in " \t\\" + _ARMOR_QUOTES + _ARMOR_CODE and q1:
+            j -= 1
+        else:
             return None
     if q1 and q2 and q1 != q2 or "edge" not in (lv1, lv2) and lv1 != lv2:
         return None
@@ -230,7 +233,9 @@ def armor_blocks(s):
     break, and whose quotes are the BEGIN's own; in a block of real lines, a closing quote after the END is the BEGIN's own.
     The block hides to the furthest of the strict END, the loose END and the last loose END that the next BEGIN reading the
     same ENDs doesn't take (with none, the last such END in the text); with no strict END, to the end of the text, so a reader
-    unsure where it ends never hides less than before. One pass over the markers, each END found by bisection."""
+    unsure where it ends never hides less than before. Fix round 1 (Codex 1): also to the end of the text when an END marker
+    with its label, in any frame, comes after that end and before its label's next BEGIN. One pass over the markers, each END
+    found by bisection."""
     begins, ends, n = _armor_markers(s, "BEGIN"), _armor_markers(s, "END"), len(s)
     loose, strict = {}, {}
     for a, b, label in ends:
@@ -268,6 +273,11 @@ def armor_blocks(s):
     for (a, _, _), (lk, _) in zip(begins, reads):
         for key in lk:
             starts.setdefault(key, []).append(a)
+    label_begins, raw_ends = {}, {}   # label: the starts of all its BEGIN / END markers, in any frame
+    for a, _, label in begins:
+        label_begins.setdefault(label, []).append(a)
+    for a, _, label in ends:
+        raw_ends.setdefault(label, []).append(a)
     out = []
     for k, ((a, b, label), (lk, sk)) in enumerate(zip(begins, reads)):
         nxt = begins[k + 1][0] if k + 1 < len(begins) else None
@@ -282,6 +292,13 @@ def armor_blocks(s):
                 if hi:
                     far.append(lst[hi - 1][0])
             hide = max(far)
+            # fix round 1 (Codex 1): any later END marker of this label before the next BEGIN of it, whatever its frame (one
+            # with text after it, which GnuPG still reads, is in neither reading), leaves the end unsure: hidden to the end
+            bs, lst = label_begins[label], raw_ends.get(label, ())
+            i = bisect.bisect_right(bs, a)
+            hi = bisect.bisect_left(lst, bs[i]) if i < len(bs) else len(lst)
+            if hi and lst[hi - 1] > hide:
+                hide = None
         out.append((a, b, label, e[0] if e else None, e[1] if e else None, nxt, hide))
     return out
 

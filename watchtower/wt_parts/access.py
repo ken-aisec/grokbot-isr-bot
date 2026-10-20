@@ -40,7 +40,9 @@ ACCESS_WORKSPACE = "/workspace"
 _AX_HOST = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)*")
 _AX_AGENT_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f-]{27,}")
 _AX_ID = re.compile(r"[a-z0-9-]{1,30}")
-_AX_NO_CONNECTOR = re.compile(r"(?i)\s*(none|nothing|n/?a|-+|no connectors?( yet)?|not (yet )?(connected|installed|set up))?\s*")
+# batch 7a fix round 1 (Codex 3): matched on the name stripped once (str.strip and \s are the same characters), with no
+# whitespace repetition of its own, so a long run of spaces before one other character is read in linear time
+_AX_NO_CONNECTOR = re.compile(r"(?i)(none|nothing|n/?a|-+|no connectors?( yet)?|not (yet )?(connected|installed|set up))?")
 ACCESS_JSON_MAX_BYTES = 1024 * 1024
 _ACCESS_RUN = {}   # {"home", "map"}: the map this command built; main_inner empties it before each command
 
@@ -119,9 +121,10 @@ def _connector_read(names, other=0):
             continue
         cut = len(c) > chars
         c, chars = c[:chars], chars - min(len(c), chars)
-        if _AX_NO_CONNECTOR.fullmatch(c) and not cut:
+        bare = c.strip()
+        if _AX_NO_CONNECTOR.fullmatch(bare) and not cut:
             continue
-        exact = next((e_ for e_ in vocab if c.strip().lower() in (e_["label"].lower(), e_["id"])), None)
+        exact = next((e_ for e_ in vocab if bare.lower() in (e_["label"].lower(), e_["id"])), None)
         if exact is not None and not cut:
             found.add(exact["label"])
             continue

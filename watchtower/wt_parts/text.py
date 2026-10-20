@@ -240,8 +240,9 @@ def pgp_packets(raw):
     """Batch 7a (PR2 Codex round 4, high 3): raw read as OpenPGP packets (old and new headers, their lengths), at most
     _PGP_MAX: "secret" when a secret-key or secret-subkey packet is among them; "public" only when every packet is a public one
     (_PGP_PUBLIC) or one readers ignore (_PGP_IGNORED: a marker, trust or padding packet), at least one is public, and they end
-    exactly at the end of raw or with a public packet cut short; None for anything else (another or reserved tag, a partial or
-    indeterminate length, bytes after them that aren't a packet, more than _PGP_MAX)."""
+    exactly at the end of raw; None for anything else (another or reserved tag, a partial or indeterminate length, bytes after
+    them that aren't a packet, more than _PGP_MAX). Fix round 1 (Codex 2): a packet whose declared length runs past the end of
+    raw is None too, public or not: a cut walk proves nothing about the bytes it skipped (a secret key may lie in them)."""
     i, n, public = 0, len(raw), False
     for _ in range(_PGP_MAX):
         if i >= n:
@@ -270,7 +271,7 @@ def pgp_packets(raw):
         public = public or tag in _PGP_PUBLIC
         i += head + size
         if i > n:
-            return "public" if tag in _PGP_PUBLIC else None
+            return None
     return "public" if i == n and public else None
 
 

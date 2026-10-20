@@ -21,7 +21,7 @@ import base64, gzip, hashlib, inspect, json, os, random, secrets, subprocess, sy
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, ROOT, wt
-from test_batch6_example_keys import _Keys, der, der_int, pem, rsa_der, token
+from test_batch6_example_keys import _Keys, der, der_int, pem, public_key_packet, rsa_der, token
 from test_batch6b_codex_r1 import (_Dismiss, BUN, GSIDS, MARKER, SKILL_HEAD, body_bits, golden, gl_key, pkcs8, scenario)
 
 TITLE = "Looks like an example or checksum value - check it"   # round 2's title; round 3 keeps each finding's own
@@ -281,7 +281,7 @@ class KeyBlockLines(unittest.TestCase):
             self.assertEqual(wt.secret_kind(v, tail=text[i + 27:])[0], "real", text[:80])
 
     def test_fake_blocks_in_code_and_prose_stay_examples(self):   # guard
-        junk = base64.b64encode(b"\x99\xff\xff" + secrets.token_bytes(117)).decode()   # batch 7a: a cut public-key packet
+        junk = base64.b64encode(public_key_packet(120)).decode()   # batch 7a fix round 1: a whole public-key packet
         # round 3 (Codex 3): a body that isn't base64 (words) can't be read, so it is a key; one that decodes to bytes starting no key
         # is still an example
         for text, want in (("-----BEGIN PRIVATE KEY-----\n" + junk + "\n-----END PRIVATE KEY-----", "example"),

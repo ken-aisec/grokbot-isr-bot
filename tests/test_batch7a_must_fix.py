@@ -14,7 +14,7 @@ Timing runs in a child process with a 60-second limit. A failure reports how man
 import base64, bisect, json, os, random, secrets, shutil, subprocess, sys, tempfile, time, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, ROOT, wt
-from test_batch6_example_keys import _Keys, pem
+from test_batch6_example_keys import _Keys, pem, public_key_packet
 from test_batch6b_codex_r2 import ed25519_pkcs8
 from test_batch6b_codex_r3 import approved_copy, bits_of, crc24, pgp_secret_block, t011
 
@@ -181,7 +181,7 @@ class SerializedArmor(Box):   # assertions on masked text report counts and yes/
         self.assertTrue(wt.mask_secrets(out) == out, "masking again changed it")
 
     def test_a_block_hidden_past_its_strict_end_is_real(self):   # guard (new)
-        junk = base64.b64encode(b"\x99\xff\xff" + secrets.token_bytes(117)).decode()   # a cut public-key packet: an example alone
+        junk = base64.b64encode(public_key_packet(120)).decode()   # a whole public-key packet: an example alone
         plain = "-----BEGIN PRIVATE KEY-----\n" + junk + "\n-----END PRIVATE KEY-----\n"
         text = json.dumps({"k": plain})
         self.assertEqual(wt.pem_kind(text, text.index("-----BEGIN")), "example")
@@ -201,6 +201,58 @@ class SerializedArmor(Box):   # assertions on masked text report counts and yes/
         self.assertEqual(kept(bits, out), 0)
         self.assertFalse("visible" in out, "the text after the block was kept")
         self.assertEqual(wt.pem_kind(text, text.index("-----BEGIN")), "real")
+
+    # fix round 1 (Codex 1): a quoted END in a header line, in a Python string written with \n escapes
+    QUOTED_COMMENT = 'Comment: x + "-----END PGP PRIVATE KEY BLOCK-----'
+
+    def python_source(self, armor):
+        return 'KEY = """' + armor.replace("\\", "\\\\").replace("\n", "\\n") + '"""\nprint(len(KEY))\n'
+
+    def trailing(self, block):
+        """block with text after its own (last) END marker, the comment's left as it is."""
+        end = "-----END PGP PRIVATE KEY BLOCK-----\n"
+        i = block.rindex(end)
+        return block[:i] + end[:-1] + " trailing\n" + block[i + len(end):]
+
+    def test_a_quoted_comment_end_before_an_end_with_text_after_it(self):   # replay (2ccbab1: every body line kept, masked 9)
+        block, bits = pgp_secret_block(self.QUOTED_COMMENT)
+        src = self.python_source(self.trailing(block))
+        self.assertEqual(src.count("-----END PGP PRIVATE KEY BLOCK-----\\n"), 1)   # the comment's END, as Codex wrote it
+        self.assert_hidden(src, bits, "quoted comment END")
+
+    def test_gpg_reads_the_quoted_comment_armor(self):   # guard: GnuPG reads that armor, its END's trailing text and all
+        if not GPG:
+            self.skipTest("gpg not installed")
+        block, _ = pgp_secret_block(self.QUOTED_COMMENT)
+        armor = self.trailing(block)
+        d = tempfile.mkdtemp()
+        try:
+            r = subprocess.run([GPG, "--homedir", d, "--batch", "--dearmor"], input=armor.encode(), capture_output=True, timeout=30)
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-300:])
+        self.assertTrue(r.stdout == armor_packet(block), "gpg dearmored other bytes")
+
+    def test_a_header_line_never_gives_the_end(self):   # replay (2ccbab1: the comment's END was the block's END)
+        block, _ = pgp_secret_block(self.QUOTED_COMMENT + "\nComment: -----BEGIN PRIVATE KEY-----\\nFAKE\\n-----END PRIVATE KEY-----")
+        src = self.python_source(block)
+        blk = wt.armor_blocks(src)[0]
+        self.assertEqual((blk[3], blk[6]), (src.rindex("-----END PGP"), src.rindex("-----END PGP")))
+        for code in ('K = ("-----BEGIN PRIVATE KEY-----\\n"\n     "QUJD\\n" + "-----END PRIVATE KEY-----\\n")\n',
+                     'K = "-----BEGIN PRIVATE KEY-----\\nQUJD\\n" + "-----END PRIVATE KEY-----"\n'):   # code before a quoted END
+            self.assertEqual(wt.armor_blocks(code)[0][3], code.index("-----END"), code)
+
+    def test_a_later_unresolved_end_hides_to_the_end(self):   # replay (2ccbab1: hidden to the first END, the rest kept)
+        junk = base64.b64encode(public_key_packet(120)).decode()
+        text = ("-----BEGIN PRIVATE KEY-----\n" + junk + "\n-----END PRIVATE KEY-----\nFAKE more\n"
+                "-----END PRIVATE KEY----- trailing\nafter\n")
+        (_, _, _, es, _, _, hide), = wt.armor_blocks(text)
+        self.assertEqual((es, hide), (text.index("-----END"), None))
+        out = wt.mask_secrets(text)
+        self.assertFalse("FAKE" in out or "after" in out, "text after the first END was kept")
+        self.assertEqual(wt.pem_kind(text, 0), "real")
+        two = text.replace("FAKE more\n", "") + "-----BEGIN PRIVATE KEY-----\n" + junk + "\n-----END PRIVATE KEY-----\nlast\n"
+        self.assertEqual([b[6] is None for b in wt.armor_blocks(two)], [True, False])   # bounded by the label's next BEGIN
 
     def test_the_known_false_alarm_hides_the_rest(self):   # guard (new): KNOWN-LIMITS, open false alarms (batch 7a)
         raw = ed25519_pkcs8()
@@ -284,7 +336,7 @@ class IgnoredPackets(_Keys):
     def test_public_packets_only_are_still_noted(self):   # guard: a public key labelled PRIVATE is what the note is for
         uid = b"FAKE Example <fake@example.invalid>"
         for raw in (public_packet(), public_packet() + b"\xb4" + bytes([len(uid)]) + uid + IGNORED["marker"],
-                    b"\x99\xff\xff" + secrets.token_bytes(297)):
+                    public_key_packet(300)):   # fix round 1: a whole packet (a cut one is a key, test_a_cut_public_packet_…)
             block = pgp_armor(raw)
             self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "example", raw[:3].hex())
 
@@ -303,7 +355,7 @@ class IgnoredPackets(_Keys):
     def test_packet_readings(self):   # guard (new)
         sk, pk, m = secret_packet(), public_packet(), IGNORED["marker"]
         for raw, want in ((sk, "secret"), (m + sk, "secret"), (pk + sk, "secret"), (pk, "public"), (m + pk + m, "public"),
-                          (b"\x99\xff\xff" + b"\x00" * 64, "public"),    # a public packet cut short
+                          (b"\x99\xff\xff" + b"\x00" * 64, None),        # a public packet cut short (fix round 1: was "public")
                           (pk + b"\x00", None),                           # bytes after the packets that aren't one
                           (pk + b"\x80\x01\x00", None),                   # reserved tag 0
                           (b"\xc6\xe0" + b"\x00" * 64, None),             # a partial length
@@ -312,6 +364,15 @@ class IgnoredPackets(_Keys):
                           (m * 64 + pk, None), (m * 63 + pk, "public"),   # more packets than the cap
                           (m * 4, None)):                                 # nothing public
             self.assertEqual(wt.pgp_packets(raw), want, raw[:4].hex())
+
+    def test_a_cut_public_packet_before_a_secret_key_is_real(self):   # replay (2ccbab1: "public", an example with the note)
+        raw = b"\x99\xff\xff" + secret_packet()   # a public header declaring 65,535 bytes, then the secret-key packet
+        self.assertIsNone(wt.pgp_packets(raw))
+        got = t011("Key:\n" + pem("", raw))
+        self.assertEqual([(f["rule"], f["severity"]) for f in got], [("WT-T011", "critical")])
+        self.assertNotIn(NOTE, got[0]["fix"])
+        block = pgp_armor(raw)
+        self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real")
 
     def test_100000_marker_packets_are_read_in_bounded_time(self):   # guard (new)
         raw = IGNORED["marker"] * 100_000 + secret_packet()
@@ -327,7 +388,24 @@ CHILD_CONNECTORS = ("import sys, time\nsys.path.insert(0, {wt_dir!r})\nimport wt
                     "run(10)\nprint(run(1000), run(8000))\n")
 
 
+CHILD_SPACES = ("import sys, time\nsys.path.insert(0, {wt_dir!r})\nimport wt\n"
+                "def run(n, answers=1):\n    t = time.perf_counter()\n"
+                "    for _ in range(answers):\n        wt._ax_said(dict(connectors=' ' * n + 'x'))\n    return time.perf_counter() - t\n"
+                "run(10)\nprint(run(2000), run(16000), run(16000, 40))\n")
+
+
 class LongConnectorAnswers(unittest.TestCase):
+    def test_spaces_before_one_other_character(self):   # replay (2ccbab1: 0.8 s for 16 KB, about 32 s for 40 such answers)
+        small, big, many = (float(x) for x in run_child(self, CHILD_SPACES, limit=120))
+        self.assertLess(big, max(0.5, 24 * small))           # 8 times the text: linear, with room for a loaded box
+        self.assertLess(many, max(5.0, 40 * 24 * small))     # 40 saved answers of 16 KB each
+
+    def test_no_connector_words_still_read(self):   # guard: the stripped reading is the old one
+        for raw in ("  none  ", "\tN/A\n", " no connectors yet ", "---", " ", "not yet set up"):
+            self.assertEqual(wt.connector_answer([raw]), ([], 0, None), repr(raw))
+        self.assertEqual(wt.connector_answer([" " * 16000 + "x"]), ([], 1, None))
+
+
     def test_a_long_scalar_answer_is_partial(self):   # replay (a3e535e: about 10 s, then complete: connectors_unknown None)
         got = wt._ax_said({"connectors": "Gmail " * 8000})
         self.assertEqual((got["connectors"], got["connectors_unknown"]), (["Gmail"], "partial"))
