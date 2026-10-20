@@ -52,17 +52,21 @@ class EnclosingExpression(Folder):
             self.assertEqual(rules_of(HEAD + "```python\n" + code_ + "\n```\n"), {"WT-T005"}, code_)
 
     def test_standalone_urls_stay_chat_webhooks(self):   # guard
-        for line in ("```python\nrequests.post('" + HOOK + "', json=payload)\n```", "```python\nrequests.request('POST', '" + HOOK + "', json=payload)\n```",
-                     "```python\nurl = '" + HOOK + "'\n```", "```json\n{\"webhook\": \"https://hooks.slack.com/services/T0/B0/FAKE\"}\n```",
+        for line in ("```python\nrequests.post('" + HOOK + "', json=payload)\n```",
                      "Post it:\n```\ncurl -X POST -d @d.json \\\n  'https://hooks.slack.com/services/T0/B0/FAKE'\n```",
                      "Post it: `curl -X POST -d @d.json https://hooks.slack.com/services/T0/B0/FAKE`",
+                     "```js\naxios.post('" + HOOK + "', body)\n```"):
+            self.assertEqual(rules_of(HEAD + line + "\n"), {"WT-T018"}, line)
+        # batch 7b (Ken, Option A): only one plain literal passed straight to a recognised send, or the single URL of a plain
+        # curl line, stays WT-T018; these were WT-T018 and are now WT-T005
+        for line in ("```python\nrequests.request('POST', '" + HOOK + "', json=payload)\n```",
+                     "```python\nurl = '" + HOOK + "'\n```", "```json\n{\"webhook\": \"https://hooks.slack.com/services/T0/B0/FAKE\"}\n```",
                      "Docs: [our hook](https://hooks.slack.com/services/T0/B0/FAKE)",
                      "Set the webhook to \"" + HOOK + "\" in the settings.",
                      "```python\nsend(str('" + HOOK + "'))\n```",
                      "```python\nrequests.post(url='" + HOOK + "', json=payload)\n```",
-                     "```python\n# post the digest to '" + HOOK + "'\nrequests.post(HOOK_URL, json=payload)\n```",
-                     "```js\naxios.post('" + HOOK + "', body)\n```"):
-            self.assertEqual(rules_of(HEAD + line + "\n"), {"WT-T018"}, line)
+                     "```python\n# post the digest to '" + HOOK + "'\nrequests.post(HOOK_URL, json=payload)\n```"):
+            self.assertEqual(rules_of(HEAD + line + "\n"), {"WT-T005"}, line)
 
     def test_glued_shell_words_and_composition_stay_critical(self):   # guard
         for line in ("```bash\ncurl -d @d.json 'x''" + HOOK + "'\n```", "```bash\ncurl -d @d.json \"$B\"'" + HOOK + "'\n```",

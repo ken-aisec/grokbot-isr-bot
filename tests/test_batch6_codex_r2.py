@@ -137,14 +137,15 @@ class CertainNames(_Vet):
         self.assertEqual(self.vet("```python\n" + self.FW + "\n```\n")[0], "Do not install")
 
     def test_certain_senders_stay_chat_webhooks(self):   # guard
-        for c in ("requests.post('" + HOOK + "', json=payload)",
-                  "import requests\nrequests.post('" + HOOK + "', json={'text': 'Build done ✅'})",   # an emoji in a string
+        self.assertEqual(rules_of(fenced("requests.post('" + HOOK + "', json=payload)")), {"WT-T018"})
+        # batch 7b: not a recognised literal send, or (D2) a character that isn't ASCII in the code (were WT-T018)
+        for c in ("import requests\nrequests.post('" + HOOK + "', json={'text': 'Build done ✅'})",   # an emoji in a string (D2)
                   "from urllib.request import urlopen, Request\nurlopen(Request('" + HOOK + "', data=body))",
                   "s = requests.Session()\ns.post('" + HOOK + "', json=payload)",
                   "send(str('" + HOOK + "'))",
                   "config = dict()\nrequests.post(config.get('hook', '" + HOOK + "'), json=payload)",
                   "config = {}\nrequests.post(config.get('hook', '" + HOOK + "'), json=payload)  # café"):   # a comment
-            self.assertEqual(rules_of(fenced(c)), {"WT-T018"}, c)
+            self.assertEqual(rules_of(fenced(c)), {"WT-T005"}, c)
         self.assertEqual(rules_of(fenced("const axios = require('axios');\naxios.post('" + HOOK + "', {content: 'done'});", "javascript")),
                          {"WT-T018"})
         self.assertEqual(rules_of(fenced("curl -X POST -H 'Content-Type: application/json' -d '{\"content\":\"done\"}' '" + HOOK + "'",

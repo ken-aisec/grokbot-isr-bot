@@ -38,7 +38,8 @@ unrecognised module as the sender, no search-path or PATH change, no shell alias
 f-string/eval/exec). Everything else stays WT-T005. This flips several pre-batch T018 guards to WT-T005 (approved by Ken as
 Option A: `test_batch5_codex_r3::test_safe_forms_stay_chat_webhooks` and `test_batch4_codex_review4::test_standalone_urls_stay_chat_webhooks`);
 those tests are unchanged in PR3 because the fix is not in it. The new false alarms that fix will add must be listed here
-when it lands.
+when it lands. **Batch 7b part 1 implements this direction** (see "Open false alarms (batch 7b)" below); items 1-7 stay listed
+here until part 2 adds their replays.
 
 8. **Wrappers still hide nested launchers (Codex round 4 high, `watchtower/wt_parts/plugins.py`; the rest of round 3's H8).**
    Ken's order (Oct 20): remaining Codex highs are logged here as must-fix before release. An outer pinned package supplies
@@ -49,6 +50,58 @@ when it lands.
    `timeout 30 sh -c '"npx" -y mutable'` or `nice sh -c …` (the wrapper's argument scan skips shells and misses the quoted
    launcher). **Fix direction:** classify the actual command after unwrapping `env`; report unread shell execution behind any
    wrapper as an incomplete launch; add regressions composing wrappers with nested launchers.
+
+## Open false alarms (batch 7b)
+
+Batch 7b part 1 (`chat_webhook` in [text.py](../watchtower/wt_parts/text.py)) stopped proving destinations. A Slack services or
+Discord webhooks URL (the hosts WT-T005's own pattern covers) is the medium WT-T018 only when the whole document passes an
+allowlist; everything else is the critical WT-T005 (Do not install, 80), even when the code really does send only to the
+webhook. **Status: open by design (Ken's chosen direction); each is a false alarm, never a missed exfiltration.**
+
+What stays WT-T018: the URL is one plain `'…'` or `"…"` literal passed straight as the first argument of `requests`/`httpx`
+`.post/.put/.patch/.get(` (at most 2 positional arguments; keywords only `json`, `data`, `headers`, `timeout`, `params`; no
+`*`/`**`) or `axios.post/.put/.patch(` (at most 2 arguments) / `axios.get(` (exactly 1), at the start of a statement (optionally
+after `await`, `NAME =` or `const|let|var NAME =`), in a fenced block or a text with no fences; or it is the single positional
+word of a plain `curl`/`wget` line (an optional `$ ` prompt, then only the allowlisted options: curl `-sSfLiv` clusters,
+`--silent --show-error --fail --fail-with-body --location --include --verbose --compressed`, and one-value `-X -H -d -F -m -o -w
+-A` and `--request --header --data --data-raw --data-binary --data-urlencode --json --form --max-time --connect-timeout --retry
+--output --write-out --user-agent`; wget `-q --quiet -O <v> -O- -qO-` and `--post-data= --post-file= --header= --method=
+--body-data= --body-file= --timeout=`; redirections skipped, `#` ends the command). Teams, Google Chat, Telegram and Slack
+workflows/triggers URLs keep WT-T018 whenever their own host and path are the service's (D1).
+
+Now WT-T005 (each was WT-T018 on a3e535e in at least one form):
+
+- **Any destination that isn't the literal itself:** a `url=` keyword, `requests.request('POST', …)`, a name (`WEBHOOK = '…'`
+  then `requests.post(WEBHOOK)`), a lookup or its default (`config.get('hook', '…')`, including the `{}`/`dict()` "empty map"),
+  an index (`config['hook']`), a loop variable, `str('…')`, a parenthesized literal `(('…'))`, a helper (`send('…')`), and a
+  comment that names the URL above `requests.post(HOOK_URL)`.
+- **Any other sender:** a `requests.Session()`/`httpx.Client()`/`aiohttp` client's `.get/.post`, `urllib.request.urlopen(Request(…))`,
+  `fetch(…)` (with or without `await`/`.then`), `axios({url})`, `https.get`/`http.get`, `axios.get` with a second argument.
+- **Not code:** a markdown link, a URL in prose ("Post the summary to https://hooks.slack.com/… when done."), a JSON or YAML
+  config value, a quoted URL in the prose of a document that has fences. (The access map still lists the webhook: it reads
+  WT-T005 findings through `CHAT_IN_T005`.)
+- **A curl/wget line that isn't plain:** `sudo`, a `VAR=` prefix, `http`/`xh`, any option off the list (`-x`, `--proxy`,
+  `--resolve`, `--connect-to`, `-K`, `--url`, `-k`, `$OPTS`, a value option inside a cluster such as `-sd`, wget's `-Ofile`),
+  two URLs or any other positional word.
+- **Doubt anywhere in the document's code** (fence bodies of any tag, prose paragraphs with a backtick, `<pre`, `<code` or an
+  indented line, or the whole text when it has no fences; comments and strings included): any character that isn't ASCII (D2:
+  an emoji in a message, `# café`, and in a file with no fences an em dash in its prose), a lone `\r`, `\f` or `\v`; the words
+  `exec eval compile globals locals vars getattr setattr delattr builtins importlib monkeypatch sys environ putenv chdir process
+  module globalThis Reflect defineProperty prototype Function PYTHONPATH PYTHONSTARTUP PYTHONHOME NODE_PATH NODE_OPTIONS
+  sitecustomize usercustomize LD_PRELOAD BASH_ENV PATH`; any `__dunder__` but `__name__` (so `if __name__ == '__main__':` is
+  doubt); `import *`, `import(` (also Python's `from x import (a, b)`); `window[`, `global[`, `self[`, `this[`; an f-string;
+  `<!--`, `-->`; any `import` or `require` on a line that isn't wholly `import requests|httpx|json|os|time|datetime[, …]`,
+  `from <one of those> import …`, `import axios from 'axios'` or `const|let|var axios = require('axios')` (an import with `as`,
+  a trailing comment, `import urllib…`, `import json5`); and shell constructs, read in every region, with quotes and backslashes
+  allowed between letters: at a command start a builtin such as `alias`, `export`, `cd`, `set`, `local`, `read`, `printf`,
+  `let`, `source`, `.`, `hash`, `command` or `case` (so a JS `let axios = require('axios')` line, a Python `set(…)` at a line
+  start, a JS `case` label or a chained `.then(…)` line is doubt), an assignment written without spaces (`NAME=…`, `x=1`,
+  `d[k]=v`), a first word starting with `$` (`$VAR`, `$(…)`, jQuery's `$.post`); anywhere, `()` followed by `{`, `(`, `[[`,
+  `if`, `for`, `while`, `until`, `case` or `select` (a JS `function f() {`), and `<<` (a heredoc, or Python's shift).
+- **Around the call:** a Python send whose block also has a `//` or `/*` comment or a backtick; an axios send whose block has a
+  `#` comment or whose code has `\u` anywhere; any whole-word mention of `requests`, `httpx` or `axios` that isn't
+  `M.<name>(` or on an allowed import line (passing the module to a function, a string `'requests'`, `obj.requests`); an
+  unterminated string or any unreadable character in the send's block.
 
 ## Must-fix before release (batch 6 PR2, Codex round 4 highs 1-4)
 
@@ -213,7 +266,7 @@ No PR3 guard is kept.
 
 Stricter since PR3 Codex round 2 (when in doubt, unproven or unread; each may show a false alarm):
 
-- **KL1 (H4-H6):** a chat webhook is WT-T018 only when every name involved is certain. Anything outside a string or comment that isn't ASCII in any code block (in a file with no fences, the whole text: an em dash in its prose too), code that rewrites names or modules at run time (`exec`, `globals`, `setattr`, `sys.modules`, `__dict__`, `prototype`, …), a shell function or alias named curl/wget/http/xh, or a changed `PATH`, `sys.path`, `PYTHONPATH`, `NODE_PATH` or `NODE_OPTIONS` anywhere makes every chat webhook in the document WT-T005. Comments are read as possibly code (`//` is Python's floor division): their words count, their `name =` bindings and calls count, a non-ASCII `//` or `/* */` comment proves nothing, and a comment between a map and its lookup keeps it unproven. A sender (`send`, `post`, `fetch`, …) that is defined, assigned, passed or imported anywhere (other than `import requests`, `from requests|httpx|urllib.request import …`, `const axios = require('axios')`, `import axios from 'axios'`) is a helper. A `{}`/`dict()` map's default is the destination only when no other code block mentions the map or calls anything, and nothing between its binding and the lookup runs (a call, an import, an operator).
+- **KL1 (H4-H6), superseded by batch 7b part 1** ("Open false alarms (batch 7b)" above; the proof described here is gone): a chat webhook is WT-T018 only when every name involved is certain. Anything outside a string or comment that isn't ASCII in any code block (in a file with no fences, the whole text: an em dash in its prose too), code that rewrites names or modules at run time (`exec`, `globals`, `setattr`, `sys.modules`, `__dict__`, `prototype`, …), a shell function or alias named curl/wget/http/xh, or a changed `PATH`, `sys.path`, `PYTHONPATH`, `NODE_PATH` or `NODE_OPTIONS` anywhere makes every chat webhook in the document WT-T005. Comments are read as possibly code (`//` is Python's floor division): their words count, their `name =` bindings and calls count, a non-ASCII `//` or `/* */` comment proves nothing, and a comment between a map and its lookup keeps it unproven. A sender (`send`, `post`, `fetch`, …) that is defined, assigned, passed or imported anywhere (other than `import requests`, `from requests|httpx|urllib.request import …`, `const axios = require('axios')`, `import axios from 'axios'`) is a helper. A `{}`/`dict()` map's default is the destination only when no other code block mentions the map or calls anything, and nothing between its binding and the lookup runs (a call, an import, an operator).
 - **B8 (H7, H8):** an npm/npx/pnpm/bunx/uvx option not in the launcher's table, exactly as written, is "couldn't read the launch" (abbreviations, `--name=value` of a switch, `--no-…`, npm's `--userconfig`/`--node-options`/`--script-shell`, uvx's `--config-file`/`--directory`/`--project`; for `npm exec`, any such word after the package too, up to `--`). An MCP file that isn't JSON even with its comments and trailing commas blanked gives each `"command"` a "couldn't read the launch" finding, whatever the command.
 
 Seen while building batch 6 PR3, not fixed (pre-existing, outside its items):
