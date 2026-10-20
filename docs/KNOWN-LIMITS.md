@@ -2,7 +2,7 @@
 
 Open findings that dev carries knowingly. Each one is **must-fix before any release**.
 
-## Must-fix before release (batch 6 PR3, Codex round 3 highs 1-7)
+## Must-fix before release (batch 6 PR3, Codex round 3 highs 1-7, round 4 high 8)
 
 Ken's decision (Oct 20): highs 8-10 are fixed in PR3; highs 1-7 ship open. Each is a document where a chat webhook URL is
 lowered from the critical WT-T005 (an alternate destination, Do not install, 80) to the medium WT-T018 (Install with changes,
@@ -13,8 +13,8 @@ lowered from the critical WT-T005 (an alternate destination, Do not install, 80)
    line as a comment, so a rebinding of the sender placed after `x = 1 // 1;` is not seen when it is parenthesized
    (`(send) = …`) or a tuple target (`(send,) = …`). The call `send("<webhook>")` still lowers to WT-T018.
 2. **A rebinding inside an f-string.** An f-string's replacement field runs code, but the scanner skips the whole string, so a
-   rebinding of `dict` there (in a non-ASCII spelling Python normalizes) goes unseen and `dict().get("hook", "<webhook>")` is
-   still read as an empty map's default: WT-T018.
+   rebinding of `dict` there (in a non-ASCII spelling Python normalizes) goes unseen, so after `config = dict()` the call
+   `requests.post(config.get("hook", "<webhook>"), json=payload)` is still read as an empty map's default: WT-T018.
 3. **Any imported module trusted as the sender's module.** After `import helpers`, `helpers.send("<webhook>", …)` lowers to
    WT-T018, because a module named in a plain import is treated like an HTTP module; the helper may send anywhere.
 4. **A patched sender implementation.** Writing to an attribute of the sender (its function code) doesn't count against it, so
@@ -39,6 +39,16 @@ f-string/eval/exec). Everything else stays WT-T005. This flips several pre-batch
 Option A: `test_batch5_codex_r3::test_safe_forms_stay_chat_webhooks` and `test_batch4_codex_review4::test_standalone_urls_stay_chat_webhooks`);
 those tests are unchanged in PR3 because the fix is not in it. The new false alarms that fix will add must be listed here
 when it lands.
+
+8. **Wrappers still hide nested launchers (Codex round 4 high, `watchtower/wt_parts/plugins.py`; the rest of round 3's H8).**
+   Ken's order (Oct 20): remaining Codex highs are logged here as must-fix before release. An outer pinned package supplies
+   executables through PATH; it doesn't pin what runs next. Each of these MCP launches produces no WT-M001:
+   `{"command":"npm","args":["exec","--package=npm@11.21.0","--","env","sh","-c","\"npx\" -y mutable"]}` (the parser consumes
+   `env`, meets `sh` and returns `None`, so `mcp_launches` loses the command it needs to reject; without `env` it is correctly
+   an incomplete launch), the same with nested `env yarn dlx mutable` or `env pipx run mutable`, and
+   `timeout 30 sh -c '"npx" -y mutable'` or `nice sh -c …` (the wrapper's argument scan skips shells and misses the quoted
+   launcher). **Fix direction:** classify the actual command after unwrapping `env`; report unread shell execution behind any
+   wrapper as an incomplete launch; add regressions composing wrappers with nested launchers.
 
 ## Batch 5 (merged to dev Oct 19, 2026: #15 and #16)
 
