@@ -24,8 +24,10 @@ webhook. **Status: open by design (Ken's chosen direction); each is a false alar
 What stays WT-T018: the URL is one plain `'…'` or `"…"` literal passed straight as the first argument of `requests`/`httpx`
 `.post/.put/.patch/.get(` (at most 2 positional arguments; keywords only `json`, `data`, `headers`, `timeout`, `params`; no
 `*`/`**`) or `axios.post/.put/.patch(` (at most 2 arguments) / `axios.get(` (exactly 1), at the start of a statement (optionally
-after `await`, `NAME =` or `const|let|var NAME =`), in a fenced block or a text with no fences; or it is the single positional
-word of a plain `curl`/`wget` line (an optional `$ ` prompt, then only the allowlisted options: curl `-sSfLiv` clusters,
+after `await`, `NAME =` or `const|let|var NAME =`; at bracket depth 0, after the block start, a `;` or a line break that doesn't
+follow a `.`), in a fenced block or a text with no fences; or it is the single positional
+word of a plain `curl`/`wget` line (every word statically literal, no loop, conditional or function keyword before it in its
+code region; an optional `$ ` prompt, then only the allowlisted options: curl `-sSfLiv` clusters,
 `--silent --show-error --fail --fail-with-body --location --include --verbose --compressed`, and one-value `-X -H -d -F -m -o -w
 -A` and `--request --header --data --data-raw --data-binary --data-urlencode --json --form --max-time --connect-timeout --retry
 --output --write-out --user-agent`; wget `-q --quiet -O <v> -O- -qO-` and `--post-data= --post-file= --header= --method=
@@ -45,17 +47,29 @@ Now WT-T005 (each was WT-T018 on a3e535e in at least one form):
   WT-T005 findings through `CHAT_IN_T005`.)
 - **A curl/wget line that isn't plain:** `sudo`, a `VAR=` prefix, `http`/`xh`, any option off the list (`-x`, `--proxy`,
   `--resolve`, `--connect-to`, `-K`, `--url`, `-k`, `$OPTS`, a value option inside a cluster such as `-sd`, wget's `-Ofile`),
-  two URLs or any other positional word.
-- **Doubt anywhere in the document's code** (fence bodies of any tag, prose paragraphs with a backtick, `<pre`, `<code` or an
-  indented line, or the whole text when it has no fences; comments and strings included): any character that isn't ASCII (D2:
+  two URLs or any other positional word. Since fix round 1 (item 5), also any word of the command (option values, redirection
+  targets and the URL included) with `$`, a backtick, `*`, `?`, `[`, `]`, `{`, `}` or `~` outside single quotes, `$` or a
+  backtick inside `"…"`, or an unclosed quote (`-H "Authorization: Bearer $TOKEN"`, `-d "{\"text\": \"$MSG\"}"`, `-d @*.json`,
+  `-o ~/out.json`), and a curl/wget after `if`, `for`, `while`, `until`, `case`,
+  `select` or `function` at a command start anywhere earlier in its code region (a loop or conditional around the send, but
+  also an unrelated `if` block above it, a Python `if`/`for` line earlier in the same block, or, in a file with no fences, a
+  prose line starting with a lowercase `if` or `for`).
+- **Doubt anywhere in the document's code** (fence bodies of any tag, prose paragraphs with a backtick, `<pre`, `<code` (any
+  case) or an indented line, every `<pre>`/`<code>` element from its opening tag to its closing tag across blank lines (fix
+  round 1, item 2; unclosed: to the end of the text), or the whole text when it has no fences; comments and strings included;
+  the word and shell checks also read each region with its backslash-newline joins removed, so `al\⏎ias` is `alias` and two
+  words a join glues together count as one, fix round 1, item 4): any character that isn't ASCII (D2:
   an emoji in a message, `# café`, and in a file with no fences an em dash in its prose), a lone `\r`, `\f` or `\v`; the words
   `exec eval compile globals locals vars getattr setattr delattr builtins importlib monkeypatch sys environ putenv chdir process
   module globalThis Reflect defineProperty prototype Function PYTHONPATH PYTHONSTARTUP PYTHONHOME NODE_PATH NODE_OPTIONS
   sitecustomize usercustomize LD_PRELOAD BASH_ENV PATH`; any `__dunder__` but `__name__` (so `if __name__ == '__main__':` is
   doubt); `import *`, `import(` (also Python's `from x import (a, b)`); `window[`, `global[`, `self[`, `this[`; an f-string;
-  `<!--`, `-->`; any `import` or `require` on a line that isn't wholly `import requests|httpx|json|os|time|datetime[, …]`,
-  `from <one of those> import …`, `import axios from 'axios'` or `const|let|var axios = require('axios')` (an import with `as`,
-  a trailing comment, `import urllib…`, `import json5`); and shell constructs, read in every region, with quotes and backslashes
+  `<!--`, `-->`; any `import` or `require` on a line that isn't wholly `import requests|httpx|json|os|time|datetime[, …]` or
+  `from json|os|time|datetime import a[, b…]` (then at most a `#` comment), or `import axios from 'axios'` /
+  `const|let|var axios = require('axios')` (then an optional `;` and at most a `//` comment) (an import with `as`, `import
+  urllib…`, `import json5`; since fix round 1, item 1, also any `from requests …` or `from httpx …`, a `from` import of a name
+  `requests`, `httpx` or `axios`, a `;` after a Python import (`import os;`), and a comment holding the word `import` or
+  `require`; each line is read once); and shell constructs, read in every region, with quotes and backslashes
   allowed between letters: at a command start a builtin such as `alias`, `export`, `cd`, `set`, `local`, `read`, `printf`,
   `let`, `source`, `.`, `hash`, `command` or `case` (so a JS `let axios = require('axios')` line, a Python `set(…)` at a line
   start, a JS `case` label or a chained `.then(…)` line is doubt), an assignment written without spaces (`NAME=…`, `x=1`,
@@ -64,7 +78,9 @@ Now WT-T005 (each was WT-T018 on a3e535e in at least one form):
 - **Around the call:** a Python send whose block also has a `//` or `/*` comment or a backtick; an axios send whose block has a
   `#` comment or whose code has `\u` anywhere; any whole-word mention of `requests`, `httpx` or `axios` that isn't
   `M.<name>(` or on an allowed import line (passing the module to a function, a string `'requests'`, `obj.requests`); an
-  unterminated string or any unreadable character in the send's block.
+  unterminated string or any unreadable character in the send's block; since fix round 1 (item 3), a send inside any bracket
+  (`print(⏎    requests.post('…'))`, a send written inside a list or a call across lines) or on the line after one ending in
+  `.`.
 
 PR3's Codex round 3 highs 1-7 (a sender rebound after `//`, `dict` rebound in an f-string, an imported helper module, a
 patched sender, a destination reassigned in another block, a quoted shell alias, `from sys import path`) are WT-T005 since

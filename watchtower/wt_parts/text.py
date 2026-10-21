@@ -980,12 +980,16 @@ def _region(text, start, end):
 # the document's code. Otherwise it is the critical WT-T005. No destination is ever "proven"; a name, lookup, default, str() or
 # url= all give WT-T005 (the old proof machinery is gone, docs/KNOWN-LIMITS.md). Every per-document result is memoized.
 _INDENT_LINE = re.compile(r"(?m)^(?: {4,}|\t)")
+_HTML_TAG = re.compile(r"(?i)<(?:pre|code)")
+_HTML_CODE = re.compile(r"(?i)<(pre|code)(?![\w-])")
+_HTML_CLOSE = {"pre": re.compile(r"(?i)</pre\s*>"), "code": re.compile(r"(?i)</code\s*>")}
 
 
 def _code_regions(text):
     """The spans of `text` read as code: every fenced block body (any tag, ``` or ~~~; an unclosed fence runs to the end), every
-    prose paragraph that has a backtick, "<pre", "<code" or a line indented four spaces or a tab, or the whole text when there
-    are no fences. Read once per text."""
+    prose paragraph that has a backtick, "<pre", "<code" (any case) or a line indented four spaces or a tab, every <pre>/<code>
+    element from its opening tag to its closing tag across blank lines (fix round 1, item 2; unclosed: to the end of the text),
+    or the whole text when there are no fences. Regions may overlap. Read once per text."""
     memo = _memo(text)
     if "code_regions" in memo:
         return memo["code_regions"]
@@ -1001,6 +1005,14 @@ def _code_regions(text):
         _prose_regions(text, prev, ms, out)
         prev = be if ce == -1 else ce + 1
     _prose_regions(text, prev, len(text), out)
+    pos = 0
+    while True:                                        # one pass: each element ends where the next search starts
+        m = _HTML_CODE.search(text, pos)
+        if m is None:
+            break
+        c = _HTML_CLOSE[m.group(1).lower()].search(text, m.end())
+        pos = len(text) if c is None else c.end()
+        out.append((m.start(), pos))
     out.sort()
     memo["code_regions"] = out
     return out
@@ -1024,7 +1036,7 @@ def _prose_regions(text, lo, hi, out):
             i = le + 1
         end = min(i, hi)
         para = text[start:end]
-        if "`" in para or "<pre" in para or "<code" in para or _INDENT_LINE.search(para):
+        if "`" in para or _HTML_TAG.search(para) or _INDENT_LINE.search(para):
             out.append((start, end))
 
 
@@ -1042,13 +1054,19 @@ _DOUBT_W = re.compile(
     r"|\b(?:window|global|globalThis|self|this)\s*\["                    # window['config'], a map written under a string
     r"|(?<![\w$-])[rRbBuU]?[fF][rRbB]?['\"]"                             # an f-string
     r"|<!--|-->")                                                        # Node reads these as comments
+# Fix round 1, item 1: an allowed import line is exactly `import M[, M…]` (M one of the modules below) or `from F import a[, b…]`
+# (F not a client module; no name is a client or `as`), then at most a `#` comment; or the two axios forms, then an optional `;`
+# and at most a `//` comment. A comment with an `import` or `require` word in it isn't plain. No alias, no `;` after a Python form.
 _ALLOWED_MODS = r"(?:requests|httpx|json|os|time|datetime)"
+_FROM_MODS = r"(?:json|os|time|datetime)"
+_IMPORTED = r"(?!(?:requests|httpx|axios|as|import)(?![\w$]))[A-Za-z_]\w*"
 _ALLOWED_IMPORTS = re.compile(
-    r"(?:import\s+" + _ALLOWED_MODS + r"(?:\s*,\s*" + _ALLOWED_MODS + r")*"
-    r"|from\s+" + _ALLOWED_MODS + r"\s+import\s+\S.*"
-    r"|import\s+axios\s+from\s+(['\"])axios\1"
-    r"|(?:const|let|var)\s+axios\s*=\s*require\(\s*(['\"])axios\2\s*\))\s*;?")
+    r"(?:import[ \t]+" + _ALLOWED_MODS + r"(?:[ \t]*,[ \t]*" + _ALLOWED_MODS + r")*"
+    r"|from[ \t]+" + _FROM_MODS + r"[ \t]+import[ \t]+" + _IMPORTED + r"(?:[ \t]*,[ \t]*" + _IMPORTED + r")*)(?P<pc>[ \t]+#.*)?"
+    r"|(?:import[ \t]+axios[ \t]+from[ \t]+(?P<q1>['\"])axios(?P=q1)"
+    r"|(?:const|let|var)[ \t]+axios[ \t]*=[ \t]*require\([ \t]*(?P<q2>['\"])axios(?P=q2)[ \t]*\))[ \t]*;?(?P<jc>[ \t]*//.*)?")
 _IMPORT_WORD = re.compile(r"(?<![\w$])(?:import|require)(?![\w$])")
+_LINE_JOIN = re.compile(r"\\\r?\n")
 # Shell, item 6: quotes and backslashes allowed between letters (so "al""ias" and \alias match a deny builtin).
 _SHELL_DENY = ("alias", "unalias", "function", "export", "declare", "typeset", "local", "readonly", "unset", "read",
                "mapfile", "readarray", "getopts", "printf", "let", "eval", "source", ".", "hash", "cd", "pushd", "popd",
@@ -1064,27 +1082,45 @@ _SHELL_DOUBT = re.compile(
     r"|<<")                                                               # a heredoc or here-string
 
 
+def _import_line(text, ls, le):
+    """True when text[ls:le] (one physical line) is wholly an allowed import (_ALLOWED_IMPORTS). Read once per line."""
+    lines = _memo(text).setdefault("import_lines", {})
+    if (ls, le) not in lines:
+        m = _ALLOWED_IMPORTS.fullmatch(text[ls:le].strip())
+        lines[(ls, le)] = bool(m) and not _IMPORT_WORD.search(m.group("pc") or m.group("jc") or "")
+    return lines[(ls, le)]
+
+
 def _imports_ok(text, s, e):
-    """True when every `import` and `require` word in text[s:e] is on a line that is wholly an allowed import (item 3)."""
-    for m in _IMPORT_WORD.finditer(text, s, e):
+    """True when every `import` and `require` word in text[s:e] is on a line that is wholly an allowed import (item 3). Each line
+    is read once, then the search goes on from its end (fix round 1, item 7: linear)."""
+    pos = s
+    while True:
+        m = _IMPORT_WORD.search(text, pos, e)
+        if m is None:
+            return True
         nl0 = text.rfind("\n", s, m.start())
         ls = s if nl0 == -1 else nl0 + 1
         nl1 = text.find("\n", m.end(), e)
         le = e if nl1 == -1 else nl1
-        if not _ALLOWED_IMPORTS.fullmatch(text[ls:le].strip()):
+        if not _import_line(text, ls, le):
             return False
-    return True
+        pos = le
 
 
 def _code_doubt(text):
-    """True when any code region of `text` holds a doubt construct, so no chat webhook in it can be WT-T018. Read once per text."""
+    """True when any code region of `text` holds a doubt construct, so no chat webhook in it can be WT-T018. The word and shell
+    checks also read each region with its backslash-newline joins removed (fix round 1, item 4: `al\\⏎ias` is `alias`). Read
+    once per text."""
     memo = _memo(text)
     if "code_doubt" in memo:
         return memo["code_doubt"]
     doubt = False
     for s, e in _code_regions(text):
+        joined = _LINE_JOIN.sub("", text[s:e]) if _LINE_JOIN.search(text, s, e) else None
         if (_DOUBT_N.search(text, s, e) or _DOUBT_W.search(text, s, e)
-                or _SHELL_DOUBT.search(text, s, e) or not _imports_ok(text, s, e)):
+                or _SHELL_DOUBT.search(text, s, e) or not _imports_ok(text, s, e)
+                or joined is not None and (_DOUBT_W.search(joined) or _SHELL_DOUBT.search(joined))):
             doubt = True
             break
     memo["code_doubt"] = doubt
@@ -1144,11 +1180,72 @@ def _logical_command(text, start):
     return words
 
 
+# Fix round 1, item 5: a shell keyword that opens a loop, a conditional or a function at a command start (joins allowed between
+# its letters, as the shell reads them); a plain curl/wget after one in the same region is not a plain send.
+_SHELL_CTRL = re.compile(r"(?m)(?:^|(?<=[;&|(){}`\n]))(?:[ \t!]|\\\r?\n)*(?:"
+                         + "|".join(r"(?:\\\r?\n)*".join(w) for w in ("if", "for", "while", "until", "case", "select", "function"))
+                         + r")(?![\w-])")
+
+
+def _static_word(w):
+    """True when the shell word `w` expands to exactly itself: outside quotes no $ ` * ? [ ] { } ~, inside "…" no $ or `, and
+    every quote closes (fix round 1, item 5)."""
+    i, n = 0, len(w)
+    while i < n:
+        c = w[i]
+        if c == "'":
+            j = w.find("'", i + 1)
+            if j == -1:
+                return False
+            i = j + 1
+        elif c == '"':
+            i += 1
+            while i < n and w[i] != '"':
+                if w[i] in "$`":
+                    return False
+                i += 2 if w[i] == "\\" else 1
+            if i >= n:
+                return False
+            i += 1
+        elif c == "\\":
+            i += 2
+        elif c in "$`*?[]{}~":
+            return False
+        else:
+            i += 1
+    return True
+
+
+def _shell_region(text, cs):
+    """(start, end) of the code region the command at `cs` is in: its fence, the whole text when there are none, else the
+    latest-starting region (of the last few) that holds it; (0, len(text)) when none does."""
+    import bisect
+    regions = _code_regions(text)
+    memo = _memo(text)
+    if "region_starts" not in memo:
+        memo["region_starts"] = [s for s, _ in regions]
+    k = bisect.bisect_right(memo["region_starts"], cs) - 1
+    for j in range(k, max(-1, k - 4), -1):
+        if regions[j][0] <= cs < regions[j][1]:
+            return regions[j]
+    return 0, len(text)
+
+
 def _shell_literal(text, a, b, cs, ls):
     """True when text[a:b] (the URL, with its quotes) is the single positional word of a plain curl/wget command on the logical
-    line at `ls` (or the inline-code span at `cs`), using only allowlisted options."""
+    line at `ls` (or the inline-code span at `cs`), using only allowlisted options, every word statically literal (_static_word),
+    and no loop, conditional or function keyword before it in its code region (_SHELL_CTRL, found once per region)."""
     inline = cs != ls and _CURL_WGET.match(text, cs)
-    words = _logical_command(text, cs if inline else ls)
+    start = cs if inline else ls
+    rs, re_ = _shell_region(text, start)
+    memo = _memo(text)
+    key = ("shell_ctrl", rs, re_)
+    if key not in memo:
+        m = _SHELL_CTRL.search(text, rs, re_)
+        memo[key] = re_ if m is None else m.start()
+    if memo[key] < start:
+        return False
+    words = _logical_command(text, start)
     i = 0
     if i < len(words) and text[words[i][0]:words[i][1]] == "$":
         i += 1   # an optional "$ " prompt
@@ -1159,7 +1256,7 @@ def _shell_literal(text, a, b, cs, ls):
         return False
     opt = _curl_opt if tool == "curl" else _wget_opt
     i += 1
-    positional = None
+    positional, value = None, False
     while i < len(words):
         wa, wb = words[i]
         w = text[wa:wb]
@@ -1167,20 +1264,26 @@ def _shell_literal(text, a, b, cs, ls):
             break
         if w.startswith("#"):
             break   # an unquoted word starting with # ends the command
-        rm = re.match(r"(?:[0-9]*>>?|[0-9]*<|&>|>&)", w)
-        if rm:
-            i += 2 if rm.end() == len(w) else 1   # a redirection word and its target are skipped
-            continue
-        if w.startswith("-") and w != "-":
+        last = inline and w.endswith("`")   # the inline span's closing backtick ends the command
+        if not _static_word(w[:-1] if last else w):
+            return False
+        rm = None if value else re.match(r"(?:[0-9]*>>?|[0-9]*<|&>|>&)", w)
+        if value:
+            value = False   # an option's value or a redirection's target, checked above
+        elif rm:
+            value = rm.end() == len(w)   # a redirection word; its target is the next word
+        elif w.startswith("-") and w != "-":
             kind = opt(w)
             if kind == "bad":
                 return False
-            i += 2 if kind == "val" else 1
-            continue
-        if positional is not None:
+            value = kind == "val"
+        elif positional is not None:
             return False   # more than one positional word
-        positional = (wa, wb)
+        else:
+            positional = (wa, wb)
         i += 1
+        if last:
+            break
     if positional is None:
         return False
     pa, pb = positional
@@ -1210,7 +1313,14 @@ def _code_literal(text, a, b, quoted, fence, fences):
     kinds, starts, ends, nl, parent, match = r["kinds"], r["starts"], r["ends"], r["nl"], r["parent"], r["match"]
     n = len(kinds)
     tok = lambda i: text[starts[i]:ends[i]] if 0 <= i < n else None
-    if any(k == "bad" for k in kinds):
+    memo = _memo(text)
+    key = ("send_facts", rs, re_)
+    if key not in memo:   # fix round 1, item 6: what every send in the block shares is read once
+        body = text[rs:re_]
+        memo[key] = {"bad": "bad" in kinds, "hash": any(text[c] == "#" for c, _ in r["comments"]),
+                     "slash": any(text[c:c + 2] in ("//", "/*") for c, _ in r["comments"]), "u": "\\u" in body, "tick": "`" in body}
+    facts = memo[key]
+    if facts["bad"]:
         return False
     li = bisect.bisect_right(starts, a) - 1
     if not (0 <= li < n and kinds[li] == "str" and starts[li] == a and ends[li] == b):
@@ -1229,11 +1339,12 @@ def _code_literal(text, a, b, quoted, fence, fences):
     close = match.get(opn)
     if close is None or tok(li + 1) not in (",", ")"):
         return False
-    # M starts a statement, optionally after await, NAME = or const|let|var NAME =
+    # M starts a statement, optionally after await, NAME = or const|let|var NAME =. Fix round 1, item 3: at bracket depth 0, after
+    # the region start, a `;`, or a line break that doesn't follow a `.` (`relay.⏎requests.post` is relay's attribute)
     j = li - 4
     if j >= 1 and tok(j - 1) == "await":
         j -= 1
-    head = lambda p: p == 0 or nl[p] or tok(p - 1) == ";"
+    head = lambda p: parent[p] is None and (p == 0 or tok(p - 1) == ";" or (nl[p] and tok(p - 1) != "."))
     if head(j):
         pass
     elif j >= 2 and tok(j - 1) == "=" and kinds[j - 2] == "name" and head(j - 2):
@@ -1242,16 +1353,10 @@ def _code_literal(text, a, b, quoted, fence, fences):
         pass
     else:
         return False
-    for cs_, _ in r["comments"]:
-        if is_axios and text[cs_] == "#":
-            return False
-        if not is_axios and text[cs_:cs_ + 2] in ("//", "/*"):
-            return False
-    if is_axios:
-        if "\\u" in text[rs:re_]:
-            return False   # an axios send: no \u anywhere in the code
-    elif "`" in text[rs:re_]:
-        return False       # a Python send: no backtick in its region
+    if facts["hash"] if is_axios else facts["slash"]:
+        return False   # an axios send: no # comment; a Python send: no // or /* comment
+    if facts["u"] if is_axios else facts["tick"]:
+        return False   # an axios send: no \u anywhere in the code; a Python send: no backtick in its region
     args, cur = [], []
     for i in range(li, close):
         if parent[i] == opn and kinds[i] == "op" and tok(i) == ",":
@@ -1282,18 +1387,30 @@ def _code_literal(text, a, b, quoted, fence, fences):
 
 def _mentions_ok(text, M):
     """U1 (items 1 and 4): every whole-word occurrence of M in any region is `M.<name>(` or on an allowed import line, so a
-    rebinding, attribute write, alias or bare reference of M anywhere gives False."""
+    rebinding, attribute write, alias or bare reference of M anywhere gives False. Read once per text and M, each line once
+    (fix round 1, item 6)."""
+    memo = _memo(text)
+    key = ("mentions", M)
+    if key in memo:
+        return memo[key]
+    memo[key] = ok = _mentions_read(text, M)
+    return ok
+
+
+def _mentions_read(text, M):
     word = re.compile(r"(?<![\w$])" + re.escape(M) + r"(?![\w$])")
     call = re.compile(r"(?<![\w$])" + re.escape(M) + r"\s*\.\s*[A-Za-z_$][\w$]*\s*\(")
     for s, e in _code_regions(text):
+        le = -1
         for m in word.finditer(text, s, e):
             if call.match(text, m.start(), e):
                 continue
-            nl0 = text.rfind("\n", s, m.start())
-            ls = s if nl0 == -1 else nl0 + 1
-            nl1 = text.find("\n", m.end(), e)
-            le = e if nl1 == -1 else nl1
-            if _ALLOWED_IMPORTS.fullmatch(text[ls:le].strip()):
+            if m.start() > le:   # a new line: find its bounds (a mention on the same line reuses them)
+                nl0 = text.rfind("\n", s, m.start())
+                ls = s if nl0 == -1 else nl0 + 1
+                nl1 = text.find("\n", m.end(), e)
+                le = e if nl1 == -1 else nl1
+            if _import_line(text, ls, le):
                 continue
             return False
     return True

