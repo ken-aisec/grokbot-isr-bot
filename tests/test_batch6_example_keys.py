@@ -122,9 +122,19 @@ def real_pems():
             "legacy": pem("RSA ", r(640), "Proc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC," + r(16).hex().upper() + "\n\n")}
 
 
+def public_key_packet(size):
+    """Batch 7a fix round 1: a complete OpenPGP public-key packet of `size` bytes (at least 18), made now (old format, tag 6:
+    version 4, a creation time, RSA, a random modulus and e = 65537). A key block holding only it isn't a private key, by its
+    structure, whatever the random bytes."""
+    m = size - 16
+    body = (b"\x04" + (1_700_000_000 + secrets.randbelow(10 ** 8)).to_bytes(4, "big") + b"\x01" + (m * 8).to_bytes(2, "big")
+            + bytes([0x80 | secrets.randbelow(128)]) + secrets.token_bytes(m - 1) + b"\x00\x11\x01\x00\x01")
+    return b"\x99" + len(body).to_bytes(2, "big") + body
+
+
 def fake_pems():
     """Key blocks that aren't keys: text in the body, random bytes that aren't DER, a body too short to be one."""
-    junk = b"\x99" + secrets.token_bytes(299)
+    junk = public_key_packet(300)   # batch 7a fix round 1: a whole public-key packet, 300 bytes as before
     return {"words": "-----BEGIN RSA PRIVATE KEY-----\nThis is a FAKE key for the docs; paste yours here.\n-----END RSA PRIVATE KEY-----\n",
             "random": pem("RSA ", junk), "short": pem("", secrets.token_bytes(16)),
             "random8": pem("", b"\x30\x82\x01\x00" + secrets.token_bytes(60))}

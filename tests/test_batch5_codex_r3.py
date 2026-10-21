@@ -52,12 +52,13 @@ class LookupsAndCollections(Folder):
     def test_safe_forms_stay_chat_webhooks(self):   # guard (round 2's safe defaults run unmodified in test_batch5_codex_r2)
         # batch 6 (KL1, Codex #15 high 1): an unknown config may hold another destination: WT-T005 (was T018)
         self.assertEqual(rules_of(fenced("url = config.get('hook', '" + HOOK + "')\nrequests.post(url, json=payload)")), {"WT-T005"})
+        # batch 7b (Ken, Option A): a lookup, a collection, a name or a wrapped literal is never a recognised send (were WT-T018)
         for c in ("config = {}\nrequests.post(config.get('hook', '" + HOOK + "'), json=payload)",
                   "config = {'hook': '" + HOOK + "'}\nrequests.post(config['hook'], json=payload)",
                   "hooks = ['" + HOOK + "', '" + r2.SLACK + "']\nfor h in hooks:\n    requests.post(h, json=payload)",
                   "WEBHOOK = '" + HOOK + "'\nrequests.post(WEBHOOK, json=payload)",
                   "requests.post(('" + HOOK + "'), json=payload)"):
-            self.assertEqual(rules_of(fenced(c)), {"WT-T018"}, c)
+            self.assertEqual(rules_of(fenced(c)), {"WT-T005"}, c)
 
 
 # ---------------------------------------------------------------- 5: an HTTP client's GET is a GET, whatever its other arguments
@@ -65,20 +66,26 @@ class HttpGets(Folder):
     CODEX = (("python", "requests.get('" + HOOK + "', params)"), ("js", "https.get('" + HOOK + "', namedCallback)"))
 
     def test_the_codex_gets_are_chat_webhooks(self):   # replay (77dedd1: Do not install, WT-T005)
-        for lang, c in self.CODEX:
-            code, r = vet_json(self.write("SKILL.md", fenced(c, lang)))
-            self.assertNotEqual(r["verdict"], "Do not install", c)
-            self.assertIn("WT-T018", [f["rule"] for f in r["findings"]], c)
-            self.assertNotIn("WT-T005", [f["rule"] for f in r["findings"]], c)
+        lang, c = self.CODEX[0]
+        code, r = vet_json(self.write("SKILL.md", fenced(c, lang)))
+        self.assertNotEqual(r["verdict"], "Do not install", c)
+        self.assertIn("WT-T018", [f["rule"] for f in r["findings"]], c)
+        self.assertNotIn("WT-T005", [f["rule"] for f in r["findings"]], c)
+        # batch 7b: the https module's get is not a recognised send: Do not install, WT-T005 (was Install with changes, WT-T018)
+        lang, c = self.CODEX[1]
+        code, r = vet_json(self.write("SKILL.md", fenced(c, lang)))
+        self.assertEqual(r["verdict"], "Do not install", c)
+        self.assertIn("WT-T005", [f["rule"] for f in r["findings"]], c)
+        self.assertNotIn("WT-T018", [f["rule"] for f in r["findings"]], c)
 
     def test_other_http_clients(self):   # replay (77dedd1: WT-T005 for each)
-        for lang, c in (("python", "httpx.get('" + HOOK + "', params)"),
-                        # batch 6 (KL2): a session or client is one only when the code binds it to one (never by its name)
-                        ("python", "self.session = requests.Session()\nself.session.get('" + HOOK + "', params, timeout)"),
+        self.assertEqual(rules_of(fenced("httpx.get('" + HOOK + "', params)")), {"WT-T018"})
+        # batch 7b: a session, a client, the http module and an axios get with two arguments are not recognised sends (were WT-T018)
+        for lang, c in (("python", "self.session = requests.Session()\nself.session.get('" + HOOK + "', params, timeout)"),
                         ("python", "client = httpx.Client()\nclient.get('" + HOOK + "', headers)"),
                         ("js", "http.get('" + HOOK + "', onResponse)"),
                         ("js", "axios.get('" + HOOK + "', config)")):
-            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T018"}, c)
+            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T005"}, c)
 
     def test_a_lookup_named_get_is_still_a_lookup(self):   # guard
         for c in ("requests.post(config.get('" + HOOK + "', params))", "requests.post(os.environ.get('" + HOOK + "'))",
@@ -108,7 +115,7 @@ class ShortAfterJoins(History):
         doc = self.copy_of("Run these:\n```\n" + "\n".join(SHORT) + "\n```\nAsk before saving.")
         self.assertNotIn("FAKEz", doc)
         self.assertIn("Ask before saving.", doc)
-        self.assertEqual(json.loads(doc)["masked"], 8)
+        self.assertEqual(json.loads(doc)["masked"], 9)   # batch 7a: MASK_VERSION 9 (was 8)
 
     def test_copies_masked_by_version_6_are_masked_again(self):   # replay (77dedd1's marker 6 left them as they were)
         d = self.skills(1)[0]

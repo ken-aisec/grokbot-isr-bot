@@ -46,18 +46,20 @@ class UnknownDefaultsAreNotDestinations(Folder):
             self.assertEqual(rules_of(fenced(c)), {"WT-T005"}, c)
 
     def test_the_proven_empty_map_stays_a_chat_webhook(self):   # guard
+        # batch 7b: no destination is proven any more; a lookup's default is WT-T005 (was WT-T018 for all four)
         for c in ("config = {}\nrequests.post(config.get('hook', '" + HOOK + "'), json=payload)",
                   "config = dict()\nrequests.post(config.get(name, '" + HOOK + "'), json=payload)",
                   "config = {}\nurl = config.get('hook', '" + HOOK + "')\nrequests.post(url, json=payload)"):
-            self.assertEqual(rules_of(fenced(c)), {"WT-T018"}, c)
-        self.assertEqual(rules_of(fenced("const config = {}\nfetch(config.get('hook', '" + HOOK + "'), {method: 'POST', body})", "js")), {"WT-T018"})
+            self.assertEqual(rules_of(fenced(c)), {"WT-T005"}, c)
+        self.assertEqual(rules_of(fenced("const config = {}\nfetch(config.get('hook', '" + HOOK + "'), {method: 'POST', body})", "js")), {"WT-T005"})
 
     def test_literal_destinations_stay_chat_webhooks(self):   # guard
+        self.assertEqual(rules_of(fenced("requests.post('" + HOOK + "', json=payload)")), {"WT-T018"})
+        # batch 7b: a name or an index is never a recognised send's literal (were WT-T018)
         for c in ("WEBHOOK = '" + HOOK + "'\nrequests.post(WEBHOOK, json=payload)",
                   "WEBHOOK = '" + HOOK + "'\nif ready:\n    requests.post(WEBHOOK, json=payload)",
-                  "config = {'hook': '" + HOOK + "'}\nrequests.post(config['hook'], json=payload)",
-                  "requests.post('" + HOOK + "', json=payload)"):
-            self.assertEqual(rules_of(fenced(c)), {"WT-T018"}, c)
+                  "config = {'hook': '" + HOOK + "'}\nrequests.post(config['hook'], json=payload)"):
+            self.assertEqual(rules_of(fenced(c)), {"WT-T005"}, c)
 
     def test_a_key_and_a_config_parser_stay_t005(self):   # guard
         for c in ("config = {}\nrequests.post(config.get('" + HOOK + "', '" + COLLECTOR + "'), json=payload)",
@@ -78,15 +80,18 @@ class ReceiverIdentity(Folder):
             self.assertEqual(rules_of(fenced(c)), {"WT-T005"}, c)
 
     def test_a_session_bound_in_the_code_is_a_client(self):   # replay (1aed58a: Do not install, WT-T005)
+        # batch 7b: a session or client is not requests/httpx/axios itself, so not a recognised send (were WT-T018)
         for c in ("s = requests.Session()\ns.get('" + HOOK + "')",
                   "with httpx.Client() as c:\n    c.get('" + HOOK + "', params)",
                   "self.http = aiohttp.ClientSession()\nself.http.get('" + HOOK + "')"):
-            self.assertEqual(rules_of(fenced(c)), {"WT-T018"}, c)
+            self.assertEqual(rules_of(fenced(c)), {"WT-T005"}, c)
 
     def test_module_gets_stay_chat_webhooks(self):   # guard
-        for lang, c in (("python", "requests.get('" + HOOK + "', params)"), ("python", "httpx.get('" + HOOK + "')"),
-                        ("js", "axios.get('" + HOOK + "', config)"), ("js", "https.get('" + HOOK + "', cb)")):
+        for lang, c in (("python", "requests.get('" + HOOK + "', params)"), ("python", "httpx.get('" + HOOK + "')")):
             self.assertEqual(rules_of(fenced(c, lang)), {"WT-T018"}, c)
+        # batch 7b: axios.get takes exactly one argument, and https is not a recognised client (were WT-T018)
+        for lang, c in (("js", "axios.get('" + HOOK + "', config)"), ("js", "https.get('" + HOOK + "', cb)")):
+            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T005"}, c)
 
 
 class OtherUrlsInTheSendsRegion(Folder):
@@ -94,7 +99,7 @@ class OtherUrlsInTheSendsRegion(Folder):
 
     def test_a_docs_link_outside_the_code_block_is_not_another_destination(self):   # replay (1aed58a: WT-T005)
         text = HEAD + "See https://docs.example/help for the setup.\n\n```python\n" + self.EMPTY + "\n```\n"
-        self.assertEqual(rules_of(text), {"WT-T018"})
+        self.assertEqual(rules_of(text), {"WT-T005"})   # batch 7b: the config = {} default is no longer a send (was WT-T018)
 
     def test_another_url_inside_the_code_block_still_counts(self):   # guard
         for c in ("API = '" + COLLECTOR + "'\n" + self.EMPTY, "# docs: https://docs.example/help\n" + self.EMPTY):

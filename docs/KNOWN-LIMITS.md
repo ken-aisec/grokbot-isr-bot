@@ -2,83 +2,126 @@
 
 Open findings, limits and false alarms that dev carries knowingly. Only the items under a heading titled **Must-fix before release** are release blockers: each of those must be fixed before any release. Everything else in this file (open limits, open false alarms, follow-ups, and the record of fixed items) is documented and kept knowingly, and is not a release blocker on its own.
 
-## Must-fix before release (batch 6 PR3, Codex round 3 highs 1-7)
+## Must-fix before release (batch 6 PR3, Codex round 4 high 8; batch 7b, Codex rounds 2 and 3; batch 7c, Codex round 1)
 
-Ken's decision (Oct 20): highs 8-10 are fixed in PR3; highs 1-7 ship open. Each is a document where a chat webhook URL is
-lowered from the critical WT-T005 (an alternate destination, Do not install, 80) to the medium WT-T018 (Install with changes,
-40) while the code actually sends somewhere else. In each case the scanner's destination proof (`_code_facts`, `resolved()`,
-`settled()`, the empty-map and builtin `dict()`/`str()` proofs) accepts the send as going to the webhook.
+Codex round 4 high 8 (wrappers hid nested launchers) was in this list; batch 7c fixed the compositions Codex reported, but
+item 8 is not fully closed: the batch 7c item below is still open. What is closed and what is still open is under "Batch 7c
+(fix/batch7c): wrappers and shells in MCP launches" at the end of this file.
 
-1. **Sender rebinding hidden by comment parsing.** Python reads `//` as floor division, but the scanner reads the rest of the
-   line as a comment, so a rebinding of the sender placed after `x = 1 // 1;` is not seen when it is parenthesized
-   (`(send) = …`) or a tuple target (`(send,) = …`). The call `send("<webhook>")` still lowers to WT-T018.
-2. **A rebinding inside an f-string.** An f-string's replacement field runs code, but the scanner skips the whole string, so a
-   rebinding of `dict` there (in a non-ASCII spelling Python normalizes) goes unseen, so after `config = dict()` the call
-   `requests.post(config.get("hook", "<webhook>"), json=payload)` is still read as an empty map's default: WT-T018.
-3. **Any imported module trusted as the sender's module.** After `import helpers`, `helpers.send("<webhook>", …)` lowers to
-   WT-T018, because a module named in a plain import is treated like an HTTP module; the helper may send anywhere.
-4. **A patched sender implementation.** Writing to an attribute of the sender (its function code) doesn't count against it, so
-   `requests.post("<webhook>", …)` after such a write still lowers to WT-T018.
-5. **Cross-block reassignment of the destination.** `hook = "<webhook>"` in one code block and `hook = <something else>` plus
-   `requests.post(hook, …)` in another lowers to WT-T018 (the same code in one block is WT-T005): the check that a name is bound
-   once only looks at the current block.
-6. **A quoted shell alias.** `alias "curl=…"` (the whole argument quoted) isn't recognized as an alias for curl, so a later
-   `curl … "<webhook>"` lowers to WT-T018 (with WT-T017).
-7. **A module-search-path change through an import alias.** `from sys import path` then `path.insert(0, "vendor")` isn't seen
-   as a `sys.path` change, so a vendored copy can replace `requests` and `requests.post("<webhook>", …)` lowers to WT-T018.
+Batch 7b: Codex review round 2 found these three in the plain-literal rule (`chat_webhook` in
+[text.py](../watchtower/wt_parts/text.py)). **Status: open.**
 
-**What still lowers T005 to T018:** any send whose destination the proof machinery accepts (a literal argument, a name bound
-to one, a dict or list element, a `{}`/`dict()` lookup default, a `str()` of a literal) when one of the gaps above hides what
-the sender or the name really is.
+- **HTML code regions.** A quoted attribute value in an opening `<pre>` or `<code>` tag can end the region early, so code after
+  it is not checked. **Fix direction:** quote-aware tag parsing, or treat such tags as doubt.
+- **curl redirections.** A shell redirection inside an accepted curl command shifts how its option values are read, so an extra
+  destination option can go unseen. **Fix direction:** treat any redirection in the command as doubt.
+- **JavaScript `with`.** A `with` statement can change what the client name refers to. **Fix direction:** treat `with` anywhere
+  in the code as doubt.
 
-**Chosen fix direction (Ken):** stop proving destinations altogether. Remove the proof machinery; a chat webhook is WT-T018
-only when its address is one plain string literal written directly as the URL argument of a recognised send, with nothing in
-the document able to change what that send calls (no binding, attribute write or import alias of the sender or its module, no
-unrecognised module as the sender, no search-path or PATH change, no shell alias or function for the command, no
-f-string/eval/exec). Everything else stays WT-T005. This flips several pre-batch T018 guards to WT-T005 (approved by Ken as
-Option A: `test_batch5_codex_r3::test_safe_forms_stay_chat_webhooks` and `test_batch4_codex_review4::test_standalone_urls_stay_chat_webhooks`);
-those tests are unchanged in PR3 because the fix is not in it. The new false alarms that fix will add must be listed here
-when it lands.
+Batch 7b: Codex review round 3 found this one. It is present since before batch 7b (a3e535e) and is not fixed in batch 7b,
+by Ken's decision. **Status: open.**
 
-Codex round 4 high 8 (wrappers hid nested launchers) was in this list; batch 7c fixed it. What is closed and what is still
-open is under "Batch 7c (fix/batch7c): wrappers and shells in MCP launches" at the end of this file.
+- **Office webhook pattern is slow on long words.** WT-T018's Office-webhook pattern
+  ([rules/text_rules.json](../rules/text_rules.json), the `[\w-]+\.webhook\.office\.com/` branch) is unanchored, so a long
+  run of word characters makes the scan quadratic (about 9 s for a 64,000-character word, over 12 s at 128,000; within the
+  file limit). **Fix direction:** anchor the branch with a word-boundary lookbehind such as `(?<![\w-])` and add a scaling
+  regression.
 
-## Must-fix before release (batch 6 PR2, Codex round 4 highs 1-4)
+Batch 7c: Codex review round 1 found this one (`mcp_launches`/`mcp_package` in
+[plugins.py](../watchtower/wt_parts/plugins.py)). **Status: open.**
 
-Ken's order (Oct 20): remaining Codex highs are logged here as must-fix before release. Codex round 4 checked PR2 at 7060724;
-round 3's highs 1-3 and 5-7 held, 4 held only in part (high 1 below), and three more were found.
+- **Script text in command position is not reported as unread.** A command-position word that contains whitespace or shell
+  syntax is script text a launcher hands to a shell, yet it is not reported as "couldn't read the launch": for example
+  `timeout 30 npx -y npm@10.9.2 exec --package=npm@10.9.2 -- 'npx -y mutable'`, and the same behind `nice` or inside a pinned
+  outer `npm exec`. a3e535e reported it as unread; 52597c5 (batch 7c) does not. **Fix direction:** treat any command-position
+  word with whitespace or shell syntax as an unread launch wherever a command is selected.
 
-1. **Serialized armor comments still expose a complete private key (`watchtower/wt_parts/mask.py`, the comment and escape
-   readers).** Take a real armored PGP private key, add two valid comment headers, `Comment: \n-----END PGP PRIVATE KEY BLOCK-----`
-   and `Comment: -----BEGIN PRIVATE KEY-----\nFAKE\n-----END PRIVATE KEY-----` (`\n` here is a literal backslash and `n`), then
-   JSON-serialize the whole armor. The reader takes the literal backslash-`n` for a line break, so the outer block ends inside
-   the first comment and the made-up inner block ends inside the second; the real base64 body is covered by neither. Every body
-   line survives `mask_secrets()` and `save_approved()` (marked `masked: 8`), and GnuPG dearmors the stored text back to the
-   same 475-byte secret-key packet. **Fix direction:** tell a serialized escape (`\n` written as an escape) from a literal
-   backslash inside a line, keep the armor-header context, and when nested markers leave the end uncertain keep the outer
-   block hidden to its last possible end (or to the end of the text).
-2. **Overlapping key blocks trim the same whitespace tail again and again (`mask.py`, `pem_spans`).** Input: `n` BEGIN lines,
-   then `x`, then `20 × n` line breaks, then one matching END. Every BEGIN resolves to that END and `pem_spans()` walks the
-   same trailing whitespace once per block: quadratic. Masking took 0.30 / 1.18 / 4.76 / 19.02 s for 500 / 1,000 / 2,000 /
-   4,000 BEGIN lines (24 KB to 192 KB, within the approved-copy size limit); b621cf4 did the largest in 0.07 s. **Fix
-   direction:** compute each END's trimmed edge once (cache per END), or merge overlapping spans before trimming; add this
-   shared-tail case to the performance guards.
-3. **A PGP marker packet gives a real key a false "isn't a real key" note (`watchtower/wt_parts/text.py`, `_key_shaped` /
-   `pem_kind`).** A real RSA secret-key packet with the standard OpenPGP marker packet (`a8 03 50 47 50`, RFC 4880 §5.8, which
-   readers must ignore) in front of it decodes cleanly to 64 bytes or more and doesn't start like a key, so `pem_kind()` says
-   `example` instead of `real`. gitleaks' private-key rule matches the whole block; the finding stays critical, but its fix
-   ends "This looks like an example or checksum value (a key block that isn't a real key); if it is real, rotate it." and the
-   fix plan moves it from "Keys left in files" to "Keys that look like examples or checksums": a Bot-writable understatement
-   of a working key (GnuPG reads both packets). **Fix direction:** walk PGP packet framing and skip ignorable leading packets
-   (marker, and any other packet a reader ignores) before deciding; and when the structure isn't recognized, keep ordinary key
-   treatment: failing to recognize a structure must never establish that it isn't a key.
-4. **Quadratic connector parsing of a saved scalar answer (`watchtower/wt_parts/access.py`, `access_connectors`, reached from
-   `_ax_said` through `connector_answer`).** Already present at b621cf4 (KL6's fix routes saved answers through the same reader
-   as fresh replies). `_ax_said({"connectors": "Gmail " * n})` sends the scalar to `access_connectors()`, whose overlap
-   selection and per-character "what's left" check (`any(s <= i < t for s, t, _ in taken)`) walk every accepted match again:
-   0.19 / 0.68 / 2.79 / 10.44 s for n = 1,000 / 2,000 / 4,000 / 8,000 (the largest is 48 KB). At 1aed58a the same answer was
-   "unsaid" in about 0.0001 s. **Fix direction:** merge the accepted matches into sorted intervals and scan the uncovered text
-   once; if parsing goes over a bounded budget, keep the answer as explicitly incomplete ("partial"), never as complete.
+## Open false alarms (batch 7b)
+
+Batch 7b part 1 (`chat_webhook` in [text.py](../watchtower/wt_parts/text.py)) stopped proving destinations. A Slack services or
+Discord webhooks URL (the hosts WT-T005's own pattern covers) is the medium WT-T018 only when the whole document passes an
+allowlist; everything else is the critical WT-T005 (Do not install, 80), even when the code really does send only to the
+webhook. **Status: open by design (Ken's chosen direction); each is a false alarm, never a missed exfiltration.**
+
+What stays WT-T018: the URL is one plain `'…'` or `"…"` literal passed straight as the first argument of `requests`/`httpx`
+`.post/.put/.patch/.get(` (at most 2 positional arguments; keywords only `json`, `data`, `headers`, `timeout`, `params`; no
+`*`/`**`) or `axios.post/.put/.patch(` (at most 2 arguments) / `axios.get(` (exactly 1), at the start of a statement (optionally
+after `await`, `NAME =` or `const|let|var NAME =`; at bracket depth 0, after the block start, a `;` or a line break that doesn't
+follow a `.`), in a fenced block or a text with no fences; or it is the single positional
+word of a plain `curl`/`wget` line (every word statically literal, no loop, conditional or function keyword before it in its
+code region; an optional `$ ` prompt, then only the allowlisted options: curl `-sSfLiv` clusters,
+`--silent --show-error --fail --fail-with-body --location --include --verbose --compressed`, and one-value `-X -H -d -F -m -o -w
+-A` and `--request --header --data --data-raw --data-binary --data-urlencode --json --form --max-time --connect-timeout --retry
+--output --write-out --user-agent`; wget `-q --quiet -O <v> -O- -qO-` and `--post-data= --post-file= --header= --method=
+--body-data= --body-file= --timeout=`; redirections skipped, `#` ends the command). Teams, Google Chat, Telegram and Slack
+workflows/triggers URLs keep WT-T018 whenever their own host and path are the service's (D1).
+
+Now WT-T005 (each was WT-T018 on a3e535e in at least one form):
+
+- **Any destination that isn't the literal itself:** a `url=` keyword, `requests.request('POST', …)`, a name (`WEBHOOK = '…'`
+  then `requests.post(WEBHOOK)`), a lookup or its default (`config.get('hook', '…')`, including the `{}`/`dict()` "empty map"),
+  an index (`config['hook']`), a loop variable, `str('…')`, a parenthesized literal `(('…'))`, a helper (`send('…')`), and a
+  comment that names the URL above `requests.post(HOOK_URL)`.
+- **Any other sender:** a `requests.Session()`/`httpx.Client()`/`aiohttp` client's `.get/.post`, `urllib.request.urlopen(Request(…))`,
+  `fetch(…)` (with or without `await`/`.then`), `axios({url})`, `https.get`/`http.get`, `axios.get` with a second argument.
+- **Not code:** a markdown link, a URL in prose ("Post the summary to https://hooks.slack.com/… when done."), a JSON or YAML
+  config value, a quoted URL in the prose of a document that has fences. (The access map still lists the webhook: it reads
+  WT-T005 findings through `CHAT_IN_T005`.)
+- **A curl/wget line that isn't plain:** `sudo`, a `VAR=` prefix, `http`/`xh`, any option off the list (`-x`, `--proxy`,
+  `--resolve`, `--connect-to`, `-K`, `--url`, `-k`, `$OPTS`, a value option inside a cluster such as `-sd`, wget's `-Ofile`),
+  two URLs or any other positional word. Since fix round 1 (item 5), also any word of the command (option values, redirection
+  targets and the URL included) that isn't statically literal (`_static_word`, which reads the word left to right; an inline
+  span's closing backtick is dropped first). Unquoted characters: any is accepted except `$`, a backtick, `*`, `?`, `[`, `]`,
+  `{`, `}` and `~`; an unquoted backslash accepts the next character whatever it is (so `\$`, `\*` and `\'` pass), and a
+  backslash that ends the word is accepted. Single-quoted: everything up to the next `'` is accepted. Double-quoted: everything
+  up to the next unescaped `"` is accepted except `$` and a backtick; a backslash accepts the next character whatever it is
+  (so `"\$"` and `"\""` pass). A `'` or `"` that never closes rejects the word. So `-H "Authorization: Bearer $TOKEN"`,
+  `-d "{\"text\": \"$MSG\"}"`, `-d @*.json` and `-o ~/out.json` are WT-T005. Also a curl/wget after `if`, `for`, `while`,
+  `until`, `case`, `select` or `function` at a command start anywhere earlier in its code region (a loop or conditional around the send, but
+  also an unrelated `if` block above it, a Python `if`/`for` line earlier in the same block, or, in a file with no fences, a
+  prose line starting with a lowercase `if` or `for`).
+- **Doubt anywhere in the document's code** (fence bodies of any tag, prose paragraphs with a backtick, `<pre`, `<code` (any
+  case) or an indented line, every `<pre>`/`<code>` element from its opening tag to its closing tag across blank lines (fix
+  round 1, item 2; unclosed: to the end of the text), or the whole text when it has no fences; comments and strings included;
+  the word and shell checks also read each region with its backslash-newline joins removed, so `al\⏎ias` is `alias` and two
+  words a join glues together count as one, fix round 1, item 4): any character that isn't ASCII (D2:
+  an emoji in a message, `# café`, and in a file with no fences an em dash in its prose), a lone `\r`, `\f` or `\v`; the words
+  `exec eval compile globals locals vars getattr setattr delattr builtins importlib monkeypatch sys environ putenv chdir process
+  module globalThis Reflect defineProperty prototype Function PYTHONPATH PYTHONSTARTUP PYTHONHOME NODE_PATH NODE_OPTIONS
+  sitecustomize usercustomize LD_PRELOAD BASH_ENV PATH`; any `__dunder__` but `__name__` (so `if __name__ == '__main__':` is
+  doubt); `import *`, `import(` (also Python's `from x import (a, b)`); `window[`, `global[`, `self[`, `this[`; an f-string;
+  `<!--`, `-->`; any `import` or `require` on a line that isn't wholly `import requests|httpx|json|os|time|datetime[, …]` or
+  `from json|os|time|datetime import a[, b…]` (then at most a `#` comment), or `import axios from 'axios'` /
+  `const|let|var axios = require('axios')` (then an optional `;` and at most a `//` comment) (an import with `as`, `import
+  urllib…`, `import json5`; since fix round 1, item 1, also any `from requests …` or `from httpx …`, a `from` import of a name
+  `requests`, `httpx` or `axios`, a `;` after a Python import (`import os;`), and a comment holding the word `import` or
+  `require`; each line is read once); and shell constructs, read in every region, with quotes and backslashes
+  allowed between letters: at a command start a builtin such as `alias`, `export`, `cd`, `set`, `local`, `read`, `printf`,
+  `let`, `source`, `.`, `hash`, `command` or `case` (so a JS `let axios = require('axios')` line, a Python `set(…)` at a line
+  start, a JS `case` label or a chained `.then(…)` line is doubt), an assignment written without spaces (`NAME=…`, `x=1`,
+  `d[k]=v`), a first word starting with `$` (`$VAR`, `$(…)`, jQuery's `$.post`); anywhere, `()` followed by `{`, `(`, `[[`,
+  `if`, `for`, `while`, `until`, `case` or `select` (a JS `function f() {`), and `<<` (a heredoc, or Python's shift).
+- **Around the call:** a Python send whose block also has a `//` or `/*` comment or a backtick; an axios send whose block has a
+  `#` comment or whose code has `\u` anywhere; any whole-word mention of `requests`, `httpx` or `axios` that isn't
+  `M.<name>(` or on an allowed import line (passing the module to a function, a string `'requests'`, `obj.requests`); an
+  unterminated string or any unreadable character in the send's block; since fix round 1 (item 3), a send inside any bracket
+  (`print(⏎    requests.post('…'))`, a send written inside a list or a call across lines) or on the line after one ending in
+  `.`.
+
+PR3's Codex round 3 highs 1-7 (a sender rebound after `//`, `dict` rebound in an f-string, an imported helper module, a
+patched sender, a destination reassigned in another block, a quoted shell alias, `from sys import path`) are WT-T005 since
+part 1; replays in `tests/test_batch7b_webhook_literal.py::Replays`, each WT-T018 on a3e535e.
+
+## Open limits of the plain-literal rule (batch 7b)
+
+The rule reads only the document's code, so a plain literal send that passes it is WT-T018 even when something it doesn't
+read changes where the send goes or what else is sent. **Status: open; Ken decides whether these block release.** Not covered:
+
+- files in the skill folder that shadow the client module (a `requests.py` or `node_modules/axios` next to the skill);
+- tool config files written by a command (curl's `.curlrc`, wget's `.wgetrc`, a proxy or URL in them);
+- proxies already set in the environment (`HTTPS_PROXY`, `ALL_PROXY`), which requests, httpx and curl follow;
+- plain-English instructions that redirect or add to the send ("send it to the other address too");
+- code that writes or downloads a file a later plain send uses (a module, a config, the body file).
 
 ## Batch 5 (merged to dev Oct 19, 2026: #15 and #16)
 
@@ -182,12 +225,12 @@ KL3 and KL6 above are fixed in this PR; KL4 and KL7 in PR1; KL1, KL2 and KL5 are
 
 Limits of the new behavior, kept knowingly:
 
-- **B5 (as of Codex round 3, Ken's rule: pick the safe option every time):** the example check lowers nothing. A value that looks like an example (FAKE or EXAMPLE right after an optional provider prefix, only placeholder words such as `your-api-key-here`, one 1-4 character unit repeated, `<…>`, a whole `$VAR`/`${VAR}`/`${{ secrets.X }}`/`%X%`/`process.env.X`/`***` reference, a key block whose body decodes cleanly to 64 bytes or more that start no private key, a hex or `integrity` value whose own line has a checksum format) keeps exactly what its rule gives any hit: its severity (critical for a token type, medium for gitleaks' generic rule, and so on), its title, its place in its file's or folder's count, Confirmed or Worth a look by the same rules (it backs up and is backed up like any other hit), and a dismissal sets it aside only when it is Worth a look, as any other. The only differences: its fix ends "This looks like an example or checksum value (…); if it is real, rotate it." (a file's or folder's finding gets that note only when every one of its hits looks like that), and the fix plan lists it as "Keys that look like examples or checksums" for the owner to check: never a revoke link, never on the scrub list, never cleared as a dead key on its own. A key TruffleHog's provider says is live loses the note and is a working key. Nothing is dropped, not even a whole `$VAR` (Ken allowed dropping that one; keeping it is the safe option). WT-T011's example-looking hits keep the id WT-T011x only so a placeholder never raises WT-T011 itself (the pre-batch `test_placeholder_keys_ignored`); RISK_KIND, vet's verdict, the brief's areas, prepublish and corroboration read WT-T011x as WT-T011, so a template with a FAKE key now fails prepublish as one with a real key does. What is left: Watchtower can't tell an example from a real key written the same way, so a docs folder full of FAKE keys scores as one full of real ones; the note says which ones it thinks are examples. A gitleaks hit is read only at the place gitleaks reported, only when the bytes there are gitleaks' Match with gitleaks' Entropy, only when the whole file is at most 100,000 bytes or the hit's first line ends inside the first 100,000 (gitleaks' later pieces count columns from where they start, which Watchtower can't know), and only in bytes whose change time is before gitleaks started (`_read_unchanged`, so they are the bytes gitleaks read; the kernel sets change times, but a clock stepped backwards, a filesystem with coarse times or a parent folder swapped by a same-user process (Codex round 3, medium) could in principle let other bytes through: the hit then at most gets a wrong note, its severity is gitleaks' rule's). A file's line starts are found once for all its hits (`FileBytes`). gitleaks' config and report are in a new private folder (`PrivateDir`: mkdtemp, 0700, held by a checked descriptor, the report read through it without following a link, one link, this user's), never in `state/`; `state/gitleaks.toml` is still written as the owner's copy and never read. A process running as the same user can still change files in that folder while gitleaks runs (any defence on one account is best-effort); a linked or missing report is "gitleaks FAILED … NOT checked", never "no hits". Key blocks (`armor_blocks`, shared by masking and the example check): a block begins at any complete `-----BEGIN <label>-----` whose label, of any length, ends in PRIVATE KEY or PRIVATE KEY BLOCK, and ends only at an END marker with the same label standing as a whole line (nothing before it on its line but the BEGIN line's own comment prefix, such as `#` or `//`; nothing after it but a closing quote; in a block written as `\n` escapes or string literals, an escape or a quote on each side), the last such before the next BEGIN (else the first after it); no such END, and the block is hidden to the end of the text and is a key. So a header line (`Comment: -----END …-----`) on a real line never ends a block (not so in serialized text: a literal backslash-`n` inside a comment is read as a line break, so a JSON-serialized armor whose comments hold `\n-----END …-----` or a whole inner BEGIN/END pair ends early and leaves the key body unmasked, Codex round 4 high 1, open), but an END line in an unusual frame (`> -----END …` in a Markdown quote, a mismatched label) hides the rest of that text in stored copies. A key block is a key when its body starts like one (any DER SEQUENCE, so SEC1 on any curve with or without its public point, PKCS#1, PKCS#8 and encrypted PKCS#8; openssh-key-v1; a PGP secret-key packet) or has a key structure where a later line starts, when it can't be read plainly (a line that isn't base64, base64 that doesn't decode, a Proc-Type/DEK-Info body), and when it decodes to fewer than 64 bytes; only a cleanly decoded body of 64 bytes or more that starts no key gets the note (a PGP secret key behind a leading marker packet starts no key by this test and wrongly gets it, Codex round 4 high 3, open). The readings are the text as it is (its lines, `\n` escapes as line breaks, each backslash run read once) and, only when the whole of it is exactly string literals in code, their contents; anything else on a line (`<base64> # ""`) makes it unread, so a key.
+- **B5 (as of Codex round 3, Ken's rule: pick the safe option every time):** the example check lowers nothing. A value that looks like an example (FAKE or EXAMPLE right after an optional provider prefix, only placeholder words such as `your-api-key-here`, one 1-4 character unit repeated, `<…>`, a whole `$VAR`/`${VAR}`/`${{ secrets.X }}`/`%X%`/`process.env.X`/`***` reference, a key block whose body decodes cleanly to 64 bytes or more that start no private key, a hex or `integrity` value whose own line has a checksum format) keeps exactly what its rule gives any hit: its severity (critical for a token type, medium for gitleaks' generic rule, and so on), its title, its place in its file's or folder's count, Confirmed or Worth a look by the same rules (it backs up and is backed up like any other hit), and a dismissal sets it aside only when it is Worth a look, as any other. The only differences: its fix ends "This looks like an example or checksum value (…); if it is real, rotate it." (a file's or folder's finding gets that note only when every one of its hits looks like that), and the fix plan lists it as "Keys that look like examples or checksums" for the owner to check: never a revoke link, never on the scrub list, never cleared as a dead key on its own. A key TruffleHog's provider says is live loses the note and is a working key. Nothing is dropped, not even a whole `$VAR` (Ken allowed dropping that one; keeping it is the safe option). WT-T011's example-looking hits keep the id WT-T011x only so a placeholder never raises WT-T011 itself (the pre-batch `test_placeholder_keys_ignored`); RISK_KIND, vet's verdict, the brief's areas, prepublish and corroboration read WT-T011x as WT-T011, so a template with a FAKE key now fails prepublish as one with a real key does. What is left: Watchtower can't tell an example from a real key written the same way, so a docs folder full of FAKE keys scores as one full of real ones; the note says which ones it thinks are examples. A gitleaks hit is read only at the place gitleaks reported, only when the bytes there are gitleaks' Match with gitleaks' Entropy, only when the whole file is at most 100,000 bytes or the hit's first line ends inside the first 100,000 (gitleaks' later pieces count columns from where they start, which Watchtower can't know), and only in bytes whose change time is before gitleaks started (`_read_unchanged`, so they are the bytes gitleaks read; the kernel sets change times, but a clock stepped backwards, a filesystem with coarse times or a parent folder swapped by a same-user process (Codex round 3, medium) could in principle let other bytes through: the hit then at most gets a wrong note, its severity is gitleaks' rule's). A file's line starts are found once for all its hits (`FileBytes`). gitleaks' config and report are in a new private folder (`PrivateDir`: mkdtemp, 0700, held by a checked descriptor, the report read through it without following a link, one link, this user's), never in `state/`; `state/gitleaks.toml` is still written as the owner's copy and never read. A process running as the same user can still change files in that folder while gitleaks runs (any defence on one account is best-effort); a linked or missing report is "gitleaks FAILED … NOT checked", never "no hits". Key blocks (`armor_blocks`, shared by masking and the example check): a block begins at any complete `-----BEGIN <label>-----` whose label, of any length, ends in PRIVATE KEY or PRIVATE KEY BLOCK, and ends only at an END marker with the same label standing as a whole line (nothing before it on its line but the BEGIN line's own comment prefix, such as `#` or `//`; nothing after it but a closing quote; in a block written as `\n` escapes or string literals, an escape or a quote on each side), the last such before the next BEGIN (else the first after it); no such END, and the block is hidden to the end of the text and is a key. Since batch 7a (Codex round 4 high 1) that END is read strictly: each escape beside it at the BEGIN's escape level (a backslash run's lowest set bit, so a literal backslash-`n`, two backslashes in a JSON string, never ends a block written with one) and each quote beside it the BEGIN's own, written the same way (a closing quote after a real-line END too); a quoted END ends a block only when its whole logical line before it (back to a line break or an escape at its level) is quotes, spaces and code (`"…\n" + "-----END …"`), so `Comment: x + "-----END …` never does (batch 7a fix round 1, Codex 1), read back past source line breaks between literals to the previous literal's own escaped line break, so `"Comment: x "⏎"-----END …"` doesn't either (fix round 2); a line continuation (a backslash before a line break, at any escape level: a run of backslashes before an escaped `n` whose length isn't a power of two) anywhere between a BEGIN and its END makes the end unsure (fix round 2, Codex 1); in a block written with escapes, so does a raw or otherwise unsure literal opening from just before the BEGIN to its END (Python's `r` prefixes with `b`/`u`/`f`, Rust's `r#"`, C#'s `@"` and `$"`, JS's ``String.raw` ``, a shell's `$'`), and a quoted END trusts only a double-quoted literal's `\n` before it (a single quote, a backtick or `""` on the way gives no END) (fix round 3, Codex 1); masking still hides at least to the furthest END the looser reading (every backslash run before `n` a line break) could take, a block followed, before its label's next BEGIN, by any other END marker of its label (in any frame: GnuPG reads an END with text after it) is hidden to the end of the text (fix round 1), and a block hidden past its END is a key. So a header line (`Comment: -----END …-----`) never ends a block, on a real line or serialized, but an END line in an unusual frame (`> -----END …` in a Markdown quote, a mismatched label) hides the rest of that text in stored copies. A key block is a key when its body starts like one (any DER SEQUENCE, so SEC1 on any curve with or without its public point, PKCS#1, PKCS#8 and encrypted PKCS#8; openssh-key-v1; since batch 7a (Codex round 4 high 3) any first byte that may start an OpenPGP packet, unless the body reads as public packets only: since fix round 2 (Codex 2) only public keys and subkeys (versions 4, 5 and 6) whose payload is exactly their algorithm's public fields (since fix round 3, Codex 2, every field exact: each MPI's bit count that of its bytes with no leading zero byte, a curve RFC 9580 names for that algorithm and version, its point with the curve's first byte and length, ECDH's KDF exactly `03 01 <known hash> <known cipher>`), and marker packets holding exactly `PGP`, at most 64, read whole to the body's end (a packet cut short is no proof: fix round 1, Codex 2; a signature, user ID, trust, padding or any packet whose bytes aren't read is none either, nor a byte left over), so a secret key behind a marker packet or a cut public header, or a structure Watchtower can't read, is a key) or has a key structure where a later line starts, when it can't be read plainly (a line that isn't base64, base64 that doesn't decode, a Proc-Type/DEK-Info body), and when it decodes to fewer than 64 bytes; only a cleanly decoded body of 64 bytes or more that starts no key gets the note. The readings are the text as it is (its lines, `\n` escapes as line breaks, each backslash run read once) and, only when the whole of it is exactly string literals in code, their contents; anything else on a line (`<base64> # ""`) makes it unread, so a key.
 - **B6 / DQ-045 (as of Codex round 2): NOT fixed in this PR.** `state/dismissed.jsonl` can be written by a Bot, and a Bot can read a skill's source and compute any digest of it, so round 1's hold (a dismissal surviving an unrelated edit for a medium-or-lower finding with a matching `ev256`) let a planted record hide a counted finding (Codex round 2, 6), and `dismiss` made the record's digest from whatever the file held then (7). Reverted: a dismissal sets aside only a Worth-a-look finding, as at 5dcd0a2. A finding dismissed before and now backed up by something (most often the change to its file) counts again, and its fix starts "You dismissed this before; it is back because the file changed (see WT-I001)" (or "… because something else now backs it up"). `ev256`, `command_span`, `source_ev256`, `held_dismissal` and `drift_only_keys` are gone. A dismissal that survives an unrelated edit needs a dismissal authority outside Bot-writable storage (an owner-only channel or signature): **Ken's decision, open**. Kept from round 1: each finding's dismissal is judged before findings are grouped, so a dismissed group leader never hides another file's finding.
 - **KL3 test change:** `tests/test_batch5_codex_r3.py::ShortAfterJoins::test_in_an_approved_copy` asserted `masked == 7`; MASK_VERSION 8 made it fail. Approved and listed: `masked == 7 -> masked == 8` (the literal, not `MASK_VERSION`).
 - **Codex round 1 on a986d54 (10 high, 1 medium):** each had a fix and a replay in `tests/test_batch6b_codex_r1.py`, but not all held: rounds 2 and 3 found the example verdicts (1-4), the key-block masking (8) and the dismissal hold (5-7) still open, and their final state is the round 3 one above (the hold reverted, DQ-045 open). Three assertions of tests added in 29ac33b changed with the fixes (a checksum test's input, and two B6 tests where a raw-high T004 or a record without `ev256` no longer holds); each is listed old → new in CHANGELOG.
 - **Codex round 2 on de3b328 (12 high):** fixed then (B5 by listing low, never dropping; B6 by reverting the hold, DQ-045 left open), replays in `tests/test_batch6b_codex_r2.py`; round 3 found the "listed low" answer itself too weak (1, 2), the 64-character label cap and the END search too loose (4, 5), and the size test for key blocks wrong (3). Key blocks are masked with no size cap: an unfinished or uncertain block is hidden to the end of the text, so prose that only names a BEGIN line (no END) loses the rest of that text in stored copies; MASK_VERSION stays 8 (this PR introduced 8, so no released copy was masked by an earlier reader of this PR).
-- **Codex round 3 on b621cf4 (7 high, final round):** fixed as above, replays in `tests/test_batch6b_codex_r3.py` (each failing on b621cf4 at its assertion), except 4 (an END inside an armor comment), which Codex round 4 on 7060724 found only partly fixed: the plain comment cases hold, a serialized one doesn't (round 4 high 1). Round 4 also found the round-3 key-block trimming quadratic (high 2), a false note on a PGP key behind a marker packet (high 3) and quadratic connector parsing (high 4); all four are open, in "Must-fix before release (batch 6 PR2, Codex round 4 highs 1-4)" above. Its medium (the change-time check is not proof of the scanned inode against a same-user process swapping a parent folder) is left as written above: it needs concurrent interference, and since round 3 a wrong verdict there only adds or drops a note. Tests added in this PR whose assertions changed are listed old → new in CHANGELOG.
+- **Codex round 3 on b621cf4 (7 high, final round):** fixed as above, replays in `tests/test_batch6b_codex_r3.py` (each failing on b621cf4 at its assertion), except 4 (an END inside an armor comment), which Codex round 4 on 7060724 found only partly fixed: the plain comment cases hold, a serialized one doesn't (round 4 high 1). Round 4 also found the round-3 key-block trimming quadratic (high 2), a false note on a PGP key behind a marker packet (high 3) and quadratic connector parsing (high 4); Ken logged all four as must-fix before release, and batch 7a (`fix/batch7a`) fixed them (MASK_VERSION 9; replays in `tests/test_batch7a_must_fix.py`, each failing on a3e535e at its assertion; the false alarms they add are under "Open false alarms (batch 7a)" below). Codex round 1 on 2ccbab1 found three of them only partly fixed (a quoted END in a header line ended a block whose real END had text after it, a cut public packet still proved "public", and the no-connector pattern backtracked on long whitespace); batch 7a fix round 1 fixed those (replays in the same file, each failing on 2ccbab1 at its assertion). Codex round 2 on 037c0e1 found two of those still partly open (a source line continuation, or a footer assembled from adjacent string literals, let a header's quoted END end the block; a public-key packet's payload was not read, so a secret-key packet inside it gave the note); batch 7a fix round 2 fixed them (replays in the same file, each failing on 037c0e1 at its assertion). Codex round 3 on 2ddc143 found both still partly open (a raw literal's `\n`, `r"Comment: x \n"` next to a quoted END, read as a line break; an ECDH key's KDF field, read by its length alone, carrying a private key); batch 7a fix round 3 (Ken: the last round) fixes those two forms (replays in the same file, each failing on 2ddc143 at its assertion). "Fixed" here means each reported form and its replays; what the readings still can't establish is listed under "Open false alarms (batch 7a)" and "Limits left (batch 7a)" below. Its medium (the change-time check is not proof of the scanned inode against a same-user process swapping a parent folder) is left as written above: it needs concurrent interference, and since round 3 a wrong verdict there only adds or drops a note. Tests added in this PR whose assertions changed are listed old → new in CHANGELOG.
 
 ## Open B7 false alarms (batch 6 PR3, Codex rounds 1 and 2)
 
@@ -206,7 +249,7 @@ No PR3 guard is kept.
 
 Stricter since PR3 Codex round 2 (when in doubt, unproven or unread; each may show a false alarm):
 
-- **KL1 (H4-H6):** a chat webhook is WT-T018 only when every name involved is certain. Anything outside a string or comment that isn't ASCII in any code block (in a file with no fences, the whole text: an em dash in its prose too), code that rewrites names or modules at run time (`exec`, `globals`, `setattr`, `sys.modules`, `__dict__`, `prototype`, …), a shell function or alias named curl/wget/http/xh, or a changed `PATH`, `sys.path`, `PYTHONPATH`, `NODE_PATH` or `NODE_OPTIONS` anywhere makes every chat webhook in the document WT-T005. Comments are read as possibly code (`//` is Python's floor division): their words count, their `name =` bindings and calls count, a non-ASCII `//` or `/* */` comment proves nothing, and a comment between a map and its lookup keeps it unproven. A sender (`send`, `post`, `fetch`, …) that is defined, assigned, passed or imported anywhere (other than `import requests`, `from requests|httpx|urllib.request import …`, `const axios = require('axios')`, `import axios from 'axios'`) is a helper. A `{}`/`dict()` map's default is the destination only when no other code block mentions the map or calls anything, and nothing between its binding and the lookup runs (a call, an import, an operator).
+- **KL1 (H4-H6), superseded by batch 7b part 1** ("Open false alarms (batch 7b)" above; the proof described here is gone): a chat webhook is WT-T018 only when every name involved is certain. Anything outside a string or comment that isn't ASCII in any code block (in a file with no fences, the whole text: an em dash in its prose too), code that rewrites names or modules at run time (`exec`, `globals`, `setattr`, `sys.modules`, `__dict__`, `prototype`, …), a shell function or alias named curl/wget/http/xh, or a changed `PATH`, `sys.path`, `PYTHONPATH`, `NODE_PATH` or `NODE_OPTIONS` anywhere makes every chat webhook in the document WT-T005. Comments are read as possibly code (`//` is Python's floor division): their words count, their `name =` bindings and calls count, a non-ASCII `//` or `/* */` comment proves nothing, and a comment between a map and its lookup keeps it unproven. A sender (`send`, `post`, `fetch`, …) that is defined, assigned, passed or imported anywhere (other than `import requests`, `from requests|httpx|urllib.request import …`, `const axios = require('axios')`, `import axios from 'axios'`) is a helper. A `{}`/`dict()` map's default is the destination only when no other code block mentions the map or calls anything, and nothing between its binding and the lookup runs (a call, an import, an operator).
 - **B8 (H7, H8):** an npm/npx/pnpm/bunx/uvx option not in the launcher's table, exactly as written, is "couldn't read the launch" (abbreviations, `--name=value` of a switch, `--no-…`, npm's `--userconfig`/`--node-options`/`--script-shell`, uvx's `--config-file`/`--directory`/`--project`; for `npm exec`, any such word after the package too, up to `--`). An MCP file that isn't JSON even with its comments and trailing commas blanked gives each `"command"` a "couldn't read the launch" finding, whatever the command.
 
 Seen while building batch 6 PR3, not fixed (pre-existing, outside its items):
@@ -214,19 +257,89 @@ Seen while building batch 6 PR3, not fixed (pre-existing, outside its items):
 - WT-T017's pattern needs a separate `-d`, so `curl -sd @notes.txt https://…` (short flags run together) is not WT-T017 at all.
 - `line_of` counts the lines up to each finding from the start of the file, so a file with tens of thousands of findings takes time quadratic in their number (12,000 chat-webhook lookups: about 2.4 s of 6.3 s).
 
+
+## Open false alarms (batch 7a, PR2 Codex round 4 highs 1-4)
+
+Ken's direction (Oct 20): when unsure, mask more or call it real. Each of these is the safe side of a fix in batch 7a and is
+**open**: it shows more than it should, never less (the tests that pin them are in `tests/test_batch7a_must_fix.py`).
+
+- **A key block with no END the strict reading takes is hidden to the end of the text (high 1, Ken's choice of the stricter
+  option) and is a key.** That is an END at another escape level than its BEGIN (`\\n-----END …` in a JSON string whose BEGIN
+  line ends in `\n`), or one with a closing quote that isn't its BEGIN's own: a key on its own line in a `"""` string
+  (`K = """⏎-----BEGIN …⏎…⏎-----END …"""`), or a JSON value whose key block starts after other text and ends right at the
+  closing quote (`"intro\n-----BEGIN …\n…\n-----END …"`). In stored copies (approved copies, the engine cache, finding
+  evidence) everything after the BEGIN in that text is `[hidden]`, so a diff or `show` of the rest of such a file shows
+  nothing; a FAKE key written that way loses its "isn't a real key" note. The made-up inner BEGIN of Codex's armor comment
+  (`Comment: -----BEGIN PRIVATE KEY-----\nFAKE\n-----END …` with literal `\n`) is one: the rest of that JSON text is hidden.
+  Since fix round 1 also: a quoted END after anything but quotes, spaces and code on its logical line (`"MIIE…" "-----END …"`
+  on one line, `x = "-----END …"` in a string written with `\n` escapes).
+- **A later END marker of a block's label hides the rest of the text (fix round 1).** Any END marker with the label, in any
+  frame, after a block's END and before the label's next BEGIN makes the end unsure: the block is hidden to the end of the
+  text and is a key. Prose that names the marker after a key (`Make sure the file ends with -----END RSA PRIVATE KEY-----.`)
+  hides everything after the key in stored copies.
+- **A line continuation in a key block hides the rest of the text (fix round 2).** A backslash right before a line break
+  (or, written with escapes, a backslash run before `\n` whose length isn't a power of two: `\\\n` in JSON) anywhere between
+  a BEGIN and its END makes the end unsure: hidden to the end of the text, a key. Python that builds a key with `\`
+  continuations (`K = "-----BEGIN …\n" \⏎ "…"`), a Markdown hard line break or a path ending in `\` inside a block does that.
+- **A quoted END needs the literal before it to end with a line break (fix rounds 1 and 2).** Read back across source line
+  breaks, a quoted END ends a block only when the literal before it ends with an escaped line break at its level: a JSON
+  array of lines without `\n` (`["-----BEGIN …", "MIIE…", "-----END …"]`) or adjacent literals on one line have no END and
+  hide the rest of the text.
+- **More key blocks are keys (high 3).** A body whose first byte has its top bit set is a key unless it reads as OpenPGP
+  public packets only, read whole to its end, so random or unrecognized bytes there (nearly all random bodies) and a public
+  packet cut short (fix round 1) no longer get the "isn't a real key" note. Since fix round 2 only bare public keys and
+  subkeys whose fields are read exactly (and `PGP` marker packets) count: an ordinary exported public key, which carries user
+  ID and signature packets, labelled PRIVATE KEY BLOCK is a key, with no note, as are keys of an algorithm or version
+  Watchtower doesn't read. Since fix round 3 also: an ECDH key whose KDF names a hash or cipher outside RFC 9580's SHA-2,
+  SHA-3, AES and Camellia ids, a curve RFC 9580 doesn't name, a compressed point, or a legacy curve in a version 6 key.
+- **Literals whose escapes are unsure hide the rest of the text (fix round 3).** In a block written with escapes, a raw
+  literal opening from just before its BEGIN to its END (`r"…"`, `rb'…'`, `R"""…"""`, `r#"…"#`, `@"…"`, `$"…"`,
+  ``String.raw`…` ``, `$'…'`, also an unrelated one such as a regex `r"\d+"` within 32 characters before the BEGIN), and a
+  key built from single-quoted, backtick or triple-quoted literals (`('-----BEGIN …\n' '…\n' '-----END …\n')`, a JS template
+  literal joined with `+`) have no END: hidden to the end of the text, a key. Blocks of real lines (a `"""` or backtick string
+  with real line breaks) are not affected.
+- **A long connector answer is "partial" (high 4).** Past 16,384 characters of names or 512 matches in one answer, the
+  labels found so far are kept and the Bot's connectors are not known whole, even when the rest repeats what was read; the
+  name the reading stopped in counts as no other connector.
+
+## Limits left (batch 7a)
+
+What the readings above still can't establish from the text alone (**open**, found while fixing Codex round 3; not reported
+by Codex):
+
+- **A public key's own fields are opaque bytes.** An RSA modulus, a curve point's coordinates or a 32/56/57-byte X25519,
+  X448, Ed25519 or Ed448 key are read for their framing, not their value (no primality or on-curve check), so a secret key's
+  bytes written into one (a raw 32-byte Ed25519 seed as an "Ed25519 public key", a DER key inside a 4096-bit "modulus") read
+  as a public key and the block gets the "isn't a real key" note. The finding itself stays as its rule gives it (WT-T011 or
+  gitleaks critical); only the note and the fix plan's group differ.
+- **A double-quoted literal's `\n` is taken as a line break in every language.** A shell's `"…\n"` (no escape processing)
+  next to a quoted END in a block written with escapes is read as Python's or JavaScript's would be; with the real footer
+  left out and no `$'…'` (which is caught) such a key could end at a header's END. Watchtower can't tell a document's
+  language from its text.
+
 ## Batch 7c (fix/batch7c): wrappers and shells in MCP launches
 
-Codex round 4 high 8 (batch 6 PR3) is closed for these compositions, each one a test in `tests/test_batch7c_wrappers.py`:
+Codex round 4 high 8 (batch 6 PR3) is closed only for the compositions below, and is **not fully closed**: a
+command-position word with whitespace or shell syntax (script text a launcher hands to a shell, such as
+`timeout 30 npx -y npm@10.9.2 exec --package=npm@10.9.2 -- 'npx -y mutable'`) is still not reported as unread (Codex
+review round 1 of batch 7c; open, under "Must-fix before release" above). The tests in `tests/test_batch7c_wrappers.py`
+check `mcp_unpinned` (one test runs an audit), and only these forms:
 
-- The five Codex examples (`npm exec --package=npm@11.21.0 -- env sh -c '"npx" -y mutable'`, the same with `env yarn dlx mutable` and `env pipx run mutable`, `timeout 30 sh -c '"npx" -y mutable'`, `nice sh -c …`): one WT-M001 each, in `mcp_unpinned` and in the audit.
-- env, timeout and nice in any order and in each option form they read, in front of npx, `pnpm dlx`, bunx and uvx, at the top and behind `npm exec` or `uvx --from` (read as launches: pinned is clear, unpinned names the package); in front of a shell at the top and behind `npm exec`, `pnpm dlx` and bunx, and in front of yarn and pipx behind `npm exec` and `uvx --from` ("couldn't read the launch"); 5,000 wrapped `npm exec` levels stop at the 16-deep bound.
-- A recognised shell as the command, `-c` or not, directly, behind `timeout`, and behind `env` in a launch: sh, bash, rbash, dash, zsh, ksh, mksh, ash, fish, `busybox sh`, `/bin/sh`, cmd, `cmd.exe`, powershell and pwsh are tested (`_SHELLS` also lists ksh93, lksh, oksh, pdksh, yash, posh, csh, tcsh and wsl).
-- Launcher and shell names among a command's words with quotes or backslashes in them, joined by shell punctuation, or as Windows paths (`"npx"`, `n""px`, `\npx`, `n\px`, `x;npx`, `C:\tools\npx.cmd`), and Windows paths in command position (`C:\tools\npx.cmd`, `C:\Windows\System32\cmd.exe /c …`, `pwsh.exe`), at the top, behind a wrapper and in a launch.
-- Behind nohup, setsid, stdbuf, sudo, chrt and xargs (and the rest of `_OTHER_WRAPPERS`): a launcher, shell or wrapper name among their words, a `$` or a backtick, or xargs's argument file (`-a`, `--arg-file`).
-- A timeout or nice option or value it can't read (`--frob`, `abc`, `-vk5`, `-s FOO`, `--sig=KILL`, `-n x`, `--adj=5`, no duration).
-- What a3e535e already flagged stays flagged: npm or pnpm without a launch subcommand behind a wrapper (`timeout 30 npm install`), `cmd /c npx …`, and a package whose own command is named like a wrapper (`npx -y nice@1.0.0 npx …`, `npx -y env@1.0.0 -S tool`).
+- The five Codex examples (`npm exec --package=npm@11.21.0 -- env sh -c '"npx" -y mutable'`, the same with `env yarn dlx mutable` and `env pipx run mutable`, `timeout 30 sh -c '"npx" -y mutable'`, `nice sh -c …`): one WT-M001 each from `mcp_unpinned`. The audit test covers only the first of them (one WT-M001 in the audit's findings).
+- env, timeout and nice in these orders: env, timeout, nice; nice, env; timeout, env; env, nice; env, timeout (and env, timeout and nice repeated 50 times in front of `sh -c`). The option forms tested are env `A=1`, `-u X`, `-i` and `--`; timeout a duration (`30`, `5`, `1`, `2.5s`, `1m`), `-s KILL`, `-sTERM`, `-k 5`, `-k5s`, `--kill-after=5` and `--preserve-status`; nice with no option, `-n 5`, `-n 1`, `-10` and `--adjustment=5`. Other forms (such as `nice -n5`, `nice --adjustment 5`, `timeout --signal=TERM`, `timeout -v`) have no test.
+- Unpinned launches behind wrappers name the package: npx at the top and behind `npm exec` and `uvx --from`; `pnpm dlx`, bunx and uvx at the top and behind `npm exec`. A pinned launch behind wrappers is clear only as tested with npx: at the top (behind timeout, nice, env with timeout and nice, `timeout --preserve-status -k 5`, `timeout -sTERM -k5s 1m`, `nice -10`, `nice --adjustment=5`) and behind `npm exec` (`env timeout 30 npx -y safe@1.2.3`).
+- A shell behind wrappers is "couldn't read the launch": at the top behind timeout, nice and env; behind `npm exec` (env, timeout); behind `pnpm --package=tool@1.0.0 dlx env`; behind `bunx --package tool@1.0.0 timeout 30`. yarn behind `npm exec` (env, `nice -n 5`) and pipx behind `npm exec` (env, `env timeout 5`) and behind `uvx --from tool==1.0.0 nice` are too. 5,000 wrapped `npm exec` levels stop at the 16-deep bound.
+- Each of sh, bash, rbash, dash, zsh, ksh, mksh, ash, fish, `busybox sh`, `/bin/sh`, cmd, `cmd.exe`, powershell and pwsh, as the command with `start.sh` (no `-c`): directly, behind `timeout 30`, and behind `env` in a pinned `npm exec`. `-c` is tested with sh, bash, zsh and dash directly, and with sh behind timeout, nice, env in a pinned `npm exec` and timeout in a pinned `npm exec`. (`_SHELLS` also lists ksh93, lksh, oksh, pdksh, yash, posh, csh, tcsh and wsl; none is tested.)
+- The launcher name npx among a command's words: `"npx" -y mutable`, `x;npx`, `n""px mutable`, `\npx mutable` and `--cmd=n\px` in `node run.js …` at the top (`"npx" -y mutable` also behind `timeout 30` and in a pinned `npm exec`); `"npx"` and `C:\tools\npx.cmd` behind xargs. A shell name among another command's words is tested only as a plain word behind xargs (`sh`) and stdbuf (`bash`).
+- Windows paths in command position: `C:\tools\npx.cmd -y mutable` at the top, behind `timeout 30` and in a pinned `npm exec`; `C:\Windows\System32\cmd.exe /c start.bat` at the top and in a pinned `npm exec`; `D:\PowerShell\pwsh.exe -File run.ps1` at the top; `C:\tools\NPM.CMD exec --package=npm@11.21.0 -- C:\x\bash.exe x`.
+- Other wrappers: nohup with `env`, `$TOOL` or a backtick word among its words (and `env` in a pinned `npm exec`), sudo with `timeout`, setsid with `nice`, stdbuf with `bash`, chrt with `${X}`, xargs with `-a args.txt`, `--arg-file=args.txt`, `nohup`, `sh`, `"npx"` or `C:\tools\npx.cmd`. The rest of `_OTHER_WRAPPERS` has no test. Guards: `nohup node server.js`, `sudo -u nobody python -m server` and `setsid node x.js` stay clear.
+- A timeout or nice option or value it can't read (`--frob`, `abc`, `-vk5`, `-s FOO`, `--sig=KILL`, `-n x`, `--adj=5`, each in front of `npx -y pkg@1.2.3`) and `timeout --foreground` with no duration.
+- What a3e535e already flagged stays flagged (guards): `timeout 30 npm install`, `nice pnpm add x`, `env A=1 timeout 30 npm run start`, `timeout 30 npm run start` in a pinned `npm exec`, `cmd /c npx -y pkg@1.2.3`, `npx -y nice@1.0.0 npx -y pkg@1.2.3` and `npx -y env@1.0.0 -S tool`. Newly flagged (replays): `env npm install` in a pinned `npm exec`, `npx -y timeout@1.0.0 30 sh -c x`, `npx -y env@1.0.0 node server.js`.
+- Timing guards (time only): four many-word and six one-long-word inputs at about 100 KB and 1 MB.
 
-Stricter (each may show a false alarm; Ken's rule: pick the safe option):
+Stricter (each may show a false alarm; Ken's rule: pick the safe option). Of the examples in this list only `bash start.sh`,
+`--sig=KILL`, `--adj=5`, `-vk5`, a `timeout` with no duration, plain `npm run start` and `npx -y env@1.0.0 node server.js` are
+in a test; the others describe how the code reads them and have no test:
 
 - Any recognised shell as the command is "couldn't read the launch", at the top too: `bash start.sh`, `bash -c "cd /srv && node server.js"`. The same check reads `plugin.json`, `marketplace.json` and the files in `.grok-plugin/` and `.cursor-plugin/` folders, so a plugin hook such as `"command": "bash ${CLAUDE_PLUGIN_ROOT}/run.sh"` there is one too.
 - A launcher or shell name among another command's words, after quotes and backslashes are taken out and the word is split at shell punctuation including `=` and `/` or `\` paths: `docker run -e SHELL=bash …`, `node server.js --shell=bash`, `node server.js --root /home/u/sh`.
@@ -235,7 +348,7 @@ Stricter (each may show a false alarm; Ken's rule: pick the safe option):
 - npm or pnpm without a launch subcommand behind any wrapper is "couldn't read the launch", env included (`env npm run start`; a3e535e gave nothing behind env, and "couldn't read" at the wrapper behind timeout or nice). Plain `npm run start` at the top stays clear.
 - A package whose own command is named env, timeout or nice is "couldn't read the launch" at its first word whatever follows (`npx -y env@1.0.0 node server.js`; a3e535e read that env as the wrapper and gave nothing).
 
-Open limits (not release blockers; flagged for Ken):
+Open limits (not release blockers; flagged for Ken; no test pins these examples):
 
 - At the top level, what `yarn dlx`, `pipx run`, `pnpx`, `uv`, `bun` and `deno` fetch is not read, with or without wrappers in front: `yarn dlx mutable`, `timeout 30 yarn dlx mutable`, `env pipx run mutable` and `nohup pipx run mutable` give no WT-M001 (as on a3e535e, which also gave none without the wrapper). Inside a launch each is "couldn't read the launch". This predates batch 7c and is outside item 8.
 - Code given to an interpreter (`node -e`, `python -c`, `perl -e`) is only scanned for launcher and shell names, so a name built at run time (`python -c "import os; os.system(chr(110) + 'px mutable')"`) is missed. A command string given to su, runuser, flock -c or watch (all in `_OTHER_WRAPPERS`) is scanned the same way plus `$` and backticks, so a launch written from text that names no launcher or shell (a file written, then sourced with `.`) is missed too.

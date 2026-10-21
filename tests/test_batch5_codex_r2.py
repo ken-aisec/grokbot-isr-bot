@@ -61,10 +61,11 @@ class Lookups(Folder):
         self.assertEqual(rules_of(fenced("const url = quiet ? 'https://collector.example' : '" + HOOK + "'", "js")), {"WT-T005"})
 
     def test_the_codex_safe_default_stays_a_chat_webhook(self):   # replay (13cbfa4: Do not install, WT-T005)
+        # batch 7b: a lookup's default is never a recognised send: Do not install, WT-T005 (was Install with changes, WT-T018)
         code, r = vet_json(self.write("SKILL.md", fenced(self.CODEX_DEFAULT)))
-        self.assertNotEqual(r["verdict"], "Do not install")
-        self.assertIn("WT-T018", [f["rule"] for f in r["findings"]])
-        self.assertNotIn("WT-T005", [f["rule"] for f in r["findings"]])
+        self.assertEqual(r["verdict"], "Do not install")
+        self.assertIn("WT-T005", [f["rule"] for f in r["findings"]])
+        self.assertNotIn("WT-T018", [f["rule"] for f in r["findings"]])
 
     def test_safe_defaults_stay_chat_webhooks(self):   # replay (13cbfa4: WT-T005 for each)
         # batch 6 PR3, Codex round 1 (9): a helper that isn't defined may send anywhere; its argument proves nothing (was T018)
@@ -84,11 +85,12 @@ class Lookups(Folder):
             self.assertEqual(rules_of(fenced(c, lang)), {"WT-T005"}, c)
 
     def test_http_get_with_options_or_a_callback_is_still_a_sender(self):   # guard
-        for lang, c in (("python", "requests.get('" + HOOK + "', timeout=5)"),
-                        ("python", "session = requests.Session()\nsession.get('" + HOOK + "')"),   # batch 6 (KL2): bound to a client
+        self.assertEqual(rules_of(fenced("requests.get('" + HOOK + "', timeout=5)")), {"WT-T018"})
+        # batch 7b: a session's or the https module's get is not a recognised send (were WT-T018)
+        for lang, c in (("python", "session = requests.Session()\nsession.get('" + HOOK + "')"),
                         ("js", "https.get('" + HOOK + "', (res) => res.resume())"),
                         ("js", "https.get('" + HOOK + "', {timeout: 5}, cb)")):
-            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T018"}, c)
+            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T005"}, c)
 
     def test_round_1_guards_still_hold(self):   # guard
         from test_batch5_codex_r1 import SenderDestination as R1
@@ -97,14 +99,16 @@ class Lookups(Folder):
             self.assertEqual(rules_of(fenced(c, lang)), {"WT-T005"}, c)
         for lang, c in (("python", "requests.post('" + HOOK + "').raise_for_status()"),
                         ("python", "resp = requests.post('" + HOOK + "', json=payload)"),
-                        ("python", "urllib.request.urlopen(urllib.request.Request('" + HOOK + "', data=body))"),
+                        ("python", "requests.post('" + HOOK + "', json={'link': 'https://docs.example/x'})")):
+            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T018"}, c)
+        # batch 7b: the same six forms as round 1's guard are no longer recognised sends (were WT-T018)
+        for lang, c in (("python", "urllib.request.urlopen(urllib.request.Request('" + HOOK + "', data=body))"),
                         ("python", "requests.request('POST', '" + HOOK + "')"),
                         ("python", "requests.post(url='" + HOOK + "')"),
-                        ("python", "requests.post('" + HOOK + "', json={'link': 'https://docs.example/x'})"),
                         ("js", "axios({url: '" + HOOK + "', method: 'post', data: body})"),
                         ("js", "await fetch('" + HOOK + "', {method: 'POST', body})"),
                         ("js", "fetch('" + HOOK + "').then(r => r.json())")):
-            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T018"}, c)
+            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T005"}, c)
 
 
 # ---------------------------------------------------------------- 2: the whole logical word names the tool and the flag
