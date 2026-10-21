@@ -2,7 +2,7 @@
 
 Open findings that dev carries knowingly. Each one is **must-fix before any release**.
 
-## Must-fix before release (batch 6 PR3, Codex round 4 high 8; batch 7b, Codex round 2)
+## Must-fix before release (batch 6 PR3, Codex round 4 high 8; batch 7b, Codex rounds 2 and 3)
 
 8. **Wrappers still hide nested launchers (Codex round 4 high, `watchtower/wt_parts/plugins.py`; the rest of round 3's H8).**
    Ken's order (Oct 20): remaining Codex highs are logged here as must-fix before release. An outer pinned package supplies
@@ -23,6 +23,15 @@ Batch 7b: Codex review round 2 found these three in the plain-literal rule (`cha
   destination option can go unseen. **Fix direction:** treat any redirection in the command as doubt.
 - **JavaScript `with`.** A `with` statement can change what the client name refers to. **Fix direction:** treat `with` anywhere
   in the code as doubt.
+
+Batch 7b: Codex review round 3 found this one. It is present since before batch 7b (a3e535e) and is not fixed in batch 7b,
+by Ken's decision. **Status: open.**
+
+- **Office webhook pattern is slow on long words.** WT-T018's Office-webhook pattern
+  ([rules/text_rules.json](../rules/text_rules.json), the `[\w-]+\.webhook\.office\.com/` branch) is unanchored, so a long
+  run of word characters makes the scan quadratic (about 9 s for a 64,000-character word, over 12 s at 128,000; within the
+  file limit). **Fix direction:** anchor the branch with a word-boundary lookbehind such as `(?<![\w-])` and add a scaling
+  regression.
 
 ## Open false alarms (batch 7b)
 
