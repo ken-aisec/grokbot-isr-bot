@@ -1057,14 +1057,17 @@ _DOUBT_W = re.compile(
 # Fix round 1, item 1: an allowed import line is exactly `import M[, M…]` (M one of the modules below) or `from F import a[, b…]`
 # (F not a client module; no name is a client or `as`), then at most a `#` comment; or the two axios forms, then an optional `;`
 # and at most a `//` comment. A comment with an `import` or `require` word in it isn't plain. No alias, no `;` after a Python form.
+# Fix round 2, item 1: the regexes match the statement only; the comment suffix is read with string operations (_import_line), so
+# a long run of blanks before it is read once.
 _ALLOWED_MODS = r"(?:requests|httpx|json|os|time|datetime)"
 _FROM_MODS = r"(?:json|os|time|datetime)"
 _IMPORTED = r"(?!(?:requests|httpx|axios|as|import)(?![\w$]))[A-Za-z_]\w*"
-_ALLOWED_IMPORTS = re.compile(
-    r"(?:import[ \t]+" + _ALLOWED_MODS + r"(?:[ \t]*,[ \t]*" + _ALLOWED_MODS + r")*"
-    r"|from[ \t]+" + _FROM_MODS + r"[ \t]+import[ \t]+" + _IMPORTED + r"(?:[ \t]*,[ \t]*" + _IMPORTED + r")*)(?P<pc>[ \t]+#.*)?"
-    r"|(?:import[ \t]+axios[ \t]+from[ \t]+(?P<q1>['\"])axios(?P=q1)"
-    r"|(?:const|let|var)[ \t]+axios[ \t]*=[ \t]*require\([ \t]*(?P<q2>['\"])axios(?P=q2)[ \t]*\))[ \t]*;?(?P<jc>[ \t]*//.*)?")
+_ALLOWED_PY = re.compile(
+    r"import[ \t]+" + _ALLOWED_MODS + r"(?:[ \t]*,[ \t]*" + _ALLOWED_MODS + r")*"
+    r"|from[ \t]+" + _FROM_MODS + r"[ \t]+import[ \t]+" + _IMPORTED + r"(?:[ \t]*,[ \t]*" + _IMPORTED + r")*")
+_ALLOWED_JS = re.compile(
+    r"import[ \t]+axios[ \t]+from[ \t]+(?P<q1>['\"])axios(?P=q1)"
+    r"|(?:const|let|var)[ \t]+axios[ \t]*=[ \t]*require\([ \t]*(?P<q2>['\"])axios(?P=q2)[ \t]*\)")
 _IMPORT_WORD = re.compile(r"(?<![\w$])(?:import|require)(?![\w$])")
 _LINE_JOIN = re.compile(r"\\\r?\n")
 # Shell, item 6: quotes and backslashes allowed between letters (so "al""ias" and \alias match a deny builtin).
@@ -1083,11 +1086,27 @@ _SHELL_DOUBT = re.compile(
 
 
 def _import_line(text, ls, le):
-    """True when text[ls:le] (one physical line) is wholly an allowed import (_ALLOWED_IMPORTS). Read once per line."""
+    """True when text[ls:le] (one physical line) is wholly an allowed import: a Python statement (_ALLOWED_PY), then nothing or
+    blanks and a `#` comment; or an axios statement (_ALLOWED_JS), then blanks, an optional `;`, and nothing or blanks and a `//`
+    comment; the comment free of `import`/`require` words. Read once per line."""
     lines = _memo(text).setdefault("import_lines", {})
     if (ls, le) not in lines:
-        m = _ALLOWED_IMPORTS.fullmatch(text[ls:le].strip())
-        lines[(ls, le)] = bool(m) and not _IMPORT_WORD.search(m.group("pc") or m.group("jc") or "")
+        line = text[ls:le].strip()
+        comment, ok = "", False
+        m = _ALLOWED_PY.match(line)
+        if m:
+            rest = line[m.end():]
+            ok = rest == "" or rest[0] in " \t" and rest.lstrip(" \t").startswith("#")
+            comment = rest
+        else:
+            m = _ALLOWED_JS.match(line)
+            if m:
+                rest = line[m.end():].lstrip(" \t")
+                if rest.startswith(";"):
+                    rest = rest[1:]
+                ok = rest == "" or rest.lstrip(" \t").startswith("//")
+                comment = rest
+        lines[(ls, le)] = ok and not _IMPORT_WORD.search(comment)
     return lines[(ls, le)]
 
 
@@ -1182,9 +1201,31 @@ def _logical_command(text, start):
 
 # Fix round 1, item 5: a shell keyword that opens a loop, a conditional or a function at a command start (joins allowed between
 # its letters, as the shell reads them); a plain curl/wget after one in the same region is not a plain send.
-_SHELL_CTRL = re.compile(r"(?m)(?:^|(?<=[;&|(){}`\n]))(?:[ \t!]|\\\r?\n)*(?:"
-                         + "|".join(r"(?:\\\r?\n)*".join(w) for w in ("if", "for", "while", "until", "case", "select", "function"))
-                         + r")(?![\w-])")
+# Fix round 2, item 2: read in three parts by _shell_ctrl (a command start, its run of blanks, `!` and joins, the keyword), so a
+# long run of joins is read once and not again from each of its line breaks.
+_CTRL_START = re.compile(r"(?m)(?:^|(?<=[;&|(){}`\n]))")
+_CTRL_LEAD = re.compile(r"(?:[ \t!]|\\\r?\n)*")
+_CTRL_WORD = re.compile(r"(?:" + "|".join(r"(?:\\\r?\n)*".join(w) for w in ("if", "for", "while", "until", "case", "select",
+                                                                              "function")) + r")(?![\w-])")
+
+
+def _shell_ctrl(text, rs, re_):
+    """Start of the first command start in text[rs:re_] whose run of blanks, `!` and joins (_CTRL_LEAD) ends at a control keyword
+    (_CTRL_WORD); re_ when none does. A command start inside a run already read (after one of its joins) ends at the same place,
+    so it is skipped: each run is read once."""
+    pos, read = rs, -1
+    while True:
+        m = _CTRL_START.search(text, pos, re_) if pos <= re_ else None   # (re clamps a pos past the text's end back to it)
+        if m is None:
+            return re_
+        a = m.start()
+        if a <= read:
+            pos = read + 1
+            continue
+        read = _CTRL_LEAD.match(text, a, re_).end()
+        if _CTRL_WORD.match(text, read, re_):
+            return a
+        pos = a + 1
 
 
 def _static_word(w):
@@ -1234,15 +1275,14 @@ def _shell_region(text, cs):
 def _shell_literal(text, a, b, cs, ls):
     """True when text[a:b] (the URL, with its quotes) is the single positional word of a plain curl/wget command on the logical
     line at `ls` (or the inline-code span at `cs`), using only allowlisted options, every word statically literal (_static_word),
-    and no loop, conditional or function keyword before it in its code region (_SHELL_CTRL, found once per region)."""
+    and no loop, conditional or function keyword before it in its code region (_shell_ctrl, found once per region)."""
     inline = cs != ls and _CURL_WGET.match(text, cs)
     start = cs if inline else ls
     rs, re_ = _shell_region(text, start)
     memo = _memo(text)
     key = ("shell_ctrl", rs, re_)
     if key not in memo:
-        m = _SHELL_CTRL.search(text, rs, re_)
-        memo[key] = re_ if m is None else m.start()
+        memo[key] = _shell_ctrl(text, rs, re_)
     if memo[key] < start:
         return False
     words = _logical_command(text, start)

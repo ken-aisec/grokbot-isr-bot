@@ -2,7 +2,7 @@
 
 Open findings that dev carries knowingly. Each one is **must-fix before any release**.
 
-## Must-fix before release (batch 6 PR3, Codex round 4 high 8)
+## Must-fix before release (batch 6 PR3, Codex round 4 high 8; batch 7b, Codex round 2)
 
 8. **Wrappers still hide nested launchers (Codex round 4 high, `watchtower/wt_parts/plugins.py`; the rest of round 3's H8).**
    Ken's order (Oct 20): remaining Codex highs are logged here as must-fix before release. An outer pinned package supplies
@@ -13,6 +13,16 @@ Open findings that dev carries knowingly. Each one is **must-fix before any rele
    `timeout 30 sh -c '"npx" -y mutable'` or `nice sh -c …` (the wrapper's argument scan skips shells and misses the quoted
    launcher). **Fix direction:** classify the actual command after unwrapping `env`; report unread shell execution behind any
    wrapper as an incomplete launch; add regressions composing wrappers with nested launchers.
+
+Batch 7b: Codex review round 2 found these three in the plain-literal rule (`chat_webhook` in
+[text.py](../watchtower/wt_parts/text.py)). **Status: open.**
+
+- **HTML code regions.** A quoted attribute value in an opening `<pre>` or `<code>` tag can end the region early, so code after
+  it is not checked. **Fix direction:** quote-aware tag parsing, or treat such tags as doubt.
+- **curl redirections.** A shell redirection inside an accepted curl command shifts how its option values are read, so an extra
+  destination option can go unseen. **Fix direction:** treat any redirection in the command as doubt.
+- **JavaScript `with`.** A `with` statement can change what the client name refers to. **Fix direction:** treat `with` anywhere
+  in the code as doubt.
 
 ## Open false alarms (batch 7b)
 
@@ -48,10 +58,14 @@ Now WT-T005 (each was WT-T018 on a3e535e in at least one form):
 - **A curl/wget line that isn't plain:** `sudo`, a `VAR=` prefix, `http`/`xh`, any option off the list (`-x`, `--proxy`,
   `--resolve`, `--connect-to`, `-K`, `--url`, `-k`, `$OPTS`, a value option inside a cluster such as `-sd`, wget's `-Ofile`),
   two URLs or any other positional word. Since fix round 1 (item 5), also any word of the command (option values, redirection
-  targets and the URL included) with `$`, a backtick, `*`, `?`, `[`, `]`, `{`, `}` or `~` outside single quotes, `$` or a
-  backtick inside `"…"`, or an unclosed quote (`-H "Authorization: Bearer $TOKEN"`, `-d "{\"text\": \"$MSG\"}"`, `-d @*.json`,
-  `-o ~/out.json`), and a curl/wget after `if`, `for`, `while`, `until`, `case`,
-  `select` or `function` at a command start anywhere earlier in its code region (a loop or conditional around the send, but
+  targets and the URL included) that isn't statically literal (`_static_word`, which reads the word left to right; an inline
+  span's closing backtick is dropped first). Unquoted characters: any is accepted except `$`, a backtick, `*`, `?`, `[`, `]`,
+  `{`, `}` and `~`; an unquoted backslash accepts the next character whatever it is (so `\$`, `\*` and `\'` pass), and a
+  backslash that ends the word is accepted. Single-quoted: everything up to the next `'` is accepted. Double-quoted: everything
+  up to the next unescaped `"` is accepted except `$` and a backtick; a backslash accepts the next character whatever it is
+  (so `"\$"` and `"\""` pass). A `'` or `"` that never closes rejects the word. So `-H "Authorization: Bearer $TOKEN"`,
+  `-d "{\"text\": \"$MSG\"}"`, `-d @*.json` and `-o ~/out.json` are WT-T005. Also a curl/wget after `if`, `for`, `while`,
+  `until`, `case`, `select` or `function` at a command start anywhere earlier in its code region (a loop or conditional around the send, but
   also an unrelated `if` block above it, a Python `if`/`for` line earlier in the same block, or, in a file with no fences, a
   prose line starting with a lowercase `if` or `for`).
 - **Doubt anywhere in the document's code** (fence bodies of any tag, prose paragraphs with a backtick, `<pre`, `<code` (any

