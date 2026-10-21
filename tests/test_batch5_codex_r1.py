@@ -41,14 +41,16 @@ class SenderDestination(Folder):
 
     def test_the_url_a_call_sends_to_stays_a_chat_webhook(self):   # guard
         for lang, c in (("python", "requests.post('" + HOOK + "').raise_for_status()"),
-                        ("python", "resp = requests.post('" + HOOK + "', json=payload)"),
-                        ("python", "urllib.request.urlopen(urllib.request.Request('" + HOOK + "', data=body))"),
+                        ("python", "resp = requests.post('" + HOOK + "', json=payload)")):
+            self.assertEqual(rules_of(HEAD + f"```{lang}\n" + c + "\n```\n"), {"WT-T018"}, c)
+        # batch 7b: only requests/httpx/axios .post/.put/.patch/.get with the literal first is a recognised send (were WT-T018)
+        for lang, c in (("python", "urllib.request.urlopen(urllib.request.Request('" + HOOK + "', data=body))"),
                         ("python", "requests.request('POST', '" + HOOK + "')"),
                         ("python", "requests.post(url='" + HOOK + "')"),
                         ("js", "axios({url: '" + HOOK + "', method: 'post', data: body})"),
                         ("js", "await fetch('" + HOOK + "', {method: 'POST', body})"),
                         ("js", "fetch('" + HOOK + "').then(r => r.json())")):
-            self.assertEqual(rules_of(HEAD + f"```{lang}\n" + c + "\n```\n"), {"WT-T018"}, c)
+            self.assertEqual(rules_of(HEAD + f"```{lang}\n" + c + "\n```\n"), {"WT-T005"}, c)
 
 
 # ---------------------------------------------------------------- 2: attached short options in the whole-word reader
