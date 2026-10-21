@@ -2,44 +2,7 @@
 
 Open findings that dev carries knowingly. Each one is **must-fix before any release**.
 
-## Must-fix before release (batch 6 PR3, Codex round 3 highs 1-7, round 4 high 8)
-
-Ken's decision (Oct 20): highs 8-10 are fixed in PR3; highs 1-7 ship open. Each is a document where a chat webhook URL is
-lowered from the critical WT-T005 (an alternate destination, Do not install, 80) to the medium WT-T018 (Install with changes,
-40) while the code actually sends somewhere else. In each case the scanner's destination proof (`_code_facts`, `resolved()`,
-`settled()`, the empty-map and builtin `dict()`/`str()` proofs) accepts the send as going to the webhook.
-
-1. **Sender rebinding hidden by comment parsing.** Python reads `//` as floor division, but the scanner reads the rest of the
-   line as a comment, so a rebinding of the sender placed after `x = 1 // 1;` is not seen when it is parenthesized
-   (`(send) = …`) or a tuple target (`(send,) = …`). The call `send("<webhook>")` still lowers to WT-T018.
-2. **A rebinding inside an f-string.** An f-string's replacement field runs code, but the scanner skips the whole string, so a
-   rebinding of `dict` there (in a non-ASCII spelling Python normalizes) goes unseen, so after `config = dict()` the call
-   `requests.post(config.get("hook", "<webhook>"), json=payload)` is still read as an empty map's default: WT-T018.
-3. **Any imported module trusted as the sender's module.** After `import helpers`, `helpers.send("<webhook>", …)` lowers to
-   WT-T018, because a module named in a plain import is treated like an HTTP module; the helper may send anywhere.
-4. **A patched sender implementation.** Writing to an attribute of the sender (its function code) doesn't count against it, so
-   `requests.post("<webhook>", …)` after such a write still lowers to WT-T018.
-5. **Cross-block reassignment of the destination.** `hook = "<webhook>"` in one code block and `hook = <something else>` plus
-   `requests.post(hook, …)` in another lowers to WT-T018 (the same code in one block is WT-T005): the check that a name is bound
-   once only looks at the current block.
-6. **A quoted shell alias.** `alias "curl=…"` (the whole argument quoted) isn't recognized as an alias for curl, so a later
-   `curl … "<webhook>"` lowers to WT-T018 (with WT-T017).
-7. **A module-search-path change through an import alias.** `from sys import path` then `path.insert(0, "vendor")` isn't seen
-   as a `sys.path` change, so a vendored copy can replace `requests` and `requests.post("<webhook>", …)` lowers to WT-T018.
-
-**What still lowers T005 to T018:** any send whose destination the proof machinery accepts (a literal argument, a name bound
-to one, a dict or list element, a `{}`/`dict()` lookup default, a `str()` of a literal) when one of the gaps above hides what
-the sender or the name really is.
-
-**Chosen fix direction (Ken):** stop proving destinations altogether. Remove the proof machinery; a chat webhook is WT-T018
-only when its address is one plain string literal written directly as the URL argument of a recognised send, with nothing in
-the document able to change what that send calls (no binding, attribute write or import alias of the sender or its module, no
-unrecognised module as the sender, no search-path or PATH change, no shell alias or function for the command, no
-f-string/eval/exec). Everything else stays WT-T005. This flips several pre-batch T018 guards to WT-T005 (approved by Ken as
-Option A: `test_batch5_codex_r3::test_safe_forms_stay_chat_webhooks` and `test_batch4_codex_review4::test_standalone_urls_stay_chat_webhooks`);
-those tests are unchanged in PR3 because the fix is not in it. The new false alarms that fix will add must be listed here
-when it lands. **Batch 7b part 1 implements this direction** (see "Open false alarms (batch 7b)" below); items 1-7 stay listed
-here until part 2 adds their replays.
+## Must-fix before release (batch 6 PR3, Codex round 4 high 8)
 
 8. **Wrappers still hide nested launchers (Codex round 4 high, `watchtower/wt_parts/plugins.py`; the rest of round 3's H8).**
    Ken's order (Oct 20): remaining Codex highs are logged here as must-fix before release. An outer pinned package supplies
@@ -102,6 +65,21 @@ Now WT-T005 (each was WT-T018 on a3e535e in at least one form):
   `#` comment or whose code has `\u` anywhere; any whole-word mention of `requests`, `httpx` or `axios` that isn't
   `M.<name>(` or on an allowed import line (passing the module to a function, a string `'requests'`, `obj.requests`); an
   unterminated string or any unreadable character in the send's block.
+
+PR3's Codex round 3 highs 1-7 (a sender rebound after `//`, `dict` rebound in an f-string, an imported helper module, a
+patched sender, a destination reassigned in another block, a quoted shell alias, `from sys import path`) are WT-T005 since
+part 1; replays in `tests/test_batch7b_webhook_literal.py::Replays`, each WT-T018 on a3e535e.
+
+## Open limits of the plain-literal rule (batch 7b)
+
+The rule reads only the document's code, so a plain literal send that passes it is WT-T018 even when something it doesn't
+read changes where the send goes or what else is sent. **Status: open; Ken decides whether these block release.** Not covered:
+
+- files in the skill folder that shadow the client module (a `requests.py` or `node_modules/axios` next to the skill);
+- tool config files written by a command (curl's `.curlrc`, wget's `.wgetrc`, a proxy or URL in them);
+- proxies already set in the environment (`HTTPS_PROXY`, `ALL_PROXY`), which requests, httpx and curl follow;
+- plain-English instructions that redirect or add to the send ("send it to the other address too");
+- code that writes or downloads a file a later plain send uses (a module, a config, the body file).
 
 ## Must-fix before release (batch 6 PR2, Codex round 4 highs 1-4)
 

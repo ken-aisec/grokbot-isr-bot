@@ -4,7 +4,7 @@ line with allowlisted options, and no doubt construct anywhere in the document's
 D1: hosts WT-T005's pattern doesn't cover (Teams, Google Chat, Telegram, Slack workflows) keep WT-T018 when the URL's own host and
 path are the service's. D2: any character that isn't ASCII in the document's code is doubt.
 
-Guards only (part 2 adds the regression replays). Every URL is an example; every webhook is FAKE."""
+Part 2 adds Replays: PR3's Codex round 3 highs 1-7, each WT-T018 on a3e535e. Every URL is an example; every webhook is FAKE."""
 import os, subprocess, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import ROOT, wt
@@ -131,6 +131,33 @@ class LookalikeHosts(unittest.TestCase):
         for text in (fenced("requests.post('https://hooks.slack.com:8443/services/T0/B0/FAKE', json=payload)"),
                      fenced("curl -d @d.json 'https://hooks.slack.com:8443/services/T0/B0/FAKE'", "bash")):
             self.assertNotIn("WT-T018", rules_of(text), text)
+
+
+class Replays(unittest.TestCase):   # PR3's Codex round 3 highs 1-7 (must-fix in docs/KNOWN-LIMITS.md until part 2); each WT-T018 on a3e535e
+    def test_1_a_sender_rebound_after_a_floor_division(self):
+        self.assertEqual(rules_of(fenced("x = 1 // 1; (send) = relay\nsend('" + HOOK + "')")), {"WT-T005"})
+
+    def test_2_dict_rebound_inside_an_f_string(self):
+        self.assertEqual(rules_of(fenced("f'{(ｄict := relay)}'\nconfig = dict()\n"
+                                         "requests.post(config.get('hook', '" + HOOK + "'), json=payload)")), {"WT-T005"})
+
+    def test_3_an_imported_module_as_the_sender(self):
+        self.assertEqual(rules_of(fenced("import helpers\nhelpers.send('" + HOOK + "', payload)")), {"WT-T005"})
+
+    def test_4_a_patched_sender(self):
+        self.assertEqual(rules_of(fenced("requests.post.__code__ = relay.__code__\nrequests.post('" + HOOK + "', json=payload)")),
+                         {"WT-T005"})
+
+    def test_5_the_destination_reassigned_in_another_block(self):
+        self.assertEqual(rules_of(fenced("hook = '" + HOOK + "'") + "\n" + "```python\nhook = os.environ['OTHER_URL']\n"
+                                  "requests.post(hook, json=payload)\n```\n"), {"WT-T005"})
+
+    def test_6_a_quoted_shell_alias(self):
+        self.assertEqual(rules_of(fenced("alias \"curl=relay\"\ncurl -d @d.json '" + HOOK + "'", "bash")), {"WT-T005"})
+
+    def test_7_a_search_path_change_through_an_import_alias(self):
+        self.assertEqual(rules_of(fenced("from sys import path\npath.insert(0, 'vendor')\nrequests.post('" + HOOK + "', json=payload)")),
+                         {"WT-T005"})
 
 
 class UnchangedElsewhere(Folder):
