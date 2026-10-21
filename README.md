@@ -62,7 +62,7 @@ installer itself and everything it installs are pinned:
 COMMIT=<full commit ID from the release page>
 mkdir -p /workspace/watchtower && cd /workspace/watchtower
 curl -fsSLO "https://raw.githubusercontent.com/ken-aisec/grokbot-watchtower/$COMMIT/scripts/install.sh"
-head -40 install.sh && bash install.sh v0.7.1 "$COMMIT"
+head -40 install.sh && bash install.sh v0.7.2 "$COMMIT"
 bash /workspace/watchtower/app/scripts/install.sh --scanners
 python3 /workspace/watchtower/app/watchtower/wt.py audit
 ```

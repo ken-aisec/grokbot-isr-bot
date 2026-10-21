@@ -98,8 +98,9 @@ _JSON_STR = r'"((?:[^"\\\n]|\\.)*)"'
 
 
 def _launcher_name(word):
-    """A command word's program name: its base name, lower case, without a Windows .cmd/.exe/.bat/.ps1 (npx.cmd is npx)."""
-    b = os.path.basename(word).lower()
+    """A command word's program name: its base name after a / or a \\ (batch 7c: C:\\tools\\npx.cmd too), lower case, without a
+    Windows .cmd/.exe/.bat/.ps1 (npx.cmd is npx)."""
+    b = os.path.basename(word.replace("\\", "/")).lower()
     return re.sub(r"\.(cmd|exe|bat|ps1)$", "", b)
 
 
@@ -128,38 +129,148 @@ def _mcp_options(w, i, name, fetched):
     return i, None
 
 
-def mcp_package(w, i=0):
-    """(launcher, [the packages it fetches], why it couldn't read the launch or None, what it runs) when the words w[i:] (a
-    server's command and args, strings) run a package launcher, else None. Its packages are the values of each --package (uvx:
-    --from and --with), or else the first word after its options; env's own options and assignments, and npm's and pnpm's
-    options before their subcommand, are read with their arity. Any doubt is a reason it couldn't read the launch, never a
-    pinned launch. What it runs (round 3, H8): (the index of the command word, whether that word is a package spec), or None."""
+# Batch 7c (KNOWN-LIMITS 8, Codex round 4 high): a wrapper never hides what it runs. env, timeout and nice are read with their
+# options exactly as written (any other option, or a value that isn't a signal, a duration or a niceness, is "couldn't read the
+# launch"), in any order, at the top and in a launch, and the command after them is read as if it stood alone. A shell (the ones
+# in _SHELLS) is never read, -c or not, wherever it is the command. Other wrappers (nohup, sudo, xargs, …) are not read: a launcher,
+# shell or wrapper name among their words, a $ or a ` (an expansion), or xargs's argument file is "couldn't read the launch".
+# Names among a command's words are seen with quotes and backslashes taken out and the words split at shell punctuation
+# (`"npx"`, `n\px`, `C:\tools\npx.cmd`, `x;npx`). A package's own command is never unwrapped: `npx -y nice@1.0.0 …` runs the
+# npm package nice, not GNU nice, so any word it gets is "couldn't read the launch". Unwrapping never clears a launch it couldn't
+# read before: npm or pnpm without a launch subcommand behind a wrapper (`timeout 30 npm install`) stays one.
+_SHELLS = frozenset(("sh", "bash", "rbash", "dash", "zsh", "ksh", "ksh93", "mksh", "lksh", "oksh", "pdksh", "ash", "yash", "posh",
+                     "busybox", "csh", "tcsh", "fish", "cmd", "powershell", "pwsh", "wsl"))
+_WRAPPERS = frozenset(("env", "timeout", "nice"))
+_OTHER_WRAPPERS = frozenset(("nohup", "setsid", "stdbuf", "sudo", "doas", "su", "runuser", "sg", "xargs", "chrt", "ionice", "taskset",
+                             "numactl", "nsenter", "unshare", "chroot", "setpriv", "prlimit", "flock", "watch", "time", "caffeinate",
+                             "systemd-run", "firejail", "bwrap", "strace", "ltrace", "valgrind", "unbuffer", "script", "faketime",
+                             "fakeroot", "eatmydata", "nocache", "trickle", "proxychains", "proxychains4", "torsocks", "tini", "dumb-init",
+                             "gosu", "su-exec", "chpst", "setuidgid", "s6-setuidgid", "xvfb-run", "dbus-run-session", "setarch"))
+_TIMEOUT_SWITCHES = frozenset(("--preserve-status", "--foreground", "-v", "--verbose"))
+_SIGNAL = re.compile(r"(?:SIG)?(?:HUP|INT|QUIT|ILL|TRAP|ABRT|IOT|BUS|FPE|KILL|USR1|SEGV|USR2|PIPE|ALRM|TERM|STKFLT|CHLD|CLD|CONT|STOP|"
+                     r"TSTP|TTIN|TTOU|URG|XCPU|XFSZ|VTALRM|PROF|WINCH|IO|POLL|PWR|SYS|RTMIN(?:\+\d+)?|RTMAX(?:-\d+)?)|\d+")
+_DURATION = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)[smhd]?")
+_NICENESS = re.compile(r"[+-]?\d+")
+_SCAN_SPLIT = re.compile(r"[\s;&|()<>`$={},]+")
+
+
+def _unwrap(w, i):
+    """Read the wrappers env, timeout and nice in front of w[i:], each with its options exactly as written: (the index of the
+    command after them, None, None), or (i, the wrapper, the word it couldn't read). Every step reads at least one word."""
     n = len(w)
-    while i < n and _launcher_name(w[i]) == "env":   # /usr/bin/env [options] [VAR=value …] npx …
-        i, opts = i + 1, True
-        while i < n:
-            x = w[i]
-            if opts and x == "--":
-                opts, i = False, i + 1
-            elif opts and (x in _ENV_SWITCHES or re.fullmatch(r"-[i0v]+", x)):
-                i += 1
-            elif opts and x in _ENV_VALUES:
-                i += 2
-            elif opts and (x.startswith(("--unset=", "--chdir=")) or (x[:2] in _ENV_VALUES and len(x) > 2)):
-                i += 1
-            elif opts and x.startswith("-"):
-                return "env", [], x, None   # -S splits a string into more words; any other option: not read
-            elif "=" in x:
-                i += 1   # VAR=value
-            else:
-                break
+    while i < n:
+        name = _launcher_name(w[i])
+        i += 1
+        if name == "env":   # /usr/bin/env [options] [VAR=value …] npx …
+            opts = True
+            while i < n:
+                x = w[i]
+                if opts and x == "--":
+                    opts, i = False, i + 1
+                elif opts and (x in _ENV_SWITCHES or re.fullmatch(r"-[i0v]+", x)):
+                    i += 1
+                elif opts and x in _ENV_VALUES:
+                    i += 2
+                elif opts and (x.startswith(("--unset=", "--chdir=")) or (x[:2] in _ENV_VALUES and len(x) > 2)):
+                    i += 1
+                elif opts and x.startswith("-"):
+                    return i, "env", x   # -S splits a string into more words; any other option: not read
+                elif "=" in x:
+                    i += 1   # VAR=value
+                else:
+                    break
+        elif name == "timeout":   # GNU and busybox: [options] DURATION command …; the options end at the first word that isn't one
+            while i < n and w[i].startswith("-") and w[i] != "-":
+                x = w[i]
+                if x == "--":
+                    i += 1
+                    break
+                if x in _TIMEOUT_SWITCHES:
+                    i += 1
+                    continue
+                if x in ("-s", "--signal", "-k", "--kill-after"):
+                    if i + 1 >= n:
+                        return i, "timeout", x   # its value is missing
+                    val, step = w[i + 1], 2
+                elif x.startswith(("--signal=", "--kill-after=")):
+                    val, step = x.partition("=")[2], 1
+                elif x[:2] in ("-s", "-k"):
+                    val, step = x[2:], 1
+                else:
+                    return i, "timeout", x   # an abbreviation, a cluster (-vk5), any other option: not read
+                if not (_SIGNAL if x.startswith(("-s", "--signal")) else _DURATION).fullmatch(val):
+                    return i, "timeout", x
+                i += step
+            if i >= n:
+                return i, "timeout", "(no duration)"
+            if not _DURATION.fullmatch(w[i]):
+                return i, "timeout", w[i]
+            i += 1
+        elif name == "nice":   # GNU and busybox: [-n N | --adjustment=N | -N] [command …]
+            while i < n and w[i].startswith("-") and w[i] != "-":
+                x = w[i]
+                if x == "--":
+                    i += 1
+                    break
+                if re.fullmatch(r"-[+-]?\d+", x):
+                    i += 1   # the old -N form
+                elif x in ("-n", "--adjustment"):
+                    if i + 1 >= n or not _NICENESS.fullmatch(w[i + 1]):
+                        return i, "nice", x
+                    i += 2
+                elif x.startswith("--adjustment=") or (x.startswith("-n") and not x.startswith("--")):
+                    if not _NICENESS.fullmatch(x.partition("=")[2] if x.startswith("--") else x[2:]):
+                        return i, "nice", x
+                    i += 1
+                else:
+                    return i, "nice", x
+        else:
+            return i - 1, None, None
+    return i, None, None
+
+
+def _scan_names(word):
+    """The program name of each piece of `word` with its quotes taken out, split at shell punctuation: once with its backslashes
+    taken out (\\npx, n\\px), once with them kept as path separators (C:\\tools\\npx.cmd). Linear in the word."""
+    s = word.replace('"', "").replace("'", "")
+    for t in _SCAN_SPLIT.split(s.replace("\\", "")):
+        yield _launcher_name(t)
+    if "\\" in s:
+        for t in _SCAN_SPLIT.split(s):
+            yield _launcher_name(t)
+
+
+def mcp_package(w, i=0, nested=False, own=False):
+    """(launcher, [the packages it fetches], why it couldn't read the launch or None, what it runs) when the words w[i:] (a
+    server's command and args, strings) run a package launcher, or a launch it couldn't read; else None. Its packages are the
+    values of each --package (uvx: --from and --with), or else the first word after its options; the wrappers in front (_unwrap)
+    and npm's and pnpm's options before their subcommand are read with their arity. Any doubt is a reason it couldn't read the
+    launch, never a pinned launch. What it runs (round 3, H8): (the index of the command word, whether that word is a package
+    spec), or None. `nested`: w[i:] is what a launch runs; `own`: w[i] is a package's own command (batch 7c: never unwrapped)."""
+    n, start = len(w), i
+    if not own:
+        i, wrapper, bad = _unwrap(w, i)
+        if wrapper is not None:
+            return wrapper, [], bad, None
     if i >= n:
         return None
-    name = _launcher_name(w[i])
-    if name not in MCP_LAUNCHERS:
-        for j in range(i + 1, n):   # a launcher word further on (cmd /c npx …, sh -c "npx …"): a launch it can't read
-            if any(_launcher_name(t) in MCP_LAUNCHERS for t in w[j].split()):
-                return name, [], w[j], None
+    name, wrapped = _launcher_name(w[i]), i > start
+    if name in _SHELLS:   # batch 7c: a shell is never read, -c or not
+        return name, [], " ".join(w[i:i + 3]), None
+    if own and name in _WRAPPERS:   # npx -y nice@1.0.0 …: the npm package nice; what it does with its words isn't read
+        return (name, [], w[i + 1], None) if i + 1 < n else None
+    if nested and name in _NESTED_UNREAD:   # yarn, pipx, …: what they run isn't read
+        return name, [], w[i], None
+    if name not in MCP_LAUNCHERS:   # a launcher or shell word further on (node run.js "npx …"): a launch it can't read
+        names = _IN_LAUNCH_WORDS if nested else _TOP_WORDS
+        other = name in _OTHER_WRAPPERS   # and among another wrapper's words: a wrapper name, an expansion, an argument file
+        if other:
+            names = names | _WRAPPER_WORDS
+        for j in range(i + 1, n):
+            x = w[j]
+            argfile = name == "xargs" and (x.startswith("--a") or (x[:1] == "-" and x[1:2] != "-" and "a" in x))   # -a, -0a, --arg-file
+            if (other and ("$" in x or "`" in x or argfile)) or any(t in names for t in _scan_names(x)):
+                return name, [], x, None
         return None
     label, fetched = name, []
     i += 1
@@ -168,7 +279,8 @@ def mcp_package(w, i=0):
         if bad is not None:
             return label, [], bad, None
         if i >= n or w[i] not in MCP_LAUNCHERS[name]:
-            return None   # npm run, pnpm install: not a launch of a fetched package
+            # npm run, pnpm install: not a launch of a fetched package; in a launch or behind a wrapper, what it runs isn't read
+            return (name, [], name, None) if nested or wrapped else None
         label = "npm exec" if name == "npm" else f"{name} {w[i]}"
         i += 1
     i, bad = _mcp_options(w, i, name, fetched)
@@ -195,9 +307,13 @@ def mcp_package(w, i=0):
 # options (or the package's own command) is read again: a launcher or env as a launch of its own; yarn, pipx, uv, bun, deno or
 # a shell (what it runs isn't read), npm or pnpm without a launch subcommand, or a launcher word among a command's arguments,
 # as "couldn't read the launch". A chain of nested launchers is read 16 deep, then is "couldn't read the launch" too.
-_NESTED_UNREAD = frozenset(("yarn", "pipx", "pnpx", "uv", "bun", "deno", "sh", "bash", "zsh", "dash", "ksh", "fish", "cmd", "powershell",
-                            "pwsh"))
-_NESTED_WORDS = frozenset(MCP_LAUNCHERS) | frozenset(("yarn", "pipx", "pnpx", "uv", "bun", "deno"))
+# Batch 7c: all of that is mcp_package's now (nested=True), behind any wrappers; the shells moved to _SHELLS. Wrappers don't count
+# toward the 16.
+_NESTED_UNREAD = frozenset(("yarn", "pipx", "pnpx", "uv", "bun", "deno"))
+_NESTED_WORDS = frozenset(MCP_LAUNCHERS) | _NESTED_UNREAD
+_TOP_WORDS = frozenset(MCP_LAUNCHERS) | _SHELLS   # the names looked for among a command's words, at the top and in a launch
+_IN_LAUNCH_WORDS = _NESTED_WORDS | _SHELLS
+_WRAPPER_WORDS = _WRAPPERS | _OTHER_WRAPPERS   # and among another wrapper's words
 _NESTING = 16
 
 
@@ -205,31 +321,19 @@ def mcp_launches(words):
     """[(launcher, [the packages it fetches], why it couldn't read the launch or None)] for a server's command and args: the
     launch (mcp_package) and each launch nested in what it runs (round 3, H8), outermost first; [] when it isn't a launch."""
     w = [x for x in words if isinstance(x, str)]
-    out, i, nested = [], 0, None
+    out, i, nested, own = [], 0, False, False
     for _ in range(_NESTING):
-        got = mcp_package(w, i)
+        got = mcp_package(w, i, nested, own)
         if got is None:
-            if nested in ("npm", "pnpm"):
-                out.append((nested, [], nested))   # npm run, pnpm install inside a launch: what it runs isn't read
             return out
         label, pkgs, bad, run = got
         out.append((label, pkgs, bad))
         if run is None:
             return out
-        i, spec = run
-        cmd = w[i]
-        nested = _launcher_name(re.split(r"(?<=.)[@=<>~!\[]", cmd, maxsplit=1)[0] if spec else cmd)
-        if nested in _NESTED_UNREAD:
-            out.append((nested, [], cmd))
-            return out
-        if nested not in MCP_LAUNCHERS and nested != "env":
-            for x in w[i + 1:]:   # a launcher word among the command's arguments
-                if any(_launcher_name(t) in _NESTED_WORDS for t in x.split()):
-                    out.append((nested, [], x))
-                    break
-            return out
-        if spec:
-            w, i = [nested] + w[i + 1:], 0   # the package's own command (npx@10.0.0 runs npx)
+        i, own = run
+        if own:   # the package's own command (npx@10.0.0 runs npx), read by its name
+            w, i = [_launcher_name(re.split(r"(?<=.)[@=<>~!\[]", w[i], maxsplit=1)[0])] + w[i + 1:], 0
+        nested = True
     out.append((out[-1][0], [], "(launchers nested over %d deep)" % _NESTING))
     return out
 
