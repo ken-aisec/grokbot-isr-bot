@@ -12,13 +12,15 @@ def mask(s):
 # the original text, and one pass writes them out, so no reader sees another's output, a hidden value keeps its line breaks
 # (history and `show` stay line for line) and the whole is linear. MASK_VERSION goes up whenever masking learns a new shape:
 # copies stored masked by an older version (approved skills, the engine cache) are then masked again.
-MASK_VERSION = 9   # batch 5: whole logical shell words for credentials, quoted YAML keys, webhook URLs over joins and \u escapes
+MASK_VERSION = 10  # batch 5: whole logical shell words for credentials, quoted YAML keys, webhook URLs over joins and \u escapes
                    # (PR A, Codex round 2: 6, for long and joined tool and flag words, whole-value keep test, Bash $'…' and $"…";
                    # round 3: 7, for short values after a joined tool or flag)
                    # batch 6 (KL3, #15 medium 6): 8, for curl's cookie and OAuth bearer values, and a hidden value that ends at its
                    # last character, so its closing quote stays and masking is idempotent
                    # batch 7a (PR2 Codex round 4, high 1): 9, a serialized key block's END read at its escape level, so a
                    # comment header's literal \n never ends it (a copy masked at 8 may hold such a body)
+                   # batch 7d (A): 10, a block written with escapes ends only at the first level of a JSON document, else
+                   # it hides to the end of the text (a copy masked at 9 may hold a body after a shell's or String.raw's END)
 # (4); PR A, Codex round 1 (5): attached -u/-U/-p and the other line-reader forms in whole words, YAML quoted values over lines,
 # an escaped or joined scheme separator
 MASK_WINDOW = 8192   # finding() stores 160 characters: it masks this much of the text they are cut from, never less
@@ -157,6 +159,19 @@ def _continuations(s):
 # escape level (r\" in JSON): Python's r/R prefixes with b/u/f, Rust's r#", C#'s @" and $", JS's String.raw`, a shell's $'
 _RAW_OPEN = re.compile(r"(?<![A-Za-z0-9_])(?:[bBuUfF]{0,2}[rR][bBuUfF]{0,2}#*|@|\$|String\.raw)\\*[\"'`]")
 _RAW_REACH = 32   # how far before a BEGIN marker its own literal's opening may stand
+# Batch 7d (A): kept, but no longer the only guard: String.raw with a space before its template, any other tag, or a shell's
+# "…\n" (no escape processing) escaped it. An escaped END now counts only where _json_text establishes the escapes.
+
+
+def _json_text(s):
+    """Batch 7d (A): True when s as a whole is one JSON document: the only text whose escapes Watchtower can establish from the
+    text alone (a JSON string holds no raw line break, raw prefix or template, and each \\n in it is a line break in its value).
+    Code in any language, YAML, JSON lines, a cut window: False."""
+    try:
+        json.loads(s)
+    except (ValueError, RecursionError):
+        return False
+    return True
 
 
 def _strict_end(s, a, b):
@@ -280,7 +295,10 @@ def armor_blocks(s):
     with its label, in any frame, comes after that end and before its label's next BEGIN. Fix round 2 (Codex 1): and when a
     line continuation (a backslash right before a line break, at any escape level) lies between the BEGIN and that end. Fix
     round 3 (Codex 1): and, in a block written with escapes, when a raw literal opens (_RAW_OPEN) from just before the BEGIN
-    to that end. One pass over the markers, each END found by bisection."""
+    to that end. Batch 7d (A): and, in a block written with escapes, unless its escapes are established: the BEGIN is at the
+    first escape level of a text that is one JSON document (_json_text). Anywhere else (a shell's "…\\n", String.raw or any
+    tagged template, code literals in any language, a notebook's code cell, JSON in JSON) the END is unsure, hidden to the end.
+    One pass over the markers, each END found by bisection."""
     begins, ends, n = _armor_markers(s, "BEGIN"), _armor_markers(s, "END"), len(s)
     loose, strict = {}, {}
     for a, b, label in ends:
@@ -295,7 +313,7 @@ def armor_blocks(s):
             if st is not None:
                 for x in (st[1], None):
                     strict.setdefault((label, "esc", st[0], x), []).append((a, b))
-    reads = []   # each BEGIN's (loose keys, strict keys)
+    reads = []   # each BEGIN's (loose keys, strict keys, escape level or None)
     for a, b, label in begins:
         # the BEGIN's own quote; at the very start of the text (a value read from its BEGIN on) whatever stood before it is
         # unknown, so its ENDs may have any quote (None), their levels still read
@@ -303,6 +321,7 @@ def armor_blocks(s):
         j = b
         while j < n and s[j] in " \t":
             j += 1
+        lv = None
         if j < n and s[j] in "\r\n":
             p = _armor_prefix(s, a)
             lk = [(label, "line", "")] + ([(label, "line", p)] if p else [])
@@ -313,9 +332,9 @@ def armor_blocks(s):
             if lv is None and q:   # no run after the BEGIN: string literals, read at the level their quote is written at
                 lv = len(q) & -len(q)
             sk = [(label, "esc", v, x) for v in dict.fromkeys(("edge", lv)) if v is not None for x in dict.fromkeys(("", q))]
-        reads.append((lk, sk))
+        reads.append((lk, sk, lv))
     starts = {}   # loose key: the starts of the BEGINs that read it
-    for (a, _, _), (lk, _) in zip(begins, reads):
+    for (a, _, _), (lk, _, _) in zip(begins, reads):
         for key in lk:
             starts.setdefault(key, []).append(a)
     label_begins, raw_ends = {}, {}   # label: the starts of all its BEGIN / END markers, in any frame
@@ -325,8 +344,8 @@ def armor_blocks(s):
         raw_ends.setdefault(label, []).append(a)
     conts = _continuations(s) if begins else []
     raws = [m.start() for m in _RAW_OPEN.finditer(s)] if begins else []
-    out = []
-    for k, ((a, b, label), (lk, sk)) in enumerate(zip(begins, reads)):
+    out, json_doc = [], None   # json_doc: _json_text(s), read once when a block written with escapes first needs it
+    for k, ((a, b, label), (lk, sk, lv)) in enumerate(zip(begins, reads)):
         nxt = begins[k + 1][0] if k + 1 < len(begins) else None
         e = _pick_end(strict, sk, b, nxt)
         hide = None
@@ -356,6 +375,14 @@ def armor_blocks(s):
             i = bisect.bisect_left(raws, a - _RAW_REACH)
             if hide is not None and lk[0][1] == "escaped" and i < len(raws) and raws[i] < hide:
                 hide = None
+            # batch 7d (A): a \n is a line break for sure only in a JSON string at the first level; anywhere else it may be
+            # text (a shell's "…", String.raw with a space before its template), so no END in a block written with escapes
+            # is sure there
+            if hide is not None and lk[0][1] == "escaped":
+                if lv == 1 and json_doc is None:
+                    json_doc = _json_text(s)
+                if not (lv == 1 and json_doc):
+                    hide = None
         out.append((a, b, label, e[0] if e else None, e[1] if e else None, nxt, hide))
     return out
 

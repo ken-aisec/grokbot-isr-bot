@@ -14,7 +14,7 @@ Timing runs in a child process with a 60-second limit. A failure reports how man
 import base64, bisect, json, os, random, secrets, shutil, subprocess, sys, tempfile, time, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, ROOT, wt
-from test_batch6_example_keys import _Keys, pem, public_key_packet
+from test_batch6_example_keys import _Keys, fake_text_body, pem, public_key_packet
 from test_batch6b_codex_r2 import ed25519_pkcs8
 from test_batch6b_codex_r3 import approved_copy, bits_of, crc24, pgp_secret_block, t011
 
@@ -141,7 +141,7 @@ class SerializedArmor(Box):   # assertions on masked text report counts and yes/
         self.assertEqual(kept(bits, out), 0, label)   # nothing of the real body
         self.assertTrue(wt.mask_secrets(out) == out, f"masking again changed it: {label}")
         doc = approved_copy(self, "release.json", text)
-        self.assertEqual(doc["masked"], 9, label)
+        self.assertEqual(doc["masked"], 10, label)   # batch 7d: MASK_VERSION 10 (was 9)
         self.assertEqual(kept(bits, doc["files"]["release.json"]), 0, label)
         return out
 
@@ -187,14 +187,22 @@ class SerializedArmor(Box):   # assertions on masked text report counts and yes/
         self.assertTrue('\\"-----END PRIVATE KEY-----' in text, "the END isn't written as a notebook writes it")
         out = wt.mask_secrets(text)
         self.assertEqual(kept(bits_of(raw), out), 0)
-        self.assertTrue("after-cell" in out, "the cell after the key was hidden")
+        # batch 7d (A): the block is at the notebook's second escape level (Python in a JSON string), whose \n isn't
+        # established, so the rest of the text is hidden (was: assertTrue("after-cell" in out))
+        self.assertFalse("after-cell" in out, "the cell after the key was kept")
         self.assertTrue(wt.mask_secrets(out) == out, "masking again changed it")
 
     def test_a_block_hidden_past_its_strict_end_is_real(self):   # guard (new)
         junk = base64.b64encode(public_key_packet(120)).decode()   # a whole public-key packet: an example alone
         plain = "-----BEGIN PRIVATE KEY-----\n" + junk + "\n-----END PRIVATE KEY-----\n"
         text = json.dumps({"k": plain})
-        self.assertEqual(wt.pem_kind(text, text.index("-----BEGIN")), "example")
+        self.assertEqual(wt.pem_kind(text, text.index("-----BEGIN")), "real")   # batch 7d (B): was "example"
+        fake = json.dumps({"k": plain.replace(junk, base64.b64encode(fake_text_body(120)).decode())})
+        self.assertEqual(wt.pem_kind(fake, fake.index("-----BEGIN")), "example")   # batch 7d: a FAKE-text body alone
+        (_, _, _, es, _, _, hide), = wt.armor_blocks(fake)
+        self.assertEqual(hide, es)
+        fake = json.dumps({"k": plain.replace(junk, base64.b64encode(fake_text_body(120)).decode()) + "FAKE \\n-----END PRIVATE KEY-----\n"})
+        self.assertEqual(wt.pem_kind(fake, fake.index("-----BEGIN")), "real")   # the same, past its strict end
         text = json.dumps({"k": plain + "FAKE \\n-----END PRIVATE KEY-----\n"})   # a later END only the loose reading takes
         (_, _, _, es, _, _, hide), = wt.armor_blocks(text)
         self.assertIsNotNone(es)
@@ -247,7 +255,8 @@ class SerializedArmor(Box):   # assertions on masked text report counts and yes/
         block, _ = pgp_secret_block(self.QUOTED_COMMENT + "\nComment: -----BEGIN PRIVATE KEY-----\\nFAKE\\n-----END PRIVATE KEY-----")
         src = self.python_source(block)
         blk = wt.armor_blocks(src)[0]
-        self.assertEqual((blk[3], blk[6]), (src.rindex("-----END PGP"), src.rindex("-----END PGP")))
+        # batch 7d (A): Python source isn't a JSON document, so it hides to the end (was: blk[6] == the END too)
+        self.assertEqual((blk[3], blk[6]), (src.rindex("-----END PGP"), None))
         for code in ('K = ("-----BEGIN PRIVATE KEY-----\\n"\n     "QUJD\\n" + "-----END PRIVATE KEY-----\\n")\n',
                      'K = "-----BEGIN PRIVATE KEY-----\\nQUJD\\n" + "-----END PRIVATE KEY-----"\n'):   # code before a quoted END
             self.assertEqual(wt.armor_blocks(code)[0][3], code.index("-----END"), code)
@@ -360,9 +369,13 @@ class SerializedArmor(Box):   # assertions on masked text report counts and yes/
                                                                           'print("visible")']}]}, indent=1))):
             out = wt.mask_secrets(text)
             self.assertEqual(kept(bits_of(raw), out), 0, name)
-            self.assertTrue("visible" in out, f"the text after the block was hidden: {name}")
             (_, _, _, es, _, _, hide), = wt.armor_blocks(text)
-            self.assertTrue(es is not None and hide == es, name)
+            if name == "JSON lines":
+                self.assertTrue("visible" in out, f"the text after the block was hidden: {name}")
+                self.assertTrue(es is not None and hide == es, name)
+            else:   # batch 7d (A): code and a notebook's code cell aren't established escapes: hidden to the end (was: as JSON lines)
+                self.assertFalse("visible" in out, f"the text after the block was kept: {name}")
+                self.assertTrue(es is not None and hide is None, name)
 
     def test_the_known_false_alarm_hides_the_rest(self):   # guard (new): KNOWN-LIMITS, open false alarms (batch 7a)
         raw = ed25519_pkcs8()
@@ -445,10 +458,14 @@ class IgnoredPackets(_Keys):
 
     def test_public_packets_only_are_still_noted(self):   # guard: a public key labelled PRIVATE is what the note is for
         # fix round 2: a public key, a public subkey and a marker (a user ID's free bytes prove nothing: test_unread_payloads_…)
+        # batch 7d (B): no longer noted: a public key's fields may hold a private key's bytes ("example" -> "real"); a FAKE-text
+        # body is what the note is for now
         for raw in (public_packet(), public_packet() + public_subkey() + IGNORED["marker"],
                     public_key_packet(300)):   # fix round 1: a whole packet (a cut one is a key, test_a_cut_public_packet_…)
             block = pgp_armor(raw)
-            self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "example", raw[:3].hex())
+            self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real", raw[:3].hex())
+        block = pgp_armor(fake_text_body(300))
+        self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "example")
 
     def test_gpg_reads_the_secret_key_behind_the_marker(self):   # guard: the replay's packets are what GnuPG reads
         if not GPG:
@@ -568,9 +585,11 @@ class IgnoredPackets(_Keys):
         for name, raw in cases.items():
             with self.subTest(name):
                 self.assertEqual(wt.pgp_packets(raw), "public", name)
-                if len(raw) >= 64:
+                if len(raw) >= 64:   # batch 7d (B): "example" -> "real", the fields may hold a private key's bytes
                     block = pgp_armor(raw)
-                    self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "example", name)
+                    self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real", name)
+        block = pgp_armor(fake_text_body(120))   # batch 7d: the example path, a FAKE-text body
+        self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "example")
 
     def test_unread_payloads_prove_nothing(self):   # guard (new): a payload whose bytes aren't read can hold a secret key
         uid = b"FAKE Example <fake@example.invalid>"

@@ -100,8 +100,8 @@ class CurlCookieAndBearer(History):
         with gzip.open(wt.approved_path(d), "rt") as f:
             doc = json.load(f)
         self.assertNotIn("FAKEz", json.dumps(doc))
-        self.assertEqual(doc["masked"], 9)   # batch 7a: MASK_VERSION 9 (was 8, and "8" below)
-        self.assertEqual(open(wt.state_path("approved_masked")).read().split()[0], "9")
+        self.assertEqual(doc["masked"], 10)   # batch 7d: MASK_VERSION 10 (was 9, and "9" below; batch 7a: 9, was 8)
+        self.assertEqual(open(wt.state_path("approved_masked")).read().split()[0], "10")
 
     def test_names_files_and_other_tools_stay_readable(self):   # guard
         for s in READABLE:
@@ -132,7 +132,7 @@ class QuotesAndIdempotence(unittest.TestCase):
                          "curl -H 'Authorization: Bearer [hidden]' https://x.example")
 
     def test_the_version_is_8(self):   # replay (5dcd0a2: 7)
-        self.assertEqual(wt.MASK_VERSION, 9)   # batch 7a: 9 (was 8); the name is batch 6's, kept so no test disappears
+        self.assertEqual(wt.MASK_VERSION, 10)   # batch 7d: 10 (was 9; batch 7a: 9, was 8); the name is batch 6's, kept so no test disappears
 
 
 if __name__ == "__main__":

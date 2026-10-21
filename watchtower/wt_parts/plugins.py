@@ -152,13 +152,40 @@ _SIGNAL = re.compile(r"(?:SIG)?(?:HUP|INT|QUIT|ILL|TRAP|ABRT|IOT|BUS|FPE|KILL|US
 _DURATION = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)[smhd]?")
 _NICENESS = re.compile(r"[+-]?\d+")
 _SCAN_SPLIT = re.compile(r"[\s;&|()<>`$={},]+")
+# Batch 7c fix round (Codex round 1 high): a command word is script text when a shell would read it as more than a program
+# name: whitespace, a quote or other shell syntax (cmd.exe's % and ^ too), or a backslash whose escape names a launcher, shell
+# or wrapper (n\px; C:\tools\npx.cmd is a Windows path). npm exec hands its command word to a shell as written.
+_SCRIPT_SYNTAX = re.compile(r"[\s'\"`;&|$<>(){}\[\]*?!#%^]")
+# Batch 7d: the host fills in a ${NAME} placeholder in an MCP command field before launch, with no shell; one at the start of
+# a word, then a path, is that path. Any other $ (bare $HOME, $(…), ${A}${B}, ${A:-x}, one mid-word) stays script text.
+_HOST_PLACEHOLDER = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}(?=[/\\])")
 
 
-def _unwrap(w, i):
+def _script_text(word, host=True):
+    """True when `word`, in command position, is script text (_SCRIPT_SYNTAX), not one program's name. Batch 7d: a blank word
+    is too (npm runs its shell in place of an empty command); with `host`, one leading host placeholder (_HOST_PLACEHOLDER)
+    followed by a path whose last part names a program is read as that path (the rest of the word is checked as before)."""
+    if not word.strip():
+        return True
+    m = _HOST_PLACEHOLDER.match(word) if host else None
+    if m and _launcher_name(word):
+        word = word[m.end():]
+    if _SCRIPT_SYNTAX.search(word):
+        return True
+    if "\\" in word:
+        bare = _launcher_name(word.replace("\\", ""))
+        return bare != _launcher_name(word) and bare in _COMMAND_NAMES
+    return False
+
+
+def _unwrap(w, i, text=None):
     """Read the wrappers env, timeout and nice in front of w[i:], each with its options exactly as written: (the index of the
-    command after them, None, None), or (i, the wrapper, the word it couldn't read). Every step reads at least one word."""
+    command after them, None, None), or (i, the wrapper, the word it couldn't read). Every step reads at least one word.
+    `text` (a list) gets the first command-position word that is script text (each wrapper's name and the command's)."""
     n = len(w)
     while i < n:
+        if text is not None and not text and _script_text(w[i]):
+            text.append(w[i])
         name = _launcher_name(w[i])
         i += 1
         if name == "env":   # /usr/bin/env [options] [VAR=value …] npx …
@@ -240,20 +267,23 @@ def _scan_names(word):
             yield _launcher_name(t)
 
 
-def mcp_package(w, i=0, nested=False, own=False):
+def mcp_package(w, i=0, nested=False, own=False, text=None):
     """(launcher, [the packages it fetches], why it couldn't read the launch or None, what it runs) when the words w[i:] (a
     server's command and args, strings) run a package launcher, or a launch it couldn't read; else None. Its packages are the
     values of each --package (uvx: --from and --with), or else the first word after its options; the wrappers in front (_unwrap)
     and npm's and pnpm's options before their subcommand are read with their arity. Any doubt is a reason it couldn't read the
     launch, never a pinned launch. What it runs (round 3, H8): (the index of the command word, whether that word is a package
-    spec), or None. `nested`: w[i:] is what a launch runs; `own`: w[i] is a package's own command (batch 7c: never unwrapped)."""
+    spec), or None. `nested`: w[i:] is what a launch runs; `own`: w[i] is a package's own command (batch 7c: never unwrapped).
+    `text` (a list) gets the first command-position word that is script text (batch 7c fix round); the result is as without it."""
     n, start = len(w), i
     if not own:
-        i, wrapper, bad = _unwrap(w, i)
+        i, wrapper, bad = _unwrap(w, i, text)
         if wrapper is not None:
             return wrapper, [], bad, None
     if i >= n:
         return None
+    if own and text is not None and not text and _script_text(w[i]):
+        text.append(w[i])
     name, wrapped = _launcher_name(w[i]), i > start
     if name in _SHELLS:   # batch 7c: a shell is never read, -c or not
         return name, [], " ".join(w[i:i + 3]), None
@@ -299,7 +329,7 @@ def mcp_package(w, i=0, nested=False, own=False):
         import itertools
         bad = next((x for x in itertools.takewhile(lambda y: y != "--", w[i + 1:])
                     if x.startswith("-") and x != "-" and x not in MCP_OPTIONS["npm"][0]), None)
-    return label, pkgs, bad, ((i, spec) if bad is None and first else None)
+    return label, pkgs, bad, ((i, spec) if bad is None and i < n else None)   # batch 7d: an empty command word is read too
 
 
 # PR3, Codex round 3 (H8): a pinned outer package never vouches for what it runs. `npm exec --package=npm@11.21.0 -- npx -y
@@ -314,23 +344,33 @@ _NESTED_WORDS = frozenset(MCP_LAUNCHERS) | _NESTED_UNREAD
 _TOP_WORDS = frozenset(MCP_LAUNCHERS) | _SHELLS   # the names looked for among a command's words, at the top and in a launch
 _IN_LAUNCH_WORDS = _NESTED_WORDS | _SHELLS
 _WRAPPER_WORDS = _WRAPPERS | _OTHER_WRAPPERS   # and among another wrapper's words
+_COMMAND_NAMES = _IN_LAUNCH_WORDS | _WRAPPER_WORDS   # a name a backslash escape mustn't hide in command position (_script_text)
 _NESTING = 16
 
 
 def mcp_launches(words):
     """[(launcher, [the packages it fetches], why it couldn't read the launch or None)] for a server's command and args: the
-    launch (mcp_package) and each launch nested in what it runs (round 3, H8), outermost first; [] when it isn't a launch."""
+    launch (mcp_package) and each launch nested in what it runs (round 3, H8), outermost first; [] when it isn't a launch.
+    Batch 7c fix round: script text in command position, at the top, after wrappers, after a launcher's -- or in a launch, is
+    also "couldn't read the launch" (labelled with the launch that runs it, or "(command)" at the top), in front of whatever
+    that level read before, so no finding is lost. Batch 7d: npx and npm exec hand the command word they run to a shell as
+    written, so there a host placeholder counts as script text too (what it is filled in with is read by the shell); a launch
+    with a blank name is labelled with the launch that runs it."""
     w = [x for x in words if isinstance(x, str)]
-    out, i, nested, own = [], 0, False, False
+    out, i, nested, own, shell = [], 0, False, False, False
     for _ in range(_NESTING):
-        got = mcp_package(w, i, nested, own)
+        text = [w[i]] if shell and i < len(w) and _script_text(w[i], host=False) else []
+        got = mcp_package(w, i, nested, own, text)
+        if text:
+            out.append((out[-1][0] if out else "(command)", [], text[0]))
         if got is None:
             return out
         label, pkgs, bad, run = got
-        out.append((label, pkgs, bad))
+        out.append((label if label.strip() else out[-1][0] if out else "(command)", pkgs, bad))
         if run is None:
             return out
         i, own = run
+        shell = label in ("npx", "npm exec")
         if own:   # the package's own command (npx@10.0.0 runs npx), read by its name
             w, i = [_launcher_name(re.split(r"(?<=.)[@=<>~!\[]", w[i], maxsplit=1)[0])] + w[i + 1:], 0
         nested = True
@@ -359,6 +399,9 @@ def mcp_pin_problem(launcher, spec):
 
 _JSONC_TOKEN = re.compile(r'"(?:[^"\\\n]|\\.)*"|//[^\n]*|/\*|[,}\]]|[^"/,}\]]+|/')
 _JSON_KEY = re.compile(r'"((?:[^"\\\n]|\\.)*)"\s*:')
+# Batch 7d: whitespace right after sh's backslash, cmd.exe's ^ or PowerShell's backtick (a line continuation or an escaped
+# space) joins what a split at whitespace parts: `n\<newline>px` is npx to a shell, "n\" and "px" to str.split.
+_SPLIT_ERASES = re.compile(r"[\\^`]\s")
 _COLON_AFTER = re.compile(r"\s*:")
 
 
@@ -473,7 +516,11 @@ def _mcp_servers(text):
             if q:
                 j, at = q.popleft()
                 used = j + 1
-            out.append((at, cfg["command"].split() + [a for a in args if isinstance(a, str)]))
+            cmd = cfg["command"]
+            head = cmd.split()
+            if not head or _SPLIT_ERASES.search(cmd):   # batch 7d: a blank command, or syntax the split would erase: kept whole
+                head = [cmd]
+            out.append((at, head + [a for a in args if isinstance(a, str)]))
     return out
 
 

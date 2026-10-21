@@ -21,7 +21,7 @@ import base64, gzip, hashlib, inspect, json, os, random, secrets, subprocess, sy
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, ROOT, wt
-from test_batch6_example_keys import _Keys, der, der_int, pem, public_key_packet, rsa_der, token
+from test_batch6_example_keys import _Keys, der, der_int, fake_text_body, pem, public_key_packet, rsa_der, token
 from test_batch6b_codex_r1 import (_Dismiss, BUN, GSIDS, MARKER, SKILL_HEAD, body_bits, golden, gl_key, pkcs8, scenario)
 
 TITLE = "Looks like an example or checksum value - check it"   # round 2's title; round 3 keeps each finding's own
@@ -284,8 +284,13 @@ class KeyBlockLines(unittest.TestCase):
         junk = base64.b64encode(public_key_packet(120)).decode()   # batch 7a fix round 1: a whole public-key packet
         # round 3 (Codex 3): a body that isn't base64 (words) can't be read, so it is a key; one that decodes to bytes starting no key
         # is still an example
-        for text, want in (("-----BEGIN PRIVATE KEY-----\n" + junk + "\n-----END PRIVATE KEY-----", "example"),
-                           ('"-----BEGIN PRIVATE KEY-----\\n" +\n"' + junk + '\\n" +\n"-----END PRIVATE KEY-----"', "example"),
+        # batch 7d: the public-key packet is a key (B: "example" -> "real", both forms), and code literals aren't a JSON document,
+        # so their END is unsure (A); a FAKE-text body is the example in a block of lines, and real in code literals (A)
+        text_body = base64.b64encode(fake_text_body(120)).decode()
+        for text, want in (("-----BEGIN PRIVATE KEY-----\n" + junk + "\n-----END PRIVATE KEY-----", "real"),
+                           ('"-----BEGIN PRIVATE KEY-----\\n" +\n"' + junk + '\\n" +\n"-----END PRIVATE KEY-----"', "real"),
+                           ("-----BEGIN PRIVATE KEY-----\n" + text_body + "\n-----END PRIVATE KEY-----", "example"),
+                           ('"-----BEGIN PRIVATE KEY-----\\n" +\n"' + text_body + '\\n" +\n"-----END PRIVATE KEY-----"', "real"),
                            ("-----BEGIN RSA PRIVATE KEY-----\nThis is a FAKE key for the docs; paste yours here.\n-----END RSA PRIVATE KEY-----", "real")):
             i = text.index("-----BEGIN")
             j = text.index("-----", i + 11) + 5

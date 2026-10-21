@@ -17,7 +17,7 @@ their assertion (measured with b621cf4's watchtower/ sources, this file in place
 import base64, gzip, json, os, secrets, shutil, subprocess, sys, tempfile, time, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, ROOT, wt
-from test_batch6_example_keys import _Keys, der, der_int, pem, public_key_packet, rsa_der, token
+from test_batch6_example_keys import _Keys, der, der_int, fake_text_body, pem, public_key_packet, rsa_der, token
 from test_batch6b_codex_r2 import ed25519_pkcs8, raw_sev
 
 NOTE = "This looks like an example or checksum value"   # wt.EXAMPLE_NOTE's start, written out so a replay fails on its assertion
@@ -237,6 +237,10 @@ class KeyStructures(unittest.TestCase):
     def test_a_long_body_that_is_no_key_is_still_noted(self):   # guard (new: b621cf4 lowered it): what B5 still says, as a note only
         block = pem("RSA ", public_key_packet(300))   # batch 7a fix round 1: a whole public-key packet
         got = t011("Key:\n" + block)
+        # batch 7d (B): a public-key packet may hold a private key's bytes: WT-T011 (was WT-T011x), no note (was noted)
+        self.assertEqual([(f["rule"], f["severity"]) for f in got], [("WT-T011", "critical")])
+        self.assertNotIn("(a key block that isn't a real key)", got[0]["fix"])
+        got = t011("Key:\n" + pem("RSA ", fake_text_body(300)))   # batch 7d: a FAKE-text body is what the note is for
         self.assertEqual([(f["rule"], f["severity"]) for f in got], [("WT-T011x", "critical")])
         self.assertIn("(a key block that isn't a real key)", got[0]["fix"])
 
@@ -278,14 +282,17 @@ class ArmorBoundaries(Box):
     def test_a_whole_line_end_is_found_in_each_framing(self):   # guard: what follows a block stays
         raw = ed25519_pkcs8()
         b = base64.b64encode(raw).decode()
+        code = 'K = ("-----BEGIN PRIVATE KEY-----\\n"\n     "' + b + '\\n"\n     "-----END PRIVATE KEY-----\\n")\nafter = 1\n'
         for text in ("before\n" + pem("", raw) + "after\n",
                      "# before\n" + "".join("# " + l + "\n" for l in pem("", raw).rstrip("\n").split("\n")) + "# after\n",
                      json.dumps({"key": pem("", raw), "after": "visible"}),
-                     'K = ("-----BEGIN PRIVATE KEY-----\\n"\n     "' + b + '\\n"\n     "-----END PRIVATE KEY-----\\n")\nafter = 1\n',
+                     code,
                      'K = """-----BEGIN PRIVATE KEY-----\n' + b + '\n-----END PRIVATE KEY-----"""\nafter = 1\n'):
             out = wt.mask_secrets(text)
             self.assertNotIn(b[:24], out, text[:40])
-            self.assertIn("after", out, text[:40])
+            # batch 7d (A): code literals aren't a JSON document, so their END is unsure and what follows is hidden (was:
+            # assertIn("after", out) for every framing)
+            (self.assertNotIn if text is code else self.assertIn)("after", out, text[:40])
             self.assertEqual(wt.mask_secrets(out), out)
 
     def test_a_header_line_never_ends_a_block_escaped_either(self):   # guard (new)
@@ -368,7 +375,14 @@ class EscapedBreaks(unittest.TestCase):
         junk = base64.b64encode(public_key_packet(120)).decode()   # batch 7a fix round 1: a whole public-key packet
         text = json.dumps({"k": "-----BEGIN PRIVATE KEY-----\n" + junk + "\n-----END PRIVATE KEY-----\n"})
         i = text.index("-----BEGIN")
-        self.assertEqual(wt.secret_kind(text[i:i + 27], tail=text[i + 27:])[0], "example")
+        self.assertEqual(wt.secret_kind(text[i:i + 27], tail=text[i + 27:])[0], "real")   # batch 7d (B): was "example"
+        # batch 7d: a FAKE-text body is the example, read in its whole JSON text as scanning reads it (with `tail` alone the
+        # text starts at the BEGIN, no JSON document, so since A it has no sure END and is real)
+        fake = base64.b64encode(fake_text_body(120)).decode()
+        text = json.dumps({"k": "-----BEGIN PRIVATE KEY-----\n" + fake + "\n-----END PRIVATE KEY-----\n"})
+        i = text.index("-----BEGIN")
+        self.assertEqual(wt.secret_kind(text[i:i + 27], block=(text, i, True))[0], "example")
+        self.assertEqual(wt.secret_kind(text[i:i + 27], tail=text[i + 27:])[0], "real")
 
 
 if __name__ == "__main__":

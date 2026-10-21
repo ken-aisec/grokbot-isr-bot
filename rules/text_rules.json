@@ -179,7 +179,7 @@
    "owasp": [
     "ASI04"
    ],
-   "pattern": "(?i)(hooks\\.slack\\.com/(services|workflows|triggers)/|discord(app)?\\.com/api/webhooks/|[\\w-]+\\.webhook\\.office\\.com/|outlook\\.office\\.com/webhook/|chat\\.googleapis\\.com/v1/spaces/[^/\\s]+/messages|api\\.telegram\\.org/bot)",
+   "pattern": "(?i)(hooks\\.slack\\.com/(services|workflows|triggers)/|discord(app)?\\.com/api/webhooks/|(?<![\\w-])[\\w-]+\\.webhook\\.office\\.com/|outlook\\.office\\.com/webhook/|chat\\.googleapis\\.com/v1/spaces/[^/\\s]+/messages|api\\.telegram\\.org/bot)",
    "fix": "Check this webhook is yours. If you don't recognise the workspace or channel, don't install it: anything sent here goes to whoever owns it."
   }
  ],

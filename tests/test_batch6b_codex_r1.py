@@ -19,7 +19,7 @@ import base64, gzip, inspect, io, json, os, random, secrets, string, sys, unitte
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, wt
-from test_batch6_example_keys import EXAMPLE, _Keys, der, der_int, pem, public_key_packet, rsa_der, token
+from test_batch6_example_keys import EXAMPLE, _Keys, der, der_int, fake_text_body, pem, public_key_packet, rsa_der, token
 
 ALNUM = string.ascii_letters + string.digits
 
@@ -118,6 +118,21 @@ class ExampleBoundToPlace(_Keys):
     def test_a_fake_key_block_on_a_later_line_of_a_long_file(self):   # guard: read inside gitleaks' first 100,000 bytes; round 2: low
         # round 3 (Codex 3): a body that isn't base64 is a key now, so the block is one that decodes to bytes that start no key
         block = pem("RSA ", public_key_packet(300)).rstrip("\n")   # batch 7a fix round 1: a whole public-key packet
+        p = self.put("sand-data/workflows/setup-dev-tools/references/long.md", "filler line\n" * 2000 + block + "\n")
+        self.leak(p, block, rule="private-key")
+        fs, notes = self.scan()
+        got = self.keys(fs, self.skill)
+        # batch 7d (B): a public-key packet's fields may hold a private key, so the block is a key: WT-T011 (was WT-T011x), no
+        # note on any finding (was: every one noted) and no "look like example" note (was: one); the FAKE-text test below is
+        # the example path
+        self.assertEqual({(f["rule"], f["title"], f.get("severity_was") or f["severity"]) for f in got},
+                         {("WT-S001", "Secret stored in a file on the shared computer", "critical"),
+                          ("WT-S002", "gitleaks: secrets in file", "critical"), ("WT-T011", "Secret or key in text", "critical")})
+        self.assertTrue(not any("(a key block that isn't a real key)" in f["fix"] for f in got), got)
+        self.assertFalse(any("1 hit(s) look like example or checksum values" in n for n in self.snap()["notes"]), notes)
+
+    def test_a_fake_text_key_block_on_a_later_line_of_a_long_file(self):   # guard (new, batch 7d): the case above, FAKE text
+        block = pem("RSA ", fake_text_body(300)).rstrip("\n")
         p = self.put("sand-data/workflows/setup-dev-tools/references/long.md", "filler line\n" * 2000 + block + "\n")
         self.leak(p, block, rule="private-key")
         fs, notes = self.scan()

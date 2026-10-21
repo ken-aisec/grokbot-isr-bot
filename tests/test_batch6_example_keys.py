@@ -132,6 +132,12 @@ def public_key_packet(size):
     return b"\x99" + len(body).to_bytes(2, "big") + body
 
 
+def fake_text_body(size):
+    """Batch 7d (B): `size` bytes of FAKE ASCII text for a key block's body: it starts no key (no 0x30, no top bit set, no "0"
+    byte where a later line could start one), so a block holding it is what the example note is for."""
+    return (b"FAKE example key body for the docs; this is not a key. " * (size // 55 + 1))[:size]
+
+
 def fake_pems():
     """Key blocks that aren't keys: text in the body, random bytes that aren't DER, a body too short to be one."""
     junk = public_key_packet(300)   # batch 7a fix round 1: a whole public-key packet, 300 bytes as before
@@ -206,7 +212,9 @@ class ExampleKeysAreNotSecrets(_Keys):
     def test_key_blocks_that_arent_keys_are_noted(self):   # replay (5dcd0a2: WT-T011 critical on each BEGIN line, and gitleaks)
         # fix round 3 (Codex 3): a body that can't be read (words), is short, or starts like a key (0x30) is a key; only random
         # bytes starting no key are an example, noted. Four files in one folder: one folder finding, as for real hits
-        want = {"words": "WT-T011", "random": "WT-T011x", "short": "WT-T011", "random8": "WT-T011"}
+        # batch 7d (B): "random" (a whole public-key packet, its modulus opaque bytes) is a key too (was WT-T011x, noted);
+        # the FAKE-text body below is the example now
+        want = {"words": "WT-T011", "random": "WT-T011", "short": "WT-T011", "random8": "WT-T011"}
         for name, block in fake_pems().items():
             p = self.put(f"sand-data/workflows/setup-dev-tools/references/{name}.md", "Your key file looks like this:\n\n" + block)
             self.leak(p, block.rstrip("\n"), rule="private-key")
@@ -218,7 +226,12 @@ class ExampleKeysAreNotSecrets(_Keys):
         for name, block in fake_pems().items():
             t11 = [f for f in wt.scan_text("Key:\n" + block, "/s/SKILL.md", wt.load_rules()) if f["rule"] in ("WT-T011", "WT-T011x")]
             self.assertEqual([(f["rule"], f["title"], f["severity"]) for f in t11], [(want[name], "Secret or key in text", "critical")], name)
-            self.assertEqual(NOTE in t11[0]["fix"], name == "random", name)
+            self.assertEqual(NOTE in t11[0]["fix"], False, name)   # batch 7d (B): was name == "random"
+        # batch 7d (B): a body of FAKE text starts no key: the example path, noted
+        t11 = [f for f in wt.scan_text("Key:\n" + pem("RSA ", fake_text_body(300)), "/s/SKILL.md", wt.load_rules())
+               if f["rule"] in ("WT-T011", "WT-T011x")]
+        self.assertEqual([(f["rule"], f["title"], f["severity"]) for f in t11], [("WT-T011x", "Secret or key in text", "critical")])
+        self.assertIn(NOTE, t11[0]["fix"])
 
     def test_environment_references_in_a_ci_log(self):   # replay (5dcd0a2: S002 critical, and the log was on the scrub list)
         lines = {"GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}": "${{ secrets.GITHUB_TOKEN }}", "export API_TOKEN=$GITHUB_TOKEN": "$GITHUB_TOKEN",

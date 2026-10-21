@@ -307,7 +307,8 @@ def pgp_packets(raw):
     Fix round 2 (Codex 2): a payload proves something only when it is read whole, so "public" needs every packet to be a
     public key or subkey whose payload is exactly its algorithm's public fields (_pgp_public_key) or a marker packet holding
     exactly "PGP"; a signature, user ID or attribute, trust, padding or any other packet (whose bytes could hold a secret key)
-    is None, as is a byte left over in any payload."""
+    is None, as is a byte left over in any payload. Batch 7d (B): only a reading now; "public" no longer gives the example
+    note (_key_shaped), as a public key's fields may hold a private key's bytes."""
     i, n, public = 0, len(raw), False
     for _ in range(_PGP_MAX):
         if i >= n:
@@ -347,13 +348,16 @@ def _key_shaped(raw, at):
     of every structure der_key_structure names, whole or not, so a cut or odd key still counts) or a PGP secret-key or
     secret-subkey packet. Reads raw at `at`, never a copy of the rest. Batch 7a (round 4, high 3): at 0, any byte that may
     start an OpenPGP packet (0x80 set) counts unless the body reads as public packets only (pgp_packets), so a secret key behind
-    a marker or another ignored packet, or a structure Watchtower can't read, is a key."""
+    a marker or another ignored packet, or a structure Watchtower can't read, is a key. Batch 7d (B): public packets prove
+    nothing either: a public key's fields (an RSA modulus, a curve point's coordinates, a 32/56/57-byte X25519, X448, Ed25519 or
+    Ed448 key) are opaque bytes a private key may be written into, so any byte that may start an OpenPGP packet is a key's
+    start, whatever pgp_packets reads."""
     if at >= len(raw):
         return False
     if raw.startswith(b"openssh-key-v1", at) or der_key_structure(raw, at) is not None:
         return True
     b = raw[at]
-    return at == 0 and (b == 0x30 or bool(b & 0x80 and pgp_packets(raw) != "public"))
+    return at == 0 and (b == 0x30 or bool(b & 0x80))
 
 
 def split_escaped_breaks(s):
@@ -1097,6 +1101,9 @@ _INDENT_LINE = re.compile(r"(?m)^(?: {4,}|\t)")
 _HTML_TAG = re.compile(r"(?i)<(?:pre|code)")
 _HTML_CODE = re.compile(r"(?i)<(pre|code)(?![\w-])")
 _HTML_CLOSE = {"pre": re.compile(r"(?i)</pre\s*>"), "code": re.compile(r"(?i)</code\s*>")}
+# Batch 7d (C1): an opening <pre> or <code> tag with anything before its > (an attribute, whose quoted value may hold the
+# closing tag and end the region early) is doubt: its region isn't read quote-aware
+_HTML_OPEN_ATTR = re.compile(r"(?i)<(?:pre|code)(?![\w-])(?!\s*>)")
 
 
 def _code_regions(text):
@@ -1160,7 +1167,8 @@ _DOUBT_N = re.compile(r"[^\x00-\x7f]|[\x0b\x0c]|\r(?!\n)")   # any non-ASCII cha
 _DOUBT_WORDS = ("exec", "eval", "compile", "globals", "locals", "vars", "getattr", "setattr", "delattr", "builtins",
                 "importlib", "monkeypatch", "sys", "environ", "putenv", "chdir", "process", "module", "globalThis",
                 "Reflect", "defineProperty", "prototype", "Function", "PYTHONPATH", "PYTHONSTARTUP", "PYTHONHOME",
-                "NODE_PATH", "NODE_OPTIONS", "sitecustomize", "usercustomize", "LD_PRELOAD", "BASH_ENV", "PATH")
+                "NODE_PATH", "NODE_OPTIONS", "sitecustomize", "usercustomize", "LD_PRELOAD", "BASH_ENV", "PATH",
+                "with")   # batch 7d (C3): JavaScript's with can change what the client name refers to
 _DOUBT_W = re.compile(
     r"\b(?:" + "|".join(_DOUBT_WORDS) + r")\b"
     r"|(?<!\w)__(?!name__)\w+?__(?!\w)"                                  # any __dunder__ except __name__
@@ -1244,12 +1252,12 @@ def _imports_ok(text, s, e):
 def _code_doubt(text):
     """True when any code region of `text` holds a doubt construct, so no chat webhook in it can be WT-T018. The word and shell
     checks also read each region with its backslash-newline joins removed (fix round 1, item 4: `al\\⏎ias` is `alias`). Read
-    once per text."""
+    once per text. Batch 7d (C1): an opening <pre> or <code> tag with attributes anywhere in the text is doubt too."""
     memo = _memo(text)
     if "code_doubt" in memo:
         return memo["code_doubt"]
-    doubt = False
-    for s, e in _code_regions(text):
+    doubt = bool(_HTML_OPEN_ATTR.search(text))
+    for s, e in ([] if doubt else _code_regions(text)):
         joined = _LINE_JOIN.sub("", text[s:e]) if _LINE_JOIN.search(text, s, e) else None
         if (_DOUBT_N.search(text, s, e) or _DOUBT_W.search(text, s, e)
                 or _SHELL_DOUBT.search(text, s, e) or not _imports_ok(text, s, e)
@@ -1386,10 +1394,17 @@ def _shell_region(text, cs):
     return 0, len(text)
 
 
+# Batch 7d (C2): a word's unquoted part (quotes and backslash escapes taken out); a < or > left in it is a redirection, which
+# moves the word an option reads as its value, so any redirection in the command (and a command ended by &>) is doubt
+_QUOTED_PART = re.compile(r"\$'(?:[^'\\]|\\[\s\S])*'?|'[^']*'?|\"(?:[^\"\\]|\\[\s\S])*\"?|\\[\s\S]?")
+_AMP_REDIRECT = re.compile(r"[ \t]*&>")
+
+
 def _shell_literal(text, a, b, cs, ls):
     """True when text[a:b] (the URL, with its quotes) is the single positional word of a plain curl/wget command on the logical
     line at `ls` (or the inline-code span at `cs`), using only allowlisted options, every word statically literal (_static_word),
-    and no loop, conditional or function keyword before it in its code region (_shell_ctrl, found once per region)."""
+    and no loop, conditional or function keyword before it in its code region (_shell_ctrl, found once per region). Batch 7d
+    (C2): and no redirection anywhere in the command (an unquoted < or > in any word, or &> right after it)."""
     inline = cs != ls and _CURL_WGET.match(text, cs)
     start = cs if inline else ls
     rs, re_ = _shell_region(text, start)
@@ -1410,22 +1425,23 @@ def _shell_literal(text, a, b, cs, ls):
         return False
     opt = _curl_opt if tool == "curl" else _wget_opt
     i += 1
-    positional, value = None, False
+    positional, value, ended = None, False, False
     while i < len(words):
         wa, wb = words[i]
         w = text[wa:wb]
         if inline and w.startswith("`"):
+            ended = True
             break
         if w.startswith("#"):
+            ended = True
             break   # an unquoted word starting with # ends the command
         last = inline and w.endswith("`")   # the inline span's closing backtick ends the command
         if not _static_word(w[:-1] if last else w):
             return False
-        rm = None if value else re.match(r"(?:[0-9]*>>?|[0-9]*<|&>|>&)", w)
+        if any(c in "<>" for c in _QUOTED_PART.sub("", w[:-1] if last else w)):
+            return False   # batch 7d (C2): a redirection
         if value:
-            value = False   # an option's value or a redirection's target, checked above
-        elif rm:
-            value = rm.end() == len(w)   # a redirection word; its target is the next word
+            value = False   # an option's value, checked above
         elif w.startswith("-") and w != "-":
             kind = opt(w)
             if kind == "bad":
@@ -1437,9 +1453,10 @@ def _shell_literal(text, a, b, cs, ls):
             positional = (wa, wb)
         i += 1
         if last:
+            ended = True
             break
-    if positional is None:
-        return False
+    if positional is None or not ended and _AMP_REDIRECT.match(text, words[-1][1]):
+        return False   # batch 7d (C2): &> right after the command (the shell's separator reading splits it off)
     pa, pb = positional
     return pa == a and (pb == b or (inline and pb == b + 1 and text[b] == "`"))
 
