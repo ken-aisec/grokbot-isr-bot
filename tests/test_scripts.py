@@ -304,8 +304,8 @@ class Publish(unittest.TestCase):
         for left in VERSIONED_DOCS:
             with self.subTest(left=left):
                 self.git("reset", "-q", "--hard", self.git("rev-list", "--max-parents=0", "HEAD"))
-                self.bump_docs("0.7.2", [d for d in VERSIONED_DOCS if d != left])
-                self.commit_file("watchtower/wt.py", 'VERSION = "0.7.2"\n')
+                self.bump_docs("0.7.3", [d for d in VERSIONED_DOCS if d != left])
+                self.commit_file("watchtower/wt.py", 'VERSION = "0.7.3"\n')
                 main = self.remote_ref("refs/heads/main")
                 r, gh = self.publish()
                 self.stopped(r, gh, main, f"STOPPED: {left} line ")
@@ -313,12 +313,12 @@ class Publish(unittest.TestCase):
 
     def test_batch3_the_tag_comes_from_wt_version(self):
         """Batch 3 (docs drift): publish.sh hardcoded v0.7.1, so a new release would have been tagged with the old number."""
-        self.bump_docs("0.7.2")                                                        # Claude review 1 (3): a bump moves these too
-        self.commit_file("watchtower/wt.py", 'import os\nVERSION = "0.7.2"\n')
+        self.bump_docs("0.7.3")                                                        # Claude review 1 (3): a bump moves these too
+        self.commit_file("watchtower/wt.py", 'import os\nVERSION = "0.7.3"\n')
         r, _ = self.publish()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertEqual(self.remote_ref("refs/tags/v0.7.2^{commit}"), self.git("rev-parse", "HEAD"))
-        self.assertIn("Publishing ownerx/grokbot-watchtower v0.7.2 at", r.stdout)
+        self.assertEqual(self.remote_ref("refs/tags/v0.7.3^{commit}"), self.git("rev-parse", "HEAD"))
+        self.assertIn("Publishing ownerx/grokbot-watchtower v0.7.3 at", r.stdout)
 
     def test_batch3_no_version_line_stops(self):
         self.commit_file("watchtower/wt.py", "# no version here\n")

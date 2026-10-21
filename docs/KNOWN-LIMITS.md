@@ -1,18 +1,12 @@
 # Known limits
 
-Open findings that dev carries knowingly. Each one is **must-fix before any release**.
+Open findings, limits and false alarms that dev carries knowingly. Only the items under a heading titled **Must-fix before release** are release blockers: each of those must be fixed before any release. Everything else in this file (open limits, open false alarms, follow-ups, and the record of fixed items) is documented and kept knowingly, and is not a release blocker on its own.
 
-## Must-fix before release (batch 6 PR3, Codex round 4 high 8; batch 7b, Codex rounds 2 and 3)
+## Must-fix before release (batch 6 PR3, Codex round 4 high 8; batch 7b, Codex rounds 2 and 3; batch 7c, Codex round 1)
 
-8. **Wrappers still hide nested launchers (Codex round 4 high, `watchtower/wt_parts/plugins.py`; the rest of round 3's H8).**
-   Ken's order (Oct 20): remaining Codex highs are logged here as must-fix before release. An outer pinned package supplies
-   executables through PATH; it doesn't pin what runs next. Each of these MCP launches produces no WT-M001:
-   `{"command":"npm","args":["exec","--package=npm@11.21.0","--","env","sh","-c","\"npx\" -y mutable"]}` (the parser consumes
-   `env`, meets `sh` and returns `None`, so `mcp_launches` loses the command it needs to reject; without `env` it is correctly
-   an incomplete launch), the same with nested `env yarn dlx mutable` or `env pipx run mutable`, and
-   `timeout 30 sh -c '"npx" -y mutable'` or `nice sh -c …` (the wrapper's argument scan skips shells and misses the quoted
-   launcher). **Fix direction:** classify the actual command after unwrapping `env`; report unread shell execution behind any
-   wrapper as an incomplete launch; add regressions composing wrappers with nested launchers.
+Codex round 4 high 8 (wrappers hid nested launchers) was in this list; batch 7c fixed the compositions Codex reported, but
+item 8 is not fully closed: the batch 7c item below is still open. What is closed and what is still open is under "Batch 7c
+(fix/batch7c): wrappers and shells in MCP launches" at the end of this file.
 
 Batch 7b: Codex review round 2 found these three in the plain-literal rule (`chat_webhook` in
 [text.py](../watchtower/wt_parts/text.py)). **Status: open.**
@@ -32,6 +26,15 @@ by Ken's decision. **Status: open.**
   run of word characters makes the scan quadratic (about 9 s for a 64,000-character word, over 12 s at 128,000; within the
   file limit). **Fix direction:** anchor the branch with a word-boundary lookbehind such as `(?<![\w-])` and add a scaling
   regression.
+
+Batch 7c: Codex review round 1 found this one (`mcp_launches`/`mcp_package` in
+[plugins.py](../watchtower/wt_parts/plugins.py)). **Status: open.**
+
+- **Script text in command position is not reported as unread.** A command-position word that contains whitespace or shell
+  syntax is script text a launcher hands to a shell, yet it is not reported as "couldn't read the launch": for example
+  `timeout 30 npx -y npm@10.9.2 exec --package=npm@10.9.2 -- 'npx -y mutable'`, and the same behind `nice` or inside a pinned
+  outer `npm exec`. a3e535e reported it as unread; 52597c5 (batch 7c) does not. **Fix direction:** treat any command-position
+  word with whitespace or shell syntax as an unread launch wherever a command is selected.
 
 ## Open false alarms (batch 7b)
 
@@ -254,6 +257,7 @@ Seen while building batch 6 PR3, not fixed (pre-existing, outside its items):
 - WT-T017's pattern needs a separate `-d`, so `curl -sd @notes.txt https://…` (short flags run together) is not WT-T017 at all.
 - `line_of` counts the lines up to each finding from the start of the file, so a file with tens of thousands of findings takes time quadratic in their number (12,000 chat-webhook lookups: about 2.4 s of 6.3 s).
 
+
 ## Open false alarms (batch 7a, PR2 Codex round 4 highs 1-4)
 
 Ken's direction (Oct 20): when unsure, mask more or call it real. Each of these is the safe side of a fix in batch 7a and is
@@ -312,3 +316,40 @@ by Codex):
   next to a quoted END in a block written with escapes is read as Python's or JavaScript's would be; with the real footer
   left out and no `$'…'` (which is caught) such a key could end at a header's END. Watchtower can't tell a document's
   language from its text.
+
+## Batch 7c (fix/batch7c): wrappers and shells in MCP launches
+
+Codex round 4 high 8 (batch 6 PR3) is closed only for the compositions below, and is **not fully closed**: a
+command-position word with whitespace or shell syntax (script text a launcher hands to a shell, such as
+`timeout 30 npx -y npm@10.9.2 exec --package=npm@10.9.2 -- 'npx -y mutable'`) is still not reported as unread (Codex
+review round 1 of batch 7c; open, under "Must-fix before release" above). The tests in `tests/test_batch7c_wrappers.py`
+check `mcp_unpinned` (one test runs an audit), and only these forms:
+
+- The five Codex examples (`npm exec --package=npm@11.21.0 -- env sh -c '"npx" -y mutable'`, the same with `env yarn dlx mutable` and `env pipx run mutable`, `timeout 30 sh -c '"npx" -y mutable'`, `nice sh -c …`): one WT-M001 each from `mcp_unpinned`. The audit test covers only the first of them (one WT-M001 in the audit's findings).
+- env, timeout and nice in these orders: env, timeout, nice; nice, env; timeout, env; env, nice; env, timeout (and env, timeout and nice repeated 50 times in front of `sh -c`). The option forms tested are env `A=1`, `-u X`, `-i` and `--`; timeout a duration (`30`, `5`, `1`, `2.5s`, `1m`), `-s KILL`, `-sTERM`, `-k 5`, `-k5s`, `--kill-after=5` and `--preserve-status`; nice with no option, `-n 5`, `-n 1`, `-10` and `--adjustment=5`. Other forms (such as `nice -n5`, `nice --adjustment 5`, `timeout --signal=TERM`, `timeout -v`) have no test.
+- Unpinned launches behind wrappers name the package: npx at the top and behind `npm exec` and `uvx --from`; `pnpm dlx`, bunx and uvx at the top and behind `npm exec`. A pinned launch behind wrappers is clear only as tested with npx: at the top (behind timeout, nice, env with timeout and nice, `timeout --preserve-status -k 5`, `timeout -sTERM -k5s 1m`, `nice -10`, `nice --adjustment=5`) and behind `npm exec` (`env timeout 30 npx -y safe@1.2.3`).
+- A shell behind wrappers is "couldn't read the launch": at the top behind timeout, nice and env; behind `npm exec` (env, timeout); behind `pnpm --package=tool@1.0.0 dlx env`; behind `bunx --package tool@1.0.0 timeout 30`. yarn behind `npm exec` (env, `nice -n 5`) and pipx behind `npm exec` (env, `env timeout 5`) and behind `uvx --from tool==1.0.0 nice` are too. 5,000 wrapped `npm exec` levels stop at the 16-deep bound.
+- Each of sh, bash, rbash, dash, zsh, ksh, mksh, ash, fish, `busybox sh`, `/bin/sh`, cmd, `cmd.exe`, powershell and pwsh, as the command with `start.sh` (no `-c`): directly, behind `timeout 30`, and behind `env` in a pinned `npm exec`. `-c` is tested with sh, bash, zsh and dash directly, and with sh behind timeout, nice, env in a pinned `npm exec` and timeout in a pinned `npm exec`. (`_SHELLS` also lists ksh93, lksh, oksh, pdksh, yash, posh, csh, tcsh and wsl; none is tested.)
+- The launcher name npx among a command's words: `"npx" -y mutable`, `x;npx`, `n""px mutable`, `\npx mutable` and `--cmd=n\px` in `node run.js …` at the top (`"npx" -y mutable` also behind `timeout 30` and in a pinned `npm exec`); `"npx"` and `C:\tools\npx.cmd` behind xargs. A shell name among another command's words is tested only as a plain word behind xargs (`sh`) and stdbuf (`bash`).
+- Windows paths in command position: `C:\tools\npx.cmd -y mutable` at the top, behind `timeout 30` and in a pinned `npm exec`; `C:\Windows\System32\cmd.exe /c start.bat` at the top and in a pinned `npm exec`; `D:\PowerShell\pwsh.exe -File run.ps1` at the top; `C:\tools\NPM.CMD exec --package=npm@11.21.0 -- C:\x\bash.exe x`.
+- Other wrappers: nohup with `env`, `$TOOL` or a backtick word among its words (and `env` in a pinned `npm exec`), sudo with `timeout`, setsid with `nice`, stdbuf with `bash`, chrt with `${X}`, xargs with `-a args.txt`, `--arg-file=args.txt`, `nohup`, `sh`, `"npx"` or `C:\tools\npx.cmd`. The rest of `_OTHER_WRAPPERS` has no test. Guards: `nohup node server.js`, `sudo -u nobody python -m server` and `setsid node x.js` stay clear.
+- A timeout or nice option or value it can't read (`--frob`, `abc`, `-vk5`, `-s FOO`, `--sig=KILL`, `-n x`, `--adj=5`, each in front of `npx -y pkg@1.2.3`) and `timeout --foreground` with no duration.
+- What a3e535e already flagged stays flagged (guards): `timeout 30 npm install`, `nice pnpm add x`, `env A=1 timeout 30 npm run start`, `timeout 30 npm run start` in a pinned `npm exec`, `cmd /c npx -y pkg@1.2.3`, `npx -y nice@1.0.0 npx -y pkg@1.2.3` and `npx -y env@1.0.0 -S tool`. Newly flagged (replays): `env npm install` in a pinned `npm exec`, `npx -y timeout@1.0.0 30 sh -c x`, `npx -y env@1.0.0 node server.js`.
+- Timing guards (time only): four many-word and six one-long-word inputs at about 100 KB and 1 MB.
+
+Stricter (each may show a false alarm; Ken's rule: pick the safe option). Of the examples in this list only `bash start.sh`,
+`--sig=KILL`, `--adj=5`, `-vk5`, a `timeout` with no duration, plain `npm run start` and `npx -y env@1.0.0 node server.js` are
+in a test; the others describe how the code reads them and have no test:
+
+- Any recognised shell as the command is "couldn't read the launch", at the top too: `bash start.sh`, `bash -c "cd /srv && node server.js"`. The same check reads `plugin.json`, `marketplace.json` and the files in `.grok-plugin/` and `.cursor-plugin/` folders, so a plugin hook such as `"command": "bash ${CLAUDE_PLUGIN_ROOT}/run.sh"` there is one too.
+- A launcher or shell name among another command's words, after quotes and backslashes are taken out and the word is split at shell punctuation including `=` and `/` or `\` paths: `docker run -e SHELL=bash …`, `node server.js --shell=bash`, `node server.js --root /home/u/sh`.
+- A wrapper other than env, timeout and nice in front of a pinned launch (`nohup npx -y pkg@1.2.3`, `sudo -u svc npx -y pkg@1.2.3`), or with an env, timeout, nice or other wrapper name, a `$` or a backtick among its words (`nohup node server.js --home $HOME`, `sudo node x.js time`); for xargs, any short option word with an `a` in it or long option starting `--a`.
+- timeout and nice options are read only as written: abbreviations (`--sig=KILL`, `--adj=5`), clusters (`-vk5`), a lowercase or unknown signal name, a duration in any other form (`1e3`, `inf`), busybox's old `timeout -t`, `--help`, `--version` and a `timeout` with no duration are "couldn't read the launch".
+- npm or pnpm without a launch subcommand behind any wrapper is "couldn't read the launch", env included (`env npm run start`; a3e535e gave nothing behind env, and "couldn't read" at the wrapper behind timeout or nice). Plain `npm run start` at the top stays clear.
+- A package whose own command is named env, timeout or nice is "couldn't read the launch" at its first word whatever follows (`npx -y env@1.0.0 node server.js`; a3e535e read that env as the wrapper and gave nothing).
+
+Open limits (not release blockers; flagged for Ken; no test pins these examples):
+
+- At the top level, what `yarn dlx`, `pipx run`, `pnpx`, `uv`, `bun` and `deno` fetch is not read, with or without wrappers in front: `yarn dlx mutable`, `timeout 30 yarn dlx mutable`, `env pipx run mutable` and `nohup pipx run mutable` give no WT-M001 (as on a3e535e, which also gave none without the wrapper). Inside a launch each is "couldn't read the launch". This predates batch 7c and is outside item 8.
+- Code given to an interpreter (`node -e`, `python -c`, `perl -e`) is only scanned for launcher and shell names, so a name built at run time (`python -c "import os; os.system(chr(110) + 'px mutable')"`) is missed. A command string given to su, runuser, flock -c or watch (all in `_OTHER_WRAPPERS`) is scanned the same way plus `$` and backticks, so a launch written from text that names no launcher or shell (a file written, then sourced with `.`) is missed too.
+- A wrapper that isn't in `_OTHER_WRAPPERS` is read as an ordinary command: only launcher and shell names among its words count.
