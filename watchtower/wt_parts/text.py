@@ -235,30 +235,64 @@ _PGP_PUBLIC = (6, 14)   # public key, public subkey: the only public packets who
 _PGP_MARKER = 10   # read only as the marker packet RFC 4880 §5.8 defines: exactly "PGP"
 _PGP_MAX = 64
 # fix round 2 (Codex 2): each public-key algorithm's public fields, in order: m an MPI, o a curve OID, k ECDH's KDF
-# parameters, a number that many raw bytes (RFC 9580 §5.5.5)
-_PGP_FIELDS = {1: "mm", 2: "mm", 3: "mm", 16: "mmm", 20: "mmm", 17: "mmmm", 18: "omk", 19: "om", 22: "om",
+# parameters, a number that many raw bytes (RFC 9580 §5.5.5). Fix round 3 (Codex 2): p the curve's point
+_PGP_FIELDS = {1: "mm", 2: "mm", 3: "mm", 16: "mmm", 20: "mmm", 17: "mmmm", 18: "opk", 19: "op", 22: "op",
                25: 32, 26: 56, 27: 32, 28: 57}
+# fix round 3 (Codex 2): the curves RFC 9580 §9.2 names: OID -> (the point's first byte, the bytes after it, the algorithms
+# that use it, whether a version 6 key may)
+_PGP_CURVES = {bytes.fromhex(oid): (pre, size, algs, v6) for oid, pre, size, algs, v6 in (
+    ("2a8648ce3d030107", 4, 64, (18, 19), True), ("2b81040022", 4, 96, (18, 19), True), ("2b81040023", 4, 132, (18, 19), True),
+    ("2b2403030208010107", 4, 64, (18, 19), True), ("2b240303020801010b", 4, 96, (18, 19), True),
+    ("2b240303020801010d", 4, 128, (18, 19), True),
+    ("2b06010401da470f01", 0x40, 32, (22,), False), ("2b060104019755010501", 0x40, 32, (18,), False))}
+_PGP_KDF_HASH = frozenset((8, 9, 10, 11, 12, 14))   # SHA2-256, -384, -512, -224, SHA3-256, -512
+_PGP_KDF_CIPHER = frozenset((7, 8, 9, 11, 12, 13))   # AES-128, -192, -256, Camellia-128, -192, -256
+
+
+def _pgp_mpi(raw, i, end, want=None):
+    """Where an exact MPI at raw[i] ends (its bit count that of its bytes, no leading zero byte; `want`: (first byte, bytes
+    after it) it must be), or None."""
+    if i + 3 > end:
+        return None
+    bits, j = int.from_bytes(raw[i:i + 2], "big"), i + 2
+    k = j + (bits + 7) // 8
+    if bits == 0 or k > end or raw[j].bit_length() != bits - 8 * (k - j - 1):
+        return None
+    if want is not None and (raw[j] != want[0] or k - j - 1 != want[1]):
+        return None
+    return k
 
 
 def _pgp_public_key(raw, i, end):
     """True when raw[i:end] is exactly a version 4, 5 or 6 public-key (or subkey) packet's payload: version, creation time,
     algorithm (_PGP_FIELDS), for 5 and 6 the key material's length (which must be the rest), then that algorithm's public
-    fields, ending exactly at `end`. Any other version or algorithm, a field cut short or a byte left over is False."""
+    fields, ending exactly at `end`. Any other version or algorithm, a field cut short or a byte left over is False. Fix
+    round 3 (Codex 2): every field exactly: each MPI's bit count matches its bytes (no leading zero byte); a curve is one
+    _PGP_CURVES names, for this algorithm (and version), and its point has the curve's first byte and length; ECDH's KDF
+    parameters are exactly 3 bytes, 0x01, a known hash and a known cipher."""
     if end - i < 6 or raw[i] not in (4, 5, 6) or raw[i + 5] not in _PGP_FIELDS:
         return False
-    v, fields, i = raw[i], _PGP_FIELDS[raw[i + 5]], i + 6
+    v, alg, i = raw[i], raw[i + 5], i + 6
+    fields, curve = _PGP_FIELDS[alg], None
     if v != 4:
         if end - i < 4 or int.from_bytes(raw[i:i + 4], "big") != end - i - 4:
             return False
         i += 4
     for f in (fields if isinstance(fields, str) else [fields]):
         if isinstance(f, int):
-            i += f
+            i = i + f if i + f <= end else None
         elif f == "m":
-            i = i + 2 + (int.from_bytes(raw[i:i + 2], "big") + 7) // 8 if i + 2 <= end else end + 1
+            i = _pgp_mpi(raw, i, end)
+        elif f == "o":
+            curve = _PGP_CURVES.get(bytes(raw[i + 1:i + 1 + raw[i]])) if i < end else None
+            ok = curve is not None and alg in curve[2] and (v != 6 or curve[3]) and i + 1 + raw[i] <= end
+            i = i + 1 + raw[i] if ok else None
+        elif f == "p":
+            i = _pgp_mpi(raw, i, end, curve[:2])
         else:
-            i = i + 1 + raw[i] if i < end and (f == "k" or raw[i] not in (0, 0xFF)) else end + 1
-        if i > end:
+            ok = i + 4 <= end and raw[i] == 3 and raw[i + 1] == 1 and raw[i + 2] in _PGP_KDF_HASH and raw[i + 3] in _PGP_KDF_CIPHER
+            i = i + 4 if ok else None
+        if i is None:
             return False
     return i == end
 

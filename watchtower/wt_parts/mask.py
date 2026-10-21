@@ -153,6 +153,12 @@ def _continuations(s):
     return [m.start() for m in _BREAK_RUN.finditer(s) if m.group(2) not in "nr" or len(m.group(1)) & (len(m.group(1)) - 1)]
 
 
+# fix round 3 (Codex 1): the opening of a string literal whose escapes aren't read as \n is a line break, written at any
+# escape level (r\" in JSON): Python's r/R prefixes with b/u/f, Rust's r#", C#'s @" and $", JS's String.raw`, a shell's $'
+_RAW_OPEN = re.compile(r"(?<![A-Za-z0-9_])(?:[bBuUfF]{0,2}[rR][bBuUfF]{0,2}#*|@|\$|String\.raw)\\*[\"'`]")
+_RAW_REACH = 32   # how far before a BEGIN marker its own literal's opening may stand
+
+
 def _strict_end(s, a, b):
     """(level or "edge", quote) under which a strict reading lets the END marker s[a:b] end a block written with escapes;
     None when it doesn't. Before it, past spaces and tabs: the start of the text or a line break ("edge"), an escaped \\n or
@@ -209,10 +215,10 @@ def _strict_end(s, a, b):
                 j = at   # an outer serialization's own line break (a notebook's source lines): read on past it
             else:
                 return None   # a backslash-n written at a deeper level is text on this line
-        elif s[j - 1] in " \t\\" + _ARMOR_QUOTES + _ARMOR_CODE:
-            j -= 1
+        elif s[j - 1] in " \t\\" + _ARMOR_CODE or (s[j - 1] == '"' and s[j - 2:j - 1] != '"'):
+            j -= 1   # fix round 3 (Codex 1): only a double-quoted literal's \\n is read as a line break in every language
         else:
-            return None
+            return None   # a single quote or backtick (raw in a shell, PHP, Ruby, Go), "" (a raw triple quote in Kotlin), text
     if q1 and q2 and q1 != q2 or "edge" not in (lv1, lv2) and lv1 != lv2:
         return None
     return (lv2 if lv1 == "edge" else lv1), q1 or q2
@@ -272,8 +278,9 @@ def armor_blocks(s):
     same ENDs doesn't take (with none, the last such END in the text); with no strict END, to the end of the text, so a reader
     unsure where it ends never hides less than before. Fix round 1 (Codex 1): also to the end of the text when an END marker
     with its label, in any frame, comes after that end and before its label's next BEGIN. Fix round 2 (Codex 1): and when a
-    line continuation (a backslash right before a line break, at any escape level) lies between the BEGIN and that end. One
-    pass over the markers, each END found by bisection."""
+    line continuation (a backslash right before a line break, at any escape level) lies between the BEGIN and that end. Fix
+    round 3 (Codex 1): and, in a block written with escapes, when a raw literal opens (_RAW_OPEN) from just before the BEGIN
+    to that end. One pass over the markers, each END found by bisection."""
     begins, ends, n = _armor_markers(s, "BEGIN"), _armor_markers(s, "END"), len(s)
     loose, strict = {}, {}
     for a, b, label in ends:
@@ -317,6 +324,7 @@ def armor_blocks(s):
     for a, _, label in ends:
         raw_ends.setdefault(label, []).append(a)
     conts = _continuations(s) if begins else []
+    raws = [m.start() for m in _RAW_OPEN.finditer(s)] if begins else []
     out = []
     for k, ((a, b, label), (lk, sk)) in enumerate(zip(begins, reads)):
         nxt = begins[k + 1][0] if k + 1 < len(begins) else None
@@ -342,6 +350,11 @@ def armor_blocks(s):
             # END line onto the line before it (a header), at any escape level: its end is unsure, hidden to the end
             i = bisect.bisect_left(conts, b)
             if hide is not None and i < len(conts) and conts[i] < hide:
+                hide = None
+            # fix round 3 (Codex 1): in a block written with escapes, a raw literal (its own, or one inside it) means a \\n
+            # may be text, not a line break, so no END in it is sure
+            i = bisect.bisect_left(raws, a - _RAW_REACH)
+            if hide is not None and lk[0][1] == "escaped" and i < len(raws) and raws[i] < hide:
                 hide = None
         out.append((a, b, label, e[0] if e else None, e[1] if e else None, nxt, hide))
     return out

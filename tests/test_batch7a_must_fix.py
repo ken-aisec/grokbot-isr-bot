@@ -308,6 +308,46 @@ class SerializedArmor(Box):   # assertions on masked text report counts and yes/
         self.assertEqual(src.count("-----END PGP PRIVATE KEY BLOCK-----"), 1)   # only the comment's: the real footer is split
         self.assert_hidden(src, bits, "adjacent literals")
 
+    # fix round 3 (Codex 1): a raw literal's \n is text, not a line break
+    def raw_literal_source(self):
+        """A Python source building the armor from literals, its header line ending in r"Comment: x \\n" (a backslash and n, in
+        Python's value) next to a quoted END; the real footer left out. (source, body pieces)"""
+        armor, bits = self.footless()
+        lits = []
+        for ln in armor.rstrip("\n").split("\n"):
+            lits += (['r"Comment: x \\n"', '"-----END PGP PRIVATE KEY BLOCK-----\\n"'] if ln == "Comment: PLACEHOLDER"
+                     else ['"' + ln + '\\n"'])
+        return "KEY = (" + "\n       ".join(lits) + ")\nprint(len(KEY))\n", bits
+
+    def test_a_raw_literal_before_a_quoted_end(self):   # replay (2ddc143: every body line kept, at each level)
+        src, bits = self.raw_literal_source()
+        for depth in (0, 1, 2):
+            with self.subTest(depth=depth):
+                self.assert_hidden(src if depth == 0 else serialized(src, depth), bits, depth)
+
+    def test_gpg_reads_the_raw_literal_armor(self):   # guard: what Python makes of that source is a key GnuPG reads
+        if not GPG:
+            self.skipTest("gpg not installed")
+        armor, _ = self.footless()
+        value = armor.replace("Comment: PLACEHOLDER", "Comment: x \\n-----END PGP PRIVATE KEY BLOCK-----")
+        d = tempfile.mkdtemp()
+        try:
+            r = subprocess.run([GPG, "--homedir", d, "--batch", "--dearmor"], input=value.encode(), capture_output=True, timeout=30)
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-300:])
+        self.assertTrue(r.stdout == armor_packet(armor + "-----END PGP PRIVATE KEY BLOCK-----\n"), "gpg dearmored other bytes")
+
+    def test_literals_whose_escapes_are_unsure_give_no_end(self):   # replay (2ddc143: each END was taken)
+        for name, code in (("single quotes", "K = ('-----BEGIN PRIVATE KEY-----\\n'\n     'QUJD\\n'\n     '-----END PRIVATE KEY-----\\n')\n"),
+                           ("backticks", "K = `-----BEGIN PRIVATE KEY-----\\n` +\n    `QUJD\\n` +\n    `-----END PRIVATE KEY-----\\n`\n"),
+                           ("raw prefix", 'K = (r"-----BEGIN PRIVATE KEY-----\\n"\n     "QUJD\\n"\n     "-----END PRIVATE KEY-----\\n")\n'),
+                           ("C# verbatim", 'K = @"-----BEGIN PRIVATE KEY-----\\n" +\n    "QUJD\\n" +\n    "-----END PRIVATE KEY-----\\n";\n')):
+            with self.subTest(name):
+                (_, _, _, es, _, _, hide), = wt.armor_blocks(code)
+                self.assertIsNone(hide, name)
+                self.assertEqual(wt.pem_kind(code, code.index("-----BEGIN")), "real", name)
+
     def test_ordinary_code_built_blocks_still_end(self):   # guard: JSON lists of lines, notebooks and code keep what follows
         raw = ed25519_pkcs8()
         p = pem("", raw)
@@ -471,6 +511,66 @@ class IgnoredPackets(_Keys):
                     old_packet(6, b"\x06" + t + b"\x1b" + (33).to_bytes(4, "big") + secrets.token_bytes(33)),   # v6 length off
                     old_packet(6, b"\x04" + t + b"\x13\x00" + b"\x02\x03\x04" + secrets.token_bytes(64))):    # an empty OID
             self.assertIsNone(wt.pgp_packets(raw), raw[:8].hex())
+
+    # fix round 3 (Codex 2): every field of an accepted public key read exactly
+    P256, P384 = bytes.fromhex("2a8648ce3d030107"), bytes.fromhex("2b81040022")
+    CV25519, ED25519 = bytes.fromhex("2b060104019755010501"), bytes.fromhex("2b06010401da470f01")
+
+    @staticmethod
+    def point(prefix, size):
+        return (prefix.bit_length() + 8 * size).to_bytes(2, "big") + bytes([prefix]) + secrets.token_bytes(size)
+
+    @staticmethod
+    def key(alg, *fields, version=4):
+        body = b"".join(fields)
+        count = (len(body).to_bytes(4, "big") if version != 4 else b"")
+        return old_packet(6, bytes([version]) + int(time.time()).to_bytes(4, "big") + bytes([alg]) + count + body)
+
+    def oid(self, o):
+        return bytes([len(o)]) + o
+
+    def test_malformed_public_fields_are_real(self):   # replay (2ddc143: "public", an example with the note)
+        P, kdf = self.oid(self.P256), b"\x03\x01\x08\x07"
+        n = mpi(256)
+        cases = {"a KDF carrying a private key": self.key(18, P, self.point(4, 64), bytes([51]) + b"\x01\x08\x07" + ed25519_pkcs8()),
+                 "a KDF then bytes left over": self.key(18, P, self.point(4, 64), kdf + b"\x00" * 8),
+                 "a 4-byte KDF": self.key(18, P, self.point(4, 64), b"\x04\x01\x08\x07\x00"),
+                 "an unknown KDF hash": self.key(18, P, self.point(4, 64), b"\x03\x01\x63\x07"),
+                 "an unknown KDF cipher": self.key(18, P, self.point(4, 64), b"\x03\x01\x08\x63"),
+                 "a KDF reserved byte": self.key(18, P, self.point(4, 64), b"\x03\x02\x08\x07"),
+                 "an unknown curve": self.key(19, self.oid(bytes.fromhex("2a8648ce3d030199")), self.point(4, 64)),
+                 "a short point": self.key(19, P, self.point(4, 63)),
+                 "a compressed point": self.key(19, P, self.point(2, 32)),
+                 "a P-256 point on P-384": self.key(19, self.oid(self.P384), self.point(4, 64)),
+                 "ECDSA on Curve25519": self.key(19, self.oid(self.CV25519), self.point(0x40, 32), mpi(48)),
+                 "an RSA modulus with a leading zero byte": self.key(1, (2048).to_bytes(2, "big") + b"\x00" + n[3:], b"\x00\x11\x01\x00\x01"),
+                 "an RSA bit count its first byte doesn't match": self.key(1, (2048).to_bytes(2, "big") + b"\x01" + n[3:], b"\x00\x11\x01\x00\x01"),
+                 "legacy EdDSA in a version 6 key": self.key(22, self.oid(self.ED25519), self.point(0x40, 32), mpi(40), version=6)}
+        for name, raw in cases.items():
+            with self.subTest(name):
+                self.assertIsNone(wt.pgp_packets(raw), name)
+                got = t011("Key:\n" + pem("", raw))
+                self.assertEqual([(f["rule"], f["severity"]) for f in got], [("WT-T011", "critical")], name)
+                self.assertFalse(NOTE in got[0]["fix"], f"noted as an example: {name}")
+                block = pgp_armor(raw)
+                self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real", name)
+
+    def test_valid_curve_and_group_keys_are_public(self):   # guard (new)
+        dsa = self.key(17, mpi(256), mpi(32), mpi(256), mpi(256))
+        cases = {"ECDH P-256": self.key(18, self.oid(self.P256), self.point(4, 64), b"\x03\x01\x08\x07"),
+                 "ECDH P-384": self.key(18, self.oid(self.P384), self.point(4, 96), b"\x03\x01\x09\x08"),
+                 "ECDH Curve25519": self.key(18, self.oid(self.CV25519), self.point(0x40, 32), b"\x03\x01\x08\x07"),
+                 "ECDSA P-521": self.key(19, self.oid(bytes.fromhex("2b81040023")), self.point(4, 132)),
+                 "ECDSA brainpoolP256r1": self.key(19, self.oid(bytes.fromhex("2b2403030208010107")), self.point(4, 64)),
+                 "EdDSA Ed25519": self.key(22, self.oid(self.ED25519), self.point(0x40, 32)),
+                 "Ed25519 v6": self.key(27, secrets.token_bytes(32), version=6), "X25519 v4": self.key(25, secrets.token_bytes(32)),
+                 "DSA": dsa, "Elgamal": self.key(16, mpi(256), mpi(1), mpi(256)), "RSA": public_key_packet(300)}
+        for name, raw in cases.items():
+            with self.subTest(name):
+                self.assertEqual(wt.pgp_packets(raw), "public", name)
+                if len(raw) >= 64:
+                    block = pgp_armor(raw)
+                    self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "example", name)
 
     def test_unread_payloads_prove_nothing(self):   # guard (new): a payload whose bytes aren't read can hold a secret key
         uid = b"FAKE Example <fake@example.invalid>"
