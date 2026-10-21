@@ -40,7 +40,9 @@ ACCESS_WORKSPACE = "/workspace"
 _AX_HOST = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)*")
 _AX_AGENT_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f-]{27,}")
 _AX_ID = re.compile(r"[a-z0-9-]{1,30}")
-_AX_NO_CONNECTOR = re.compile(r"(?i)\s*(none|nothing|n/?a|-+|no connectors?( yet)?|not (yet )?(connected|installed|set up))?\s*")
+# batch 7a fix round 1 (Codex 3): matched on the name stripped once (str.strip and \s are the same characters), with no
+# whitespace repetition of its own, so a long run of spaces before one other character is read in linear time
+_AX_NO_CONNECTOR = re.compile(r"(?i)(none|nothing|n/?a|-+|no connectors?( yet)?|not (yet )?(connected|installed|set up))?")
 ACCESS_JSON_MAX_BYTES = 1024 * 1024
 _ACCESS_RUN = {}   # {"home", "map"}: the map this command built; main_inner empties it before each command
 
@@ -92,35 +94,65 @@ def _ax_strs(v, cap, n):
 _AX_FILLER = re.compile(r"(?i)\b(and|or|plus|also|with|the|my|our|connectors?)\b|[\W_]+")
 
 
+CONNECTOR_READ_CHARS, CONNECTOR_READ_MATCHES = 16_384, 512   # batch 7a (PR2 Codex round 4, high 4): one answer's reading budget
+
+
 def access_connectors(names, other=0):
     """(the rules/access_vocab.json labels these connector names stand for, in the vocabulary's order; how many other connectors).
     PR B, Codex round 1 (1): a connector is only ever kept as one of the vocabulary's own labels. Anything else a Bot wrote there
     (a key, "password=...", a sentence about a client) is counted, never kept. "none" and the like are no connector. PR B, Codex
     round 2 (5): every product one name names is kept ("Gmail and Slack" is both); where two matches overlap the longer one wins
     (a label written out, "Microsoft Teams", is that one product), and what is left of the name once the matches, "and", "or" and
-    punctuation are taken out is one other connector."""
+    punctuation are taken out is one other connector. Batch 7a: _connector_read, without its "cut short" answer."""
+    labels, n, _ = _connector_read(names, other)
+    return labels, n
+
+
+def _connector_read(names, other=0):
+    """access_connectors' reading, and whether it was cut short (batch 7a, PR2 Codex round 4, high 4): at most
+    CONNECTOR_READ_CHARS characters of all the names together and CONNECTOR_READ_MATCHES matches are read; past either, reading
+    stops, the labels found so far are kept and the answer is cut short (connector_answer: "partial", never complete), and the
+    name it stopped in adds no other connector (what is left of it is unread). Each match is placed against its two accepted
+    neighbours (bisection) and what is left is the text between the accepted matches, so a name is read in linear time."""
     vocab = [e_ for e_ in access_vocab() if "connector_rx" in e_["_rx"]]
-    found, n = set(), _ax_count(other)
+    found, n, chars, matches = set(), _ax_count(other), CONNECTOR_READ_CHARS, CONNECTOR_READ_MATCHES
     for c in names if isinstance(names, list) else []:
-        if not isinstance(c, str) or _AX_NO_CONNECTOR.fullmatch(c):
+        if not isinstance(c, str):
             continue
-        exact = next((e_ for e_ in vocab if c.strip().lower() in (e_["label"].lower(), e_["id"])), None)
-        if exact is not None:
+        cut = len(c) > chars
+        c, chars = c[:chars], chars - min(len(c), chars)
+        bare = c.strip()
+        if _AX_NO_CONNECTOR.fullmatch(bare) and not cut:
+            continue
+        exact = next((e_ for e_ in vocab if bare.lower() in (e_["label"].lower(), e_["id"])), None)
+        if exact is not None and not cut:
             found.add(exact["label"])
             continue
-        spans = []
+        spans, over = [], False
         for e_ in vocab:   # its connector pattern, its title pattern ("MS Teams") and its label written out
-            spans += [(m.start(), m.end(), e_["label"]) for k in ("connector_rx", "title_rx") for m in e_["_rx"][k].finditer(c) if m.end() > m.start()]
-            spans += [(m.start(), m.end(), e_["label"]) for m in re.finditer(r"(?i)(?<!\w)" + re.escape(e_["label"]) + r"(?!\w)", c)]
-        taken = []
+            rxs = [e_["_rx"]["connector_rx"], e_["_rx"]["title_rx"], re.compile(r"(?i)(?<!\w)" + re.escape(e_["label"]) + r"(?!\w)")]
+            for m in (m for rx in rxs for m in rx.finditer(c)):   # taken one at a time, so the budget bounds the reading
+                if m.end() > m.start():
+                    if not matches:
+                        over = True
+                        break
+                    matches -= 1
+                    spans.append((m.start(), m.end(), e_["label"]))
+            if over:
+                break
+        starts, taken = [], []
         for s, t, label in sorted(spans, key=lambda x: (x[0] - x[1], x[0])):   # the longest first
-            if all(t <= s2 or s >= t2 for s2, t2, _ in taken):
-                taken.append((s, t, label))
+            i = bisect.bisect_left(starts, s)
+            if (i == 0 or taken[i - 1][1] <= s) and (i == len(taken) or t <= taken[i][0]):
+                starts.insert(i, s)
+                taken.insert(i, (s, t, label))
         found |= {label for _, _, label in taken}
-        rest = "".join(ch for i, ch in enumerate(c) if not any(s <= i < t for s, t, _ in taken))
+        if cut or over:
+            return [e_["label"] for e_ in vocab if e_["label"] in found], n, True
+        rest = "".join(c[p:s] for p, s in zip([0] + [t for _, t, _ in taken], starts + [len(c)]))
         if _AX_FILLER.sub("", rest):
             n += 1
-    return [e_["label"] for e_ in vocab if e_["label"] in found], n
+    return [e_["label"] for e_ in vocab if e_["label"] in found], n, False
 
 
 ACCESS_CONNECTORS_UNKNOWN = ("unsaid", "partial")   # round 3 (2): the Bot didn't say; it said something Watchtower couldn't read
@@ -130,10 +162,11 @@ def connector_answer(raw, other=0):
     """Batch 6 (KL6, #16 high 2): one reading of a Bot's connector answer, for a fresh reply (shape_reply) and a kept one (_ax_said,
     from rollcall_findings.json, which the Bot can write) alike: (labels, other connectors, unknown). A string is a name, a list's
     strings are names; a list member that isn't a string ({"name": "Gmail"}, 123), or an answer that is neither, makes it "partial";
-    no answer (none, an empty string) is "unsaid". Never an empty, complete list from something Watchtower couldn't read."""
+    no answer (none, an empty string) is "unsaid". Never an empty, complete list from something Watchtower couldn't read.
+    Batch 7a (PR2 Codex round 4, high 4): an answer too long to read whole (_connector_read's budget) is "partial" too."""
     items = raw if isinstance(raw, list) else [] if raw is None or (isinstance(raw, str) and not raw.strip()) else [raw]
-    labels, n = access_connectors([c for c in items if isinstance(c, str)], other)
-    unknown = "unsaid" if not items and not isinstance(raw, list) else "partial" if any(not isinstance(c, str) for c in items) else None
+    labels, n, cut = _connector_read([c for c in items if isinstance(c, str)], other)
+    unknown = "unsaid" if not items and not isinstance(raw, list) else "partial" if cut or any(not isinstance(c, str) for c in items) else None
     return labels, n, unknown
 
 

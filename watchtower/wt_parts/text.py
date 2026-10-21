@@ -230,17 +230,130 @@ def der_key_structure(b, at=0):
     return "encrypted-pkcs8" if tags == [0x30, 0x04] else None
 
 
+_PGP_SECRET = (5, 7)   # secret key, secret subkey
+_PGP_PUBLIC = (6, 14)   # public key, public subkey: the only public packets whose whole payload is read (_pgp_public_key)
+_PGP_MARKER = 10   # read only as the marker packet RFC 4880 §5.8 defines: exactly "PGP"
+_PGP_MAX = 64
+# fix round 2 (Codex 2): each public-key algorithm's public fields, in order: m an MPI, o a curve OID, k ECDH's KDF
+# parameters, a number that many raw bytes (RFC 9580 §5.5.5). Fix round 3 (Codex 2): p the curve's point
+_PGP_FIELDS = {1: "mm", 2: "mm", 3: "mm", 16: "mmm", 20: "mmm", 17: "mmmm", 18: "opk", 19: "op", 22: "op",
+               25: 32, 26: 56, 27: 32, 28: 57}
+# fix round 3 (Codex 2): the curves RFC 9580 §9.2 names: OID -> (the point's first byte, the bytes after it, the algorithms
+# that use it, whether a version 6 key may)
+_PGP_CURVES = {bytes.fromhex(oid): (pre, size, algs, v6) for oid, pre, size, algs, v6 in (
+    ("2a8648ce3d030107", 4, 64, (18, 19), True), ("2b81040022", 4, 96, (18, 19), True), ("2b81040023", 4, 132, (18, 19), True),
+    ("2b2403030208010107", 4, 64, (18, 19), True), ("2b240303020801010b", 4, 96, (18, 19), True),
+    ("2b240303020801010d", 4, 128, (18, 19), True),
+    ("2b06010401da470f01", 0x40, 32, (22,), False), ("2b060104019755010501", 0x40, 32, (18,), False))}
+_PGP_KDF_HASH = frozenset((8, 9, 10, 11, 12, 14))   # SHA2-256, -384, -512, -224, SHA3-256, -512
+_PGP_KDF_CIPHER = frozenset((7, 8, 9, 11, 12, 13))   # AES-128, -192, -256, Camellia-128, -192, -256
+
+
+def _pgp_mpi(raw, i, end, want=None):
+    """Where an exact MPI at raw[i] ends (its bit count that of its bytes, no leading zero byte; `want`: (first byte, bytes
+    after it) it must be), or None."""
+    if i + 3 > end:
+        return None
+    bits, j = int.from_bytes(raw[i:i + 2], "big"), i + 2
+    k = j + (bits + 7) // 8
+    if bits == 0 or k > end or raw[j].bit_length() != bits - 8 * (k - j - 1):
+        return None
+    if want is not None and (raw[j] != want[0] or k - j - 1 != want[1]):
+        return None
+    return k
+
+
+def _pgp_public_key(raw, i, end):
+    """True when raw[i:end] is exactly a version 4, 5 or 6 public-key (or subkey) packet's payload: version, creation time,
+    algorithm (_PGP_FIELDS), for 5 and 6 the key material's length (which must be the rest), then that algorithm's public
+    fields, ending exactly at `end`. Any other version or algorithm, a field cut short or a byte left over is False. Fix
+    round 3 (Codex 2): every field exactly: each MPI's bit count matches its bytes (no leading zero byte); a curve is one
+    _PGP_CURVES names, for this algorithm (and version), and its point has the curve's first byte and length; ECDH's KDF
+    parameters are exactly 3 bytes, 0x01, a known hash and a known cipher."""
+    if end - i < 6 or raw[i] not in (4, 5, 6) or raw[i + 5] not in _PGP_FIELDS:
+        return False
+    v, alg, i = raw[i], raw[i + 5], i + 6
+    fields, curve = _PGP_FIELDS[alg], None
+    if v != 4:
+        if end - i < 4 or int.from_bytes(raw[i:i + 4], "big") != end - i - 4:
+            return False
+        i += 4
+    for f in (fields if isinstance(fields, str) else [fields]):
+        if isinstance(f, int):
+            i = i + f if i + f <= end else None
+        elif f == "m":
+            i = _pgp_mpi(raw, i, end)
+        elif f == "o":
+            curve = _PGP_CURVES.get(bytes(raw[i + 1:i + 1 + raw[i]])) if i < end else None
+            ok = curve is not None and alg in curve[2] and (v != 6 or curve[3]) and i + 1 + raw[i] <= end
+            i = i + 1 + raw[i] if ok else None
+        elif f == "p":
+            i = _pgp_mpi(raw, i, end, curve[:2])
+        else:
+            ok = i + 4 <= end and raw[i] == 3 and raw[i + 1] == 1 and raw[i + 2] in _PGP_KDF_HASH and raw[i + 3] in _PGP_KDF_CIPHER
+            i = i + 4 if ok else None
+        if i is None:
+            return False
+    return i == end
+
+
+def pgp_packets(raw):
+    """Batch 7a (PR2 Codex round 4, high 3): raw read as OpenPGP packets (old and new headers, their lengths), at most
+    _PGP_MAX: "secret" when a secret-key or secret-subkey packet is among them; "public" only when every packet is a public one
+    or one readers ignore (until fix round 2: a marker, trust or padding packet), at least one is public, and they end
+    exactly at the end of raw; None for anything else (another or reserved tag, a partial or indeterminate length, bytes after
+    them that aren't a packet, more than _PGP_MAX). Fix round 1 (Codex 2): a packet whose declared length runs past the end of
+    raw is None too, public or not: a cut walk proves nothing about the bytes it skipped (a secret key may lie in them).
+    Fix round 2 (Codex 2): a payload proves something only when it is read whole, so "public" needs every packet to be a
+    public key or subkey whose payload is exactly its algorithm's public fields (_pgp_public_key) or a marker packet holding
+    exactly "PGP"; a signature, user ID or attribute, trust, padding or any other packet (whose bytes could hold a secret key)
+    is None, as is a byte left over in any payload."""
+    i, n, public = 0, len(raw), False
+    for _ in range(_PGP_MAX):
+        if i >= n:
+            return "public" if public else None
+        b = raw[i]
+        if not b & 0x80:
+            return None
+        if b & 0x40:
+            tag, o = b & 0x3F, raw[i + 1] if i + 1 < n else None
+            if o is None or 224 <= o < 255:
+                return None if tag not in _PGP_SECRET else "secret"
+            if o < 192:
+                head, size = 2, o
+            elif o < 224:
+                head, size = 3, ((o - 192) << 8) + raw[i + 2] + 192 if i + 2 < n else None
+            else:
+                head, size = 6, int.from_bytes(raw[i + 2:i + 6], "big") if i + 5 < n else None
+        else:
+            tag, kind = (b & 0x3C) >> 2, b & 3
+            head = 1 + (1, 2, 4, 0)[kind]
+            size = int.from_bytes(raw[i + 1:i + head], "big") if kind != 3 and i + head <= n else None
+        if tag in _PGP_SECRET:
+            return "secret"
+        if size is None or i + head + size > n:
+            return None
+        start, i = i + head, i + head + size
+        if tag in _PGP_PUBLIC and _pgp_public_key(raw, start, i):
+            public = True
+        elif tag != _PGP_MARKER or raw[start:i] != b"PGP":
+            return None
+    return "public" if i == n and public else None
+
+
 def _key_shaped(raw, at):
     """Fix round 3 (Codex 3): True when raw[at:] is a private key's start: a structure der_key_structure names, or
     openssh-key-v1, anywhere; and at the body's start (at 0) anything shaped like one: any DER SEQUENCE (0x30, the first byte
     of every structure der_key_structure names, whole or not, so a cut or odd key still counts) or a PGP secret-key or
-    secret-subkey packet. Reads raw at `at`, never a copy of the rest."""
+    secret-subkey packet. Reads raw at `at`, never a copy of the rest. Batch 7a (round 4, high 3): at 0, any byte that may
+    start an OpenPGP packet (0x80 set) counts unless the body reads as public packets only (pgp_packets), so a secret key behind
+    a marker or another ignored packet, or a structure Watchtower can't read, is a key."""
     if at >= len(raw):
         return False
     if raw.startswith(b"openssh-key-v1", at) or der_key_structure(raw, at) is not None:
         return True
     b = raw[at]
-    return at == 0 and (b == 0x30 or bool(b & 0x80 and ((b & 0x3F) if b & 0x40 else ((b & 0x3C) >> 2)) in (5, 7)))
+    return at == 0 and (b == 0x30 or bool(b & 0x80 and pgp_packets(raw) != "public"))
 
 
 def split_escaped_breaks(s):
@@ -347,13 +460,14 @@ def pem_kind(text, at=0, complete=True):
     5). The readings are the text as it is (its lines, \\n escapes as line breaks: a .pem, YAML, a JSON string) and, only when
     the whole of it is exactly string literals in code ("MIIE…\\n" + "…"), their contents; `<base64> # ""` is neither, so it is
     real. A FAKE word decides nothing; the label is not read. Each block's body lies before the next BEGIN, so the hits of one
-    text are read in one pass between them."""
+    text are read in one pass between them. Batch 7a (round 4, high 1): the END is the strict reading's, and a block that
+    masking hides past it (the readings disagree on where it ends) is real."""
     blocks, starts = _armor_index(text)
     k = bisect.bisect_left(starts, at)
     if k == len(starts) or starts[k] != at:
         return "real"
-    _, be, _, es, _, nxt = blocks[k]
-    if es is None or (nxt is not None and es > nxt) or (nxt is None and not complete):
+    _, be, _, es, _, nxt, hide = blocks[k]
+    if es is None or hide != es or (nxt is not None and es > nxt) or (nxt is None and not complete):
         return "real"
     region = text[be:es]
     readings = [list(split_escaped_breaks(region))]

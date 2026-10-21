@@ -17,7 +17,7 @@ their assertion (measured with b621cf4's watchtower/ sources, this file in place
 import base64, gzip, json, os, secrets, shutil, subprocess, sys, tempfile, time, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, ROOT, wt
-from test_batch6_example_keys import _Keys, der, der_int, pem, rsa_der, token
+from test_batch6_example_keys import _Keys, der, der_int, pem, public_key_packet, rsa_der, token
 from test_batch6b_codex_r2 import ed25519_pkcs8, raw_sev
 
 NOTE = "This looks like an example or checksum value"   # wt.EXAMPLE_NOTE's start, written out so a replay fails on its assertion
@@ -235,7 +235,7 @@ class KeyStructures(unittest.TestCase):
             self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real", block[:60])
 
     def test_a_long_body_that_is_no_key_is_still_noted(self):   # guard (new: b621cf4 lowered it): what B5 still says, as a note only
-        block = pem("RSA ", b"\x99" + secrets.token_bytes(299))
+        block = pem("RSA ", public_key_packet(300))   # batch 7a fix round 1: a whole public-key packet
         got = t011("Key:\n" + block)
         self.assertEqual([(f["rule"], f["severity"]) for f in got], [("WT-T011x", "critical")])
         self.assertIn("(a key block that isn't a real key)", got[0]["fix"])
@@ -365,7 +365,7 @@ class EscapedBreaks(unittest.TestCase):
         text = json.dumps({"k": pem("", raw)})
         i = text.index("-----BEGIN")
         self.assertEqual(wt.secret_kind(text[i:i + 27], tail=text[i + 27:])[0], "real")
-        junk = base64.b64encode(b"\x99" + secrets.token_bytes(119)).decode()
+        junk = base64.b64encode(public_key_packet(120)).decode()   # batch 7a fix round 1: a whole public-key packet
         text = json.dumps({"k": "-----BEGIN PRIVATE KEY-----\n" + junk + "\n-----END PRIVATE KEY-----\n"})
         i = text.index("-----BEGIN")
         self.assertEqual(wt.secret_kind(text[i:i + 27], tail=text[i + 27:])[0], "example")
