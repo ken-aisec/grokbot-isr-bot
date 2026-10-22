@@ -87,6 +87,15 @@ owner decisions:
   `$(printenv HOME)`, `` `printenv HOME >x` ``, `xargs printenv HOME`, a later code span, a code span after any earlier backtick
   in the file (fix round 3: `` `true `` then `` `printenv AWS_ACCESS_`printf KEY_ID` `` on the next line, but also a plain
   `` `printenv HOME` `` below an earlier code span or fence) and `PRINTENV HOME` stay high (more alarms than fix round 1).
+- **`printenv MYSQL_PWD` gives no WT-T004 finding** (watchtower/wt_parts/text.py:975). `SECRET_SHAPED` has no `pwd`, so the name
+  passes `one_plain_variable`, though MySQL documents `MYSQL_PWD` as the connection password; this is a regression from b8i3,
+  outside the URL/DSN names limit above: it was high on 63714e4 (before b8i3) and gives no finding on 31873e1. Accepted by the
+  owner 2026-10-22, tracked as DQ-054.
+- **Two affirmative reads still get the negation guard** (watchtower/wt_parts/text.py:583). An em dash stays attached to the
+  requiring word, so the check misses it ("Do not run the task without—at minimum—using commands such as `env`, or
+  `printenv`."), and "prior to" is not a requiring word ("Do not run the deployment prior to checking with tools such as `env`,
+  or `printenv`."); both were high on 63714e4 and are medium, guarded "negated" and unscored on 31873e1. Accepted by the owner
+  2026-10-22, tracked as DQ-053.
 - **A negated "such as" list of code spans** ("Do not … such as `env`, bare `set`, or `printenv`, and do not echo the value.") is
   read as negated: lowered to medium and still listed, never dropped. It needs the negation at the clause start, followed right
   away by an action verb it forbids (inspect, run, use, print, dump, echo, execute, call, read, list, show, display, invoke,
