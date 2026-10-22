@@ -41,6 +41,19 @@ used then would say SCANNERS MISSING on every such run). The SCANNERS MISSING wo
 installed; run install.sh --scanners") is unchanged, though for a failed stage that advice doesn't fit. A daily run still lists
 TruffleHog in engines_used.json without running it (as before; only full runs feed the history).
 
+Fix round 2's own session and process-group kill in `run()` leaves three mediums (Codex fix round 3 on 63714e4), each an
+accepted known limit (owner decision 2026-10-22), recorded and not fixed:
+
+- **Ctrl-C no longer promptly stops SkillSpector and husk** (watchtower/wt_parts/collect.py:152, called from the thread pool at
+  watchtower/wt_parts/engines.py:383). Ctrl-C reaches only the main thread, so their `run()` never sees the KeyboardInterrupt
+  and the pool's shutdown waits for the scanners, now in their own session, to end or time out.
+- **No `run()` command has a controlling terminal** (watchtower/wt_parts/collect.py:152). Opening `/dev/tty` now gives ENXIO, so
+  a terminal-dependent login helper fails, for example `cargo update` (watchtower/wt_parts/approved.py:572) with Cargo's
+  `net.git-fetch-with-cli` set.
+- **"Kill before reap" isn't guaranteed** (watchtower/wt_parts/collect.py:160). `communicate()` can reap the child and then raise
+  (output that isn't valid UTF-8, or its own Ctrl-C handling), and the handler still calls `os.killpg`, which after PID reuse
+  could signal an unrelated process group. The time-out path kills before reaping.
+
 ## b8i3: credential-read filters (batch 8, v0.7.4 dev)
 
 WT-T004 lost three false alarms from a vendor's docs, and with them a derived WT-X003 "SkillSpector + Watchtower" agreement. Each
