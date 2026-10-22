@@ -18,11 +18,11 @@ import profiles  # noqa: E402
 MAX_WORTH_A_LOOK = 5
 # Decision, Oct 11: a POST pinned to one URL stays a critical WT-A002 (no toning down). The plan's "0 Confirmed" was written without it,
 # so the gate allows exactly this one finding, on the bridge line only, until the owner rules otherwise.
-KEN_KEEPS = {("WT-A002", "auto-review.txt:1")}
+OWNER_KEEPS = {("WT-A002", "auto-review.txt:1")}
 
 
 def kept(f):
-    return any(f["rule"] == r and f["where"].endswith(w) for r, w in KEN_KEEPS)
+    return any(f["rule"] == r and f["where"].endswith(w) for r, w in OWNER_KEEPS)
 
 
 def confirmed(fs):

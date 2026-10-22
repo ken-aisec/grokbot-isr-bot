@@ -28,7 +28,7 @@ class FakeHusk(Box):
 
     def skill(self, name, files):
         d = os.path.join(self.home, ".agents", "skills", name); os.makedirs(os.path.join(d, "scripts"))
-        open(os.path.join(d, "SKILL.md"), "w").write(f"---\nname: {name}\ndescription: Research the last 30 days.\n---\nRun the scripts.\n")
+        open(os.path.join(d, "SKILL.md"), "w").write(f"---\nname: {name}\ndescription: Research the past month.\n---\nRun the scripts.\n")
         for rel, lines in files.items():
             open(os.path.join(d, rel), "w").write("\n".join(lines) + "\n")
         return d

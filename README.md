@@ -24,7 +24,7 @@ On a template install these are files the Bot reads, not slash commands: ask in 
 
 | Routine | When | Cost |
 | --- | --- | --- |
-| Daily watch | 06:00 | Silent unless something changed. Scripts only; the model reads a delta under 4 KB. |
+| Daily watch | 06:00 | Reports what changed and anything still open (unverified findings, checks that didn't complete). Scripts only; the model reads a delta under 4 KB. |
 | Weekly audit and report | Sunday 05:00 | One audit, one report, one summary. |
 | Weekly tidy | Sunday 06:00 | Lists every cache or file it would empty or change, with whose it is, and waits for one yes. |
 | Monthly roll-call reminder | Off by default | Opt-in. Only reminds; each roll-call needs the owner's yes. Replies sit in a 0700 folder as 0600 files, are deleted as each is analyzed, and are never scored. |

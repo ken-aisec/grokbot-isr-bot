@@ -119,6 +119,36 @@ findings stay.
 
 WT-A002 has no 'push' verb (DQ-051, recorded, not fixed).
 
+## b8i5: generic release (`tests/test_generic_release.py`, as of fix round 1)
+
+The test fails on any denylisted string in a tracked file's contents or path (every component), naming the path (a
+denylisted component masked to `[digest prefix]`), the line and a digest prefix, never the text. It reads the file list
+from `git ls-files` only (a linked worktree's `.git` file included): with no git, or outside a checkout, it skips with that
+reason, and it never walks the folder. Every file is read as text (UTF-16 with a BOM, else UTF-8, else latin-1), NUL bytes
+included; only the formats in `BINARY` (png, jpg, jpeg, gif, ico, webp, bmp, zip, gz, tgz, bz2, xz, pdf, woff, woff2, ttf,
+otf) have their contents skipped. Owner decisions and limits:
+
+- Keyed entries (5) are digests of the string casefolded with everything but `[a-z0-9]` dropped. They match in any case and
+  as any run of adjacent words up to 48 characters, across separators, line breaks and adjacent string literals, and with
+  escapes read (`\n`, `\t` and the like separate words; `\xHH`, `\uHHHH`, `\UHHHHHHHH`, `\N{…}` and octal escapes that
+  stand for a letter or digit are read as it). So prose whose words join into a keyed entry is a hit too (one fixture line
+  was reworded in fix round 1). HTML entities, URL encoding, base64 and the like are not decoded.
+- Exact-form only (13, owner decision pending): 12 entries whose text is in no tracked file, so no casefolded digest could
+  be derived without plaintext (`0715f7c809a4`, `1cb12b334f1b`, `4a84f5ba2ed4`, `71c095b134e2`, `75fd13fb1022`,
+  `785ccca17817`, `9bebadf8653f`, `d492559b465c`, `e85f3d74bf75`, `ebcd9aca2aa3`, `ee4b266f4830`, `f1c422554521`), and
+  `8899ecd1626d`, kept exact on purpose: its keyed digest (`71b41d6dd48d`) is a common lowercase word that b8i5's
+  lookalike test keeps clean, and switching it would flag 13 lines in 4 test files. These match only as first stored
+  (word as written or lowercased, host, compound, 2-/3-gram, UUID, bucket), plus joined runs as written or lowercased and
+  literals joined on one line; another casing of a capitalized one, or a compound split across lines, passes.
+- `ALLOW` holds the digest of the public repo account name exactly as written in the release URLs. Only that whole
+  compound is blanked before the scan; any other spelling, casing, separator or longer compound containing it is a hit.
+- Exempt: `CHANGELOG.md` from `## 0.7.3` down (history; the owner decides), and the four item-4 files
+  (`rules/platform-release.lock`, `rules/platform-normalize.json`, `rules/platform-reviewed.json`,
+  `tests/test_item8_churn.py`) until item 4 lands; `test_item4_exemptions_still_needed` fails once a file is clean.
+- The sync-bucket UUID pair in `rules/platform-release.lock` and `tests/test_item8_churn.py` identifies the owner's box (it
+  names that box's synced plugin folder). Both are item-4 files (on hold), so the pair stays for now; item 4 replaces it with
+  a generic id and adds the pair's digests (`SYNC_BUCKET_UUIDS_TODO_ITEM4`).
+
 ## Fixed in batch 7d (the last must-fix items)
 
 Fixed before batch 7d part 2, recorded here so this list is whole:

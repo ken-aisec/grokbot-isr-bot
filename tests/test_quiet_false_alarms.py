@@ -33,7 +33,7 @@ class QuietFalseAlarms(unittest.TestCase):
                    [F("WT-X003", "critical", self.skill), F("WT-C003", "high", "settings")]):
             self.assertEqual(wt.score(wt.label_findings(fs)), wt.score(fs))   # unlabelled findings count in full, as before v0.6.8
 
-    def test_ken_calls_of_oct_10(self):
+    def test_owner_calls_of_oct_10(self):
         """Shell-history hits are commands that ran: evidence, so a reverse shell stays critical. H007 is evidence; L001 is pattern."""
         for r in ("WT-H001", "WT-H002", "WT-H003", "WT-H004", "WT-H005", "WT-H006", "WT-H007", "WT-H008", "WT-H009"):
             self.assertIn(r, wt.EVIDENCE_RULES, r)

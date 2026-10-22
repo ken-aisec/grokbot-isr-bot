@@ -56,7 +56,7 @@ class MaskSecrets(unittest.TestCase):
 
     def test_references_and_ordinary_flags_are_left_alone(self):   # guard (needs mask_secrets, so it can't run on 857ab38)
         for s in ("curl -H \"Authorization: Bearer $GITHUB_TOKEN\" https://api.github.com/x", "export PATH=/usr/local/bin:$PATH",
-                  "TOKEN=${GH_TOKEN} make", "mkdir -p /x/y", "ssh -p 2222 user@host", "mail ken@example.com",
+                  "TOKEN=${GH_TOKEN} make", "mkdir -p /x/y", "ssh -p 2222 user@host", "mail owner@example.com",
                   "git clone ssh://git@github.com/o/r", "the bearer token is required", "echo $API_TOKEN"):
             self.assertEqual(wt.mask_secrets(s), s)
         for text in NORMAL:

@@ -28,7 +28,7 @@ class ArchiveAndCandidatesLeak(Box):
 
     def test_archive_snapshot_raises_no_new_file_alarm(self):
         self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
-        write(os.path.join(self.wf, "_archive", "2026-10-13", "snapshot-2", "ken-polish", "SKILL.md"), GOOD + "Every email gets a reply.\n")
+        write(os.path.join(self.wf, "_archive", "2026-10-13", "snapshot-2", "team-polish", "SKILL.md"), GOOD + "Every email gets a reply.\n")
         self.audit()
         fs = [f for f in self.snap()["findings"] if "_archive" in f["where"]]
         self.assertEqual(fs, [])

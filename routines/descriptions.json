@@ -1,6 +1,6 @@
 [
   {"slug": "watchtower-daily-watch", "name": "Watchtower daily watch",
-   "description": "Every morning, check for skill changes, decoy reads and new risks; alert only when something changed."},
+   "description": "Every morning, check for skill changes, decoy reads and new risks; report what changed and anything that still needs attention, such as open unverified findings or checks that didn't complete."},
   {"slug": "watchtower-weekly-audit", "name": "Watchtower weekly audit",
    "description": "Every Sunday, run the full audit, threat brief and weekly report into this chat."},
   {"slug": "watchtower-weekly-tidy", "name": "Watchtower weekly tidy",
