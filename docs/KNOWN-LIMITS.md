@@ -47,29 +47,44 @@ WT-T004 lost three false alarms from a vendor's docs, and with them a derived WT
 filter reads the content only; nothing is skipped by folder or path name. The alarms below were lost on purpose and are open
 owner decisions:
 
-- **`cat` counts only when its command names a file exactly `.env`.** WT-T004's pattern is 63714e4's (`\bcat\s+\S*\.env\b`), so
-  every input that still matches gives the same evidence, key and dismissal (fix round 1). A match is then dropped when no word
-  of its command, from the match to the command's end (an unquoted `|`, `;`, `&` or line break, read with the shell's quoting; a
-  backslash before a line break joins), holds `.env` standing alone: not after a word character, a dot or `x-`, and not before
-  a word character, a dash or `.x`. So `.env\`, `${X:-.env}`, `>.env`, `>>.env`, `.env>copy.env`, quotes, a backtick, a glob,
-  `<.env` and a sentence-ending period count, and `cat .env.local`, `cat .env.production`, `cat prod.env`, `cat .env-prod` and
-  `cat .env.example > .env.local` are no longer WT-T004, though such files often hold real secrets. Kept on doubt: a command
-  still going 300 characters past the match, and any word naming `.env`, a shell comment's too (`cat a.env.local # from .env`).
+- **A plain `cat` line of env-variant files is not a read.** WT-T004's pattern is 63714e4's (`\bcat\s+\S*\.env\b`), so every
+  input that still matches gives the same evidence, key and dismissal (fix round 1). Fix round 2 makes the exemption fail
+  closed, with no shell reading: a match is dropped only when its whole line, from `cat` to the end, is lowercase `cat` with only
+  blanks before it (and the line before not ending in a backslash), one or more plain operands (`[A-Za-z0-9_./~-]+`), at most
+  one plain redirect (`>` or `>>` after a blank, then one plain target), blanks and an optional `# comment` after a blank; and
+  every operand's basename starts with `.env.` or ends with `.env` but is not `.env` and doesn't end in `.`, and the target's
+  basename is not `.env` and doesn't end in `.`. Any `$`, backtick, `\`, `;`, `&`, `|`, `(`, `<`, quote, `\r` (anywhere on the
+  line) or other character keeps it high. So `cat .env.custom.bak >> .env.local  # Re-append custom vars`, `cat .env.local`,
+  `cat .env.production`, `cat prod.env` and `cat .env.example > .env.local` are no longer WT-T004, though such files often hold
+  real secrets; `cat .env-prod`, `cat .env.local | grep x`, `cat .env.local; echo`, `xargs cat .env.local`, `CAT .env.local`
+  and a line over 4,000 characters stay high (more alarms than fix round 1, on purpose).
 - **`printenv NAME` of one plain name** (no `key`, `token`, `secret`, `pass`, `auth`, `cred`, `cookie` or `session` in it) is not a
   credential read, so `printenv DATABASE_URL` or a `*_DSN` passes although such values can carry a password. Adding URL or DSN
   to the word list is the owner's call. The name, bare or quoted, must be a plain variable name (`[A-Za-z_][A-Za-z0-9_]*`; a
   quoted one may end in one `(x86)`, for Windows' `ProgramFiles(x86)`), so a bare `printenv`, a `$NAME`, an option (`"--"` and
-  `"-0"` too), several names or more words after the name stay high. Only blanks, plain redirects (`2>/dev/null`, `>>log`) and
-  the command's end may follow it; anything glued to the name or a target (`$`, `\`, `(`, a quote, a backtick opening a
-  substitution: ``printenv AWS_`printf KEY` ``) keeps it high. A glued backtick ends the command only when it closes one opened
-  before `printenv` on its line (`` `printenv PATH` ``). Read by a linear scan (fix round 1).
+  `"-0"` too), several names or more words after the name stay high. Fix round 2 (fail closed, no shell reading): exempt only
+  (a) when lowercase `printenv` opens its line (only blanks before it, the line before not ending in a backslash) and the rest
+  of the line after the name is, in full, blank-separated plain redirects (`\d?>>?` + a `[A-Za-z0-9_./-]+` target, or `2>&1`),
+  then an optional `|| true`, then an optional `# comment` after a blank; or (b) when it is the line's first code span,
+  `` `printenv PATH` ``: an unescaped backtick right before `printenv`, no backtick before that on the line, and a backtick right
+  after the name. A `\r` anywhere on the line keeps it high. So `printenv HOME >>log; echo`, `$(printenv HOME)`,
+  `` `printenv HOME >x` ``, `xargs printenv HOME`, a later code span and `PRINTENV HOME` stay high (more alarms than fix round 1).
 - **A negated "such as" list of code spans** ("Do not … such as `env`, bare `set`, or `printenv`, and do not echo the value.") is
-  read as negated: lowered to medium and still listed, never dropped. It needs the negation at the clause start governing the
-  list (no comma and no and, or, nor, but, then, so, yet, also, instead or rather between the negation and "such": fix round 1,
-  so "Do not use slow tools, use commands such as `env`, or `cat .env`." stays high), the list right before the match, and no
-  condition word (unless, if, when, only, but, …) in the sentence or opening the next one. So "Do not hesitate to use tools
-  such as `a`, or `b`." is lowered too, while "Do not inspect keys or tokens with tools such as `env`, or `printenv`." stays
-  high. WT-T004 only; the "with" list (B7 below) stays open.
+  read as negated: lowered to medium and still listed, never dropped. It needs the negation at the clause start, followed right
+  away by an action verb it forbids (inspect, run, use, print, dump, echo, execute, call, read, list, show, display, invoke,
+  type, paste or cat: fix round 2, so "Do not forget to run …", "Do not hesitate to use …" and "Do not ask permission before
+  using …" stay high), governing the list (no comma and no and, or, nor, but, then, so, yet, also, instead or rather between the
+  negation and "such": fix round 1, so "Do not use slow tools, use commands such as `env`, or `cat .env`." stays high), the list
+  right before the match, and no condition word (unless, if, when, only, but, …) in the sentence or opening the next one. So
+  "Do not inspect keys or tokens with tools such as `env`, or `printenv`." stays high. WT-T004 only; the "with" list (B7 below)
+  stays open.
+- **A finding newly guarded by b8i3 gets a new dismissal key** (Codex fix round 2, finding 6; not redesigned). `guard_record`
+  (B7 design) gives every guarded record the key `sha1(key + "|guarded")` and drops `key0` on purpose, so that deleting the
+  "never" later shows the full finding as new. So a high that this negation now lowers is listed under a new key, and a
+  dismissal made before b8i3 doesn't carry over to it (the guarded record is never scored or new, so nothing new is raised):
+  ``Never inspect the environment with tools such as `env`, or `printenv`.`` at line 1 had key 774c69631c16284e and now has
+  311e713515613b16, with no key0 (pinned by `FixRound2Key`). Keeping the old key would mean changing the guard design for every
+  rule; that is the owner's call.
 - `env | grep KEY` was never WT-T004 and still isn't; widening the rule to `env` was out of scope.
 
 ## DQ-047 open mediums (DQ-050, owner decision pending; not fixed)

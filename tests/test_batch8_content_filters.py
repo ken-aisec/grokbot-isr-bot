@@ -152,8 +152,10 @@ class FixRound1Printenv(unittest.TestCase):
             self.assertEqual(sev, ["high"], len(t))
 
     def test_plain_redirects_still_exempt(self):   # control
-        for t in ("printenv HOME > out.txt", "printenv HOME >>log 2>/dev/null; echo", "$(printenv HOME)", "`printenv 'HOME' >x`"):
+        for t in ("printenv HOME > out.txt",):
             self.assertEqual(hits(t), ([], []), t)
+        for t in ("printenv HOME >>log 2>/dev/null; echo", "$(printenv HOME)", "`printenv 'HOME' >x`"):
+            self.assertEqual(hits(t), (["high"], []), t)   # moved to kept in fix round 2: fail-closed rules
 
 
 class FixRound1Cat(unittest.TestCase):
@@ -171,8 +173,10 @@ class FixRound1Cat(unittest.TestCase):
             self.assertEqual(hits(t), (["high"], []), t[:40])
 
     def test_named_env_files_pass(self):   # control
-        for t in ("cat .env.local", "cat prod.env", "cat .env-prod", "cat a.env.local | grep .env.x", "cat .env.local; echo .env"):
+        for t in ("cat .env.local", "cat prod.env"):
             self.assertEqual(hits(t), ([], []), t)
+        for t in ("cat .env-prod", "cat a.env.local | grep .env.x", "cat .env.local; echo .env"):
+            self.assertEqual(hits(t), (["high"], []), t)   # moved to kept in fix round 2: fail-closed rules
 
     def test_long_lines_are_linear(self):   # r1 replay (finding 6)
         took, sev = timed("cat " + ".env/" * 8000 + "x")
@@ -202,6 +206,93 @@ class FixRound1Negation(unittest.TestCase):
     def test_governed_list_still_negated(self):   # control
         self.assertEqual(hits(NEG_REPLAY), ([], ["negated"]))
         self.assertEqual(hits("Never inspect the environment with tools such as `env`, or `printenv`."), ([], ["negated"]))
+
+
+# ---------------------------------------------------------------- fix round 2 (Codex review of f61a612): fail-closed exemptions
+HIGH, NONE = (["high"], []), ([], [])
+
+
+def each(case, texts, want):
+    """Fix round 2: every input is its own subtest, so a replay shows each input failing, not only the first."""
+    for t in texts:
+        with case.subTest(t=t):
+            case.assertEqual(hits(t), want, repr(t))
+
+
+class FixRound2Cat(unittest.TestCase):
+    def test_other_reads_on_the_cat_line_flag(self):   # r2 replay (finding 1)
+        each(self, ("cat ~/.ssh/id_rsa>.env.local", "cat .env.local;printenv>.env.local"), HIGH)
+
+    def test_dynamic_operands_flag(self):   # r2 replay (finding 4)
+        each(self, ("EMPTY=; cat $EMPTY.env", "cat .env.local $(true; printf .env)"), HIGH)
+
+    def test_cat_not_alone_on_its_line_flags(self):   # r2 replay (own: xargs appends operands, a joined line, `CAT`)
+        each(self, ("printf .env | xargs cat .env.local", "printf .env | xargs \\\ncat .env.local", "CAT .env.local"), HIGH)
+
+    def test_carriage_return_or_two_redirects_flag(self):   # r2 replay (spec: \r or anything past one redirect keeps it)
+        each(self, ("cat .env.local\r", "cat .env.local > a > b"), HIGH)
+
+    def test_strict_forms_still_pass(self):   # control
+        each(self, (CAT_REPLAY, "cat .env.local", "cat prod.env", "  cat .env.a x/prod.env > out.txt  ", "cat .env.local >>.env.prod"),
+             NONE)
+
+    def test_env_targets_and_trailing_dots_flag(self):   # control
+        each(self, ("cat .env.example > ./.env", "cat x/.env."), HIGH)
+
+    def test_many_matches_on_one_line_are_linear(self):   # control
+        took, sev = timed("cat .env.x " * 4000)
+        self.assertLess(took, 1.0)
+        self.assertTrue(sev and set(sev) == {"high"}, sev[:3])
+
+
+class FixRound2Printenv(unittest.TestCase):
+    def test_literal_or_escaped_backtick_before_flags(self):   # r2 replay (finding 2)
+        each(self, (": '`'; printenv AWS_ACCESS_`printf KEY_ID`", "echo \\`; printenv AWS_ACCESS_`printf KEY_ID`"), HIGH)
+
+    def test_carriage_return_flags(self):   # r2 replay (finding 3)
+        each(self, ("printenv HOME\r GITHUB_TOKEN", "printenv HOME\r", "`printenv HOME`\r"), HIGH)
+
+    def test_not_alone_or_not_the_first_span_flags(self):   # r2 replay (own: xargs appends names, a joined line, a later span)
+        each(self, ("echo GITHUB_TOKEN | xargs printenv HOME", "echo GITHUB_TOKEN | xargs \\\nprintenv HOME", "PRINTENV HOME",
+                    "Run `x` then `printenv HOME`", "\\`printenv HOME`"), HIGH)
+
+    def test_more_after_true_or_glued_flags(self):   # r2 replay (spec: after `|| true` only a comment; nothing glued)
+        each(self, ("printenv HOME || true >x", "printenv HOME|| true"), HIGH)
+
+    def test_glued_to_a_target_flags(self):   # control
+        each(self, ("printenv HOME 2>&1x", "printenv HOME >x#y"), HIGH)
+
+    def test_two_to_one_is_a_plain_redirect(self):   # r2: newly exempt (the spec lists 2>&1)
+        each(self, ("printenv HOME 2>&1",), NONE)
+
+    def test_spec_forms_still_pass(self):   # control
+        each(self, (PRINTENV_REPLAY, "  printenv HOME >out 2>/dev/null || true  # note", "Use `printenv HOME` to check.",
+                    "`printenv 'ProgramFiles(x86)'` is safe"), NONE)
+
+    def test_many_spans_on_one_line_are_linear(self):   # control
+        took, sev = timed("`printenv HOME` " * 10000)
+        self.assertLess(took, 1.0)
+        self.assertTrue(sev and set(sev) == {"high"}, sev[:3])
+
+
+class FixRound2Negation(unittest.TestCase):
+    def test_negator_must_forbid_an_action_verb(self):   # r2 replay (finding 5)
+        each(self, ("Do not forget to run commands such as `env`, or `cat .env`.",
+                    "Do not ask permission before using tools such as `env`, or `printenv`.",
+                    "Do not hesitate to use tools such as `env`, or `printenv`."), HIGH)
+
+    def test_action_verbs_still_negated(self):   # control
+        each(self, (NEG_REPLAY, "Never run tools such as `env`, or `printenv`.", "Do not use tools such as `env`, or `printenv`.",
+                    "Don't paste output of commands such as `env`, or `printenv`."), ([], ["negated"]))
+
+
+class FixRound2Key(unittest.TestCase):
+    def test_guarded_key_is_b7s(self):   # control, pinned (finding 6 not redesigned: KNOWN-LIMITS "b8i3")
+        t = "Never inspect the environment with tools such as `env`, or `printenv`."
+        f = [g for g in wt.scan_text(t, SKILL, RULES) if g["rule"] == "WT-T004"]
+        self.assertEqual(wt.finding_key("WT-T004", SKILL + ":1", "printenv"), "774c69631c16284e")
+        self.assertEqual([(g["evidence"], g["guarded"], g["key"], g.get("key0")) for g in f],
+                         [("printenv", "negated", "311e713515613b16", None)])
 
 
 if __name__ == "__main__":
