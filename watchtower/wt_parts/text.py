@@ -972,7 +972,8 @@ PRINTENV_NAME = re.compile(r"""[ \t]+(?:'(?P<sq>[A-Za-z_][A-Za-z0-9_]*(?:\([A-Za
                            r""""(?P<dq>[A-Za-z_][A-Za-z0-9_]*(?:\([A-Za-z0-9_]+\))?)"|(?P<bare>[A-Za-z_][A-Za-z0-9_]*))""")
 PRINTENV_REDIRECT = re.compile(r"2>&1|[0-9]?>>?[ \t]*[A-Za-z0-9_./-]+")
 PRINTENV_TRUE = re.compile(r"\|\|[ \t]*true")
-SECRET_SHAPED = re.compile(r"(?i)key|token|secret|pass|auth|cred|cookie|session")
+# DQ-054 (Codex verify of 31873e1): `pwd` (MYSQL_PWD, PGPWD) is secret-shaped too, as on 63714e4; `passwd` is covered by `pass`.
+SECRET_SHAPED = re.compile(r"(?i)key|token|secret|pass|pwd|auth|cred|cookie|session")
 
 
 def _line_bounds(text, s, e):

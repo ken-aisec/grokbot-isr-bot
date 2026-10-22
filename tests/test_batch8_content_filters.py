@@ -18,7 +18,10 @@ only when its negation governs it. Tests marked "r1 replay" fail on 0223735 on t
 
 Fix round 3 (Codex review of 2b8920c; subtractive): a code-span printenv with any backtick before it in the text, a negation with
 without/unless/until/before/first/except before the match, and a line over 4,000 characters keep the finding. Tests marked
-"r3 replay" fail on 2b8920c on their assertion."""
+"r3 replay" fail on 2b8920c on their assertion.
+
+DQ-054 (Codex verify of 31873e1; a regression from b8i3, fixed): a `pwd` name (`printenv MYSQL_PWD`) is secret-shaped again, high
+as on 63714e4. Tests marked "dq054 replay" fail on 12a9c5c on their assertion."""
 import os, re, sys, time, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -313,6 +316,34 @@ class FixRound3(unittest.TestCase):
     def test_line_over_the_cap_keeps_the_finding(self):   # r3 replay (finding 3)
         each(self, (" " * 3000 + "cat .env.local" + " " * 2000, " " * 3000 + "printenv HOME" + " " * 2000), HIGH)
         each(self, (" " * 1000 + "cat .env.local", " " * 1000 + "printenv HOME", "`printenv PATH` is safe\n`x`"), NONE)   # control
+
+
+# ---------------------------------------------------------------- DQ-054 (Codex verify of 31873e1): password-style names
+# 63714e4's finding for one `printenv NAME` line on line 1: the rules file is 63714e4's, so it is the bare match, written out here.
+T004_63714E4 = {"key": "774c69631c16284e", "rule": "WT-T004", "title": "Reads credential stores", "severity": "high",
+                "owasp": ["ASI03", "AST03"], "where": SKILL + ":1", "evidence": "printenv",
+                "fix": "A skill should never need SSH keys, cloud credentials, cookies or the environment. Remove the step or reject "
+                       "the skill.", "source": "watchtower"}
+
+
+class Dq054PasswordNames(unittest.TestCase):
+    def test_pwd_names_are_t004_high_as_on_63714e4(self):   # dq054 replay
+        for t in ("printenv MYSQL_PWD", "printenv PGPWD", "printenv DB_PASSWD", "printenv pwd"):
+            with self.subTest(t=t):
+                self.assertEqual(wt.scan_text(t, SKILL, RULES), [T004_63714E4], t)
+
+    def test_harmless_one_names_stay_exempt(self):   # control
+        each(self, ("printenv HOME", "printenv PATH", "printenv LANG", PRINTENV_REPLAY), NONE)
+
+
+class Dq054Agreement(Box):
+    ISSUES, run_on = NoAgreementFromTheseLines.ISSUES, NoAgreementFromTheseLines.run_on
+
+    def test_mysql_pwd_corroborates_as_on_63714e4(self):   # dq054 replay: the WT-X003 agreement 63714e4 gave
+        fs = self.run_on(HEAD + "```bash\nprintenv MYSQL_PWD\n```\n" + MARK + "\n")
+        x = [f for f in fs if f["rule"] == "WT-X003"]
+        self.assertEqual(len(x), 1)
+        self.assertTrue(x[0]["evidence"].startswith("SkillSpector + Watchtower"), x[0]["evidence"])
 
 
 if __name__ == "__main__":

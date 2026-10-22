@@ -72,7 +72,7 @@ owner decisions:
   real secrets; `cat .env-prod`, `cat .env.local | grep x`, `cat .env.local; echo`, `xargs cat .env.local`, `CAT .env.local`
   and a line over 4,000 characters stay high (more alarms than fix round 1, on purpose). The 4,000-character cap is on the whole
   line, enforced since fix round 3 (`_line_bounds`; before it, only the distance from the match to each end was checked).
-- **`printenv NAME` of one plain name** (no `key`, `token`, `secret`, `pass`, `auth`, `cred`, `cookie` or `session` in it) is not a
+- **`printenv NAME` of one plain name** (no `key`, `token`, `secret`, `pass`, `pwd`, `auth`, `cred`, `cookie` or `session` in it) is not a
   credential read. Accepted known limit (owner decision, fix round 3): URL- and DSN-style names are exempt, so
   `printenv DATABASE_URL` or a `*_DSN` passes although such values can carry a password. The name, bare or quoted, must be a
   plain variable name (`[A-Za-z_][A-Za-z0-9_]*`; a quoted one may end in one `(x86)`, for Windows' `ProgramFiles(x86)`), so a bare
@@ -87,10 +87,12 @@ owner decisions:
   `$(printenv HOME)`, `` `printenv HOME >x` ``, `xargs printenv HOME`, a later code span, a code span after any earlier backtick
   in the file (fix round 3: `` `true `` then `` `printenv AWS_ACCESS_`printf KEY_ID` `` on the next line, but also a plain
   `` `printenv HOME` `` below an earlier code span or fence) and `PRINTENV HOME` stay high (more alarms than fix round 1).
-- **`printenv MYSQL_PWD` gives no WT-T004 finding** (watchtower/wt_parts/text.py:975). `SECRET_SHAPED` has no `pwd`, so the name
-  passes `one_plain_variable`, though MySQL documents `MYSQL_PWD` as the connection password; this is a regression from b8i3,
-  outside the URL/DSN names limit above: it was high on 63714e4 (before b8i3) and gives no finding on 31873e1. Accepted by the
-  owner 2026-10-22, tracked as DQ-054.
+- **`printenv MYSQL_PWD` (DQ-054): fixed in this commit (the one after 12a9c5c), not an accepted limit.** On 31873e1 it gave
+  no WT-T004 finding, a regression from b8i3: `SECRET_SHAPED` (watchtower/wt_parts/text.py) had no `pwd`, so the name passed
+  `one_plain_variable`, though MySQL documents `MYSQL_PWD` as the connection password. The fix adds `pwd`, restoring 63714e4's
+  behaviour: `printenv MYSQL_PWD`, `PGPWD`, `pwd` (and `DB_PASSWD`, already covered by `pass`) are WT-T004 high with 63714e4's
+  evidence, key and WT-X003 effect. The match ignores case, so the shell's own `PWD` and `OLDPWD` are high again too, as on
+  63714e4.
 - **Two affirmative reads still get the negation guard** (watchtower/wt_parts/text.py:583). An em dash stays attached to the
   requiring word, so the check misses it ("Do not run the task without—at minimum—using commands such as `env`, or
   `printenv`."), and "prior to" is not a requiring word ("Do not run the deployment prior to checking with tools such as `env`,
