@@ -13,16 +13,26 @@ TruffleHog runs from the sealed in-memory copy (`/proc/self/fd/N`) like every ot
 TruffleHog 3.97.9 runs overseer, whose master looks up its own program file, gets `/memfd:watchtower-scanner (deleted)` and exits
 ("failed to stat binary") before scanning anything. `--local-dev` is an undocumented "hidden" flag in upstream's main.go: with
 it, main() runs the scan itself and exits, and overseer never starts. This was read in upstream source for the pinned 3.97.9;
-it was not tried against the real binary offline. `--no-update` is kept as well. Nothing is copied to disk, so nothing on disk
-runs after the check.
+it was not tried against the real binary offline. `--no-update` is kept as well. Nothing is copied to disk, so TruffleHog's own
+program never runs from disk after the check. That covers its own executable only: helpers it starts (a detector's
+`git ls-remote`, say) run from PATH. `run()` starts every program in its own session and, on a time-out (or any error while
+waiting for it), kills its whole process group, so such a helper doesn't outlive it.
 
 The stage counts as finished only on exit 0 (or 183, results found) together with TruffleHog's "finished scanning" log line
 (stderr, JSON with `--json`), the last thing its run() logs. Its signal handler exits 0 on SIGINT/SIGTERM without finishing,
 so a silent exit 0 is a failed stage, and so is a non-zero exit with partial output. A failed stage keeps the last key status
 and TruffleHog isn't listed in engines_used.json or the score fingerprint.
 
+Scan errors fail the stage too (fix round 2). Without `--fail-on-scan-errors` TruffleHog logs errors it scanned past
+("encountered errors during scan", a file it couldn't read, say), still says "finished scanning" and exits 0, so that file's keys
+would drop out of the key status. Watchtower passes the flag (a scan error is then a non-zero exit) and also fails the stage on
+that log line whatever the exit code; the note says "it hit errors while scanning", without the errors themselves. So a box
+with a file in scope that is never readable reports "TruffleHog FAILED" on every run, keeping the last key status. That is
+intended (fail closed; owner decision): the fix is to make the file readable or move it out of scope.
+
 Both points belong to the pinned release. A new TruffleHog pin must re-check in upstream main.go that `--local-dev` still skips
-overseer and that run() still ends with "finished scanning" (`tests/test_batch8_trufflehog_launch.py` T7 trips when the pin in
+overseer, that run() still ends with "finished scanning", and that `--fail-on-scan-errors` and the "encountered errors during
+scan" line are unchanged (`tests/test_batch8_trufflehog_launch.py` T7 trips when the pin in
 scripts/scanner-bins.lock or install.sh moves).
 
 A single-scanner stage that fails (gitleaks, pip-audit, OSV-Scanner, TruffleHog: `SCANNER_STAGES`) no longer lists its scanner

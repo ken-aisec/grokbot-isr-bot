@@ -338,17 +338,19 @@ def needs_you(findings, limit=None):
     return items[:limit] if limit else items
 
 
-def _trufflehog_finished(err):
-    """b8i1: whether TruffleHog said it finished: its run() ends by logging "finished scanning" (stderr, one JSON object per line
-    with --json). Its signal handler exits 0 without it, so exit 0 alone doesn't show a finished scan."""
+def _trufflehog_logged(err):
+    """b8i1: the messages TruffleHog logged (stderr, one JSON object per line with --json). Its run() ends by logging "finished
+    scanning"; its signal handler exits 0 without it, so exit 0 alone doesn't show a finished scan. Fix round 2: it logs
+    "encountered errors during scan" for errors it scanned past."""
+    said = set()
     for line in err.splitlines():
         try:
             d = json.loads(line)
         except ValueError:
             continue
-        if isinstance(d, dict) and d.get("msg") == "finished scanning":
-            return True
-    return False
+        if isinstance(d, dict) and isinstance(d.get("msg"), str):
+            said.add(d["msg"])
+    return said
 
 
 def trufflehog_status(paths, notes):
@@ -363,12 +365,16 @@ def trufflehog_status(paths, notes):
         save_json(state_path("key_status.json"), {"at": now(), "ran": True, "files": {}})
         return {}
     # b8i1: --local-dev (a hidden flag in 3.97.9) skips overseer, which otherwise looks up its own program file, the sealed
-    # in-memory copy, and exits ("failed to stat binary") before scanning anything
-    code, out_s, err = run([exe, "filesystem", *targets, "--json", "--no-update", "--local-dev",
+    # in-memory copy, and exits ("failed to stat binary") before scanning anything. Fix round 2: --fail-on-scan-errors, else a
+    # file it couldn't read is logged, and it still says "finished scanning" and exits 0 with that file's keys missing
+    code, out_s, err = run([exe, "filesystem", *targets, "--json", "--no-update", "--local-dev", "--fail-on-scan-errors",
                             "--results=verified,unverified,unknown"], 150)
-    # b8i1: finished means exit 0 (or 183, results found) and its "finished scanning" line; a non-zero exit fails even with output
-    if code not in (0, 183) or not _trufflehog_finished(err):
-        why = (err.strip()[-140:] or "no output") if code not in (0, 183) else "it stopped without saying it finished scanning"
+    # b8i1: finished means exit 0 (or 183, results found) and its "finished scanning" line; a non-zero exit fails even with output.
+    # Fix round 2: and no "encountered errors during scan" line (in case the flag didn't take); its errors stay out of the note
+    said = _trufflehog_logged(err)
+    if code not in (0, 183) or "finished scanning" not in said or "encountered errors during scan" in said:
+        why = ((err.strip()[-140:] or "no output") if code not in (0, 183) else "it hit errors while scanning"
+               if "encountered errors during scan" in said else "it stopped without saying it finished scanning")
         fail_note(notes, f"TruffleHog FAILED ({why}): live/dead key status is unavailable this run.")
         return {}
     status = {}

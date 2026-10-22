@@ -147,14 +147,21 @@ def run(cmd, timeout=120, cwd=None):
         try:
             if time.monotonic() >= deadline:
                 return timed_out
-            p = subprocess.Popen(argv, executable=exe, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=cwd, pass_fds=fds)
+            # b8i1 fix round 2: its own session, so a time-out also kills what it started (a TruffleHog detector's `git ls-remote`)
+            p = subprocess.Popen(argv, executable=exe, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=cwd, pass_fds=fds,
+                                 start_new_session=True)
         finally:
             _LAUNCH.release()
         with p:
             try:
                 out, err = p.communicate(timeout=max(0, deadline - time.monotonic()))
-            except subprocess.TimeoutExpired:
-                p.kill()
+            except BaseException as e:   # a time-out, or anything else (Ctrl-C) before leaving `with p`, which waits for it
+                try:
+                    os.killpg(p.pid, signal.SIGKILL)   # before it is reaped, so its group id can't have been reused
+                except (ProcessLookupError, PermissionError):
+                    p.kill()
+                if not isinstance(e, subprocess.TimeoutExpired):
+                    raise
                 p.wait()
                 return timed_out
         return p.returncode, out, err

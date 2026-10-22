@@ -12,8 +12,11 @@ runs after the check. Its stage counts as finished only on exit 0 (or 183) with 
 used. The stand-ins for TruffleHog are /bin/sh scripts, registered in this process only; OVERSEER fails as overseer does unless
 it is given --local-dev. Expected values are literals, so an older Watchtower fails at an assertion instead of erroring.
 Measured: T1-T3 and T4 (a)-(c) fail on 4c89284 or 1a4805c at their assertions (see CHANGELOG); T5 and T6 contrasts are marked.
+Fix round 2: TruffleHog also gets --fail-on-scan-errors, and a stage that logged "encountered errors during scan" failed whatever
+its exit; run() kills a timed-out program's whole process group. On 23476f2 T3 (the new flag assertion), T4 (h), T9 and T10
+fail at their assertions; T4 (e), (g) and T8 pass there too (contrasts: the exit code and the finished line each count alone).
 """
-import json, os, subprocess, sys, tempfile, unittest
+import json, os, subprocess, sys, tempfile, time, unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -23,6 +26,9 @@ from test_batch6_example_keys import token  # noqa: E402
 
 REAL_POPEN = subprocess.Popen
 DONE = '{"level":"info-0","logger":"trufflehog","msg":"finished scanning","chunks":1}'
+# Fix round 2: what upstream logs for non-fatal scan errors (it still logs DONE and exits 0 without --fail-on-scan-errors)
+SCAN_ERR_TEXT = "open /srv/unreadable-scan-target: permission denied"
+SCAN_ERRORS = json.dumps({"level": "error", "logger": "trufflehog", "msg": "encountered errors during scan", "errors": [SCAN_ERR_TEXT]})
 # Launched from the sealed copy, $0 is /proc/self/fd/N; it links to "/memfd:watchtower-scanner (deleted)", which can't be stat'ed
 OVERSEER_CHECK = ('case " $* " in *" --local-dev "*) ;; *) x=$(readlink "$0" || echo "$0"); '
                   '[ -e "$x" ] || { echo "failed to stat binary" >&2; exit 1; };; esac\n')
@@ -103,6 +109,7 @@ class Launch(_T):
         self.assertEqual(got[0], "filesystem")
         for flag in ("--local-dev", "--no-update", "--json"):
             self.assertIn(flag, got)
+        self.assertIn("--fail-on-scan-errors", got)          # fix round 2: a scan error is a non-zero exit
 
     def test_4_a_trufflehog_that_did_not_finish_is_a_failed_stage(self):
         self.scanners(trufflehog=self.good)
@@ -114,7 +121,17 @@ class Launch(_T):
                            ("a result, exit 0, no finished line", "#!/bin/sh\n" + result(self.env_file) + "exit 0\n"),
                            ("a result, an error line, exit 1",
                             "#!/bin/sh\n" + result(self.env_file) + "echo 'error scanning chunk' >&2\nexit 1\n"),
-                           ("a fatal line, exit 1, no output", "#!/bin/sh\necho 'fatal: could not start' >&2\nexit 1\n")):
+                           ("a fatal line, exit 1, no output", "#!/bin/sh\necho 'fatal: could not start' >&2\nexit 1\n"),
+                           # fix round 2: (e) the exit code counts on its own; (g) only a log line's msg says it finished; (h) a scan error
+                           ("(e) a result, the finished line, exit 1",
+                            "#!/bin/sh\n" + result(self.env_file) + "echo '" + DONE + "' >&2\nexit 1\n"),
+                           ("(g) the finished text inside another field, exit 0",
+                            "#!/bin/sh\n" + result(self.env_file) + "echo '" + json.dumps(
+                                {"level": "info-0", "logger": "trufflehog", "msg": "scanning", "detail": "finished scanning"}) + "' >&2\nexit 0\n"),
+                           ("(g) the finished text on a plain line, exit 0",
+                            "#!/bin/sh\n" + result(self.env_file) + "echo 'finished scanning' >&2\nexit 0\n"),
+                           ("(h) exit 0, the finished line and a scan-errors line",
+                            "#!/bin/sh\n" + result(self.env_file) + "echo '" + SCAN_ERRORS + "' >&2\necho '" + DONE + "' >&2\nexit 0\n")):
             with self.subTest(case):
                 if os.path.exists(log):
                     os.remove(log)
@@ -128,6 +145,59 @@ class Launch(_T):
                 self.assertNotIn("TruffleHog", fp)
                 self.assertTrue([n for n in r["notes"] if "TruffleHog FAILED" in n], r["notes"])
                 self.assertEqual(wt.load_json(wt.state_path("key_status.json"), {}), good)
+
+    def test_8_exit_183_with_results_and_the_finished_line_is_a_finished_stage(self):
+        """Fix round 2 (f): 183 is TruffleHog's "results found" exit, not a failure (contrast: passes on 23476f2 too)."""
+        self.scanners(trufflehog="#!/bin/sh\n" + result(self.env_file) + "echo '" + DONE + "' >&2\nexit 183\n")
+        r = self.audit()
+        self.assertNotIn("TruffleHog (which keys still work)", self.snap()["stages_skipped"])
+        used, fp = self.engines_and_fingerprint()
+        self.assertIn("TruffleHog", used)
+        self.assertIn("TruffleHog", fp)
+        self.assertFalse([n for n in r["notes"] if "TruffleHog FAILED" in n], r["notes"])
+        got = wt.load_json(wt.state_path("key_status.json"), {})["files"]
+        self.assertEqual(got, {self.env_file: [{"detector": "Github", "status": "live", "line": 1, "guide": None}]})
+
+    def test_9_scan_errors_fail_the_stage_without_their_text_in_the_note(self):
+        """Fix round 2 (h): exit 0 and "finished scanning", but it logged "encountered errors during scan"."""
+        self.put("trufflehog", "#!/bin/sh\n" + result(self.env_file) + "echo '" + SCAN_ERRORS + "' >&2\necho '" + DONE + "' >&2\n")
+        notes = []
+        self.assertEqual(wt.trufflehog_status([self.env_file], notes), {})
+        self.assertEqual([n for n in notes if "TruffleHog FAILED" in n],
+                         ["TruffleHog FAILED (it hit errors while scanning): live/dead key status is unavailable this run."])
+        self.assertFalse([n for n in notes if "permission denied" in n or "unreadable-scan-target" in n], notes)
+
+
+class Timeout(_T):
+    def test_10_a_scanner_s_child_is_killed_with_it_on_time_out(self):
+        """Fix round 2: run() starts each program in its own session and kills its process group on time-out, so a child it
+        started (a detector's helper) doesn't go on running."""
+        pidfile = os.path.join(self.tmp, "child.pid")
+        exe = self.put("trufflehog", "#!/bin/sh\nsleep 300 &\necho $! > " + repr(pidfile) + "\nwait\n")
+        child = []
+
+        def gone(pid):
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    if f.read() != b"sleep\x00300\x00":
+                        return True                                         # gone (a zombie's is empty), or the pid was reused
+                with open(f"/proc/{pid}/stat") as f:
+                    return f.read().rsplit(")", 1)[1].split()[0] == "Z"
+            except FileNotFoundError:
+                return True
+
+        def cleanup():
+            if child and not gone(child[0]):
+                os.kill(child[0], 9)   # an older run() left it running: don't leave it behind the test
+        self.addCleanup(cleanup)
+        code, out, err = wt.run([exe], 2)
+        self.assertEqual(code, 124, err)
+        with open(pidfile) as f:
+            child.append(int(f.read()))
+        end = time.monotonic() + 5
+        while not gone(child[0]) and time.monotonic() < end:
+            time.sleep(0.05)
+        self.assertTrue(gone(child[0]), f"the scanner's child {child[0]} is still running")
 
 
 class EnginesUsed(_T):
@@ -174,7 +244,8 @@ class Pin(unittest.TestCase):
     def test_7_the_flags_are_pinned_to_trufflehog_3_97_9(self):
         """A tripwire: --local-dev is an undocumented upstream flag, and "finished scanning" is the log line run() ends with."""
         why = ("TruffleHog's pin moved: re-check in the new release's upstream main.go that --local-dev still skips overseer and "
-               "that run() still ends by logging \"finished scanning\" (trufflehog_status relies on both), then update this test.")
+               "that run() still ends by logging \"finished scanning\" (trufflehog_status relies on both), and that "
+               "--fail-on-scan-errors and the \"encountered errors during scan\" line are unchanged, then update this test.")
         with open(os.path.join(ROOT, "scripts", "scanner-bins.lock")) as f:
             rows = [l for l in f if not l.startswith("#") and l.split()[1:2] == ["trufflehog"]]
         self.assertTrue(rows, why)
