@@ -49,7 +49,6 @@ class EmptyScannerLock(unittest.TestCase):
                 self.assertRegex(line, scanner_lock.LINE, f"line {n}")
         self.assertEqual(scanner_lock.parse(text)[1], [])
 
-    @unittest.expectedFailure   # tripwire: remove this decorator when Ken fills the lock (it then fails as an unexpected success)
     def test_the_shipped_lock_is_release_complete(self):
         text, why = shipped()
         self.assertIsNone(why)
