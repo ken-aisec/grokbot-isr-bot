@@ -188,6 +188,21 @@ class DQ047CatalogFolderMove(Box):
         got = [f for f in d["new"] if f["rule"] == "WT-I002" and f["where"].startswith(dst + "/")]
         self.assertEqual({k for f in got for k in (f["key"], f.get("key0")) if k} & old_keys, set())
 
+    def test_a_linked_manifest_beside_the_originals_is_new(self):
+        """Fix round 2 (Codex): an earlier-named sibling whose manifest links to the original's and whose skill is a copy is no
+        move: the inventory scans the linked manifest once, under the sibling's name, but the 190d folder is still on disk."""
+        self.start()
+        old_keys = wt.keys_of([f for f in self.snap()["findings"] if f"/{OLD}/" in f["where"]])
+        sib = "0" * 40                                 # sorts before 190d…, so the inventory keeps the sibling's manifest path
+        src, dst = os.path.join(self.cache, "github", OLD), os.path.join(self.cache, "github", sib)
+        os.makedirs(os.path.join(dst, ".cursor-plugin"))
+        os.symlink(os.path.join(src, ".cursor-plugin", "plugin.json"), os.path.join(dst, ".cursor-plugin", "plugin.json"))
+        put(os.path.join(dst, "skills", "github", "SKILL.md"), open(os.path.join(src, "skills", "github", "SKILL.md")).read())
+        d = daily(self)
+        self.assertEqual(self.i002(d["new"], sib), [f"{dst}/.cursor-plugin/plugin.json", f"{dst}/skills/github/SKILL.md"])
+        got = [f for f in d["new"] if f["rule"] == "WT-I002" and f["where"].startswith(dst + "/")]
+        self.assertEqual({k for f in got for k in (f["key"], f.get("key0")) if k} & old_keys, set())
+
 
 class DQ047PluginVersionBump(Box):
     SITES = "/home/box/.codex/plugins/cache/openai-curated-remote/sites"

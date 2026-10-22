@@ -575,24 +575,47 @@ def plugin_identity(plugin_json):
     return name[:80], os.path.normpath(d)
 
 
+def _plugin_version(manifests):
+    """DQ-047: "name@version[+...]" from one plugin folder's manifests; None when there are none or one states no version."""
+    v = set()
+    for p in manifests:
+        data = load_json(p, None)
+        ver = data.get("version") if isinstance(data, dict) else None
+        v.add(f"{plugin_identity(p)[0]}@{ver[:40]}" if isinstance(ver, str) and ver.strip() else None)
+    return "+".join(sorted(v)) if v and None not in v else None
+
+
 def plugin_versions(plugin_files):
     """DQ-047: {plugin folder: "name@version[+...]"} from the plugin's own manifests (every plugin.json the folder holds, as
     plugin_identity finds its folder). A folder whose manifests state no version gets no entry: its files keep path keys only.
     Fix round 1 (Codex): a folder that shares its place and name@version with another on disk (both catalog folders at once, or
-    a copy beside the original) gets no entry: not a move."""
-    ids = {}
+    a copy beside the original) gets no entry: not a move.
+    Fix round 2 (Codex): the count is taken on disk (each folder in the place, its plugin.json and <meta dir>/plugin.json), not
+    from the inventory, which scans a linked manifest once under whichever name sorts first: a sibling whose manifest links to
+    the original's, or that is a link to the whole folder, shares the place and gets no entry."""
+    found = {}
     for p in plugin_files:
         if os.path.basename(p) != "plugin.json" or not any(x in p for x in ("/plugins/", "/plugin-cache/")):
             continue
-        name, d = plugin_identity(p)
-        data = load_json(p, None)
-        ver = data.get("version") if isinstance(data, dict) else None
-        ids.setdefault(d, set()).add(f"{name}@{ver[:40]}" if isinstance(ver, str) and ver.strip() else None)
-    out = {d: "+".join(sorted(v)) for d, v in ids.items() if None not in v}
-    same = {}
-    for d, v in out.items():
-        same[(os.path.dirname(d), v)] = same.get((os.path.dirname(d), v), 0) + 1
-    return {d: v for d, v in out.items() if same[(os.path.dirname(d), v)] == 1}
+        found.setdefault(plugin_identity(p)[1], []).append(p)
+    out = {}
+    for d, ps in found.items():
+        v = _plugin_version(ps)
+        if v:
+            out[d] = v
+    disk = {}
+    for place in {os.path.dirname(d) for d in out}:
+        try:
+            kids = os.listdir(place)
+        except OSError:
+            kids = []
+        for k in kids:
+            ms = [m for m in [os.path.join(place, k, "plugin.json")] + [os.path.join(place, k, x, "plugin.json") for x in PLUGIN_META_DIRS]
+                  if os.path.isfile(m)]
+            v = _plugin_version(ms)
+            if v:
+                disk[(place, v)] = disk.get((place, v), 0) + 1
+    return {d: v for d, v in out.items() if disk.get((os.path.dirname(d), v)) == 1}
 
 
 def plugin_file_key(rule_id, path, sha, versions):
