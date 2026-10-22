@@ -57,34 +57,40 @@ owner decisions:
   line) or other character keeps it high. So `cat .env.custom.bak >> .env.local  # Re-append custom vars`, `cat .env.local`,
   `cat .env.production`, `cat prod.env` and `cat .env.example > .env.local` are no longer WT-T004, though such files often hold
   real secrets; `cat .env-prod`, `cat .env.local | grep x`, `cat .env.local; echo`, `xargs cat .env.local`, `CAT .env.local`
-  and a line over 4,000 characters stay high (more alarms than fix round 1, on purpose).
+  and a line over 4,000 characters stay high (more alarms than fix round 1, on purpose). The 4,000-character cap is on the whole
+  line, enforced since fix round 3 (`_line_bounds`; before it, only the distance from the match to each end was checked).
 - **`printenv NAME` of one plain name** (no `key`, `token`, `secret`, `pass`, `auth`, `cred`, `cookie` or `session` in it) is not a
-  credential read, so `printenv DATABASE_URL` or a `*_DSN` passes although such values can carry a password. Adding URL or DSN
-  to the word list is the owner's call. The name, bare or quoted, must be a plain variable name (`[A-Za-z_][A-Za-z0-9_]*`; a
-  quoted one may end in one `(x86)`, for Windows' `ProgramFiles(x86)`), so a bare `printenv`, a `$NAME`, an option (`"--"` and
+  credential read. Accepted known limit (owner decision, fix round 3): URL- and DSN-style names are exempt, so
+  `printenv DATABASE_URL` or a `*_DSN` passes although such values can carry a password. The name, bare or quoted, must be a
+  plain variable name (`[A-Za-z_][A-Za-z0-9_]*`; a quoted one may end in one `(x86)`, for Windows' `ProgramFiles(x86)`), so a bare
+  `printenv`, a `$NAME`, an option (`"--"` and
   `"-0"` too), several names or more words after the name stay high. Fix round 2 (fail closed, no shell reading): exempt only
   (a) when lowercase `printenv` opens its line (only blanks before it, the line before not ending in a backslash) and the rest
   of the line after the name is, in full, blank-separated plain redirects (`\d?>>?` + a `[A-Za-z0-9_./-]+` target, or `2>&1`),
   then an optional `|| true`, then an optional `# comment` after a blank; or (b) when it is the line's first code span,
-  `` `printenv PATH` ``: an unescaped backtick right before `printenv`, no backtick before that on the line, and a backtick right
-  after the name. A `\r` anywhere on the line keeps it high. So `printenv HOME >>log; echo`, `$(printenv HOME)`,
-  `` `printenv HOME >x` ``, `xargs printenv HOME`, a later code span and `PRINTENV HOME` stay high (more alarms than fix round 1).
+  `` `printenv PATH` ``: an unescaped backtick right before `printenv`, no backtick anywhere before that in the text (fix round 3:
+  not just on its line, since a backtick on an earlier line may open a substitution that this one closes), and a backtick right
+  after the name. A `\r` anywhere on the line, or a line over 4,000 characters, keeps it high. So `printenv HOME >>log; echo`,
+  `$(printenv HOME)`, `` `printenv HOME >x` ``, `xargs printenv HOME`, a later code span, a code span after any earlier backtick
+  in the file (fix round 3: `` `true `` then `` `printenv AWS_ACCESS_`printf KEY_ID` `` on the next line, but also a plain
+  `` `printenv HOME` `` below an earlier code span or fence) and `PRINTENV HOME` stay high (more alarms than fix round 1).
 - **A negated "such as" list of code spans** ("Do not … such as `env`, bare `set`, or `printenv`, and do not echo the value.") is
   read as negated: lowered to medium and still listed, never dropped. It needs the negation at the clause start, followed right
   away by an action verb it forbids (inspect, run, use, print, dump, echo, execute, call, read, list, show, display, invoke,
   type, paste or cat: fix round 2, so "Do not forget to run …", "Do not hesitate to use …" and "Do not ask permission before
   using …" stay high), governing the list (no comma and no and, or, nor, but, then, so, yet, also, instead or rather between the
   negation and "such": fix round 1, so "Do not use slow tools, use commands such as `env`, or `cat .env`." stays high), the list
-  right before the match, and no condition word (unless, if, when, only, but, …) in the sentence or opening the next one. So
-  "Do not inspect keys or tokens with tools such as `env`, or `printenv`." stays high. WT-T004 only; the "with" list (B7 below)
-  stays open.
-- **A finding newly guarded by b8i3 gets a new dismissal key** (Codex fix round 2, finding 6; not redesigned). `guard_record`
-  (B7 design) gives every guarded record the key `sha1(key + "|guarded")` and drops `key0` on purpose, so that deleting the
+  right before the match, no condition word (unless, if, when, only, but, …) in the sentence or opening the next one, and (fix
+  round 3) no without, unless, until, before, first or except between the negation and the match, so "Do not run the task
+  without first using commands such as `env`, or `printenv`." stays high. So "Do not inspect keys or tokens with tools such as
+  `env`, or `printenv`." stays high. WT-T004 only; the "with" list (B7 below) stays open.
+- **A finding newly guarded by b8i3 gets a new dismissal key.** Accepted known limit (owner decision, fix round 3; Codex fix round
+  2, finding 6, not redesigned). `guard_record` (B7 design) gives every guarded record the key `sha1(key + "|guarded")` and drops `key0` on purpose, so that deleting the
   "never" later shows the full finding as new. So a high that this negation now lowers is listed under a new key, and a
   dismissal made before b8i3 doesn't carry over to it (the guarded record is never scored or new, so nothing new is raised):
   ``Never inspect the environment with tools such as `env`, or `printenv`.`` at line 1 had key 774c69631c16284e and now has
   311e713515613b16, with no key0 (pinned by `FixRound2Key`). Keeping the old key would mean changing the guard design for every
-  rule; that is the owner's call.
+  rule, so dismissals made before b8i3 don't carry over to newly guarded lines.
 - `env | grep KEY` was never WT-T004 and still isn't; widening the rule to `env` was out of scope.
 
 ## DQ-047 open mediums (DQ-050, owner decision pending; not fixed)

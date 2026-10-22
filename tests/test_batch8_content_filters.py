@@ -14,7 +14,11 @@ Tests marked "replay" fail on 63714e4 on their assertion; "control" ones pass be
 
 Fix round 1 (Codex review of 0223735): the `cat` pattern is 63714e4's again (same evidence, same keys) and "exactly .env" is a
 content check on the rest of the command; `printenv`'s one name is checked by a linear scan; a "such as" list counts as negated
-only when its negation governs it. Tests marked "r1 replay" fail on 0223735 on their assertion."""
+only when its negation governs it. Tests marked "r1 replay" fail on 0223735 on their assertion.
+
+Fix round 3 (Codex review of 2b8920c; subtractive): a code-span printenv with any backtick before it in the text, a negation with
+without/unless/until/before/first/except before the match, and a line over 4,000 characters keep the finding. Tests marked
+"r3 replay" fail on 2b8920c on their assertion."""
 import os, re, sys, time, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -293,6 +297,22 @@ class FixRound2Key(unittest.TestCase):
         self.assertEqual(wt.finding_key("WT-T004", SKILL + ":1", "printenv"), "774c69631c16284e")
         self.assertEqual([(g["evidence"], g["guarded"], g["key"], g.get("key0")) for g in f],
                          [("printenv", "negated", "311e713515613b16", None)])
+
+
+# ---------------------------------------------------------------- fix round 3 (Codex review of 2b8920c): subtractive, fail loud
+class FixRound3(unittest.TestCase):
+    def test_backtick_that_may_close_an_earlier_substitution_flags(self):   # r3 replay (finding 1)
+        each(self, ("`true\n`printenv AWS_ACCESS_`printf KEY_ID`", "`true\nSee `printenv AWS_ACCESS_`printf KEY_ID`",
+                    "Run `x`.\n`printenv HOME`"), HIGH)
+
+    def test_negation_that_still_requires_the_list_flags(self):   # r3 replay (finding 2)
+        each(self, ("Do not run the task without first using commands such as `env`, or `printenv`.",
+                    "Never run the deploy before checking with tools such as `env`, or `printenv`.",
+                    "Do not use the build first with tools such as `env`, or `printenv`."), HIGH)
+
+    def test_line_over_the_cap_keeps_the_finding(self):   # r3 replay (finding 3)
+        each(self, (" " * 3000 + "cat .env.local" + " " * 2000, " " * 3000 + "printenv HOME" + " " * 2000), HIGH)
+        each(self, (" " * 1000 + "cat .env.local", " " * 1000 + "printenv HOME", "`printenv PATH` is safe\n`x`"), NONE)   # control
 
 
 if __name__ == "__main__":

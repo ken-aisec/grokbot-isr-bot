@@ -574,11 +574,14 @@ def _negated_example_list(text, m, walk, after, span, rules):
     sentence (spans masked) ends with no condition word in it or opening the next one. Any doubt means False.
     Fix round 1: the negation must govern the list: no comma or clause joiner (and, or, but, then, …) between it and "such", so
     "Do not use slow tools, use commands such as `env`, or `cat .env`." asks for the read and stays high.
-    Fix round 2: the negation is followed right away by an action verb (NEG_HEAD), so "Do not forget to run …" stays high."""
+    Fix round 2: the negation is followed right away by an action verb (NEG_HEAD), so "Do not forget to run …" stays high.
+    Fix round 3: no REQUIRING word between the negation and the match, so "Do not run the task without first using …" stays high."""
     if not span or after is None or not after[1] or not NEG_HEAD.match(walk):
         return False
     cls = {CODE: "C", ",": ",", "or": "o", "and": "o", "nor": "o", "such": "s", "as": "a"}
     toks = [t for t in (_guard_token(x) for x in GUARD_TOKEN.findall(walk)) if t]
+    if any(t in REQUIRING for t in toks):
+        return False
     shape = "".join(cls.get(t, "m" if t in LIST_MODIFIERS else "x") for t in toks)
     lst = EXAMPLE_LIST.search(shape)
     if shape.count("C") > 8 or not lst or any(t == "," or t in CLAUSE_JOINERS for t in toks[:lst.start()]):
@@ -625,6 +628,9 @@ EXAMPLE_LIST = re.compile(r"sa(?:m?C,o?)*m?C(?:,o?|,?o)m?$")
 NEG_HEAD = re.compile(r"(?i)^\s*(?:do\s+not|don't|never|avoid)\s+(?:inspect|run|use|print|dump|echo|execute|call|read|list|show|"
                       r"display|invoke|type|paste|cat)(?=\s|$)")
 CLAUSE_JOINERS = frozenset(("and", "or", "nor", "but", "then", "so", "yet", "also", "instead", "rather", "&"))
+# Fix round 3 (Codex 2): a word that may make the negated sentence still require the listed commands ("Do not run the task
+# without first using …"); one between the negation and the match means no guard.
+REQUIRING = frozenset(("without", "unless", "until", "before", "first", "except"))
 CONDITION = re.compile(r"(?i)\b(unless|except|until|if|when|whenever|but|only|otherwise|instead|however)\b")
 
 
@@ -960,6 +966,8 @@ def sends_data(ev):
 # (a) lowercase printenv opens its line (_opens_line) and after the name the rest of the line is, in full, blank-separated plain
 # redirects (>x, 2>/dev/null, 2>&1), then an optional `|| true`, then an optional `# comment`. (b) the line's first code span is
 # `printenv NAME`: an unescaped backtick right before printenv, no backtick before that on the line, a backtick right after the name.
+# Fix round 3 (Codex 1; subtractive): (b) needs no backtick anywhere before it in the text, not just on its line, so a backtick that
+# may close a substitution opened on an earlier line (`true⏎`printenv AWS_ACCESS_`printf KEY_ID`) keeps the finding.
 PRINTENV_NAME = re.compile(r"""[ \t]+(?:'(?P<sq>[A-Za-z_][A-Za-z0-9_]*(?:\([A-Za-z0-9_]+\))?)'|"""
                            r""""(?P<dq>[A-Za-z_][A-Za-z0-9_]*(?:\([A-Za-z0-9_]+\))?)"|(?P<bare>[A-Za-z_][A-Za-z0-9_]*))""")
 PRINTENV_REDIRECT = re.compile(r"2>&1|[0-9]?>>?[ \t]*[A-Za-z0-9_./-]+")
@@ -968,13 +976,15 @@ SECRET_SHAPED = re.compile(r"(?i)key|token|secret|pass|auth|cred|cookie|session"
 
 
 def _line_bounds(text, s, e):
-    """(a, b): the line holding text[s:e], or None when its start or its end is more than LINE_CAP away."""
+    """(a, b): the line holding text[s:e], or None when its start or its end is more than LINE_CAP away or it is longer than
+    LINE_CAP (fix round 3, Codex 3: the cap is on the whole line)."""
     lo = max(0, s - LINE_CAP)
     a = text.rfind("\n", lo, s) + 1
     b = text.find("\n", e, e + LINE_CAP + 1)
     if (a == 0 and lo) or (b == -1 and len(text) > e + LINE_CAP):
         return None
-    return a, (len(text) if b == -1 else b)
+    b = len(text) if b == -1 else b
+    return None if b - a > LINE_CAP else (a, b)
 
 
 def _opens_line(text, s, a):
@@ -996,7 +1006,7 @@ def one_plain_variable(text, m):
         return False
     a, b = ab
     if s > a and text[s - 1] == "`":   # (b)
-        return (s - 1 == a or text[s - 2] != "\\") and "`" not in text[a:s - 1] and text.startswith("`", p.end())
+        return (s - 1 == a or text[s - 2] != "\\") and text.rfind("`", 0, s - 1) == -1 and text.startswith("`", p.end())
     if not _opens_line(text, s, a):   # (a)
         return False
     i, done = p.end(), False   # done: `|| true` read, so only a comment may follow
@@ -1022,7 +1032,8 @@ def one_plain_variable(text, m):
 # one plain redirect (> or >>, a blank before it, then one plain target), blanks, and an optional `# comment` after a blank.
 # Plain is [A-Za-z0-9_./~-]+, so $, a backtick, \, ;, &, |, (, <, a quote, \r (anywhere on the line) or any other character
 # keeps the finding. Each operand's basename starts with ".env." or ends with ".env", and isn't ".env" or ending in "."; the
-# target's basename isn't ".env" or ending in ".". One pass over the line, at most LINE_CAP characters; a longer line is kept.
+# target's basename isn't ".env" or ending in ".". One pass over the line, at most LINE_CAP characters; a longer line is kept
+# (enforced in _line_bounds since fix round 3).
 CAT_PLAIN = re.compile(r"[A-Za-z0-9_./~> \t-]*")
 CAT_REDIRECT = re.compile(r">>?[ \t]*(?P<target>[A-Za-z0-9_./~-]+)")
 CAT_COMMENT = re.compile(r"[ \t]#")
