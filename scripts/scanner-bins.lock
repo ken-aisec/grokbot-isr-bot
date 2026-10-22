@@ -23,3 +23,9 @@
 #
 # Known gap: for the Python scanners only the entry-point file is checked here; the package code in site-packages comes
 # from scripts/scanners.lock (pip --require-hashes) at install time and is not re-checked on each run.
+4acb8d21b1676a7615666c4bee6d109e8f687373b3254630625af6306624ba3d  skillspector  any  SkillSpector 2.12.0, git+https://github.com/NVIDIA/SkillSpector@a50b9c93835c94f7d36329f11c6599abbb9c74ee (entry point, install.sh --scanners) (filled Oct 21, 2026 from a scratch install of 690100b)
+1755b64857807394742b77b77395deb9f7904aa93c525fd70264fef1c52bf5e8  husk  any  husk-scanner 1.3.5 from scripts/scanners.lock (pip --require-hashes; entry point) (filled Oct 21, 2026 from a scratch install of 690100b)
+88f91962aa2f93ac6ab281d553b9e125f5197bbbce38f9f2437f7299c32e5509  gitleaks  x86_64  gitleaks 8.30.1 linux_x64, GitHub release tarball verified against gitleaks_8.30.1_checksums.txt (filled Oct 21, 2026 from a scratch install of 690100b)
+2e0a09c37d104c2f3069021f0c1ab33cf07287b6aca4d59eb4684d7d73fb89b4  trufflehog  x86_64  TruffleHog 3.97.9 linux_amd64, GitHub release tarball verified against trufflehog_3.97.9_checksums.txt (filled Oct 21, 2026 from a scratch install of 690100b)
+ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b108  osv-scanner  x86_64  OSV-Scanner 2.6.0 osv-scanner_linux_amd64, GitHub release binary verified against osv-scanner_SHA256SUMS (filled Oct 21, 2026 from a scratch install of 690100b)
+3b833a3749d5a91078ade02aeeaff51fae6b6913bc39eac09e9155abbef82e54  pip-audit  any  pip-audit 2.10.1 from scripts/scanners.lock (pip --require-hashes; entry point) (filled Oct 21, 2026 from a scratch install of 690100b)
