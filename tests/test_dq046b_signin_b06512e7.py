@@ -1,5 +1,5 @@
-"""DQ-046(b) (Ken, Oct 20: "Trust the new version and add it to the approved list"): Grok Bot's sign-in skill changed from
-sha256 329d4f59 to b06512e7 on the live boxes (sand-data and agent-data, identical). The line Ken read on Oct 18 (old line 12) is
+"""DQ-046(b) (decision, Oct 20: "Trust the new version and add it to the approved list"): Grok Bot's sign-in skill changed from
+sha256 329d4f59 to b06512e7 on the live boxes (sand-data and agent-data, identical). The line the owner read on Oct 18 (old line 12) is
 byte-identical and is now line 11, so the release lock lists the new bytes at both paths and rules/platform-reviewed.json has
 the same two checked findings (WT-T008, WT-T004) for them at line 11. The 329d4f59 lines and entries stay: boxes not yet updated
 still have those bytes. Exact bytes only, as before: no change to the matching (sha256 + rule + line).
@@ -15,7 +15,7 @@ from test_batch5_platform_notes import _SignIn, LINE12, SIGNIN, REL
 OLD = "329d4f59c94da1e42737230253bbb671183546d2ce82e04af9c304a46e759071"
 NEW = "b06512e770076a989724a0aac84961a993089aca44cbfc5e79774c4f16055724"
 AGENT_REL = "agent-data/managed-skills/skills/sign-in/SKILL.md"
-# sha256 of line 11 of the b06512e7 bytes with its line end (`sed -n 11p SKILL.md | sha256sum`, measured on Ken's copy, Oct 20)
+# sha256 of line 11 of the b06512e7 bytes with its line end (`sed -n 11p SKILL.md | sha256sum`, measured on the maintainer's copy, Oct 20)
 NEW_LINE11 = "195407c010ae686c473a4c75fc353c88b1bbcdc9d7ea3a46799d9825a7d8a39b"
 # the synthetic new version: one line fewer above the reviewed line, which is now line 11
 SIGNIN11 = SIGNIN.replace("## Steps\n\nFollow these in order.\n", "## Steps\nFollow these in order.\n")
@@ -42,7 +42,7 @@ class ShippedLists(unittest.TestCase):
                          [("WT-T004", 11, (REL, AGENT_REL)), ("WT-T008", 11, (REL, AGENT_REL))])
         self.assertEqual({e["rule"]: e["note"] for e in new}, {e["rule"]: e["note"] for e in old})   # the same two notes
         self.assertEqual(sorted((e["rule"], e["line"]) for e in old), [("WT-T004", 12), ("WT-T008", 12)])
-        self.assertEqual(hashlib.sha256((LINE12 + "\n").encode()).hexdigest(), NEW_LINE11)   # line 11 is the line Ken read
+        self.assertEqual(hashlib.sha256((LINE12 + "\n").encode()).hexdigest(), NEW_LINE11)   # line 11 is the line the owner read
 
     def test_the_synthetic_copy_has_the_reviewed_line_at_line_11(self):   # guard (this file's own fixture)
         self.assertEqual(SIGNIN11.split("\n")[10], LINE12)

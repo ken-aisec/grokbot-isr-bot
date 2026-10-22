@@ -48,7 +48,7 @@ def hook_findings(roots, inv):
                 out.append(finding("WT-C005", "The platform's own hook runs a script from a shared temp folder", "low", ["ASI05", "ASI10"], p,
                                    f"{c[:90]} ({there})", "This hook came with the computer and you can't change it. Every Bot can write to that folder, so a "
                                    "Bot that was tricked could plant the script. It's listed so you know; it is worth reporting to the platform.", ident=c))
-                out[-1]["platform_hook"] = True   # Ken, Oct 13: shown in the Platform section, not scored
+                out[-1]["platform_hook"] = True   # Decision, Oct 13: shown in the Platform section, not scored
             else:
                 out.append(finding("WT-C005", "A hook runs a script from a folder every Bot can write to", "high", ["ASI05", "ASI10"], p,
                                    f"{c[:90]} ({there})", "Find out what added this hook. If it isn't yours, remove it from that file; if it is, move the "

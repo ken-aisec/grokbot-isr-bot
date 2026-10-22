@@ -1,4 +1,4 @@
-"""DQ-042 (Ken, Oct 16): vendor skill updates shouldn't be flagged.
+"""DQ-042 (decision, Oct 16): vendor skill updates shouldn't be flagged.
 
 `wt.py audit` raised a HIGH "Grok Bot's own learn changed and now Corroborated by multiple engines" for the platform's bundled
 learn skill after a routine platform update. The real line (`wt.py show WT-X003`, Oct 16):
@@ -394,7 +394,7 @@ class DangerousFifthIssue(_Learn, Box):
 
 
 class _StaysConfirmed(_Learn):
-    """Codex, DQ-042 round 3 (Ken: when evidence is incomplete, never demote to Platform): learn's vote stays high and Confirmed,
+    """Codex, DQ-042 round 3 (owner decision: when evidence is incomplete, never demote to Platform): learn's vote stays high and Confirmed,
     and the change keeps its "tell Grok Bot support" alert."""
     REL = ".grok/bundled/skills"
 

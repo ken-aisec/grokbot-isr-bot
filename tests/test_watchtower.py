@@ -560,7 +560,7 @@ class Features(unittest.TestCase):
         self.assertNotIn("SECRET-1", json.dumps(st))                              # raw values never stored
         out = {f["where"]: f for f in wt.apply_key_status(fs, st)}
         self.assertEqual(out[chat + ":1"]["severity"], "critical")
-        # R05 (Ken, Oct 11): "Verified: false" without an error is unverified, not dead; it is never "Nothing to revoke"
+        # R05 (decision, Oct 11): "Verified: false" without an error is unverified, not dead; it is never "Nothing to revoke"
         self.assertEqual(out[old + ":1"]["severity"], "medium")
         self.assertNotEqual(out[old + ":1"]["title"], wt.KEY_DEAD)
         todo = wt.needs_you(list(out.values()))

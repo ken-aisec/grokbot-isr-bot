@@ -105,7 +105,7 @@ def is_vendor_template_file(path):
     return under_platform_root(path) and bool(VENDOR_TEMPLATE_PATH.search(p))
 
 
-# v0.7.1 precision item 1 (Ken, Oct 12): live-only by default. Skill wording and drift rules run only on what the platform
+# v0.7.1 precision item 1 (decision, Oct 12): live-only by default. Skill wording and drift rules run only on what the platform
 # loads; archives, clones and other projects are listed once as "Not scanned". `audit --everything` opts in (kept in
 # state/scope.json until `--live-only`). Keys are checked everywhere either way (secret scan does not use this).
 SCAN_EVERYTHING = False

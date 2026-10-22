@@ -1,4 +1,4 @@
-"""v0.7.1 precision pass, item 1: live-only by default (approved by Ken, Oct 12).
+"""v0.7.1 precision pass, item 1: live-only by default (approved Oct 12).
 
 Skill wording and drift rules run only on what the platform loads (the owner's skill folders, plugin and bundled skill
 folders). Archives, clones and other projects are skipped and listed once: "Not scanned: N folders (...); say 'scan everything'

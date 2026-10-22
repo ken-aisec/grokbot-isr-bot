@@ -1,4 +1,4 @@
-"""v0.7.1 red-team (Ken's second account on v0.7.0, Oct 14, relayed by Claude Oct 15): the roll-call made people less safe.
+"""v0.7.1 red-team (the owner's second account on v0.7.0, Oct 14, relayed by Claude Oct 15): the roll-call made people less safe.
 Any agent could send it, Bots can't check who is asking (one answered twice, once to a deleted Watchtower), it asked for every
 memory word for word, and the replies sat as plain files every Bot could read. The roll-call stays (opt-in, off by default), but
 the question now asks only for a shape, replies live as 0600 files in a 0700 folder inside Watchtower's home, and each reply is

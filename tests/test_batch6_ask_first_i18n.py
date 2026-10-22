@@ -1,4 +1,4 @@
-"""Batch 6 PR1, B4: Ask-first rules written in another language (Ken's decision 2).
+"""Batch 6 PR1, B4: Ask-first rules written in another language (decision 2).
 
 rules/ask_first_vocab.json (shipped, held to MANIFEST.sha256 like the access vocabulary) gives, for 13 languages, the words that
 open an Ask-first rule and the stems of the five areas. A rule set Watchtower reads is linted over every language at once; one

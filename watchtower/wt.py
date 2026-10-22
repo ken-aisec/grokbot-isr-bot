@@ -442,7 +442,7 @@ def cmd_baseline(args):
     else:
         # Codex, item 8 review 2 (high 3): the owner's yes to a new baseline covers their own skills and plugins, never a platform
         # file the release list doesn't include. Such a file keeps the line it had (so it still shows as changed) or stays out, and
-        # only a Watchtower release that lists it clears it (Ken's decision, Oct 18).
+        # only a Watchtower release that lists it clears it (decision, Oct 18).
         old = load_baseline()[0]
         held = platform_unproven(meta["manifest"])
         base = {p: h for p, h in meta["manifest"].items() if p not in held}

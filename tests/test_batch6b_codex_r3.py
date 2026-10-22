@@ -1,4 +1,4 @@
-"""Batch 6 PR2, Codex round 3 (7 high on b621cf4): replays and guards. Ken's rule, final round: pick the safe option every time.
+"""Batch 6 PR2, Codex round 3 (7 high on b621cf4): replays and guards. The owner's rule, final round: pick the safe option every time.
 
 1, 2: an example-looking or checksum-framed secret lowers nothing. It keeps its rule's severity, title, counting and
 Confirmed/Worth-a-look rules, backs up and is backed up like any other hit, and is dismissed only as any other is; the check only
@@ -191,7 +191,7 @@ class ExamplesInWatchtowersRules(unittest.TestCase):
         for k in ("sk-ant-api03-your-key-here-xxxxxxxxxxxxxxxx", "ghp_" + "a" * 36, "sk-proj-EXAMPLEKEY1234567890abcdefgh"):
             self.assertEqual({f["rule"] for f in t011(f"key={k}")}, {"WT-T011x"}, k)
 
-    def test_nothing_is_dropped_on_a_reference(self):   # guard: a $VAR is noted, never left out (Ken: may be dropped; kept, safe)
+    def test_nothing_is_dropped_on_a_reference(self):   # guard: a $VAR is noted, never left out (owner decision: may be dropped; kept, safe)
         self.assertEqual(wt.secret_kind("${API_TOKEN}"), ("example", "an environment variable name"))
 
 

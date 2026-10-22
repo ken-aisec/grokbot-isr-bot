@@ -1,7 +1,7 @@
 # Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
 # ---------------------------------------------------------------- access map: what the Bots on this computer can reach
 # Batch 5 (a): a plain answer to "what can my Bots reach?", built only from what Watchtower already collects. Nothing new is read
-# from memories, messages, transcripts or credential files, and no value is taken from them. Ken's decisions (Oct 18): MCP configs
+# from memories, messages, transcripts or credential files, and no value is taken from them. Decisions, Oct 18: MCP configs
 # give server names, transport and URL host only, never env, args, headers or a URL's path (4); each Bot's part is what it said in
 # the roll-call, labelled "what the Bot said; not checked" (5). Every map passes through access_record() before it is kept or
 # shown. PR B, Codex round 1 (2): the map shown is always built by the command that shows it (the audit's own, or one built from
@@ -550,7 +550,7 @@ def _ax_url_host(u):
 def _ax_mcp(paths, bases):
     """Tool connections from the MCP config files: each server's name, whether it runs a command or reaches a URL, and that URL's
     host. Only the `mcpServers` / `servers` lists are read, and in each server only `command` (whether there is one) and `url`
-    (its host); env, args, headers and a URL's path or query are never read or kept (Ken's decision 4). PR B, Codex round 1: the
+    (its host); env, args, headers and a URL's path or query are never read or kept (decision 4). PR B, Codex round 1: the
     count and the products the tools reach come from every tool, before the list is cut (3); a file reached through a link is
     unreadable, its target never opened (5)."""
     tools, bad, seen = [], [], set()

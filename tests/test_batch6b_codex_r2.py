@@ -1,4 +1,4 @@
-"""Batch 6 PR2, Codex round 2 (12 high on de3b328): replays and guards. Ken's rule decides each trade-off: a signal a Bot can
+"""Batch 6 PR2, Codex round 2 (12 high on de3b328): replays and guards. The owner's rule decides each trade-off: a signal a Bot can
 write (state/, dismissed.jsonl, last_findings.json, a report file, the home folder) never lowers or hides a finding.
 
 B5 (1-5): an example-looking secret (FAKE or placeholder text, an environment-variable reference, a key block whose body isn't a

@@ -1,13 +1,13 @@
 """Batch 5, item d: few false alarms from Grok Bot's own files.
 
 d1: findings in Grok Bot's own files (scope "platform") are Platform notes: not in open_by_severity, `new`, breakdown's Confirmed
-list or the dashboard's tiles (Ken's decision 2, Oct 18: they keep their severity, label and key inside, so a vendor rug pull still
-alerts). d2: rules/platform-reviewed.json, findings Watchtower's team read in exact platform file versions (Ken's decision 1): a
+list or the dashboard's tiles (decision 2, Oct 18: they keep their severity, label and key inside, so a vendor rug pull still
+alerts). d2: rules/platform-reviewed.json, findings Watchtower's team read in exact platform file versions (decision 1): a
 checked note, only for those bytes, that rule and that line.
 
 Tests marked "replay" fail on 151e40c on their assertion (measured with 151e40c's watchtower/ sources and rules, this file in place);
-"guard" ones keep what must not change. The sign-in skill here is a synthetic copy: its line 12 is the exact line Ken read on his box
-(Oct 18), the rest is made up, so its sha256 is not the shipped one; the platform folders of this computer are never opened."""
+"guard" ones keep what must not change. The sign-in skill here is a synthetic copy: its line 12 is the exact line the owner read on the
+maintainer's box (Oct 18), the rest is made up, so its sha256 is not the shipped one; the platform folders of this computer are never opened."""
 import json, os, re, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -279,7 +279,7 @@ class ShippedReviewedList(unittest.TestCase):
         finally:
             wt.PLATFORM_REVIEWED = old
 
-    def test_the_notes_say_what_line_12_does(self):   # guard: Ken read line 12 on his box (Oct 18); these are its two findings
+    def test_the_notes_say_what_line_12_does(self):   # guard: the owner read line 12 on the maintainer's box (Oct 18); these are its two findings
         with open(os.path.join(ROOT, "rules", "platform-reviewed.json")) as f:
             notes = {e["rule"]: e["note"] for e in json.load(f)["entries"]}
         self.assertEqual(notes["WT-T008"], "Grok Bot's sign-in skill tells the Bot not to bring up 1Password with people who don't use it. "

@@ -3,11 +3,11 @@
 One content check (secret_kind) for Watchtower's own rule (WT-T011, WT-S001) and every gitleaks hit, on the secret value only:
 FAKE or placeholder text, an environment-variable reference, a key block whose structure isn't a key, and (gitleaks
 generic-api-key) a file's checksum by its line's format look like examples. gitleaks runs with --redact; its secret is found
-again in the file from its Match, judged in memory and never stored. Fix round 2 (Codex 3, 4; Ken's rule): anyone can write a
+again in the file from its Match, judged in memory and never stored. Fix round 2 (Codex 3, 4; the owner's rule): anyone can write a
 real key in those forms, so an example-looking hit is never left out: it is a low finding, "Looks like an example or checksum
 value - check it", never Confirmed, never offered for revoking or clearing, kept apart from the per-file and folder grouping of
 real hits, every file and line named. The tests/, fixtures/ and *.test.* path skips, the line rule that hid a whole line next
-to a $VAR and FIXTURE_PATH (a file name lowering a key to low) are gone (Ken: no name-based skips); .pem files are read as text.
+to a $VAR and FIXTURE_PATH (a file name lowering a key to low) are gone (owner decision: no name-based skips); .pem files are read as text.
 Fix round 3 (Codex 1, 2, 3; test_batch6b_codex_r3): an example-looking hit lowers nothing. It keeps its rule's severity, title,
 counting, grouping and Confirmed rules, and only its fix gets "This looks like an example or checksum value (…); if it is real,
 rotate it."; a key block that can't be read, is short or starts like a key is a key. The assertions changed here are listed in

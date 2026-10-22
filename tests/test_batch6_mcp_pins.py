@@ -1,7 +1,7 @@
 """Batch 6 PR3, B8: an MCP server a package launcher runs is pinned only by an exact version, whichever launcher it is.
 
 npx, uvx, bunx, `pnpm dlx` and `npm exec` (also behind /usr/bin/env) are read alike from each server's command and args; "@latest",
-a range and a dist-tag are unpinned (Ken's decision 7). The old test ("an @ within 200 characters of the command") let
+a range and a dist-tag are unpinned (decision 7). The old test ("an @ within 200 characters of the command") let
 `npx -y @scope/pkg`, `pkg@latest` and an email in the args pass as pinned, and never looked at bunx behind env, pnpm or npm.
 
 Tests marked "replay" fail on 1aed58a on their assertion (measured with 1aed58a's watchtower/ sources, this file in place);

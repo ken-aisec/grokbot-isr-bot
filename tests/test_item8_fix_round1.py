@@ -187,7 +187,7 @@ class BoundedPlatformList(_Platform):
             return real(p, *a, **k)
         os.open = counting
         try:
-            pv = self.preview()["platform_unverified"]                         # Ken's decision (Oct 18): a read-only list
+            pv = self.preview()["platform_unverified"]                         # Decision, Oct 18: a read-only list
             self.assertEqual(len(reads), 0)
             self.assertEqual(pv["open"], self.N)
             self.assertEqual(len(pv["files"]), wt.PLATFORM_OPEN_SHOWN)

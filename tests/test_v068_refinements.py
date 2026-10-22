@@ -1,4 +1,4 @@
-"""Ken's refinements of Oct 10 to "false alarms are never scary" (after Cloudflare's MIT-licensed security-audit skill)."""
+"""The owner's refinements of Oct 10 to "false alarms are never scary" (after Cloudflare's MIT-licensed security-audit skill)."""
 import io, json, os, shutil, sys, tempfile, unittest, warnings
 from contextlib import redirect_stdout, redirect_stderr
 
@@ -160,8 +160,8 @@ class MemoryStandingOrders(Base):
             self.assertIsNone(flag(t), t)
 
     def test_owner_setup_notes_are_never_flagged_for_outside_content(self):
-        for t in ("(2026-09-10) [log] Eagle goal frame: track @kenr posts, see https://x.com/kenr",
-                  "Ken 2026-09-25: Cloud Agents report to ken@example.com",
+        for t in ("(2026-09-10) [log] goal frame: track @example_user posts, see https://x.com/example_user",
+                  "Admin 2026-09-25: Cloud Agents report to admin@example.com",
                   "Setup: weekly report goes to https://drive.example.com/folder",
                   "I prefer briefs at https://news.example.com before 7am.",
                   {"text": "Digest to ops@example.com", "source": "owner"}):

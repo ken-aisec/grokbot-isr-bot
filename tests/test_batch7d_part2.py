@@ -1,4 +1,4 @@
-"""Batch 7d part 2: the last "Must-fix before release" items (docs/KNOWN-LIMITS.md). Ken's rule: fail closed.
+"""Batch 7d part 2: the last "Must-fix before release" items (docs/KNOWN-LIMITS.md). The owner's rule: fail closed.
 
 A (7a masking): a key block written with escapes ended at an escaped END whose \\n may be text: JavaScript's String.raw with a
 space before its template (or any other tag), and a shell's "…\\n" fragments (no escape processing in sh), each next to a comment

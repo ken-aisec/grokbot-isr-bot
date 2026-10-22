@@ -52,7 +52,7 @@ class LookupsAndCollections(Folder):
     def test_safe_forms_stay_chat_webhooks(self):   # guard (round 2's safe defaults run unmodified in test_batch5_codex_r2)
         # batch 6 (KL1, Codex #15 high 1): an unknown config may hold another destination: WT-T005 (was T018)
         self.assertEqual(rules_of(fenced("url = config.get('hook', '" + HOOK + "')\nrequests.post(url, json=payload)")), {"WT-T005"})
-        # batch 7b (Ken, Option A): a lookup, a collection, a name or a wrapped literal is never a recognised send (were WT-T018)
+        # batch 7b (decision: Option A): a lookup, a collection, a name or a wrapped literal is never a recognised send (were WT-T018)
         for c in ("config = {}\nrequests.post(config.get('hook', '" + HOOK + "'), json=payload)",
                   "config = {'hook': '" + HOOK + "'}\nrequests.post(config['hook'], json=payload)",
                   "hooks = ['" + HOOK + "', '" + r2.SLACK + "']\nfor h in hooks:\n    requests.post(h, json=payload)",

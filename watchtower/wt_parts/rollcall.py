@@ -18,7 +18,7 @@ STANDING = re.compile(r"(?i)\b(always|from now on|whenever|every (time|day|morni
 
 def memory_loosens(t, rules=None):
     """A memory that loosens permissions: a loosening phrase that isn't itself negated ("never skip the approval").
-    Since Ken's call of Oct 10 a plain standing order ("every morning send the digest") is not enough on its own."""
+    Since the decision of Oct 10 a plain standing order ("every morning send the digest") is not enough on its own."""
     for m in LOOSENING.finditer(t):
         if not DEFEAT_NEGATED.search(t[max(0, m.start() - 20):m.start()]) and not re.search(r"(?i)\b(never|not|n't)\b[^.;]{0,30}$", t[max(0, m.start() - 40):m.start()]):
             return True
@@ -217,12 +217,12 @@ def _rc_remove(p, rdir):
 
 
 def merge_rollcall(prev, rnd, findings, bots, answered, access=None):
-    """Oct 15: Foxtrot's late reply, run on its own, replaced all ten Bots' findings with its own. A run in the same roll-call
+    """Oct 15: one Bot's late reply, run on its own, replaced every Bot's findings with its own. A run in the same roll-call
     round (`rnd`) as the saved file now merges per Bot: a Bot that answered this run (`answered`) replaces only its own findings,
     every other Bot keeps its findings and its name. Outside a round, or against a file from another round or from before
     shape-only replies, this run's findings replace the file as before. A finding's Bot is the `bot` saved with it, never read
     back out of `where`: a Bot may be named "Alpha:memories", which is also where Alpha's WT-M010 points. A finding with no
-    saved Bot is kept, never dropped on a guess. Batch 5 (a, Ken's decision 5): `access`, what each Bot said it can reach
+    saved Bot is kept, never dropped on a guess. Batch 5 (a, decision 5): `access`, what each Bot said it can reach
     (rollcall_access), is merged per Bot the same way."""
     fresh = {"at": now(), "round": rnd, "masked": VERSION, "shape_only": True, "bots": list(bots), "findings": list(findings),
              "access": dict(access or {})}
@@ -239,7 +239,7 @@ def merge_rollcall(prev, rnd, findings, bots, answered, access=None):
 
 
 def rollcall_access(sh):
-    """What a Bot said it can reach, kept for the access map (batch 5, a; Ken's decision 5): from the reply's shape only, each
+    """What a Bot said it can reach, kept for the access map (batch 5, a; decision 5): from the reply's shape only, each
     routine's trigger and flags, the memory count (never memory text) and the reply's date. A routine's name is never kept: a naive
     Bot pastes memory text there (test_v071_rollcall_redteam), and the map only counts routines. PR B, Codex round 1 (1): nor is a
     connector's own text: only the vocabulary's label for it, or a count of other connectors (rollcall_said). The access map
@@ -647,7 +647,7 @@ def cmd_rollcall(args):
     try:
         return _rollcall(args, rdir)
     finally:                                   # every path: NOT RUN, an error partway, or a finished run
-        # Ken's pick (R01): without the owner's yes nothing is deleted; the daily check sweeps replies older than an hour
+        # Decision (R01): without the owner's yes nothing is deleted; the daily check sweeps replies older than an hour
         removed = delete_raw_replies(rdir) if getattr(args, "owner_said_yes", False) and owned_rollcall_dir(rdir) else 0
         if getattr(args, "owner_said_yes", False):
             removed += clear_legacy_replies()

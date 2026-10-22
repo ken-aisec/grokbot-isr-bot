@@ -7,7 +7,7 @@ grouping, file counts and state the Bot can write; Codex left four highs open (c
 Now a new or changed file in a platform folder is a platform update only when its path and exact bytes are on the vendor
 release list Watchtower ships (rules/platform-release.lock, held to MANIFEST.sha256). Anything else is a counted high, daily
 included, until the owner says yes to the exact bytes `wt.py fix` shows (`--approve-platform <code> --owner-said-yes`).
-Ken's decision (Oct 18) removed that yes: only the release list clears one, and the tests that used the yes now check it is
+A decision (Oct 18) removed that yes: only the release list clears one, and the tests that used the yes now check it is
 refused (tests/test_item8_release_only.py has the replays).
 
 Each test fails on the base (857ab38) unless its docstring says it is a contrast. The real-path tests (SubstringBypass,
@@ -215,7 +215,7 @@ class EngineBytes(_Platform):
         self.audit()
         self.assertNotIn(plant, wt.load_baseline()[0])
         self.assertEqual(len(self.counted_high(plant)), 1)
-        pv = self.preview()["platform_unverified"]                             # listed, never approved (Ken's decision, Oct 18)
+        pv = self.preview()["platform_unverified"]                             # listed, never approved (decision, Oct 18)
         self.assertEqual([f["where"] for f in pv["files"]], [plant])
         self.assertIn("platform-release.lock", self.approve("0" * 20))
         self.assertNotIn(plant, wt.load_baseline()[0])
@@ -523,7 +523,7 @@ class Docs(unittest.TestCase):
             return f.read()
 
     def test_the_release_list_is_well_formed_and_is_in_the_manifest(self):
-        """Filled from Ken's box (Oct 18): every line is `<sha256>  <path>` inside a platform folder, and wt reads it whole."""
+        """Filled from the maintainer's box (Oct 18): every line is `<sha256>  <path>` inside a platform folder, and wt reads it whole."""
         import re
         t = self.read("rules/platform-release.lock")
         lines = [l for l in t.splitlines() if l.strip() and not l.lstrip().startswith("#")]

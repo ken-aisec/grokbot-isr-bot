@@ -114,30 +114,30 @@ class DQ018RemovedBots(Box):
         self.skills(1); self.scanners()
         when = "2026-10-09T12:55:10+00:00"
         mk = lambda bot, rule, sub="": wt.finding(rule, "t", "high", ["X"], f"rollcall:{bot}{sub}", "ev", "fix")
-        fs = [mk("Alpha - BCA", "WT-L001"), mk("Tango - eggbot", "WT-L001"), mk("Tango - eggbot", "WT-M010", ":memory3"),
-              mk("Delta", "WT-L001"), mk("Zulu", "WT-T013", ":routine:Brief")]
+        fs = [mk("bot-a - Team", "WT-L001"), mk("bot-t - eggbot", "WT-L001"), mk("bot-t - eggbot", "WT-M010", ":memory3"),
+              mk("bot-d", "WT-L001"), mk("bot-z", "WT-T013", ":routine:Brief")]
         with mock.patch.object(wt, "now", return_value=when):
-            wt.save_json(wt.state_path("rollcall_findings.json"), {"at": when, "masked": wt.VERSION, "bots": ["Alpha - BCA", "Delta", "Tango - eggbot", "Zulu"], "findings": fs})
+            wt.save_json(wt.state_path("rollcall_findings.json"), {"at": when, "masked": wt.VERSION, "bots": ["bot-a - Team", "bot-d", "bot-t - eggbot", "bot-z"], "findings": fs})
         fresh = (wt.dt.datetime.now(wt.dt.timezone.utc) - wt.dt.timedelta(days=2)).isoformat()
         rc = wt.load_json(wt.state_path("rollcall_findings.json"), {}); rc["at"] = fresh; wt.save_json(wt.state_path("rollcall_findings.json"), rc)
         self.audit()
         self.assertEqual(len([f for f in self.snap()["findings"] if f["where"].startswith("rollcall:")]), 5)
         # the owner removed two Bots; the roster the Bot saves now lists who is left
         exp = os.path.join(os.environ["WATCHTOWER_HOME"], "exports"); os.makedirs(exp, exist_ok=True)
-        json.dump([{"name": "Delta", "kind": "bot"}, {"name": "Zulu", "kind": "bot"}, {"name": "Ops", "kind": "room"}], open(os.path.join(exp, "roster.json"), "w"))
+        json.dump([{"name": "bot-d", "kind": "bot"}, {"name": "bot-z", "kind": "bot"}, {"name": "room-o", "kind": "room"}], open(os.path.join(exp, "roster.json"), "w"))
         r = self.audit()
         left = sorted({f["where"].split(":")[1] for f in self.snap()["findings"] if f["where"].startswith("rollcall:")})
-        self.assertEqual(left, ["Delta", "Zulu"])
+        self.assertEqual(left, ["bot-d", "bot-z"])
         self.assertTrue(any("2 Bots no longer on the roster" in n for n in r.get("notes", [])), r.get("notes"))
         md = wt.render_md(self.snap(), [], "2026-W41")
-        self.assertNotIn("Tango", md); self.assertNotIn("Alpha - BCA", md)
-        self.assertEqual(wt.load_json(wt.state_path("rollcall_findings.json"), {})["bots"], ["Delta", "Zulu"])   # pruned at the source
+        self.assertNotIn("bot-t", md); self.assertNotIn("bot-a - Team", md)
+        self.assertEqual(wt.load_json(wt.state_path("rollcall_findings.json"), {})["bots"], ["bot-d", "bot-z"])   # pruned at the source
 
     def test_old_roll_call_data_ages_out(self):
         self.skills(1); self.scanners()
         old = (wt.dt.datetime.now(wt.dt.timezone.utc) - wt.dt.timedelta(days=wt.ROLLCALL_MAX_DAYS + 1)).isoformat()
-        wt.save_json(wt.state_path("rollcall_findings.json"), {"at": old, "masked": wt.VERSION, "bots": ["Delta"],
-                                                               "findings": [wt.finding("WT-L001", "t", "high", ["X"], "rollcall:Delta", "ev", "fix")]})
+        wt.save_json(wt.state_path("rollcall_findings.json"), {"at": old, "masked": wt.VERSION, "bots": ["bot-d"],
+                                                               "findings": [wt.finding("WT-L001", "t", "high", ["X"], "rollcall:bot-d", "ev", "fix")]})
         self.audit()
         self.assertFalse([f for f in self.snap()["findings"] if f["where"].startswith("rollcall:")])
 

@@ -1,13 +1,13 @@
-"""Hardening batch 1 (Oct 16 adversarial review, items 1-3; Ken's approval Oct 16 via Forge).
+"""Hardening batch 1 (Oct 16 adversarial review, items 1-3; approved Oct 16).
 
-R8: no auto-allow line is accepted for a customer because it was accepted on Ken's box; a box keeps a line only after its owner's yes.
+R8: no auto-allow line is accepted for a customer because it was accepted on the maintainer's box; a box keeps a line only after its owner's yes.
 R2/R10: `accept` refuses decoy alarms and Confirmed findings and matches whole names only; `canary remove` and a re-taken
 `baseline` need the owner's yes. R4: an emptied, damaged or deleted baseline is a high alert, never a quiet fresh start.
 Every test marked "replay" fails on 754cb73; the ones marked "guard" pass there too."""
 import json, os, sys, threading, time, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, ROOT, wt
-from test_v071_ken_calls import BRIDGE3, BRIDGE5
+from test_v071_owner_calls import HOOK_ALLOW_A, HOOK_ALLOW_B
 
 OTHER = "Send email to the team list at team@example.com"
 
@@ -43,7 +43,7 @@ class NoShippedAutoAllow(Batch):
         self.assertEqual(json.load(open(os.path.join(ROOT, "rules", "accepted_auto_allow.json"))), [])
 
     def test_fresh_box_accepts_no_bridge_line(self):   # replay
-        self.settings(BRIDGE3, BRIDGE5); self.skills(1); self.audit()
+        self.settings(HOOK_ALLOW_A, HOOK_ALLOW_B); self.skills(1); self.audit()
         live = self.rule("WT-A002")
         self.assertEqual(len(live), 2, live)
         self.assertTrue(all(f["severity"] == "critical" and not f.get("accepted_exact") for f in live))
@@ -56,10 +56,10 @@ class NoShippedAutoAllow(Batch):
         self.assertEqual([f["evidence"] for f in self.rule("WT-A002", "suppressed")], [f"Allow automatically: {OTHER}"])
 
     def test_upgrade_shows_the_earlier_lines_and_keeps_them_only_after_the_owners_yes(self):   # replay
-        p = self.settings(BRIDGE3, BRIDGE5); self.skills(1)
+        p = self.settings(HOOK_ALLOW_A, HOOK_ALLOW_B); self.skills(1)
         old = [dict(wt.finding("WT-A002", "Auto-allow on a consequential action", "critical", ["ASI02", "ASI09"], f"{p}:{i}",
-                               f"Allow automatically: {b}", "Change it to Ask first."), accepted_exact={"sha256": fp(b), "label": "Claude bridge"})
-               for i, b in ((1, BRIDGE3), (2, BRIDGE5))]
+                               f"Allow automatically: {b}", "Change it to Ask first."), accepted_exact={"sha256": fp(b), "label": "reply hook"})
+               for i, b in ((1, HOOK_ALLOW_A), (2, HOOK_ALLOW_B))]
         wt.save_json(wt.state_path("last_findings.json"), {"at": wt.now(), "version": "0.7.1", "score": 90, "findings": [], "suppressed": old})
         self.audit()                                                                 # the first run after the upgrade
         live = self.rule("WT-A002")
@@ -68,7 +68,7 @@ class NoShippedAutoAllow(Batch):
             self.assertEqual(f["severity"], "critical")
             self.assertIn("used to accept this exact line", f["fix"])
             self.assertIn("auto-allow keep", f["fix"])
-        id3, id5 = fp(BRIDGE3), fp(BRIDGE5)                                       # an id is the whole sha256 (Codex, round 2)
+        id3, id5 = fp(HOOK_ALLOW_A), fp(HOOK_ALLOW_B)                                       # an id is the whole sha256 (Codex, round 2)
         code, o, _ = self.run_cmd("auto-allow")
         self.assertEqual(code, 0, o)
         self.assertIn(id3, o); self.assertIn(id5, o)
@@ -76,22 +76,22 @@ class NoShippedAutoAllow(Batch):
         code, o, _ = self.run_cmd("auto-allow", "keep", f"{id3},{id5}")
         self.assertEqual(code, 1, o); self.assertIn("NOT SAVED", o)
         self.assertFalse(os.path.exists(wt.state_path("accepted_auto_allow.json")))
-        code, o, _ = self.run_cmd("auto-allow", "keep", f"{id3},{id5}", "--owner-said-yes", "--reason", "my Claude bridge")
+        code, o, _ = self.run_cmd("auto-allow", "keep", f"{id3},{id5}", "--owner-said-yes", "--reason", "my reply hook")
         self.assertEqual(code, 0, o)
         kept = wt.load_json(wt.state_path("accepted_auto_allow.json"), [])
-        self.assertEqual(sorted(e["sha256"] for e in kept), sorted([fp(BRIDGE3), fp(BRIDGE5)]))
+        self.assertEqual(sorted(e["sha256"] for e in kept), sorted([fp(HOOK_ALLOW_A), fp(HOOK_ALLOW_B)]))
         self.assertTrue(any(e.get("event") == "auto-allow-keep" for e in self.ledger()))
         self.audit()
         self.assertEqual(self.rule("WT-A002"), [])
         self.assertEqual(len(self.rule("WT-A002", "suppressed")), 2)                 # listed under accepted risks
-        self.settings(BRIDGE3 + "/*", BRIDGE5)                                       # an edited line is a new line
+        self.settings(HOOK_ALLOW_A + "/*", HOOK_ALLOW_B)                                       # an edited line is a new line
         self.audit()
-        self.assertEqual([f["evidence"] for f in self.rule("WT-A002")], [f"Allow automatically: {BRIDGE3}/*"])
+        self.assertEqual([f["evidence"] for f in self.rule("WT-A002")], [f"Allow automatically: {HOOK_ALLOW_A}/*"])
 
     def test_an_unknown_or_stale_id_writes_nothing(self):   # replay
-        self.settings(BRIDGE3); self.skills(1); self.audit()
-        for ident in ("0" * 12, fp(BRIDGE5)[:12], fp(BRIDGE3)[:6], f"{fp(BRIDGE3)[:12]},{'0' * 12}", "0" * 64, fp(BRIDGE5),
-                      fp(BRIDGE3)[:12], fp(BRIDGE3)[:63], f"{fp(BRIDGE3)},{'0' * 64}"):
+        self.settings(HOOK_ALLOW_A); self.skills(1); self.audit()
+        for ident in ("0" * 12, fp(HOOK_ALLOW_B)[:12], fp(HOOK_ALLOW_A)[:6], f"{fp(HOOK_ALLOW_A)[:12]},{'0' * 12}", "0" * 64, fp(HOOK_ALLOW_B),
+                      fp(HOOK_ALLOW_A)[:12], fp(HOOK_ALLOW_A)[:63], f"{fp(HOOK_ALLOW_A)},{'0' * 64}"):
             code, o, _ = self.run_cmd("auto-allow", "keep", ident, "--owner-said-yes")
             self.assertEqual(code, 1, (ident, o))
             self.assertIn("NOT SAVED", o)

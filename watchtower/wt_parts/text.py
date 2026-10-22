@@ -38,7 +38,7 @@ def is_document_blob(b64):
 
 
 # Batch 6 (B5, DQ-043/044): one content check for every secret hit (WT-T011, WT-S001 and each gitleaks hit), on the secret value
-# only, never its line or its file's name. Fix round 3 (Codex 1, 2; Ken's rule): a value that looks like an example (FAKE or
+# only, never its line or its file's name. Fix round 3 (Codex 1, 2; the owner's rule): a value that looks like an example (FAKE or
 # placeholder text, an environment-variable reference, a key block whose body isn't a key, a checksum by its line's format) can
 # still be a working credential, and anyone can write one that way, so the check lowers nothing: the hit keeps its rule's
 # severity, title, counting and Confirmed/Worth-a-look rules, backs up and is backed up like any other, and is dismissed only as

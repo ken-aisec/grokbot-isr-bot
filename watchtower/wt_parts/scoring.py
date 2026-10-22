@@ -10,7 +10,7 @@ SCORE_CAP = {"critical": 50, "high": 25, "medium": 12, "low": 3}      # per seve
 EVIDENCE_RULES = frozenset((
     "WT-A001", "WT-A002", "WT-A003", "WT-A004", "WT-A005", "WT-C001", "WT-C003", "WT-C004", "WT-C005",
     "WT-D001", "WT-D002", "WT-I001", "WT-I002", "WT-I003", "WT-I004", "WT-I005", "WT-I006", "WT-I010", "WT-I011",
-    # Shell history: commands that actually ran on this computer, not wording (Ken, 2026-10-10). H007 is a file-mode fact.
+    # Shell history: commands that actually ran on this computer, not wording (decision, 2026-10-10). H007 is a file-mode fact.
     "WT-H001", "WT-H002", "WT-H003", "WT-H004", "WT-H005", "WT-H006", "WT-H007", "WT-H008", "WT-H009",
     "WT-K001", "WT-K002", "WT-K003", "WT-K004", "WT-K005", "WT-K006", "WT-M001", "WT-P001", "WT-R010",
     "WT-S003", "WT-S004", "WT-S005", "WT-W001", "WT-W002", "WT-X003", "WT-X004",
@@ -18,12 +18,12 @@ EVIDENCE_RULES = frozenset((
 HISTORY_SHRANK = "Shell history shrank since last check"
 NEW_SIGN_IN = "New sign-in in the shared browser"
 CONFIRMED, MAYBE_FINE = "Confirmed", "Worth a look (might be fine)"
-# v0.6.8 (Ken, Oct 10, after Cloudflare's MIT-licensed security-audit skill): a "Worth a look" finding carries no severity and
+# v0.6.8 (decision, Oct 10, after Cloudflare's MIT-licensed security-audit skill): a "Worth a look" finding carries no severity and
 # never moves the score; best-practice checks are Tips, also without severity or score.
 TIP_RULES = frozenset(("WT-R002", "WT-R003"))   # pattern-class best practice only; no evidence rule is moved
 SCOPE_RULES = frozenset(("WT-I007", "WT-I008"))   # v0.7.1 items 1 and 6: "Not scanned" and "Platform refresh" summaries are tips
 TIP = "Tip"
-# Batch 6 (B3, Ken's decision 8): a setting that is already safe, said as a Tip (no severity, never scored, never new). WT-C002
+# Batch 6 (B3, decision 8): a setting that is already safe, said as a Tip (no severity, never scored, never new). WT-C002
 # ("Ask every time" for running commands on this computer) left EVIDENCE_RULES for it; "Always allow" (WT-C001) stays critical.
 SETTING_TIPS = frozenset(("WT-C002",))
 VERB_AREA = (("sending email or messages", r"(?i)^(send|sends|sending|email|emails|message|messages|reply|replies|dm)$"),
@@ -74,7 +74,7 @@ def _skill_of(f):
 
 NO_OPINION = frozenset(("WT-X004", "WT-R010"))   # "couldn't finish" / "didn't parse": facts about the run, not the content
 
-# v0.7.1 precision item 2 (Ken, Oct 12): Confirmed means dangerous and reachable. Two votes count only when they are about the
+# v0.7.1 precision item 2 (decision, Oct 12): Confirmed means dangerous and reachable. Two votes count only when they are about the
 # same file and the same kind of risk; a wording hit alone is never Confirmed, it needs a behavior signal in the same file.
 RISK_KIND = {"WT-T004": "credential", "WT-T011": "credential", "WT-T011x": "credential", "WT-S001": "credential", "WT-S002": "credential", "WT-K003": "credential",
              "WT-T005": "exfil", "WT-T017": "exfil", "WT-T006": "pipe", "WT-T006k": "pipe", "WT-T002": "obfuscation",
@@ -103,7 +103,7 @@ SQL_SHAPE = re.compile(r"\b(select\b.*\bfrom\b|insert\s+into\b|update\s+[\w.`\"'
 
 def husk_messages_that_count(d, msgs):
     """DQ-011 (4): husk flags any f-string with a SQL keyword that a function returns, so a chat message such as
-    `return f"last30days update: {topic}..."` came back as SQL injection. Such a message counts only when the line it names
+    `return f"topic-digest update: {topic}..."` came back as SQL injection. Such a message counts only when the line it names
     (or the two after it, for a query split over lines) has the shape of a SQL statement. A query passed to execute(), a
     message of any other kind, a message without a file and line, or a line Watchtower can't read are kept
     as before."""
@@ -282,7 +282,7 @@ def _no_severity(f, cls, label):
         f["severity_was"], f["severity"] = f["severity"], "info"   # shown without a severity, never scored
 
 
-# v0.7.1 precision item 3 (Ken, Oct 12): evidence rules split the fact from the severity. The fact stays listed; the severity
+# v0.7.1 precision item 3 (decision, Oct 12): evidence rules split the fact from the severity. The fact stays listed; the severity
 # is only kept when the thing is reachable. WT-S004 (DQ-026: high only with a session cookie for a sensitive site) and WT-A001
 # (DQ-027: critical only when broader than one pinned address) already do this where they are made; FACT_ONLY holds the rest.
 FACT_NOTE = {"WT-D002": ("in a project nothing on this computer loads",
@@ -420,7 +420,7 @@ def label_findings(findings, covered=None):
     return out
 
 
-# v0.7.1 precision item 5 (Ken, Oct 12): one finding per root cause. Within one skill, findings about the same kind of risk
+# v0.7.1 precision item 5 (decision, Oct 12): one finding per root cause. Within one skill, findings about the same kind of risk
 # with the same label are one line; the other rules, files and engines are listed on it as "also flagged by". Keys, decoys,
 # change alerts and evidence (two engines agreeing, a decoy read) are never folded: each one is its own fact.
 GROUP_CLASSES = ("pattern", "tip", "corroborated", "platform")
@@ -494,7 +494,7 @@ def _changed_high(f):
 
 
 def group_changed_skills(fs):
-    """Ken, Oct 14: several reviewed skills changed is one finding listing each skill, not one high per skill. Still high.
+    """Decision, Oct 14: several reviewed skills changed is one finding listing each skill, not one high per skill. Still high.
     Each skill keeps its own record (fix, re-vet, diff and approvals work per skill); all but the first are marked
     `grouped_into` and are neither scored nor shown as lines of their own."""
     for f in fs:

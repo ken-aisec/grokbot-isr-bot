@@ -44,7 +44,7 @@ class QuietFalseAlarms(unittest.TestCase):
         self.assertEqual((l1["severity"], l1["label"]), ("info", wt.MAYBE_FINE))
 
     def test_a_lone_pattern_finding_carries_no_severity(self):
-        """Since Ken's refinement of Oct 10: not capped at medium but shown with no severity ("info") and never scored."""
+        """Since the owner's refinement of Oct 10: not capped at medium but shown with no severity ("info") and never scored."""
         out = wt.label_findings([F("WT-T013", "high", "rollcall:Bot:routine:x"), F("WT-T005", "critical", f"{self.md}:3"),
                                  F("WT-S002", "high", "/ws/notes.txt", source="gitleaks"), F("WT-X001", "high", "/ws/other", source="skillspector")])
         self.assertEqual([f["severity"] for f in out], ["info"] * 4)
@@ -71,11 +71,11 @@ class QuietFalseAlarms(unittest.TestCase):
     def test_roll_call_findings_only_back_up_their_own_bot_line(self):
         out = wt.label_findings([F("WT-T013", "high", "rollcall:Alpha:routine:Brief:1"), F("WT-L001", "high", "rollcall:Alpha"),
                                  F("WT-M010", "medium", "rollcall:Bravo:memory1"), F("WT-T013", "high", "rollcall:Bravo:routine:Digest:1")])
-        self.assertEqual([f["class"] for f in out], ["pattern", "pattern", "pattern", "pattern"])   # L001 is a pattern since Ken's call of Oct 10
+        self.assertEqual([f["class"] for f in out], ["pattern", "pattern", "pattern", "pattern"])   # L001 is a pattern since the decision of Oct 10
         self.assertEqual(out[0]["severity"], "info")
 
     def test_worth_a_look_findings_never_move_the_score(self):
-        """Replaced the 0.2 weight (Ken, Oct 10): an uncorroborated pattern finding counts for nothing."""
+        """Replaced the 0.2 weight (decision, Oct 10): an uncorroborated pattern finding counts for nothing."""
         p = wt.label_findings([F("WT-T013", "medium", "rollcall:B:routine:r")])
         e = wt.label_findings([F("WT-A003", "medium", "rules")])
         self.assertEqual(p[0]["class"], "pattern")

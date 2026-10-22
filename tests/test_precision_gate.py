@@ -16,8 +16,8 @@ from test_watchtower import fake_key  # noqa: E402
 import profiles  # noqa: E402
 
 MAX_WORTH_A_LOOK = 5
-# Ken, Oct 11: a POST pinned to one URL stays a critical WT-A002 (no toning down). The plan's "0 Confirmed" was written without it,
-# so the gate allows exactly this one finding, on the bridge line only, until Ken rules otherwise.
+# Decision, Oct 11: a POST pinned to one URL stays a critical WT-A002 (no toning down). The plan's "0 Confirmed" was written without it,
+# so the gate allows exactly this one finding, on the bridge line only, until the owner rules otherwise.
 KEN_KEEPS = {("WT-A002", "auto-review.txt:1")}
 
 
@@ -61,7 +61,7 @@ class BusyCleanBox(Box):
         self.assertTrue(self.quiet(self.run_cmd("daily", "--roots", *self.roots)[1]))
 
     def test_the_pinned_bridge_post_stays_critical(self):
-        """Ken, Oct 11: no toning down. If this fails, a precision change softened it: put it back, don't edit the test."""
+        """Decision, Oct 11: no toning down. If this fails, a precision change softened it: put it back, don't edit the test."""
         self.audit()
         a2 = [f for f in self.snap()["findings"] if f["rule"] == "WT-A002"]
         self.assertEqual([(f["severity"], f["where"].endswith("auto-review.txt:1")) for f in a2], [("critical", True)])

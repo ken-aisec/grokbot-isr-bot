@@ -1,4 +1,4 @@
-"""Ken, Oct 13 (item 8 dry run follow-up): Codex's and Claude's own built-ins, the platform's /tmp/hooks hook, and the platform's
+"""Decision, Oct 13 (item 8 dry run follow-up): Codex's and Claude's own built-ins, the platform's /tmp/hooks hook, and the platform's
 masked-secret store are Platform lines (shown, not scored). Owner plugins and stray keys still count. Replays, anonymized."""
 import json, os, stat, sys, unittest
 

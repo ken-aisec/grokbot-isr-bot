@@ -1,6 +1,6 @@
 """Batch 6 PR3, C (code part): the scanner lock that ships empty is tested, visibly, and install.sh extracts without ownership.
 
-scripts/scanner-bins.lock lists no program yet: Ken fills it before a release (docs/KNOWN-LIMITS.md, the plan's section 5), and
+scripts/scanner-bins.lock lists no program yet: the maintainer fills it before a release (docs/KNOWN-LIMITS.md, the plan's section 5), and
 publish.sh refuses to publish until every required scanner has a line. Until then the release-complete test is an expected
 failure, reported as one on every run. Once the lock is filled it becomes an unexpected success, which fails the run on Python
 3.11 and later until its decorator is removed; from then on it guards against emptying the lock. A tripwire both ways.

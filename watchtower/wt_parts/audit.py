@@ -81,7 +81,7 @@ def audit(roots, exports, quick=False):
     base, base_status, base_why = load_baseline()
     # item 8 (R3): no vendor provenance, a counted high. Checked before any exemption (Codex, item 8 review 1: Watchtower's own
     # watchtower-fix/SKILL.md copied into .grok/bundled/skills passed as its own release, with no line for that path). Review 2
-    # (high 3): a matching baseline.json line is not provenance. Ken's decision (Oct 18): only the release list is, on every run; a
+    # (high 3): a matching baseline.json line is not provenance. Decision, Oct 18: only the release list is, on every run; a
     # first run (a new box, or one whose state was wiped) vouches for nothing.
     unproven = platform_unproven(manifest)
     for p in sorted(unproven):
@@ -203,7 +203,7 @@ def audit(roots, exports, quick=False):
     for p in walk(roots, max_depth=6):
         if p in known or p in decoys or os.path.basename(p) in SESSION_FILES:
             continue
-        if is_platform_secret_store(p):   # Ken, Oct 13: the platform's masked-secret store; never read, only noted
+        if is_platform_secret_store(p):   # Decision, Oct 13: the platform's masked-secret store; never read, only noted
             fs.append(platform_secret_store_note(p))
             continue
         # v0.7.0 review R1: no sample-folder or quarantine skip here. A key is a key wherever it sits, and the

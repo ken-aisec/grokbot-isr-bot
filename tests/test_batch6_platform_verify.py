@@ -1,6 +1,6 @@
-"""Batch 6 PR1, B1 (Ken's decision: option D) and B2: Grok Bot's own metadata JSON verified by content.
+"""Batch 6 PR1, B1 (decision: option D) and B2: Grok Bot's own metadata JSON verified by content.
 
-rules/platform-normalize.json (still MANIFEST-held, still shipped EMPTY until Ken's spike data lands) may now name, per file:
+rules/platform-normalize.json (still MANIFEST-held, still shipped EMPTY until the maintainer's spike data lands) may now name, per file:
 - `fields`: values the loader never reads, each with an exact type, a "*" step for list elements, and two more types
   (epoch_ms_number, uuid);
 - `units`: where the per-skill or per-file units are and the file in the same platform root each must equal. A skill_text unit's

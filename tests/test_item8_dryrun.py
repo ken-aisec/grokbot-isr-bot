@@ -58,7 +58,7 @@ class ArchiveAndCandidatesLeak(Box):
 
     def test_project_agents_skills_in_a_clone_is_not_live_but_home_one_is(self):
         self.assertFalse(wt.is_live_skill_path(os.path.join(self.ws, "kb-clone", ".agents", "skills", "3d-brain", "SKILL.md")))
-        self.assertTrue(wt.is_live_skill_path(os.path.join(self.home, ".agents", "skills", "last30days", "SKILL.md")))
+        self.assertTrue(wt.is_live_skill_path(os.path.join(self.home, ".agents", "skills", "topic-digest", "SKILL.md")))
 
 
 class ListenerWordingAlone(Box):

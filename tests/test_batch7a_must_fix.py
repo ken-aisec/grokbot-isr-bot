@@ -1,4 +1,4 @@
-"""Batch 7a: batch 6 PR2's four must-fix highs (Codex round 4 on 7060724, docs/KNOWN-LIMITS.md before this batch). Ken's
+"""Batch 7a: batch 6 PR2's four must-fix highs (Codex round 4 on 7060724, docs/KNOWN-LIMITS.md before this batch). The owner's
 rule: when unsure, mask more or call it real, never less.
 
 1: a JSON-serialized PGP armor whose comment headers hold a literal \\n-----END …----- and a whole inner BEGIN/END pair kept the
@@ -147,7 +147,7 @@ class SerializedArmor(Box):   # assertions on masked text report counts and yes/
 
     def test_codex_case_serialized_once_and_twice(self):   # replay (a3e535e: every body line kept, masked 8)
         block, bits = pgp_secret_block(CODEX_COMMENTS)
-        for depth in (1, 2):   # the comment's inner BEGIN has no END at its level, so it hides to the end of the text (Ken)
+        for depth in (1, 2):   # the comment's inner BEGIN has no END at its level, so it hides to the end of the text (owner decision)
             self.assert_hidden(serialized(block, depth), bits, depth)
 
     def test_fake_end_then_a_literal_break(self):   # replay (a3e535e: the block ended at the fake END, the body after it kept)
@@ -210,7 +210,7 @@ class SerializedArmor(Box):   # assertions on masked text report counts and yes/
         self.assertEqual(wt.pem_kind(text, text.index("-----BEGIN")), "real")
         self.assertNotIn("FAKE", wt.mask_secrets(text))
 
-    def test_no_strict_end_hides_to_the_end_of_the_text(self):   # guard (new): Ken's choice, the stricter one
+    def test_no_strict_end_hides_to_the_end_of_the_text(self):   # guard (new): the owner's choice, the stricter one
         block, bits = pgp_secret_block("Comment: made now")
         text = json.dumps({"k": block.replace("\n-----END PGP", "\\n-----END PGP"), "after": "visible"})   # only a literal END
         (_, _, _, es, _, _, hide), = wt.armor_blocks(text)

@@ -52,7 +52,7 @@ class Base(unittest.TestCase):
 
 class RepliesNeverOutliveARun(Base):
     def test_not_run_reads_and_deletes_nothing(self):
-        """Ken's R01 decision (Oct 11): without the owner's yes nothing is read or deleted; the hourly daily sweep cleans up."""
+        """The R01 decision (Oct 11): without the owner's yes nothing is read or deleted; the hourly daily sweep cleans up."""
         p = self.reply()
         code, out, _ = self.run_wt("rollcall")
         self.assertEqual(code, 2); self.assertIn("NOT RUN", out)

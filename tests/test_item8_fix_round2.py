@@ -115,7 +115,7 @@ class BaselineIsNotProvenance(_Platform):
         self.assertEqual(len(self.counted_high(plant)), 1)
         pv = self.preview()["platform_unverified"]
         self.assertEqual([f["where"] for f in pv["files"]], [plant])
-        self.assertIn("platform-release.lock", self.approve("0" * 20))        # Ken's decision (Oct 18): no yes approves it
+        self.assertIn("platform-release.lock", self.approve("0" * 20))        # Decision, Oct 18: no yes approves it
         self.audit()
         self.assertEqual(len(self.counted_high(plant)), 1)
 
@@ -235,7 +235,7 @@ class LinkToTheOwnersFile(_Platform):
         own, plat = self.layout()
         pv = self.preview()["platform_unverified"]
         self.assertIn(plat, [f["where"] for f in pv["files"]], pv)
-        self.assertIn("platform-release.lock", self.approve("0" * 20))        # Ken's decision (Oct 18): no yes approves it
+        self.assertIn("platform-release.lock", self.approve("0" * 20))        # Decision, Oct 18: no yes approves it
         self.audit()
         self.assertEqual(len(self.counted_high(plat)), 1)
         add(own, "Changed again.\n")                                            # other bytes: a new alert

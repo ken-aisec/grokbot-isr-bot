@@ -403,7 +403,7 @@ def gitleaks_findings(roots, notes):
             if os.path.abspath(str(leak.get("File") or "")) in decoys:
                 continue
             if is_platform_secret_store(str(leak.get("File") or "")):
-                continue                                  # Ken, Oct 13: the platform's masked-secret store is one Platform note (WT-I009)
+                continue                                  # Decision, Oct 13: the platform's masked-secret store is one Platform note (WT-I009)
             if in_toolchain_tree(str(leak.get("File") or "")):
                 skipped_tool += 1
                 continue                                  # item 8 dry run: test vectors in a language toolchain or package store                                  # Watchtower's own decoys (their names are this install's, not in this config)

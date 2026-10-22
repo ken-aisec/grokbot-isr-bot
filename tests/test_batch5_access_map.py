@@ -1,6 +1,6 @@
 """Batch 5, item a: the access map, a plain answer to "what can my Bots reach?", built only from what Watchtower already collects.
 
-Ken's decisions (Oct 18): MCP configs give server names, transport and URL host only, never env, args, headers or a URL's path (4);
+Decisions (Oct 18): MCP configs give server names, transport and URL host only, never env, args, headers or a URL's path (4);
 each Bot's part is what it said in the roll-call, kept per Bot and labelled "what the Bot said; not checked" (5).
 
 Tests marked "replay" fail on 77dedd1 on their assertion (measured with 77dedd1's watchtower/ sources and rules, this file in place);
@@ -14,7 +14,7 @@ AGENT = "1b2c3d4e-0000-4000-8000-00000000d31a"
 FAKES = ("FAKEenvVALUE", "FAKEargVALUE", "FAKEheaderVALUE", "FAKEurlPATH", "FAKEurlQUERY", "FAKEmemoryTEXT", "FAKEtranscriptTEXT",
          "FAKEauthFILE", "FAKEcookieVALUE", "FAKEprofileFIELD", "FAKEhookTOKEN", "FAKEreplyTEXT", "FAKEportUSER")
 SETTINGS = {"autoReviewInstructions": {
-                "allowAutomatically": ["HTTP POST to the Claude bridge at https://claude-grok-bridge.vercel.app/api/bridge only",
+                "allowAutomatically": ["HTTP POST to the reply hook at https://reply-hook.example.invalid/api/hook only",
                                        "Run the test suite in ~/projects/app"],
                 "askFirst": ["sending email or messages", "publishing or posting", "purchases or payments", "deleting data",
                              "changing permissions, settings, routines or connectors"]},
@@ -22,12 +22,12 @@ SETTINGS = {"autoReviewInstructions": {
 MCP = {"mcpServers": {
     "github": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-github@1.0.0", "FAKEargVALUE"], "env": {"GITHUB_PAT": "FAKEenvVALUE"}},
     "notion": {"url": "https://FAKEportUSER@mcp.notion.com:8443/FAKEurlPATH/sse?key=FAKEurlQUERY", "headers": {"Authorization": "Bearer FAKEheaderVALUE"}}}}
-FOXTROT = {"name": "Foxtrot", "connectors": ["Gmail", "Google Calendar"],
+BOT_F = {"name": "bot-f", "connectors": ["Gmail", "Google Calendar"],
            "routines": [{"name": "Morning digest", "trigger": "schedule", "sends_or_posts": True, "asks_first": False, "reads_outside_content": False},
                         {"name": "Notes", "trigger": "schedule", "sends_or_posts": False, "asks_first": True, "reads_outside_content": False}],
            "memories": {"count": 14, "loosen_permissions": 0, "from_outside_content": 0}, "ask_first": [], "auto_allow_rules": 0,
            "sends_or_posts_without_asking": False, "reads_outside_content": False, "memory_text": "FAKEreplyTEXT"}
-ECHO = {"name": "Echo", "connectors": [], "routines": [{"name": "Tidy", "trigger": "schedule", "sends_or_posts": False, "asks_first": True}],
+ECHO = {"name": "bot-e", "connectors": [], "routines": [{"name": "Tidy", "trigger": "schedule", "sends_or_posts": False, "asks_first": True}],
         "memories": {"count": 2, "loosen_permissions": 0, "from_outside_content": 0}}
 
 
@@ -71,12 +71,12 @@ class _Access(Box):
         w(os.path.join(h, "projects", "tools", "mcp.json"), "{not json")
         w(os.path.join(h, "sand-data", "workflows", "digest", "SKILL.md"),
           "---\nname: digest\ndescription: Daily digest.\n---\nPost the summary to https://hooks.slack.com/services/T0AAAA/B0BBBB/FAKEhookTOKEN when done.\n")
-        w(os.path.join(h, "agent-data", "agents", AGENT, "profile.json"), {"name": "Delta", "notes": "FAKEprofileFIELD"})
+        w(os.path.join(h, "agent-data", "agents", AGENT, "profile.json"), {"name": "bot-d", "notes": "FAKEprofileFIELD"})
         w(os.path.join(h, "agent-data", "agents", AGENT, "memories.json"), [{"text": "FAKEmemoryTEXT"}])
         w(os.path.join(h, "agent-data", "agent-transcripts", AGENT, "t.jsonl"), '{"text": "FAKEtranscriptTEXT"}\n')
-        w(self.wt_home("exports", "roster.json"), [{"name": n, "kind": "bot"} for n in ("Foxtrot", "Echo", "Delta")])
+        w(self.wt_home("exports", "roster.json"), [{"name": n, "kind": "bot"} for n in ("bot-f", "bot-e", "bot-d")])
         if rollcall:
-            self.rollcall(FOXTROT, ECHO)
+            self.rollcall(BOT_F, ECHO)
 
     def audit_json(self):
         code, out, err = self.run_cmd("audit", "--roots", *self.roots, "--budget", "0")
@@ -117,7 +117,7 @@ class WhoCanReachWhat(_Access):
         for line in ("All your Bots share this computer, so every Bot can use everything in the first list.",
                      "- Browser: signed in to 2 sites, including github.com and mail.google.com.",
                      "- Command-line sign-ins: OpenAI Codex CLI login. Grok Bot's own CLI sign-in is there too (Watchtower never reads it).",
-                     "- Allowed without asking: 1 rule lets Bots send things out without asking you (\"HTTP POST to the Claude bridge at [link] only\"); "
+                     "- Allowed without asking: 1 rule lets Bots send things out without asking you (\"HTTP POST to the reply hook at [link] only\"); "
                      "1 rule lets Bots run commands without asking you (\"Run the test suite in ~/projects/app\").",
                      "- Running programs: Bots can run programs without asking you (Execution on Local Computer: Always allow).",
                      # PR B, Codex round 2 (notes): outside the audit this line is the last audit's, and says so with its date
@@ -126,9 +126,9 @@ class WhoCanReachWhat(_Access):
                      "link can post to that channel.",
                      "- Tool connections (MCP): 2 tools in 2 files: github and notion (mcp.notion.com).",
                      "- Watchtower couldn't read the tool list in ~/projects/tools/mcp.json.",
-                     "- Foxtrot: Gmail and Google Calendar connectors; 2 routines, 1 sends without asking you; 14 memories.",
-                     "- Echo: no connectors; 1 routine; 2 memories.",
-                     "- Delta: didn't answer the roll-call.",
+                     "- bot-f: Gmail and Google Calendar connectors; 2 routines, 1 sends without asking you; 14 memories.",
+                     "- bot-e: no connectors; 1 routine; 2 memories.",
+                     "- bot-d: didn't answer the roll-call.",
                      "- What's inside memories, messages or saved passwords. Watchtower never reads them."):
             self.assertIn(line, out)
         self.assertIn(f"Each Bot (what each Bot said in the roll-call on {day.strftime('%b')} {day.day}; Watchtower can't check it)", out)
@@ -149,8 +149,8 @@ class WhoCanReachWhat(_Access):
         ids = [x["id"] for x in wt.auto_allow_lines()]
         self.assertIn(sh["auto_allow"][0]["id"], ids)   # the same id `wt.py auto-allow` shows
         self.assertEqual((sh["runs_programs"], sh["auto_review"], sh["settings"]), ("without asking", True, "found"))
-        self.assertEqual([b["name"] for b in m["bots"]], ["Echo", "Foxtrot"])
-        self.assertEqual(m["bots_silent"], ["Delta"])
+        self.assertEqual([b["name"] for b in m["bots"]], ["bot-e", "bot-f"])
+        self.assertEqual(m["bots_silent"], ["bot-d"])
         self.assertEqual(m["unknown"], ["connectors", "routines_on_box", "secrets_content"])
 
     def test_the_report_and_dashboard_show_it(self):   # replay (77dedd1: no section)
@@ -164,7 +164,7 @@ class WhoCanReachWhat(_Access):
         self.assertIn("\nShared by all Bots\n- Browser: signed in to 2 sites", sec)
         self.assertIn("\nWhat Watchtower can't see\n- Which connectors a Bot uses", sec)
         self.assertIn("<h2 style='font-size:16px'>Who can reach what</h2><div class='card'>", page)
-        self.assertIn("<li>Delta: didn&#x27;t answer the roll-call.</li>", page)
+        self.assertIn("<li>bot-d: didn&#x27;t answer the roll-call.</li>", page)
 
     def test_the_audit_json_has_one_access_line(self):   # replay (77dedd1: no access key)
         self.build()
@@ -293,13 +293,13 @@ class UnknownsAreStated(_Access):
         out = self.access()[1]
         self.assertIn("- No Bot has answered a roll-call in the last 35 days, so Watchtower doesn't know which connectors each Bot uses. "
                       "Ask Watchtower to run a roll-call.", out)
-        self.assertNotIn("Delta: didn't answer", out)
+        self.assertNotIn("bot-d: didn't answer", out)
 
     def test_a_stale_roll_call(self):   # replay
         self.build(rollcall=False)
         old = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=40)).replace(microsecond=0)
-        wt.save_json(wt.state_path("rollcall_findings.json"), {"at": old.isoformat(), "masked": wt.VERSION, "bots": ["Foxtrot"], "findings": [],
-                                                               "access": {"Foxtrot": {"connectors": ["Gmail"], "routines": []}}})
+        wt.save_json(wt.state_path("rollcall_findings.json"), {"at": old.isoformat(), "masked": wt.VERSION, "bots": ["bot-f"], "findings": [],
+                                                               "access": {"bot-f": {"connectors": ["Gmail"], "routines": []}}})
         self.audit_json()
         out = self.access()[1]
         self.assertIn(f"- The last roll-call answers are from {old.strftime('%b')} {old.day}, more than 35 days ago, so Watchtower doesn't know "
@@ -321,9 +321,9 @@ class UnknownsAreStated(_Access):
 
     def test_a_bot_that_answered_before_access_was_kept(self):   # replay
         self.build(rollcall=False)
-        wt.save_json(wt.state_path("rollcall_findings.json"), {"at": wt.now(), "masked": wt.VERSION, "bots": ["Foxtrot"], "findings": []})
+        wt.save_json(wt.state_path("rollcall_findings.json"), {"at": wt.now(), "masked": wt.VERSION, "bots": ["bot-f"], "findings": []})
         self.audit_json()
-        self.assertIn("- Foxtrot: answered the roll-call before Watchtower kept what each Bot can reach; the next roll-call fills this in.", self.access()[1])
+        self.assertIn("- bot-f: answered the roll-call before Watchtower kept what each Bot can reach; the next roll-call fills this in.", self.access()[1])
 
     def test_no_audit_yet(self):   # replay (77dedd1: argparse exit 2, not the plain error)
         try:
@@ -339,7 +339,7 @@ class RollcallKeepsAccess(_Access):
     def test_each_bots_answer_is_kept_as_its_shape(self):   # replay (77dedd1: no access in rollcall_findings.json)
         self.build()
         rc = json.load(open(wt.state_path("rollcall_findings.json")))
-        fox = (rc.get("access") or {}).get("Foxtrot")
+        fox = (rc.get("access") or {}).get("bot-f")
         self.assertEqual(fox and fox["connectors"], ["Gmail", "Google Calendar"])
         self.assertEqual(fox["memories"], 14)
         self.assertEqual(fox["routines"][0], {"trigger": "schedule", "sends_without_asking": True, "asks_first": False})   # never its name
@@ -349,19 +349,19 @@ class RollcallKeepsAccess(_Access):
     def test_a_late_reply_in_the_same_round_keeps_the_others(self):   # guard (Oct 15 merge, now for access too)
         self.build(rollcall=False)
         self.run_cmd("rollcall", "--question")
-        self.rollcall(FOXTROT, ECHO)
+        self.rollcall(BOT_F, ECHO)
         self.rollcall(dict(ECHO, connectors=["Slack"]))
         acc = json.load(open(wt.state_path("rollcall_findings.json")))["access"]
-        self.assertEqual(acc["Foxtrot"]["connectors"], ["Gmail", "Google Calendar"])
-        self.assertEqual(acc["Echo"]["connectors"], ["Slack"])
+        self.assertEqual(acc["bot-f"]["connectors"], ["Gmail", "Google Calendar"])
+        self.assertEqual(acc["bot-e"]["connectors"], ["Slack"])
 
     def test_a_removed_bot_leaves_the_map(self):   # guard (DQ-018: the roster decides)
         self.build()
         time.sleep(1.1)
-        w(self.wt_home("exports", "roster.json"), [{"name": "Foxtrot", "kind": "bot"}])
+        w(self.wt_home("exports", "roster.json"), [{"name": "bot-f", "kind": "bot"}])
         self.audit_json()
-        self.assertEqual([b["name"] for b in json.loads(self.map_file())["bots"]], ["Foxtrot"])
-        self.assertNotIn("Echo", json.load(open(wt.state_path("rollcall_findings.json"))).get("access", {}))
+        self.assertEqual([b["name"] for b in json.loads(self.map_file())["bots"]], ["bot-f"])
+        self.assertNotIn("bot-e", json.load(open(wt.state_path("rollcall_findings.json"))).get("access", {}))
 
 
 # ---------------------------------------------------------------- shape and size

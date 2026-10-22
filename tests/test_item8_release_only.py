@@ -1,4 +1,4 @@
-"""Item 8, Ken's decision (Oct 18): a file in a platform folder is trusted only when Watchtower's release list
+"""Item 8, decision (Oct 18): a file in a platform folder is trusted only when Watchtower's release list
 (rules/platform-release.lock) has its path and exact sha256. Nothing on the computer approves one.
 
 Two highs were open on 7ab522f:
@@ -22,7 +22,7 @@ def file_sha(p):
     return sha(p) if os.path.exists(p) else None
 
 
-class _Forge(_Platform):
+class _ForgedState(_Platform):
     def plant(self):
         p = self.md("helper")
         put(p, CLEAN.format(n="helper"))
@@ -40,7 +40,7 @@ class _Forge(_Platform):
         wt.save_json(wt.state_path("baseline.json"), base)
 
 
-class H1LocalRecords(_Forge):
+class H1LocalRecords(_ForgedState):
     def test_h1_a_record_with_its_ledger_line_grants_nothing(self):
         self.start()
         plant = self.plant()
@@ -79,7 +79,7 @@ class H1LocalRecords(_Forge):
         self.assertFalse(os.path.lexists(wt.state_path("platform_approved.json")))
 
 
-class H2FirstRunTrust(_Forge):
+class H2FirstRunTrust(_ForgedState):
     def test_h2_a_brand_new_box_trusts_no_unlisted_platform_file(self):
         plant = self.plant()
         self.start()
@@ -103,7 +103,7 @@ class H2FirstRunTrust(_Forge):
         self.assertNotIn(plant, wt.load_baseline()[0])
 
 
-class Migration(_Forge):
+class Migration(_ForgedState):
     def test_migration_a_vouched_baseline_and_old_record_are_alerts_again(self):
         self.start()
         plant = self.plant()

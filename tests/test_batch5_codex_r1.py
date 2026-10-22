@@ -135,7 +135,7 @@ class MultilineQuotedScalars(History):
         self.assertEqual(doc["masked"], wt.MASK_VERSION)
 
     def test_one_line_values_and_other_keys_are_read_as_before(self):   # guard
-        self.assertEqual(wt.mask_secrets('{"password": "FAKE", "user": "ken"}'), '{"password": [hidden], "user": "ken"}')
+        self.assertEqual(wt.mask_secrets('{"password": "FAKE", "user": "admin"}'), '{"password": [hidden], "user": "admin"}')
         self.assertEqual(wt.mask_secrets("'password': 'FAKE'\nafter: kept\n"), "'password': [hidden]\nafter: kept\n")
         for s in ('"name": "hello\n  there"\n', "'note': 'it''s\n  fine'\n", 'title: "a\nb"\n'):
             self.assertEqual(wt.mask_secrets(s), s, s)

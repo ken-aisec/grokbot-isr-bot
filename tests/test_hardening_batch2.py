@@ -1,4 +1,4 @@
-"""Hardening batch 2 (Oct 16 adversarial review R5, R1, R2; roadmap rows 4, 6, 7; Ken's approval Oct 16 via Forge).
+"""Hardening batch 2 (Oct 16 adversarial review R5, R1, R2; roadmap rows 4, 6, 7; approved Oct 16).
 
 Row 4 (R5): a Confirmed critical is "Act now" and grade F, a Confirmed high "Check this week" and at most C; the number stays a trend.
 Row 6 (R1): defensive wording is kept as a "Warning or example text" record, never dropped and never scored.

@@ -628,11 +628,11 @@ def upgrade_npm(projects):
 
 
 # Item 8 (R3, Codex highs 3 and 4) bound the owner's yes to the bytes `wt.py fix` showed, and reviews 1 to 3 bounded its reads and
-# pages. Ken's decision (Oct 18): there is no yes. A file in a platform folder is trusted only through the release list, so
+# pages. Decision, Oct 18: there is no yes. A file in a platform folder is trusted only through the release list, so
 # `fix --approve-platform` and `--platform-from` stay in the parser (a Bot following an older SKILL.md gets a plain answer, not an
 # argparse error) and are refused: nothing is read, written or approved. The preview shows the same read-only list daily does
 # (platform_open).
-PLATFORM_YES_REFUSED = ("NOT APPROVED: Watchtower doesn't approve platform files on this computer (Ken's decision, Oct 18). A file in Grok "
+PLATFORM_YES_REFUSED = ("NOT APPROVED: Watchtower doesn't approve platform files on this computer (Watchtower policy: only a release that lists a platform file clears it). A file in Grok "
                         f"Bot's, Codex's or Claude's own skill folder is trusted only when Watchtower's release list ({PLATFORM_LOCK_REL}) has its "
                         "path and exact sha256. Nothing was changed. If you didn't expect these files, remove them; a real vendor update clears "
                         "when a Watchtower release lists it.")
@@ -658,7 +658,7 @@ def cmd_fix(args):
     ch_skills, ch_other = changed_skills(fs)
     approving = getattr(args, "approve_platform", None) is not None or getattr(args, "platform_from", None) is not None
     if not (args.apply or args.upgrade or args.upgrade_projects or args.accept or args.revet or args.exception or args.quarantine or approving):
-        plat = platform_open(snap)   # item 8: a dict, never trimmed by fit; read-only (Ken's decision, Oct 18: nothing here approves them)
+        plat = platform_open(snap)   # item 8: a dict, never trimmed by fit; read-only (decision, Oct 18: nothing here approves them)
         out = fit({"mode": "preview (nothing changed)",
                    **({"platform_unverified": plat} if plat else {}),
                    "changed_skills_total": len(ch_skills),

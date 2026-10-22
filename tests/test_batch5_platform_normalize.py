@@ -1,7 +1,7 @@
 """Batch 5, item d3: the platform's own metadata JSON (.grok/bundled/manifest.json and the like) that its sync rewrites.
 
 d3a: an unverified metadata JSON is still a counted high, with honest wording: the platform rewrites it, don't delete it, it clears
-when a Watchtower release lists the version. d3b (Ken's decision 3, Oct 18): rules/platform-normalize.json names fields the sync
+when a Watchtower release lists the version. d3b (decision 3, Oct 18): rules/platform-normalize.json names fields the sync
 rewrites; the release list holds the digest of the file without them. The shipped spec is EMPTY, so nothing changes until a spike
 proves which fields are unused; these tests use a spec of their own. A file read strictly (no duplicate keys, NaN, BOM, link or
 oversize) with only those fields changed is a Platform refresh Tip; any other change stays a counted WT-I001.

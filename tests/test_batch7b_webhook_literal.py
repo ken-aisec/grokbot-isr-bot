@@ -285,7 +285,7 @@ class UnchangedElsewhere(Folder):
         self.assertEqual((r["verdict"], r["risk_score"]), ("Do not install", 80))
 
     def test_the_wt_a002_checks_still_pass(self):   # run unmodified
-        import test_claude_rereview as cr, test_v071_ken_calls as kc
+        import test_claude_rereview as cr, test_v071_owner_calls as kc
         suite = unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(cr.LintSlashJoinedActions),
                                     unittest.defaultTestLoader.loadTestsFromTestCase(kc.AcceptedExactAutoAllow)])
         res = unittest.TestResult()

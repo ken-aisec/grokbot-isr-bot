@@ -1,5 +1,5 @@
 # Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
-# ---------------------------------------------------------------- v0.6.8: the disprove step (Ken, Oct 10; after Cloudflare's MIT skill)
+# ---------------------------------------------------------------- v0.6.8: the disprove step (decision, Oct 10; after Cloudflare's MIT skill)
 DISMISS_LOG = "dismissed.jsonl"
 # Text that argues the content is safe. A scanner-facing reassurance is what an attacker would write, so it is a reason to KEEP.
 SAFE_CLAIM = re.compile(r"(?i)(\b(this|it)\s+is\s+(safe|fine|harmless|legit\w*|authori[sz]ed|approved|benign|trusted)\b|\bnot\s+(malicious|a\s+threat|dangerous|harmful)\b"
@@ -49,7 +49,7 @@ def dismiss(key, reason):
     else:
         entry.update(key=f["key"], rule=f["rule"], where=f["where"], cls=f.get("class") or ("evidence" if is_evidence(f) else "pattern"))
         m = SAFE_CLAIM.search(dismiss_context(f))
-        if f.get("unverified_platform"):   # item 8 review 1; Ken's decision (Oct 18): only a release that lists it clears one
+        if f.get("unverified_platform"):   # item 8 review 1; decision, Oct 18: only a release that lists it clears one
             ok, why = False, "a platform file not on the vendor's release list: only a Watchtower release that lists it clears it"
         elif is_evidence(f) or entry["cls"] != "pattern":
             ok, why = False, f"{entry['cls']} finding: only Worth-a-look findings can be dropped"
@@ -119,7 +119,7 @@ def by_sev(fs):
     return c
 
 
-# Batch 5 (d1, Ken's decision 2, Oct 18): Grok Bot's own files (scope "platform") keep their severity, label and key inside, so a
+# Batch 5 (d1, decision 2, Oct 18): Grok Bot's own files (scope "platform") keep their severity, label and key inside, so a
 # vendor rug pull still alerts and stays Confirmed, but they are never one of the owner's problems: not in open_by_severity, not
 # in `new`, not in breakdown's Confirmed list, not in the report's counts or the dashboard's tiles. Each is one plain line in
 # "Platform notes" instead. Unverified platform files (WT-I001/I002/I011) are never platform scope and still count.

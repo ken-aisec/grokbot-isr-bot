@@ -1,11 +1,11 @@
-"""Ken's two v0.7.1 calls (Oct 14, via Master Chief): exact accepted WT-A002 lines; changed skills grouped into one WT-I001."""
+"""Two v0.7.1 owner calls (Oct 14): exact accepted WT-A002 lines; changed skills grouped into one WT-I001."""
 import json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, ROOT, wt
 
-BRIDGE3 = "Send HTTP POST requests to the Claude bridge at https://claude-grok-bridge.vercel.app/api/bridge"
-BRIDGE5 = ("HTTP POST to https://claude-grok-bridge.vercel.app/api/bridge only (Bot replies to Ken's Claude bridge). "
-           "Ask first for any other URL.")
+HOOK_ALLOW_A = "Send HTTP POST requests to the reply hook at https://reply-hook.example.invalid/api/hook"
+HOOK_ALLOW_B = ("HTTP POST to https://reply-hook.example.invalid/api/hook only (Bot replies to the owner's reply hook). "
+                "Ask first for any other URL.")
 
 
 def lint(*allow):
@@ -14,32 +14,32 @@ def lint(*allow):
 
 
 class AcceptedExactAutoAllow(Box):
-    # Hardening batch 1 (R8, Oct 16): nothing ships; Ken's box holds the two lines in its state list after his yes (`auto-allow keep`).
+    # Hardening batch 1 (R8, Oct 16): nothing ships; the owner's box holds the two lines in its state list after the owner's yes (`auto-allow keep`).
     def setUp(self):
         super().setUp()
         wt.save_json(wt.state_path("accepted_auto_allow.json"), [{"rule": "WT-A002", "sha256": wt.auto_allow_fingerprint(f"Allow automatically: {a}"),
-                                                                 "label": "Claude bridge", "accepted": "owner"} for a in (BRIDGE3, BRIDGE5)])
+                                                                 "label": "reply hook", "accepted": "owner"} for a in (HOOK_ALLOW_A, HOOK_ALLOW_B)])
 
     def test_shipped_list_is_empty_and_the_box_list_holds_exactly_the_two_bridge_lines(self):
         self.assertEqual(json.load(open(os.path.join(ROOT, "rules", "accepted_auto_allow.json"))), [])
         os.remove(wt.state_path("accepted_auto_allow.json"))
         self.assertEqual(wt.accepted_auto_allow(), {})                     # a fresh box accepts nothing
         p = os.path.join(self.tmp, "settings.json")
-        json.dump({"autoReviewInstructions": {"allowInstructions": [BRIDGE3, BRIDGE5]}}, open(p, "w"))
+        json.dump({"autoReviewInstructions": {"allowInstructions": [HOOK_ALLOW_A, HOOK_ALLOW_B]}}, open(p, "w"))
         os.environ["WATCHTOWER_SETTINGS"] = p
         try:
-            ids = ",".join(wt.auto_allow_fingerprint(f"Allow automatically: {a}") for a in (BRIDGE3, BRIDGE5))
+            ids = ",".join(wt.auto_allow_fingerprint(f"Allow automatically: {a}") for a in (HOOK_ALLOW_A, HOOK_ALLOW_B))
             code, o, _ = self.run_cmd("auto-allow", "keep", ids, "--owner-said-yes")
         finally:
             os.environ.pop("WATCHTOWER_SETTINGS", None)
         self.assertEqual(code, 0, o)
         acc = wt.accepted_auto_allow()
         self.assertEqual(len(acc), 2)
-        for a in (BRIDGE3, BRIDGE5):
+        for a in (HOOK_ALLOW_A, HOOK_ALLOW_B):
             self.assertIn(wt.auto_allow_fingerprint(f"Allow automatically: {a}"), acc)
 
     def test_accepted_exact_entries_suppressed_but_shown(self):
-        fs = lint(BRIDGE3, BRIDGE5)
+        fs = lint(HOOK_ALLOW_A, HOOK_ALLOW_B)
         self.assertEqual(len(fs), 2)
         for f in fs:
             self.assertEqual(f["severity"], "critical")   # the rule keeps critical; acceptance is an owner decision on top
@@ -49,8 +49,8 @@ class AcceptedExactAutoAllow(Box):
         self.assertEqual(len(sup), 2)   # listed under accepted risks, not silently dropped
 
     def test_edited_or_broader_variant_still_critical(self):
-        for v in (BRIDGE3 + "/*", BRIDGE3.replace("/api/bridge", ""), BRIDGE5.replace(" Ask first for any other URL.", ""),
-                  BRIDGE3 + " and any other URL", "send " + BRIDGE3):
+        for v in (HOOK_ALLOW_A + "/*", HOOK_ALLOW_A.replace("/api/hook", ""), HOOK_ALLOW_B.replace(" Ask first for any other URL.", ""),
+                  HOOK_ALLOW_A + " and any other URL", "send " + HOOK_ALLOW_A):
             fs = lint(v)
             self.assertTrue(fs, v)
             self.assertTrue(all(f["severity"] == "critical" and not f.get("accepted_exact") for f in fs), v)
@@ -63,7 +63,7 @@ class AcceptedExactAutoAllow(Box):
 
     def test_accepted_line_in_settings_file_is_accepted_risk_in_audit(self):
         p = os.path.join(self.tmp, "settings.json")
-        json.dump({"autoReviewInstructions": {"allowInstructions": [BRIDGE3, "Send email to anyone"]}}, open(p, "w"))
+        json.dump({"autoReviewInstructions": {"allowInstructions": [HOOK_ALLOW_A, "Send email to anyone"]}}, open(p, "w"))
         os.environ["WATCHTOWER_SETTINGS"] = p
         try:
             self.skills(1); self.scanners(); self.audit()
@@ -73,7 +73,7 @@ class AcceptedExactAutoAllow(Box):
         live = [f for f in s["findings"] if f["rule"] == "WT-A002"]
         sup = [f for f in s["suppressed"] if f["rule"] == "WT-A002"]
         self.assertEqual(len(live), 1); self.assertIn("Send email", live[0]["evidence"]); self.assertEqual(live[0]["severity"], "critical")
-        self.assertEqual(len(sup), 1); self.assertIn("claude-grok-bridge", sup[0]["evidence"])
+        self.assertEqual(len(sup), 1); self.assertIn("reply-hook.example.invalid", sup[0]["evidence"])
 
 
 class ChangedSkillsGrouped(Box):

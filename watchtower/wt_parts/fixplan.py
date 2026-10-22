@@ -465,7 +465,7 @@ def key_status_severity(findings, status, ran=None):
                 f["evidence"] = f"{names(dead)} ({len(dead)} dead)"
                 f["fix"] = "Nothing to revoke. Tell Watchtower \"fix it\" to clear the copies."
             else:
-                # batch 6 (B5, Ken): a file's name no longer lowers a key (FIXTURE_PATH is gone); what is here is judged like a
+                # batch 6 (B5, owner decision): a file's name no longer lowers a key (FIXTURE_PATH is gone); what is here is judged like a
                 # key anywhere else
                 f["severity"] = "medium" if SEV_ORDER.index(f["severity"]) < SEV_ORDER.index("medium") else f["severity"]
                 f["title"] = KEY_MAYBE
@@ -617,7 +617,7 @@ def acceptable(f):
 
 
 # Hardening batch 1 (R2/R10, Oct 16): the one-at-a-time `accept` follows the same line as the fix. A decoy alarm, or something
-# Watchtower saw happen or two checks agree on, can't be marked as fine. An unused connector stays acceptable (Ken, D2): the
+# Watchtower saw happen or two checks agree on, can't be marked as fine. An unused connector stays acceptable (decision D2): the
 # owner keeps one on purpose, and nobody gains anything from it being accepted.
 ACCEPT_ONE_ALSO = frozenset(("WT-C004",))
 

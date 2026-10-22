@@ -846,7 +846,7 @@ PLATFORM_DANGER_KINDS = frozenset(RISK_KIND[r] for r in BEHAVIOR_RULES)   # cred
 
 
 def unconfirmed_platform_vote(f, fs):
-    """DQ-042 (Ken, Oct 16): vendor skill updates shouldn't be flagged. A routine update to the bundled learn skill came back
+    """DQ-042 (decision, Oct 16): vendor skill updates shouldn't be flagged. A routine update to the bundled learn skill came back
     "SkillSpector + husk; Memory Poisoning: Memory Manipulation; analysis-evasion: …" and daily raised a high alert. On the
     platform's own skill folders (platform_skill_path), two engines agreeing is Confirmed only when their words name a dangerous
     behavior (the kinds of BEHAVIOR_RULES), or a Confirmed critical/high Watchtower finding in the same skill backs it. Engines
@@ -862,7 +862,7 @@ def unconfirmed_platform_vote(f, fs):
 
 
 def summarize_refresh(fs):
-    """v0.7.1 precision item 6 (Ken, Oct 12): change alerts name the source. Changes to Grok Bot's own files (a platform refresh)
+    """v0.7.1 precision item 6 (decision, Oct 12): change alerts name the source. Changes to Grok Bot's own files (a platform refresh)
     are one summary line, a Tip, never an alert — unless the change brings a new Confirmed critical or high (Claude v0.7.1 F4).
     Then daily gets a real alert: the built-in turned bad; don't use it until Grok Bot fixes it. Unflagged platform changes
     still roll into the one Tip. Owner skill changes and installed-plugin changes still alert as before."""
@@ -952,7 +952,7 @@ def builtin(f):
 
 SECRET_RULES = ("WT-S001", "WT-S002", "WT-K003")   # a key or a decoy copy counts wherever it sits (v0.7.0 review R3)
 
-# v0.7.1 precision item 4 (Ken, Oct 12): built-ins never move the score. Grok Bot's own files (the bundled and managed skills,
+# v0.7.1 precision item 4 (decision, Oct 12): built-ins never move the score. Grok Bot's own files (the bundled and managed skills,
 # its config files, the platform's plugin catalog cache, the computer's own Python packages) go in a separate Platform section,
 # one line each. Plugins the owner installed still count as before (critical and high), and a new plugin nobody kept counts in full.
 PLATFORM = "Platform (Grok Bot's own file)"
@@ -997,11 +997,11 @@ def in_catalog_plugin(where):
     return False
 
 
-# Ken, Oct 13 (item 8 dry run): Codex's and Claude's own built-in skills and plugins are the platform's, shown not scored.
+# Decision, Oct 13 (item 8 dry run): Codex's and Claude's own built-in skills and plugins are the platform's, shown not scored.
 # (Folded into PLATFORM_ROOT_SUBS / under_platform_root — Claude v0.7.1 F3.)
-# Ken, Oct 13: the platform's masked-secret store (values saved through the secure secret request). Never read by Watchtower.
+# Decision, Oct 13: the platform's masked-secret store (values saved through the secure secret request). Never read by Watchtower.
 PLATFORM_SECRET_STORE = ("sand-data/box-secrets.json", "agent-data/box-secrets.json",
-                         ".grok/auth.json")   # Ken, Oct 14: the Grok CLI sign-in file is expected; that exact path only
+                         ".grok/auth.json")   # Decision, Oct 14: the Grok CLI sign-in file is expected; that exact path only
 GROK_CLI_SIGN_IN = ".grok/auth.json"
 
 
@@ -1074,7 +1074,7 @@ def mark_platform(fs):
     for f in fs:
         if f.get("scope") != "platform" or f.get("guarded") or f.get("reviewed"):
             continue
-        if f.get("class") in ("pattern", "tip") or f.get("platform_hook") or unconfirmed_platform_vote(f, fs):   # Ken, Oct 13: the platform's hook is a Platform line
+        if f.get("class") in ("pattern", "tip") or f.get("platform_hook") or unconfirmed_platform_vote(f, fs):   # Decision, Oct 13: the platform's hook is a Platform line
             f["class"], f["label"] = "platform", PLATFORM
             f["fix"] = f["fix"] if f.get("platform_hook") or f["rule"] == "WT-I009" else PLATFORM_FIX
             if f["severity"] != "info" and not f.get("platform_hook"):   # the hook keeps its low (listed fact), never scored

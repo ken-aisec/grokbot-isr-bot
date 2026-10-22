@@ -74,7 +74,7 @@ class InstallScanners(unittest.TestCase):
         return r, calls
 
     def test_a_lock_that_fails_stops_the_install(self):
-        """Ken, Oct 9: a failed lock skips only the Python scanners. The binaries still install from their own checksums,
+        """Decision, Oct 9: a failed lock skips only the Python scanners. The binaries still install from their own checksums,
         and the script still ends with CHECKSUM LOCK FAILED and a non-zero exit."""
         r, calls = self.run_install(PIP_FAILS="1")
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)

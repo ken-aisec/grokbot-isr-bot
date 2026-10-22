@@ -4,9 +4,9 @@
 # silently change is one in Watchtower's own release: rules/platform-release.lock, listed in MANIFEST.sha256 and held to it here
 # like the scanner lock. Lines are `sha256sum` output run from the home folder: "<sha256>  <path under the home folder>". A new or
 # changed file in a platform folder is a platform update only when its path and its exact bytes are listed; anything else is a
-# counted high until a Watchtower release lists it. Ken's decision (Oct 18): release list only. Nothing on the computer approves a
-# platform file (no owner's yes, no record, no first-run trust): all of that is state the Bot can write. Filled Oct 18 from Ken's
-# box (see its header); the platform's sync bookkeeping (PLATFORM_CHURN) is never listed and never needs to be.
+# counted high until a Watchtower release lists it. Decision, Oct 18: release list only. Nothing on the computer approves a
+# platform file (no owner's yes, no record, no first-run trust): all of that is state the Bot can write. Filled Oct 18 from the
+# maintainer's box (see its header); the platform's sync bookkeeping (PLATFORM_CHURN) is never listed and never needs to be.
 PLATFORM_LOCK_REL = "rules/platform-release.lock"
 PLATFORM_LOCK = os.path.join(HERE, "..", PLATFORM_LOCK_REL)   # tests point this at a file in their box; never read from the environment
 PLATFORM_LOCK_MAX_BYTES = 4 * 1024 * 1024
@@ -175,7 +175,7 @@ def unverified_platform_finding(p, h, was=None):
     """A new or changed file in a platform folder that the vendor release list doesn't include, with these bytes at this path:
     a counted high. No `refresh` key, so it never goes into the Platform refresh Tip and an audit never rolls it into the
     baseline; `unverified_platform` keeps it out of the platform scope, `fix --revet`, `accept` and `dismiss`. Only a Watchtower
-    release that lists it clears it (Ken's decision, Oct 18)."""
+    release that lists it clears it (decision, Oct 18)."""
     v = platform_vendor(p)
     fix = (f"Nothing shows {v} made this change, so treat it like a file someone added. Don't use this skill until you've looked. "
            "Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its "
@@ -208,7 +208,7 @@ def unverified_platform_finding(p, h, was=None):
 # owner's yes (`fix --approve-platform`), a record of it in state/platform_approved.json bound to a ledger line, and a first baseline
 # that vouched for every platform file on a new box. All of that lived in Watchtower's state, which the Bot can write, so a Bot
 # that wrote the record and its ledger line, or wiped the state for a new first run, made its own plant a platform file.
-# Ken's decision (Oct 18): release list only. A file in a platform folder is trusted only by platform_listed, on every run, first
+# Decision, Oct 18: release list only. A file in a platform folder is trusted only by platform_listed, on every run, first
 # or not; baseline.json, the old record and the ledger are never read for it, and `--approve-platform` is refused (approve_platform).
 OLD_PLATFORM_APPROVALS = "platform_approved.json"   # written by earlier versions; never read, never deleted (one note while it exists)
 
@@ -273,7 +273,7 @@ def _plain_rel(rel):
             and rel.startswith(tuple(sub + "/" for sub in PLATFORM_ROOT_SUBS)))
 
 
-# Batch 5 (d2, Ken's decision 1, Oct 18): findings Watchtower's team read in exact versions of the platform's own files. One entry
+# Batch 5 (d2, decision 1, Oct 18): findings Watchtower's team read in exact versions of the platform's own files. One entry
 # names the paths (under the home folder), the file's sha256, the rule and the line; it applies only to those bytes there, so any
 # change to the file (another sha256) ends it. The list ships in Watchtower's release and is held to MANIFEST.sha256 like the
 # release lock; its path is a constant tests point at their own file, never read from the environment or from state/. Nothing on
@@ -340,13 +340,13 @@ def platform_reviewed(f, manifest, snap=None):
     return next((e for e in entries if e["sha256"] == h and all(r & set(e["paths"]) for r in rels)), None)
 
 
-# Batch 5 (d3b, Ken's decision 3, Oct 18): a release-shipped normalization spec for the platform's metadata JSON. An entry names a
+# Batch 5 (d3b, decision 3, Oct 18): a release-shipped normalization spec for the platform's metadata JSON. An entry names a
 # path under the home folder and the exact key paths whose values the platform's own sync rewrites, each with a type. The file is
 # read strictly (a plain file of at most 1 MB, UTF-8 without a BOM, no duplicate keys, no NaN or Infinity, at most 64 deep); each
 # named value present must have exactly its type, or nothing is normalized; those values are dropped and the rest is written
 # compactly in its own key order. The release list then holds the sha256 of that canonical form for the path, like any other
 # line. Any other difference gives another digest, so it stays a counted WT-I001. The spec ships EMPTY: nothing is normalized until
-# a spike (Ken's shape diff with scripts/platform-json-shape.py, then a check of the host loader) proves which fields are unused.
+# a spike (the maintainer's shape diff with scripts/platform-json-shape.py, then a check of the host loader) proves which fields are unused.
 PLATFORM_NORMALIZE_REL = "rules/platform-normalize.json"
 PLATFORM_NORMALIZE = os.path.join(HERE, "..", PLATFORM_NORMALIZE_REL)
 PLATFORM_NORMALIZE_MAX_BYTES = 64 * 1024
@@ -357,7 +357,7 @@ NORMALIZE_TYPES = {"iso8601": re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?
                    "epoch_ms_number": None, "uuid": re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")}
 _PLATFORM_NORMALIZE_CACHE = {}
 
-# Batch 6 (B1, Ken's decision: option D): an entry may also name `units`, where the per-skill or per-file units of the file are and
+# Batch 6 (B1, decision: option D): an entry may also name `units`, where the per-skill or per-file units of the file are and
 # the file in the same platform root each must equal. Watchtower then checks, by content, that the file says nothing beyond what it
 # fingerprinted itself in this run (platform_verified): a skill_text unit (each element of the list at `at`, named by its `id`
 # field) has text fields equal to its `file` (the whole SKILL.md, what follows its frontmatter, or one frontmatter field); a
@@ -690,7 +690,7 @@ def platform_listed_normalized(p, h, manifest=None):
     return platform_verified(p, h, manifest)
 
 
-# PR #9 (Ken: few false alarms): the platform's own sync bookkeeping, rewritten at every sync with no release (Ken's box, Oct 18:
+# PR #9 (owner decision: few false alarms): the platform's own sync bookkeeping, rewritten at every sync with no release (the maintainer's box, Oct 18:
 # the empty .bucket-<id> marker Claude's plugin sync writes). It is no provenance subject: not walked, fingerprinted or listed
 # (rules/platform-release.lock's fill command skips exactly the files platform_churn_file skips). Exact name at exact place only:
 # it sits at a platform folder's top, never in a skill folder.

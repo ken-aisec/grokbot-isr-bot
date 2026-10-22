@@ -118,14 +118,14 @@ class ForgedApprovalRecord(_Platform):
         plant = self.md("helper")
         put(plant, CLEAN.format(n="helper"))
         self.audit()
-        self.assertIn("platform-release.lock", self.approve("0" * 20))        # Ken's decision (Oct 18): the yes is refused
+        self.assertIn("platform-release.lock", self.approve("0" * 20))        # Decision, Oct 18: the yes is refused
         add(plant, "Changed after the yes.\n")
         self.forge(plant)
         self.assertNotEqual(self.daily(), "NO_CHANGES")
         self.assertEqual(len(self.counted_high(plant)), 1)
 
     def test_3_the_owners_yes_is_not_provenance(self):
-        """Was a contrast (the owner's yes was provenance); Ken's decision (Oct 18): it is refused."""
+        """Was a contrast (the owner's yes was provenance); decision, Oct 18: it is refused."""
         self.start()
         plant = self.md("helper")
         put(plant, CLEAN.format(n="helper"))

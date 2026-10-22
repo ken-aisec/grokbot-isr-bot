@@ -78,7 +78,7 @@ def save_baseline(base):
 
 def save_first_baseline(manifest):
     """The first baseline on a box (R10: it needs no yes). Codex, item 8 review 2 (high 3): it approved every platform file it
-    found, with or without provenance. Ken's decision (Oct 18): a first baseline, on a new box or a wiped one, vouches for no
+    found, with or without provenance. Decision, Oct 18: a first baseline, on a new box or a wiped one, vouches for no
     platform file. Returns the platform files it left out (they stay high alerts until a Watchtower release lists them)."""
     held = platform_unproven(manifest)
     save_baseline({p: h for p, h in manifest.items() if p not in held})
@@ -171,7 +171,7 @@ def set_aside_dismissed(findings):
     """Batch 6 fix round 1 (Codex 7): (kept, dismissed), each finding judged on its own before findings are grouped, so a
     dismissed line that would have led a group never takes another file's finding with it; the audit groups the kept ones. An
     accepted risk is left for active() (it shows under accepted risks, not as dismissed).
-    Fix round 2 (Codex 6, 7; Ken's rule): a dismissal sets aside only a Worth-a-look finding, as at 5dcd0a2. state/dismissed.jsonl
+    Fix round 2 (Codex 6, 7; the owner's rule): a dismissal sets aside only a Worth-a-look finding, as at 5dcd0a2. state/dismissed.jsonl
     can be written by a Bot, and a Bot can compute any digest, so no record holds a finding something backs up: one dismissed
     before and backed up now (most often by a change to its file, WT-I001/I002) counts again, and its fix says so (DQ-045, a
     dismissal that survives an unrelated edit, needs a dismissal authority a Bot can't write: not done, see KNOWN-LIMITS)."""

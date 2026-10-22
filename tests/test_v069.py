@@ -1,4 +1,4 @@
-"""v0.6.9 scope (Ken, Oct 10): DQ-013..016, daily dismissals, environment profiles, red-team."""
+"""v0.6.9 scope (decision, Oct 10): DQ-013..016, daily dismissals, environment profiles, red-team."""
 import io, json, os, shutil, sys, tempfile, time, unittest, warnings
 from contextlib import redirect_stdout, redirect_stderr
 from unittest import mock
@@ -31,12 +31,12 @@ class Base(unittest.TestCase):
 
 
 class DQ014TimeoutIsNotASecondOpinion(Base):
-    def test_the_last30days_case(self):
+    def test_the_topic_digest_case(self):
         """Replay of the main box, 2026-10-10 12:22Z: husk's SQL flag on a chat-message line, SkillSpector timed out."""
-        skill = os.path.join(self.tmp, "home", "box", ".agents", "skills", "last30days")
+        skill = os.path.join(self.tmp, "home", "box", ".agents", "skills", "topic-digest")
         os.makedirs(os.path.join(skill, "scripts"))
-        open(os.path.join(skill, "SKILL.md"), "w").write("---\nname: last30days\ndescription: Watch topics.\n---\n")
-        lines = ["x = 1"] * 59 + ['    return f"\U0001F4F0 *last30days update: {topic}*\\n{new} new, {updated} updated"']
+        open(os.path.join(skill, "SKILL.md"), "w").write("---\nname: topic-digest\ndescription: Watch topics.\n---\n")
+        lines = ["x = 1"] * 59 + ['    return f"\U0001F4F0 *topic-digest update: {topic}*\\n{new} new, {updated} updated"']
         open(os.path.join(skill, "scripts", "watchlist.py"), "w").write("\n".join(lines) + "\n")
         x2 = wt.finding("WT-X002", "husk flagged this skill", "low", ["AST01"], os.path.join(skill, "scripts", "watchlist.py") + ":60",
                         "sql-injection: f-string", "Read it.", source="husk")
@@ -65,11 +65,11 @@ class Prepublish(Base):
     def test_dq015_owner_and_bot_names_in_a_routine_are_flagged(self):
         """Replay: the daily-watch routine named the owner and another Bot, and prepublish said PASS."""
         os.makedirs(os.path.join(self.tmp, "wt", "exports"), exist_ok=True)
-        open(os.path.join(self.tmp, "wt", "exports", "names.txt"), "w").write("Ken\n")
+        open(os.path.join(self.tmp, "wt", "exports", "names.txt"), "w").write("Owner\n")
         routine = ("Every day at 6:00 AM run the daily check. Never send without my approval.\n"
-                   "Ken's standing rule: Forge develops Watchtower; never message Forge.\n"
-                   "The result goes to Ken in this chat.\n")
-        code, r = self.stage({"routine-daily-watch.md": routine}, roster=[{"name": "Forge", "kind": "bot"}, {"name": "Watchtower", "kind": "bot"},
+                   "Owner's standing rule: Builder develops Watchtower; never message Builder.\n"
+                   "The result goes to Owner in this chat.\n")
+        code, r = self.stage({"routine-daily-watch.md": routine}, roster=[{"name": "Builder", "kind": "bot"}, {"name": "Watchtower", "kind": "bot"},
                                                                           {"name": "Ops room", "kind": "room"}])
         names = [f for f in r["findings"] if f["rule"] == "WT-PP08"]
         self.assertEqual(sorted({f["where"].rsplit(":", 1)[1] for f in names}), ["2", "3"])
@@ -78,7 +78,7 @@ class Prepublish(Base):
         self.assertFalse(any("forged" in f["evidence"] for f in names))
 
     def test_dq015_no_names_known_means_nothing_invented(self):
-        code, r = self.stage({"routine-a.md": "Never send without my approval. Ken reviews it."})
+        code, r = self.stage({"routine-a.md": "Never send without my approval. Owner reviews it."})
         self.assertFalse([f for f in r["findings"] if f["rule"] == "WT-PP08"])
 
     def test_dq016_a_stale_getting_started_is_flagged(self):

@@ -167,7 +167,7 @@ class R05R06KeyVerdicts(unittest.TestCase):
         self.assertNotEqual(f["title"], wt.KEY_DEAD)
         self.assertNotIn("Nothing to revoke", f["fix"])
         self.assertEqual(f["severity"], "medium")
-        self.assertNotEqual(wt.fix_class(f), "auto")             # Ken (R05): copies are cleared only on the owner's explicit yes
+        self.assertNotEqual(wt.fix_class(f), "auto")             # Decision (R05): copies are cleared only on the owner's explicit yes
 
     def test_a_live_key_on_line_2_does_not_verify_line_90(self):
         """R06: one verified credential at line 2 made an unrelated line-90 finding look verified (critical)."""

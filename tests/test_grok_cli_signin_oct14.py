@@ -1,4 +1,4 @@
-"""Ken, Oct 14: ~/.grok/auth.json (the Grok CLI sign-in file) is expected: one WT-I009 Platform note, never read, never scored.
+"""Decision, Oct 14: ~/.grok/auth.json (the Grok CLI sign-in file) is expected: one WT-I009 Platform note, never read, never scored.
 Only that exact path. A key anywhere else, including other files under ~/.grok, still counts. Replays, anonymized."""
 import base64, json, os, sys, unittest
 
