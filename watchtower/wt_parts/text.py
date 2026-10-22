@@ -567,6 +567,39 @@ def _negated(clause, rules):
     return False
 
 
+def _negated_example_list(text, m, walk, after, span, rules):
+    """b8i3 (WT-T004 only): "Do not inspect … with broad commands such as `env`, bare `set`, or `printenv`, and do not echo the
+    value." The walk stops at the comma after a code span, so `such` is never reached. The match is negated only when it closes a
+    "such as" list of code spans (at most 8) in a clause that opens with the negation, the prose after its span is plain, and its
+    sentence (spans masked) ends with no condition word in it or opening the next one. Any doubt means False."""
+    if not span or after is None or not after[1] or not NEG_HEAD.match(walk):
+        return False
+    cls = {CODE: "C", ",": ",", "or": "o", "and": "o", "nor": "o", "such": "s", "as": "a"}
+    toks = [t for t in (_guard_token(x) for x in GUARD_TOKEN.findall(walk)) if t]
+    shape = "".join(cls.get(t, "m" if t in LIST_MODIFIERS else "x") for t in toks)
+    if shape.count("C") > 8 or not EXAMPLE_LIST.search(shape):
+        return False
+    a = text.rfind("\n", 0, m.start()) + 1
+    b = text.find("\n", m.end())
+    b = len(text) if b == -1 else b
+    if b - a > LINE_CAP:
+        return False
+    line = text[a:b]
+    sp = _spans(line)
+    if sp is None:
+        return False
+    ml = list(line)
+    for x0, x1, _ in sp:
+        ml[x0:x1] = CODE * (x1 - x0)
+    masked, s, e = "".join(ml), m.start() - a, m.end() - a
+    st = max([z.end() for z in SENTENCE_END.finditer(masked, 0, s)], default=0)
+    end = SENTENCE_END.search(masked, e)
+    if not end or CONDITION.search(masked[st:end.end()]):
+        return False
+    nxt = "\n".join(text[a + end.end():a + end.end() + 80].split("\n")[:2])
+    return not CONDITION.match(nxt.lstrip(" \t\r\n*_>-"))
+
+
 LINE_CAP, SPAN_CAP, ARGS_CAP, CLAUSE_CAP, AFTER_CAP, TOKEN_CAP, NEST_CAP, LIST_CAP = 4000, 300, 300, 300, 200, 200, 3, 200
 CODE = "\x01"                                    # a masked code span: one filler noun in the prose around it
 SENTENCE_END = re.compile(r"[.!?](?=\s|$)")      # quote-unaware: a quote never hides a sentence end (the 5" of 5"-wide)
@@ -579,6 +612,12 @@ HEADING = re.compile(r"^ {0,3}#{1,6}[ \t]+")      # a Markdown heading marker at
 AFTER_SEP = re.compile(r"(?i)(?:[ \t]*[;:]|[ \t]+[-–—]{1,2})[ \t]+(?P<phrase>(?:don'?t|do\s+not|never)\s+(?:follow|obey)\s+"
                        r"(?:it|this|them|that|these|those)|treat\s+(?:it|this|them|that|these|those)\s+as\s+(?:untrusted\s+)?data|"
                        r"(?:it|this|that)\s+is\s+(?:an?\s+)?(?:attack|injection|prompt[- ]injection))[ \t]*(?:[.!](?=\s|$)|$)")
+# b8i3: a negated "such as" list of code spans (_negated_example_list). Walk tokens: C a code span, "," o or/and/nor, s such,
+# a as, m a list modifier ("bare `set`"), x anything else.
+LIST_MODIFIERS = frozenset(("bare", "plain", "raw", "full"))
+EXAMPLE_LIST = re.compile(r"sa(?:m?C,o?)*m?C(?:,o?|,?o)m?$")
+NEG_HEAD = re.compile(r"(?i)^\s*(?:do\s+not|don't|never|avoid)\b")
+CONDITION = re.compile(r"(?i)\b(unless|except|until|if|when|whenever|but|only|otherwise|instead|however)\b")
 
 
 def _spans(line):
@@ -841,6 +880,7 @@ def _wording_guard(text, m, rules, prev_end):
 # are removed: an override that names a config file or a reviewer's output (T001), an env file copied into another (T004), and
 # (round 2, H2) "Do not debug with `env`, `printenv` …", whose negation a trailing "unless …" makes conditional. Those false
 # alarms are open (docs/KNOWN-LIMITS.md, B7).
+# b8i3: a negated "such as" list of code spans is read as negated (WT-T004 only); the "with" list and anything conditional stay open.
 
 
 def in_warning(text, m, rules, rule_id, prev_end=None):
@@ -855,7 +895,7 @@ def in_warning(text, m, rules, rule_id, prev_end=None):
     walk, after, span, quoted = u
     if quoted:
         return "quoted"
-    if _negated(walk, rules):
+    if _negated(walk, rules) or (rule_id == "WT-T004" and _negated_example_list(text, m, walk, after, span, rules)):
         return "negated"
     if _listed(text, m, prev_end):
         return "list"
@@ -900,6 +940,20 @@ def sends_data(ev):
     if re.search(r"(?i)(\s-G\b|\s--get\b)", seg):
         return bool(re.search(r"(?i)(@\S|\$\(|`[^`\n]+`)", seg))
     return True
+
+
+# b8i3: `printenv NAME` prints one variable. It is a credential read only when the name is secret-shaped; a bare printenv, a
+# $name, an option, several names or more words after it stay WT-T004. Only redirects may follow the name, then the command ends.
+PRINTENV_ONE = re.compile(r"""[ \t]+(?:'(?P<sq>[^'\s$`\\]+)'|"(?P<dq>[^"\s$`\\]+)"|(?P<bare>[A-Za-z_]\w*))(?:[ \t]+\d?>>?[ \t]*[^\s;&|)`]+)*[ \t]*(?=[;&|)`\r\n]|$)""")
+SECRET_SHAPED = re.compile(r"(?i)key|token|secret|pass|auth|cred|cookie|session")
+
+
+def one_plain_variable(text, m):
+    """WT-T004: the match is `printenv` of one named variable that isn't secret-shaped (`printenv HOME`)."""
+    if m.group(0).lower() != "printenv":
+        return False
+    p = PRINTENV_ONE.match(text, m.end())
+    return bool(p) and not SECRET_SHAPED.search(p.group("sq") or p.group("dq") or p.group("bare"))
 
 
 # Codex, batch 4 round 1: a chat webhook is WT-T018 only when the URL's own host is exactly the chat service's, with its webhook
@@ -1701,6 +1755,8 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None)
                 continue   # a lookalike or nested host: not a chat service's webhook (a Slack or Discord one stays T005)
             if rule["id"] == "WT-T005" and CHAT_IN_T005.fullmatch(m.group(0)) and chat_webhook(text, m):
                 continue   # the owner's own chat webhook is WT-T018, not an exfiltration host
+            if rule["id"] == "WT-T004" and one_plain_variable(text, m):
+                continue   # b8i3: `printenv HOME` prints one plain variable, not the environment
             if is_ref and rule["id"] in REF_RULES and (rule["id"] not in GUARD_CODE_RULES or ref_line(text, m)):
                 if limit is not None and len(out) >= limit and (rule["id"], "ref") in kinds:
                     if cut is not None:

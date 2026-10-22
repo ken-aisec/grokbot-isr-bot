@@ -1,0 +1,121 @@
+"""Batch 8 item 3 (b8i3): WT-T004 content filters.
+
+WT-T004 ("Reads credential stores", high) raised three false alarms in a vendor's docs and, through them, a WT-X003 "SkillSpector
++ Watchtower" agreement:
+1 `cat .env.custom.bak >> .env.local`: `\\bcat\\s+\\S*\\.env\\b` matched `cat .env` in front of `.custom`. `cat` now counts only a
+  file named exactly `.env`, read or redirected into;
+2 "Do not inspect the environment with broad commands such as `env`, bare `set`, or `printenv`": the walk back from `printenv`
+  stopped at the comma after a code span. A negated "such as" list of code spans is now read as negated: lowered to medium and
+  still listed, never dropped. A condition word anywhere in the sentence (or opening the next one) keeps it high;
+3 `printenv 'ProgramFiles(x86)'`: one named variable that isn't secret-shaped is not a credential read.
+All three read the content only; nothing is skipped by folder or path name.
+
+Tests marked "replay" fail on 63714e4 on their assertion; "control" ones pass before and after. No key values appear anywhere."""
+import os, sys, unittest
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from test_boxes import Box, wt  # noqa: E402
+from test_dq042_vendor_skills import MARK, put, skillspector  # noqa: E402
+
+RULES = wt.load_rules()
+SKILL = "/ws/vendor-docs/SKILL.md"
+HEAD = "---\nname: vendor-docs\ndescription: Vendor setup notes.\n---\n"
+
+# the audited lines, verbatim
+CAT_REPLAY = "cat .env.custom.bak >> .env.local  # Re-append custom vars\n"
+NEG_REPLAY = ("Reuse an existing key without revealing it. Do not inspect the environment with broad commands such as `env`, bare `set`, "
+              "or `printenv`, and do not echo the value. Use a subshell so tracing is restored automatically:")
+PRINTENV_REPLAY = "printenv 'ProgramFiles(x86)' 2>/dev/null || true"
+
+
+def hits(text, rule="WT-T004", where=SKILL):
+    """(full, records): this rule's findings at full severity and its guarded records."""
+    fs = [f for f in wt.scan_text(text, where, RULES) if f["rule"] == rule]
+    return [f["severity"] for f in fs if not f.get("guarded")], [f.get("guarded") for f in fs if f.get("guarded")]
+
+
+# ---------------------------------------------------------------- 1: cat reads only a file named exactly .env
+class CatExactEnv(unittest.TestCase):
+    def test_custom_backup_append_is_not_a_read(self):   # replay
+        self.assertEqual(hits(CAT_REPLAY), ([], []))
+
+    def test_other_env_names_are_not_t004(self):   # replay
+        for t in ("cat .env.local", "cat .env.production", "cat .env.example > .env.local"):
+            self.assertEqual(hits(t), ([], []), t)
+
+    def test_exact_env_reads_still_flag(self):   # control
+        for t in ("cat .env", "cat .env | grep X", "cat .env; echo", "cat ~/.env", 'cat "$HOME/.env"', "cat '.env'", "cat .env*",
+                  "cat <.env", "Run cat .env."):
+            self.assertEqual(hits(t), (["high"], []), t)
+
+    def test_evidence_and_keys_unchanged(self):   # control: the same evidence, so the same key and the same dismissals
+        for t, ev in (("cat ~/.env > .env.local", "cat ~/.env"), ("cat .env.example >> .env", "cat .env")):
+            f = [g for g in wt.scan_text(t, SKILL, RULES) if g["rule"] == "WT-T004"]
+            self.assertEqual([(g["evidence"], g["severity"], g.get("guarded")) for g in f], [(ev, "high", None)], t)
+            self.assertEqual(f[0]["key"], wt.finding_key("WT-T004", SKILL + ":1", ev), t)
+
+
+# ---------------------------------------------------------------- 2: a negated "such as" list of code spans
+class NegatedSuchAsList(unittest.TestCase):
+    def test_such_as_list_is_lowered_not_dropped(self):   # replay
+        self.assertEqual(hits(NEG_REPLAY), ([], ["negated"]))
+        f = [g for g in wt.scan_text(NEG_REPLAY, SKILL, RULES) if g["rule"] == "WT-T004"]
+        self.assertEqual([(g["severity"], g["severity_was"]) for g in f], [("medium", "high")])
+
+    def test_bare_and_affirmative_reads_keep_severity(self):   # control
+        for t in ("printenv", "Run `printenv` and paste it"):
+            self.assertEqual(hits(t), (["high"], []), t)
+
+    def test_env_grep_unchanged(self):   # control: pinned, not a WT-T004 hit today
+        self.assertEqual(wt.scan_text("env | grep KEY", SKILL, RULES), [])
+
+    def test_conditional_or_unlisted_stays_high(self):   # control
+        for t in ("Do not use tools such as `env`, or `printenv` unless asked.",
+                  "Do not use tools such as `env`, or `printenv`. Unless support asks.",
+                  "Do not use tools such as `env`, run `printenv`.",
+                  "Use tools such as `env`, or `printenv`.",
+                  NEG_REPLAY.replace(", and do not", " when debugging, and do not")):
+            self.assertEqual(hits(t), (["high"], []), t)
+
+
+# ---------------------------------------------------------------- 3: printenv of one plain variable
+class PrintenvOneVariable(unittest.TestCase):
+    def test_one_plain_variable_is_not_a_read(self):   # replay
+        for t in (PRINTENV_REPLAY, "printenv HOME", "`printenv PATH`"):
+            self.assertEqual(hits(t), ([], []), t)
+
+    def test_secret_bare_dynamic_or_many_still_flag(self):   # control
+        for t in ("printenv GITHUB_TOKEN", "printenv AWS_SECRET_ACCESS_KEY", "printenv", "printenv A B", "printenv $VAR",
+                  "printenv session_id", "printenv -0 HOME", "Run printenv HOME to see it"):
+            self.assertEqual(hits(t), (["high"], []), t)
+
+
+# ---------------------------------------------------------------- the derived WT-X003 agreement
+class NoAgreementFromTheseLines(Box):
+    ISSUES = [{"severity": "HIGH", "category": "Privilege Escalation", "pattern": "Credential Access"}]
+    BODY = HEAD + "```bash\n" + CAT_REPLAY + PRINTENV_REPLAY + "\n```\n\n" + NEG_REPLAY + "\n" + MARK + "\n"
+
+    def run_on(self, body):
+        d = os.path.join(self.home, ".agents", "skills", "vendor-docs")
+        put(os.path.join(d, "SKILL.md"), body)
+        self.scanners(skillspector=skillspector(self.ISSUES))
+        self.audit()
+        return [f for f in self.snap()["findings"] if f["where"].startswith(d)]
+
+    def test_no_x003_from_these_lines(self):   # replay
+        fs = self.run_on(self.BODY)
+        self.assertEqual([f for f in fs if f["rule"] == "WT-X003"], [])
+        self.assertTrue([f for f in fs if f["rule"] == "WT-X001"])
+        # scan_text lowers it to medium (NegatedSuchAsList); the audit then labels every guarded record info (scoring.py, batch 2 R1)
+        self.assertEqual([(f["severity"], f.get("severity_was"), f.get("guarded"), f.get("label")) for f in fs if f["rule"] == "WT-T004"],
+                         [("info", "high", "negated", wt.GUARDED_LABEL)])
+
+    def test_exact_env_read_still_corroborates(self):   # control
+        fs = self.run_on(self.BODY.replace(MARK, "Run `cat .env` first.\n" + MARK))
+        x = [f for f in fs if f["rule"] == "WT-X003"]
+        self.assertEqual(len(x), 1)
+        self.assertTrue(x[0]["evidence"].startswith("SkillSpector + Watchtower"), x[0]["evidence"])
+
+
+if __name__ == "__main__":
+    unittest.main()
