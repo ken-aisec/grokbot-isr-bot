@@ -168,6 +168,12 @@ def _int_field(leak, k):
     return v if isinstance(v, int) and not isinstance(v, bool) else None
 
 
+def _leak_order(leak):
+    """One order for gitleaks hits, whatever order the folder was listed or gitleaks reported them in: the file's path, then
+    the line as a number (then column and rule, so hits on one line keep one order too)."""
+    return (str(leak.get("File") or ""), _int_field(leak, "StartLine") or 0, _int_field(leak, "StartColumn") or 0, str(leak.get("RuleID") or ""))
+
+
 def _fill(match, text):
     """The secret when `text` is gitleaks' Match with each REDACTED put back as one same secret; None otherwise. Both ends of
     text are fixed, so the secret's length, and the secret, follow from the length alone."""
@@ -413,7 +419,7 @@ def gitleaks_findings(roots, notes):
             by_dir.setdefault(group_dir(fpath), []).append(fpath)
         for d, files in by_dir.items():
             if len(files) >= 4 or any(x in d for x in GROUPED_DIRS):  # transcripts, tool output: one finding per folder
-                leaks = [l for fp in files for l in per_file.pop(fp)]
+                leaks = sorted((l for fp in files for l in per_file.pop(fp)), key=_leak_order)   # named in one order, not gitleaks' listing
                 kinds = sorted({l.get("RuleID", "secret") for l in leaks})
                 generic = all(k.startswith("generic") for k in kinds)
                 cache = any(x in d for x in TOOL_CACHE_DIRS)

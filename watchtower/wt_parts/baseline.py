@@ -405,6 +405,8 @@ def run_audit_locked(args, quick):
     snapshot = {"at": now(), "version": VERSION, "status": status_of(scored(live)), "score": s, "grade": g, "previous_score": prev.get("score"), "findings": live, "suppressed": suppressed,
                 "scanners_missing": meta.get("scanners_missing", []), "stages_skipped": list(STAGE_FAILED),
                 "inventory": meta["inventory"], "notes": meta["notes"]}
+    if meta.get("plugin_version_changes"):   # DQ-047 fix round 1: cmd_daily says them; only when there are any
+        snapshot["plugin_version_changes"] = meta["plugin_version_changes"]
     # PR A, Codex round 2 (6): critical or high findings a daily run had no room to name stay owed while they are open, whatever
     # run comes next (cmd_daily names them and clears them)
     owed = prev.get("undelivered") if isinstance(prev.get("undelivered"), list) else []

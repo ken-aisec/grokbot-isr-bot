@@ -313,11 +313,12 @@ def cmd_daily(args):
     plat = platform_open(snap)
     # PR A, Codex round 2 (6): a critical or high finding an earlier run had no room to name is still to be said: never NO_CHANGES
     pending = undelivered_open(snap, new)
-    if snap.get("scanners_missing") and not new and not fixed and not plat and not pending:
+    moved = snap.get("plugin_version_changes") or []   # DQ-047 fix round 1: a pending plugin's version bump is said, never NO_CHANGES
+    if snap.get("scanners_missing") and not new and not fixed and not plat and not pending and not moved:
         print("SCANNERS_MISSING " + ", ".join(snap["scanners_missing"]) + ": run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, then `wt.py daily` again")
         return 0
     gap = list(snap.get("stages_skipped") or [])
-    if not new and not fixed and not plat and not pending:
+    if not new and not fixed and not plat and not pending and not moved:
         # R04: nothing changed among what WAS checked; a stage that didn't finish is said, never hidden behind NO_CHANGES
         print(f"NO_CHANGES_BUT_NOT_CHECKED {'; '.join(gap)[:300]}: these were not checked this run (last results kept)" if gap else "NO_CHANGES")
         return 0
@@ -329,6 +330,8 @@ def cmd_daily(args):
         out["scanners_missing"] = snap["scanners_missing"]
     if gap:
         out["not_checked_this_run"] = gap
+    if moved:
+        out["plugin_version_changes"] = moved
     out.update(score_change(snap, new))
     decoys = [compact(f) for f in new if f["rule"].startswith("WT-K")]
     if decoys:
@@ -347,7 +350,7 @@ def cmd_daily(args):
     alerts = scanner_alerts(snap)
     if alerts:
         out["scanner_alerts"] = alerts
-    text = fit_owner_first(out, notes, limit=6000, keep=("decoys", "scanner_alerts", "not_yet_reported"), before="new")
+    text = fit_owner_first(out, notes, limit=6000, keep=("decoys", "scanner_alerts", "not_yet_reported", "plugin_version_changes"), before="new")
     # PR A, Codex round 2 (6): every critical or high finding this output doesn't name (no room) is kept as undelivered in the
     # snapshot until a daily run names it, and is listed whole in a file the routine must read and name from, today
     said = json.loads(text)

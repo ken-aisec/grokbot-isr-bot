@@ -575,6 +575,51 @@ def plugin_identity(plugin_json):
     return name[:80], os.path.normpath(d)
 
 
+def plugin_versions(plugin_files):
+    """DQ-047: {plugin folder: "name@version[+...]"} from the plugin's own manifests (every plugin.json the folder holds, as
+    plugin_identity finds its folder). A folder whose manifests state no version gets no entry: its files keep path keys only.
+    Fix round 1 (Codex): a folder that shares its place and name@version with another on disk (both catalog folders at once, or
+    a copy beside the original) gets no entry: not a move."""
+    ids = {}
+    for p in plugin_files:
+        if os.path.basename(p) != "plugin.json" or not any(x in p for x in ("/plugins/", "/plugin-cache/")):
+            continue
+        name, d = plugin_identity(p)
+        data = load_json(p, None)
+        ver = data.get("version") if isinstance(data, dict) else None
+        ids.setdefault(d, set()).add(f"{name}@{ver[:40]}" if isinstance(ver, str) and ver.strip() else None)
+    out = {d: "+".join(sorted(v)) for d, v in ids.items() if None not in v}
+    same = {}
+    for d, v in out.items():
+        same[(os.path.dirname(d), v)] = same.get((os.path.dirname(d), v), 0) + 1
+    return {d: v for d, v in out.items() if same[(os.path.dirname(d), v)] == 1}
+
+
+def plugin_file_key(rule_id, path, sha, versions):
+    """DQ-047: the content key of a file inside a plugin folder: its rule, the place the plugin's folders sit in (the folder above
+    the version or catalog-commit folder), the plugin's name and version from its manifests, the file's path inside the plugin
+    and its full sha256. The platform moving a plugin to a new catalog-commit folder with the same version and the same bytes
+    keeps it; any changed byte, another version or another place does not. None when the file is in no versioned plugin folder."""
+    n = os.path.normpath(path)
+    root = max((d for d in versions if n.startswith(d + "/")), key=len, default=None)
+    if root is None or not sha or sha.startswith("unreadable"):
+        return None
+    ident = f"{rule_id}|plugin:{os.path.dirname(root)}|{versions[root]}|{os.path.relpath(n, root)}|{sha}"
+    return hashlib.sha1(ident.encode()).hexdigest()[:16]
+
+
+def plugin_place_key(name, roots, files):
+    """DQ-047: the key a pending plugin's WT-I004 is also known by: its name, the place its folders sit in, how many there are
+    and the files inside each (`files`: each root's sorted paths relative to it, in root order), not the version folder. A
+    version bump with the same files under the same name and place, while it waits for the owner's decision, is the same open
+    finding; a file added, removed or renamed is not (fix round 1, Codex)."""
+    places = sorted({os.path.dirname(os.path.normpath(r)) for r in roots})
+    return hashlib.sha1(f"WT-I004|plugin:{name}|{'|'.join(places)}|{len(roots)}|{json.dumps(files)}".encode()).hexdigest()[:16]
+
+
+PLUGIN_MOVES = {}   # DQ-047: this run's pending plugins whose folders changed, {name: (old roots, new roots)}
+
+
 CATALOG_MARKETS = ("cursor-public", "claude-plugins-official")
 CATALOG_WINDOW = 600   # seconds: one sync lands its plugins within minutes of each other
 
@@ -636,7 +681,11 @@ def note_plugins(inv):
     base = load_baseline()[0] if first else {}
     base_hashes = set(base.values())
     in_baseline = lambda name: not base or any(p in base or sha256_file(p) in base_hashes for p in manifests[name])
+    PLUGIN_MOVES.clear()
     for name, roots in here.items():
+        was = st.get(name, {}).get("roots") if isinstance(st.get(name), dict) else None
+        if was and st[name].get("status") == "new" and sorted(set(roots)) != was:
+            PLUGIN_MOVES[name] = (was, sorted(set(roots)))
         if name not in st:
             st[name] = {"since": now(), "status": "known" if first and in_baseline(name) else "new"}
             # Already there on Watchtower's first run, inside the platform's catalog cache, and runs no code: the catalog's, as a

@@ -3,6 +3,7 @@
 def audit(roots, exports, quick=False):
     rules = load_rules()
     fs, notes = [], []
+    version_changes = []   # DQ-047 fix round 1: the pending plugins' version-folder notes, said in daily too
     INCOMPLETE_SKILLS.clear()
     _RUNS_CODE.clear()
     VERIFIED_METADATA.clear()   # batch 6 (B1): filled by platform_verified below
@@ -91,6 +92,7 @@ def audit(roots, exports, quick=False):
         # Item 8 (Codex high 2): a file is moved only when an approved file with the same name and bytes is gone from disk, one
         # for one, within one trust boundary, and never in or out of a platform folder (match_moves).
         moved_from, moved_to = match_moves(base, manifest)
+        versions = plugin_versions(inv["plugin_files"])
         for p, h in manifest.items():
             if p in unproven:
                 continue
@@ -110,6 +112,9 @@ def audit(roots, exports, quick=False):
                 fs.append(finding("WT-I002", "New skill or plugin file", "low", ["AST09"], p, h[:12],
                                   "Vet it (`wt vet`), then run `wt baseline` to accept it."))
                 fs[-1]["refresh"] = platform_file(p)
+                ck = plugin_file_key("WT-I002", p, h, versions)   # DQ-047: same bytes, same plugin version, new catalog folder
+                if ck:
+                    fs[-1]["key0"] = ck
         for p in base:
             if any(x in p for x in SKIP_PATH_PARTS):
                 continue
@@ -159,6 +164,15 @@ def audit(roots, exports, quick=False):
         fs.append(finding("WT-I004", "New plugin installed", "medium", ["AST02", "AST09"], proots[0], f"{name}: {n_files} files, {n_skills} skills",
                           "A plugin's skills can't be vetted before it is installed, so they are checked now. Anything the scanners flag in it is "
                           "listed and counts until you decide. Tell Watchtower \"fix it\" to keep it with one yes, or remove it in the app (Marketplace → Your plugins)."))
+        rel = [sorted(os.path.relpath(p, r) for p in manifest if p == r or p.startswith(r + "/")) for r in proots]
+        was = PLUGIN_MOVES.get(name)
+        if not was or (len(was[0]) == len(was[1]) and not any(os.path.lexists(r) for r in was[0])):
+            fs[-1]["key0"] = plugin_place_key(name, proots, rel)   # DQ-047: the same files in a new version folder, the old one gone
+        if was:
+            line = (f"Plugin {name} changed version folder ({', '.join(os.path.basename(r) for r in was[0])} → "
+                    f"{', '.join(os.path.basename(r) for r in was[1])}); it is still waiting for your decision (WT-I004).")
+            notes.append(line)
+            version_changes.append(line)
 
     # 3. persistence (ASI10)
     CRONTAB_SEEN.clear()   # batch 5 PR B, Codex round 2 (3): unless this look says otherwise, the crontab couldn't be read
@@ -329,7 +343,7 @@ def audit(roots, exports, quick=False):
                         "so this is a partial scan and their last results are kept. Run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, then audit again.")
     fs += scanner_x005()   # batch 3 (R7): every scanner was looked at just above, in audit and daily alike
     fs = sort_findings(dedupe(fs))
-    meta = {"inventory": {k: len(v) for k, v in inv.items() if k not in ("non_live_skills", "platform_aliases")}, "notes": notes, "manifest": manifest, "persistence": snap, "scanners_missing": gone,
+    meta = {"inventory": {k: len(v) for k, v in inv.items() if k not in ("non_live_skills", "platform_aliases")}, "notes": notes, "plugin_version_changes": version_changes, "manifest": manifest, "persistence": snap, "scanners_missing": gone,
             "skill_dirs": [os.path.dirname(x) for x in inv["skills"]], "baseline_status": base_status,
             "access_sources": {"roots": list(roots), "mcp": list(inv["mcp_configs"]), "plugin_files": list(inv["plugin_files"]),
                                "browser": jar.get("hosts"),   # batch 5 (a); PR B, Codex round 1 (2): this run's own look at the jar
