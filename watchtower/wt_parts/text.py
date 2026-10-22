@@ -571,13 +571,16 @@ def _negated_example_list(text, m, walk, after, span, rules):
     """b8i3 (WT-T004 only): "Do not inspect … with broad commands such as `env`, bare `set`, or `printenv`, and do not echo the
     value." The walk stops at the comma after a code span, so `such` is never reached. The match is negated only when it closes a
     "such as" list of code spans (at most 8) in a clause that opens with the negation, the prose after its span is plain, and its
-    sentence (spans masked) ends with no condition word in it or opening the next one. Any doubt means False."""
+    sentence (spans masked) ends with no condition word in it or opening the next one. Any doubt means False.
+    Fix round 1: the negation must govern the list: no comma or clause joiner (and, or, but, then, …) between it and "such", so
+    "Do not use slow tools, use commands such as `env`, or `cat .env`." asks for the read and stays high."""
     if not span or after is None or not after[1] or not NEG_HEAD.match(walk):
         return False
     cls = {CODE: "C", ",": ",", "or": "o", "and": "o", "nor": "o", "such": "s", "as": "a"}
     toks = [t for t in (_guard_token(x) for x in GUARD_TOKEN.findall(walk)) if t]
     shape = "".join(cls.get(t, "m" if t in LIST_MODIFIERS else "x") for t in toks)
-    if shape.count("C") > 8 or not EXAMPLE_LIST.search(shape):
+    lst = EXAMPLE_LIST.search(shape)
+    if shape.count("C") > 8 or not lst or any(t == "," or t in CLAUSE_JOINERS for t in toks[:lst.start()]):
         return False
     a = text.rfind("\n", 0, m.start()) + 1
     b = text.find("\n", m.end())
@@ -617,6 +620,7 @@ AFTER_SEP = re.compile(r"(?i)(?:[ \t]*[;:]|[ \t]+[-–—]{1,2})[ \t]+(?P<phrase
 LIST_MODIFIERS = frozenset(("bare", "plain", "raw", "full"))
 EXAMPLE_LIST = re.compile(r"sa(?:m?C,o?)*m?C(?:,o?|,?o)m?$")
 NEG_HEAD = re.compile(r"(?i)^\s*(?:do\s+not|don't|never|avoid)\b")
+CLAUSE_JOINERS = frozenset(("and", "or", "nor", "but", "then", "so", "yet", "also", "instead", "rather", "&"))
 CONDITION = re.compile(r"(?i)\b(unless|except|until|if|when|whenever|but|only|otherwise|instead|however)\b")
 
 
@@ -944,7 +948,13 @@ def sends_data(ev):
 
 # b8i3: `printenv NAME` prints one variable. It is a credential read only when the name is secret-shaped; a bare printenv, a
 # $name, an option, several names or more words after it stay WT-T004. Only redirects may follow the name, then the command ends.
-PRINTENV_ONE = re.compile(r"""[ \t]+(?:'(?P<sq>[^'\s$`\\]+)'|"(?P<dq>[^"\s$`\\]+)"|(?P<bare>[A-Za-z_]\w*))(?:[ \t]+\d?>>?[ \t]*[^\s;&|)`]+)*[ \t]*(?=[;&|)`\r\n]|$)""")
+# Fix round 1: the name, bare or quoted, is a plain variable name (a quoted one may end in one "(x86)"), so "--" and "-0" are
+# options; after it a linear scan (no regex repetition, so no backtracking) allows only blanks, plain redirects (2>/dev/null,
+# >>log) and the command's end. Anything glued to the name or a target ($, \, (, a quote, a backtick that opens a substitution:
+# printenv AWS_`printf KEY`) is doubt; a backtick glued on is the end only when it closes one opened before printenv on its line.
+PRINTENV_NAME = re.compile(r"""[ \t]+(?:'(?P<sq>[A-Za-z_][A-Za-z0-9_]*(?:\([A-Za-z0-9_]+\))?)'|"""
+                           r""""(?P<dq>[A-Za-z_][A-Za-z0-9_]*(?:\([A-Za-z0-9_]+\))?)"|(?P<bare>[A-Za-z_][A-Za-z0-9_]*))""")
+PRINTENV_REDIRECT = re.compile(r"[0-9]?>>?[ \t]*[A-Za-z0-9_./~+,:@%=-]+")
 SECRET_SHAPED = re.compile(r"(?i)key|token|secret|pass|auth|cred|cookie|session")
 
 
@@ -952,8 +962,52 @@ def one_plain_variable(text, m):
     """WT-T004: the match is `printenv` of one named variable that isn't secret-shaped (`printenv HOME`)."""
     if m.group(0).lower() != "printenv":
         return False
-    p = PRINTENV_ONE.match(text, m.end())
-    return bool(p) and not SECRET_SHAPED.search(p.group("sq") or p.group("dq") or p.group("bare"))
+    p = PRINTENV_NAME.match(text, m.end())
+    if not p or SECRET_SHAPED.search(p.group("sq") or p.group("dq") or p.group("bare")):
+        return False
+    i, n = p.end(), len(text)
+    while True:
+        j = i
+        while j < n and text[j] in " \t":
+            j += 1
+        if j == n or text[j] in ";&|)\r\n":
+            return True
+        if text[j] == "`":
+            lo = max(0, m.start() - LINE_CAP)
+            ls = text.rfind("\n", lo, m.start()) + 1
+            if ls == 0 and lo:
+                return False   # its line starts out of reach
+            return text.count("`", ls, m.start()) % 2 == 1   # it closes a backtick opened before printenv on its line
+        if j == i:
+            return False   # glued to the name or to a redirect's target
+        r = PRINTENV_REDIRECT.match(text, j)
+        if not r:
+            return False
+        i = r.end()
+
+
+# b8i3 fix round 1: WT-T004's `cat` alternative is 63714e4's again (\bcat\s+\S*\.env\b: the same evidence, keys and dismissals
+# for every input). A match counts only when a word of its command, from the match to the command's end (| ; & or a line break,
+# read with the shell's quoting by mask.py's _LW, joined lines joined), holds a file named exactly .env: not after a word
+# character, a dot or "x-", and not before a word character, a dash or ".x". `.env\`, ${X:-.env}, >.env, `.env*`, "Run cat .env."
+# count; .env.local, prod.env, .env-prod don't. Linear: one pass over at most ARGS_CAP characters after the match; a command
+# still going past that is kept (doubt keeps the alarm).
+EXACT_ENV = re.compile(r"(?i)(?<![\w.])(?<!\w-)\.env(?![\w-]|\.\w)")
+CAT_MATCH = re.compile(r"(?i)cat\s")
+LINE_JOIN = re.compile(r"\\\r?\n")
+
+
+def exact_env_read(text, m):
+    """WT-T004: False when the match is a `cat` whose command names no file exactly `.env` (cat .env.custom.bak >> .env.local)."""
+    if not CAT_MATCH.match(m.group(0)):
+        return True
+    end = min(len(text), m.end() + ARGS_CAP)
+    for w in _LW.finditer(text, m.start(), end):
+        if w.group("sep") is not None:
+            return False
+        if EXACT_ENV.search(LINE_JOIN.sub("", w.group())):
+            return True
+    return end < len(text)
 
 
 # Codex, batch 4 round 1: a chat webhook is WT-T018 only when the URL's own host is exactly the chat service's, with its webhook
@@ -1757,6 +1811,8 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None)
                 continue   # the owner's own chat webhook is WT-T018, not an exfiltration host
             if rule["id"] == "WT-T004" and one_plain_variable(text, m):
                 continue   # b8i3: `printenv HOME` prints one plain variable, not the environment
+            if rule["id"] == "WT-T004" and not exact_env_read(text, m):
+                continue   # b8i3 fix round 1: `cat .env.local` reads no file named exactly .env
             if is_ref and rule["id"] in REF_RULES and (rule["id"] not in GUARD_CODE_RULES or ref_line(text, m)):
                 if limit is not None and len(out) >= limit and (rule["id"], "ref") in kinds:
                     if cut is not None:

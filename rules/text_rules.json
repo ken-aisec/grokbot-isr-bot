@@ -41,7 +41,7 @@
     "ASI03",
     "AST03"
    ],
-   "pattern": "(?i)(~/\\.ssh|\\bid_rsa\\b|\\bid_ed25519\\b|\\.aws/credentials|\\.netrc\\b|\\.git-credentials|Login Data|cookies\\.sqlite|\\bprintenv\\b|/proc/self/environ|\\bcat\\s+(?:(?:\\S*[/'\"<])?\\.env(?=[\\s;&|)`'\"<>*?\\[{},]|\\.(?=\\s|$)|$)|\\S*\\.env\\b(?=\\S*\\s*>>?\\s*(?:\\S*[/'\"])?\\.env(?=[\\s;&|)`'\"<>*?\\[{},]|\\.(?=\\s|$)|$)))|security\\s+find-(generic|internet)-password|1password|op\\s+item\\s+get|bitwarden\\s+(export|unlock))",
+   "pattern": "(?i)(~/\\.ssh|\\bid_rsa\\b|\\bid_ed25519\\b|\\.aws/credentials|\\.netrc\\b|\\.git-credentials|Login Data|cookies\\.sqlite|\\bprintenv\\b|/proc/self/environ|\\bcat\\s+\\S*\\.env\\b|security\\s+find-(generic|internet)-password|1password|op\\s+item\\s+get|bitwarden\\s+(export|unlock))",
    "fix": "A skill should never need SSH keys, cloud credentials, cookies or the environment. Remove the step or reject the skill."
   },
   {

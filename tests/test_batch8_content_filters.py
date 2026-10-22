@@ -10,8 +10,12 @@ WT-T004 ("Reads credential stores", high) raised three false alarms in a vendor'
 3 `printenv 'ProgramFiles(x86)'`: one named variable that isn't secret-shaped is not a credential read.
 All three read the content only; nothing is skipped by folder or path name.
 
-Tests marked "replay" fail on 63714e4 on their assertion; "control" ones pass before and after. No key values appear anywhere."""
-import os, sys, unittest
+Tests marked "replay" fail on 63714e4 on their assertion; "control" ones pass before and after. No key values appear anywhere.
+
+Fix round 1 (Codex review of 0223735): the `cat` pattern is 63714e4's again (same evidence, same keys) and "exactly .env" is a
+content check on the rest of the command; `printenv`'s one name is checked by a linear scan; a "such as" list counts as negated
+only when its negation governs it. Tests marked "r1 replay" fail on 0223735 on their assertion."""
+import os, re, sys, time, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, wt  # noqa: E402
@@ -115,6 +119,89 @@ class NoAgreementFromTheseLines(Box):
         x = [f for f in fs if f["rule"] == "WT-X003"]
         self.assertEqual(len(x), 1)
         self.assertTrue(x[0]["evidence"].startswith("SkillSpector + Watchtower"), x[0]["evidence"])
+
+
+# ---------------------------------------------------------------- fix round 1 (Codex review of 0223735)
+OLD_CAT = re.compile(r"(?i)\bcat\s+\S*\.env\b")   # 63714e4's `cat` alternative: the evidence every still-matching input keeps
+
+
+def timed(text):
+    t = time.perf_counter()
+    fs = wt.scan_text(text, SKILL, RULES)
+    return time.perf_counter() - t, [f["severity"] for f in fs if f["rule"] == "WT-T004" and not f.get("guarded")]
+
+
+class FixRound1Printenv(unittest.TestCase):
+    def test_quoted_options_still_flag(self):   # r1 replay (finding 1)
+        for t in ('printenv "--"', 'printenv "-0"', "printenv '--'", "printenv '-0'"):
+            self.assertEqual(hits(t), (["high"], []), t)
+
+    def test_backtick_glued_to_the_name_still_flags(self):   # r1 replay (finding 2)
+        for t in ("printenv AWS_ACCESS_`printf KEY_ID`", "printenv AWS_` printf KEY_ID`", 'printenv "AWS_"`printf KEY`',
+                  "printenv HOME`x`"):
+            self.assertEqual(hits(t), (["high"], []), t)
+
+    def test_other_glued_characters_still_flag(self):   # control
+        for t in ("printenv HOME$X", "printenv HOME(x)", "printenv HOME\\X", "printenv 'HOME'x", "printenv HOME-x"):
+            self.assertEqual(hits(t), (["high"], []), t)
+
+    def test_redirect_chain_is_linear(self):   # r1 replay (finding 3)
+        for t in ("printenv HOME" + " >>x" * 24 + " x", "printenv HOME" + " >x" * 10000 + " y"):
+            took, sev = timed(t)
+            self.assertLess(took, 1.0, len(t))
+            self.assertEqual(sev, ["high"], len(t))
+
+    def test_plain_redirects_still_exempt(self):   # control
+        for t in ("printenv HOME > out.txt", "printenv HOME >>log 2>/dev/null; echo", "$(printenv HOME)", "`printenv 'HOME' >x`"):
+            self.assertEqual(hits(t), ([], []), t)
+
+
+class FixRound1Cat(unittest.TestCase):
+    def test_exact_env_forms_still_flag(self):   # r1 replay (finding 4)
+        for t in ("cat .env\\\n | head", "cat ${X:-.env}", "cat >.env", "cat >>.env", "cat a.env.local \\\n  .env",
+                  "cat .env.example .env"):
+            self.assertEqual(hits(t), (["high"], []), repr(t))
+
+    def test_more_exact_forms_still_flag(self):   # control
+        for t in ("`cat .env`", 'cat ".env"', "cat .env*", "Run cat .env.", "cat x.env.bak; cat .env"):
+            self.assertIn("high", hits(t)[0], t)
+
+    def test_doubt_keeps_it(self):   # r1 (added after the replay run): a comment's .env and a command past the cap stay, as on 63714e4
+        for t in ("cat a.env.local # from .env", "cat a.env.local " + "x " * 200 + "| head"):
+            self.assertEqual(hits(t), (["high"], []), t[:40])
+
+    def test_named_env_files_pass(self):   # control
+        for t in ("cat .env.local", "cat prod.env", "cat .env-prod", "cat a.env.local | grep .env.x", "cat .env.local; echo .env"):
+            self.assertEqual(hits(t), ([], []), t)
+
+    def test_long_lines_are_linear(self):   # r1 replay (finding 6)
+        took, sev = timed("cat " + ".env/" * 8000 + "x")
+        self.assertLess(took, 1.0)
+        self.assertEqual(sev, ["high"])
+        took, sev = timed("cat a.env.x " * 4000)   # one command past the cap: kept, as on 63714e4
+        self.assertLess(took, 1.0)
+        self.assertTrue(sev and set(sev) == {"high"}, sev[:3])
+
+    def test_evidence_and_keys_as_on_63714e4(self):   # r1 replay (finding 7)
+        for t in ("cat .env>copy.env", "cat .env.example .env", "cat ${X:-.env}", "cat >>.env", "cat ~/.env.bak>.env"):
+            f = [g for g in wt.scan_text(t, SKILL, RULES) if g["rule"] == "WT-T004"]
+            ev = OLD_CAT.search(t).group(0)
+            self.assertEqual([(g["evidence"], g["severity"]) for g in f], [(ev, "high")], t)
+            self.assertEqual(f[0]["key"], wt.finding_key("WT-T004", SKILL + ":1", ev), t)
+        self.assertEqual(wt.finding_key("WT-T004", SKILL + ":1", "cat .env>copy.env"), "7eb4541594f17ae2")
+
+
+class FixRound1Negation(unittest.TestCase):
+    def test_affirmative_after_a_clause_break_stays_high(self):   # r1 replay (finding 5)
+        for t in ("Do not use slow tools, use commands such as `env`, or `cat .env`.",
+                  "Do not use slow tools and use commands such as `env`, or `printenv`.",
+                  "Never wait, run tools such as `env`, or `printenv`.",
+                  "Do not inspect keys or tokens with tools such as `env`, or `printenv`."):
+            self.assertEqual(hits(t), (["high"], []), t)
+
+    def test_governed_list_still_negated(self):   # control
+        self.assertEqual(hits(NEG_REPLAY), ([], ["negated"]))
+        self.assertEqual(hits("Never inspect the environment with tools such as `env`, or `printenv`."), ([], ["negated"]))
 
 
 if __name__ == "__main__":
