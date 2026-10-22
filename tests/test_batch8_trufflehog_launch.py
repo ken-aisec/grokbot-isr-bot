@@ -1,33 +1,36 @@
 """Batch 8 (v0.7.4 dev), item b8i1: TruffleHog's launch.
 
-In 0.7.3 every scanner ran from a sealed in-memory copy (/proc/self/fd/N). TruffleHog 3.97.9 always runs overseer, whose master
-asks the system for its own program file, gets "/memfd:watchtower-scanner (deleted)", can't stat it and exits ("failed to stat
-binary") before scanning anything. The stage failed and the last key status was kept, but scanner_used() only checked the
-program file, so engines_used.json and score_history.csv's fingerprint still said TruffleHog ran.
+In 0.7.3 every scanner ran from a sealed in-memory copy (/proc/self/fd/N). TruffleHog 3.97.9 runs overseer unless it is given
+its hidden `--local-dev` flag; overseer's master asks the system for its own program file, gets "/memfd:watchtower-scanner
+(deleted)", can't stat it and exits ("failed to stat binary") before scanning anything. The stage failed and the last key status
+was kept, but scanner_used() only checked the program file, so engines_used.json and score_history.csv's fingerprint still said
+TruffleHog ran.
 
-Now TruffleHog runs from a checked copy on disk, in a private folder of this run's own, checked again before it starts, while it
-runs and after it exits; a change gives WT-X005 and its results are discarded. And a scanner whose stage failed is not used.
-The stand-in for TruffleHog is this computer's own /bin/sh (a native program, like TruffleHog), registered in this process only.
-Each test fails on 1a4805c at its assertion (T5 and T6 contrasts are marked).
+Now TruffleHog runs from the sealed copy like every other scanner, with `--local-dev` (overseer never starts), and nothing on disk
+runs after the check. Its stage counts as finished only on exit 0 (or 183) with its "finished scanning" log line; a silent exit 0
+(its signal handler exits 0) or a non-zero exit with partial output is a failed stage, and a scanner whose stage failed is not
+used. The stand-ins for TruffleHog are /bin/sh scripts, registered in this process only; OVERSEER fails as overseer does unless
+it is given --local-dev. Expected values are literals, so an older Watchtower fails at an assertion instead of erroring.
+Measured: T1-T3 and T4 (a)-(c) fail on 4c89284 or 1a4805c at their assertions (see CHANGELOG); T5 and T6 contrasts are marked.
 """
-import errno, os, subprocess, sys, tempfile, time, unittest
+import json, os, subprocess, sys, tempfile, unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import wt  # noqa: E402
+from test_boxes import ROOT, wt  # noqa: E402
 import test_batch3_scanners as b3  # noqa: E402  (module access: its test classes don't run twice)
 from test_batch6_example_keys import token  # noqa: E402
 
 REAL_POPEN = subprocess.Popen
-with open(os.path.realpath("/bin/sh"), "rb") as _f:
-    SH = _f.read()
-RERUN = 'x=$(readlink /proc/$$/exe); [ -e "$x" ] || { echo "failed to stat binary" >&2; exit 1; }; "$x" -c "echo child-ok"'
-SWAP_DURING = ('x=$(readlink /proc/$$/exe); cat "$x" > "$x.n"; printf \'\\0\' >> "$x.n"; chmod 700 "$x.n"; mv "$x.n" "$x"; '
-               '"$x" -c "echo child-results"')
+DONE = '{"level":"info-0","logger":"trufflehog","msg":"finished scanning","chunks":1}'
+# Launched from the sealed copy, $0 is /proc/self/fd/N; it links to "/memfd:watchtower-scanner (deleted)", which can't be stat'ed
+OVERSEER_CHECK = ('case " $* " in *" --local-dev "*) ;; *) x=$(readlink "$0" || echo "$0"); '
+                  '[ -e "$x" ] || { echo "failed to stat binary" >&2; exit 1; };; esac\n')
 
 
-def x005(name):
-    return [(f["rule"], f["severity"], os.path.basename(f["where"])) for f in wt.scanner_x005() if f["where"].endswith("/" + name)]
+def result(path):
+    return "echo '" + json.dumps({"SourceMetadata": {"Data": {"Filesystem": {"file": path, "line": 1}}},
+                                  "DetectorName": "Github", "Verified": True}) + "'\n"
 
 
 class _T(b3._Scanners):
@@ -39,81 +42,92 @@ class _T(b3._Scanners):
         os.makedirs(self.tmpd)
         p = mock.patch.object(tempfile, "tempdir", self.tmpd)
         p.start(); self.addCleanup(p.stop)
-        self.seen, self.swap, self.refuse = [], None, False
+        self.seen, self.swap = [], None
         p = mock.patch.object(wt.subprocess, "Popen", self.popen)
         p.start(); self.addCleanup(p.stop)
+        self.env_file = os.path.join(self.ws, "deploy.env")
+        with open(self.env_file, "w") as f:
+            f.write("GITHUB_TOKEN=" + token("ghp_", 36) + "\n")
+        self.good = "#!/bin/sh\n" + result(self.env_file) + "echo '" + DONE + "' >&2\n"
+        self.log = os.path.join(self.tmp, "evil.log")
 
     def popen(self, *a, **k):
-        """Records the program file each launch starts; can swap a different file in over it, or fail the start."""
-        exe = k.get("executable")
-        self.seen.append(exe)
-        if self.swap is not None and self.under(exe):
-            new = exe + ".n"
-            with open(new, "wb") as f:
+        """Records each launch's argv[0], program file and what its passed descriptor links to; on TruffleHog's launch (after
+        Watchtower's checks) it can rename a different program over bin/trufflehog."""
+        argv, fds = list(a[0] if a else k["args"]), k.get("pass_fds") or ()
+        link = os.readlink(f"/proc/self/fd/{fds[0]}") if fds else None
+        self.seen.append((argv[0], k.get("executable"), link))
+        th = os.path.join(self.bin, "trufflehog")
+        if self.swap is not None and argv[0] == th:
+            with open(th + ".n", "w") as f:
                 f.write(self.swap)
-            os.chmod(new, 0o700)
-            os.rename(new, exe)
-        if self.refuse and exe is not None:
-            raise OSError(errno.ENOEXEC, "Exec format error")
+            os.chmod(th + ".n", 0o755)
+            os.rename(th + ".n", th)
         return REAL_POPEN(*a, **k)
 
-    def under(self, path):
-        return isinstance(path, str) and path.startswith(self.tmpd + os.sep)
+    def launches(self):
+        return [(exe, link) for a0, exe, link in self.seen if a0 == os.path.join(self.bin, "trufflehog")]
 
-    def sh_as_trufflehog(self):
-        p = os.path.join(self.bin, "trufflehog")
-        os.makedirs(self.bin, exist_ok=True)
-        with open(p, "wb") as f:
-            f.write(SH)
-        os.chmod(p, 0o755)
-        wt.SCANNER_LOCK_EXTRA["trufflehog"] = wt.scanner_digest(p)
-        return p
+    def engines_and_fingerprint(self):
+        used = wt.load_json(wt.state_path("engines_used.json"), {})["engines"]
+        with open(wt.state_path("score_history.csv")) as f:
+            last = f.read().splitlines()[-1]
+        return used, last.rsplit(",", 1)[1].split("|", 1)[1].split("+")
 
 
 class Launch(_T):
-    def test_1_a_scanner_that_reruns_its_own_path_runs(self):
-        p = self.sh_as_trufflehog()
-        code, out, err = wt.run([p, "-c", RERUN], 20)
-        self.assertEqual((code, out), (0, "child-ok\n"), err)
-        self.assertNotIn("trufflehog", wt.SCANNER_PROBLEMS)
-        self.assertEqual(wt.scanner_x005(), [])
+    def test_1_an_overseer_like_trufflehog_runs_with_local_dev(self):
+        self.put("trufflehog", "#!/bin/sh\n" + OVERSEER_CHECK + result(self.env_file) + "echo '" + DONE + "' >&2\n")
+        notes = []
+        status = wt.trufflehog_status([self.env_file], notes)
+        self.assertEqual(status, {self.env_file: [{"detector": "Github", "status": "live", "line": 1, "guide": None}]}, notes)
+        self.assertFalse([n for n in notes if "FAILED" in n], notes)
 
-    def test_2_a_copy_swapped_before_exec_is_x005_and_no_results(self):
-        p = self.sh_as_trufflehog()
-        self.swap = SH + b"\0"
-        code, out, err = wt.run([p, "-c", "echo results"], 20)
-        self.assertEqual((code, out), (126, ""), err)
-        self.assertTrue(err.startswith("results discarded"), err)
-        self.assertEqual(wt.SCANNER_PROBLEMS["trufflehog"][0], "changed")
-        self.assertEqual(x005("trufflehog"), [("WT-X005", "high", "trufflehog")])
+    def test_2_trufflehog_runs_from_the_sealed_copy(self):
+        self.put("trufflehog", self.good)
+        self.swap = "#!/bin/sh\necho evil >> " + repr(self.log) + "\n"
+        status = wt.trufflehog_status([self.env_file], [])
+        (exe, link), = self.launches()
+        self.assertRegex(exe or "", r"^/proc/self/fd/\d+$")
+        self.assertTrue((link or "").startswith("/memfd:"), link)
+        self.assertFalse(os.path.exists(self.log))           # the program renamed in after the check never ran
+        self.assertEqual(status, {self.env_file: [{"detector": "Github", "status": "live", "line": 1, "guide": None}]})
+        self.assertEqual(os.listdir(self.tmpd), [])          # nothing was copied to disk
 
-    def test_3_a_copy_swapped_during_the_run_is_x005_and_no_results(self):
-        p = self.sh_as_trufflehog()
-        code, out, err = wt.run([p, "-c", SWAP_DURING], 20)
-        self.assertEqual((code, out), (126, ""), err)
-        self.assertTrue(err.startswith("results discarded"), err)
-        self.assertEqual(wt.SCANNER_PROBLEMS["trufflehog"][0], "changed")
-        self.assertEqual(x005("trufflehog"), [("WT-X005", "high", "trufflehog")])
+    def test_3_argv_has_local_dev_and_no_update(self):
+        args = os.path.join(self.tmp, "args.txt")
+        self.put("trufflehog", "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + repr(args) + "\necho '" + DONE + "' >&2\n")
+        wt.trufflehog_status([self.env_file], [])
+        with open(args) as f:
+            got = f.read().splitlines()
+        self.assertEqual(got[0], "filesystem")
+        for flag in ("--local-dev", "--no-update", "--json"):
+            self.assertIn(flag, got)
 
-    def test_4_the_private_folder_is_always_removed(self):
-        p = self.sh_as_trufflehog()
-        # "; exit 0": sh -c may replace itself with a lone last command, and a native program running another file is a change
-        for case, argv, timeout in (("success", [p, "-c", RERUN], 20), ("exit 1", [p, "-c", "exit 1"], 20),
-                                    ("swap", [p, "-c", "echo results"], 20), ("timeout", [p, "-c", "sleep 30; exit 0"], 2),
-                                    ("start fails", [p, "-c", "echo results"], 20)):
+    def test_4_a_trufflehog_that_did_not_finish_is_a_failed_stage(self):
+        self.scanners(trufflehog=self.good)
+        self.audit()
+        good = wt.load_json(wt.state_path("key_status.json"), {})
+        self.assertEqual(list(good.get("files", {})), [self.env_file])   # guard: the good run's key status
+        log = os.path.join(self.tmp, "trufflehog.log")
+        for case, body in (("exit 0, nothing said", "#!/bin/sh\nexit 0\n"),
+                           ("a result, exit 0, no finished line", "#!/bin/sh\n" + result(self.env_file) + "exit 0\n"),
+                           ("a result, an error line, exit 1",
+                            "#!/bin/sh\n" + result(self.env_file) + "echo 'error scanning chunk' >&2\nexit 1\n"),
+                           ("a fatal line, exit 1, no output", "#!/bin/sh\necho 'fatal: could not start' >&2\nexit 1\n")):
             with self.subTest(case):
-                wt.SCANNER_PROBLEMS.clear(); wt.SCANNERS_HELD.clear()
-                self.seen[:] = []
-                self.swap = SH + b"\0" if case == "swap" else None
-                self.refuse = case == "start fails"
-                t0 = time.monotonic()
-                code = wt.run(argv, timeout)[0]
-                took = time.monotonic() - t0
-                self.assertTrue([e for e in self.seen if self.under(e)], self.seen)
-                self.assertEqual(os.listdir(self.tmpd), [])
-                if case == "timeout":
-                    self.assertEqual(code, 124)
-                    self.assertLess(took, 10)
+                if os.path.exists(log):
+                    os.remove(log)
+                wt.save_json(wt.state_path("key_status.json"), good)   # each case starts from the good run (an earlier case may have saved)
+                self.scanners(trufflehog=b3.logged(body, log))
+                r = self.audit()
+                self.assertTrue(os.path.exists(log))             # the stage ran
+                self.assertIn("TruffleHog (which keys still work)", self.snap()["stages_skipped"])
+                used, fp = self.engines_and_fingerprint()
+                self.assertNotIn("TruffleHog", used)
+                self.assertNotIn("TruffleHog", fp)
+                self.assertTrue([n for n in r["notes"] if "TruffleHog FAILED" in n], r["notes"])
+                self.assertEqual(wt.load_json(wt.state_path("key_status.json"), {}), good)
 
 
 class EnginesUsed(_T):
@@ -154,6 +168,20 @@ class EnginesUsed(_T):
                 self.assertFalse(wt.scanner_used(name))
                 wt.STAGE_FAILED.remove(stage)
                 self.assertTrue(wt.scanner_used(name))       # contrast: used again once its stage didn't fail
+
+
+class Pin(unittest.TestCase):
+    def test_7_the_flags_are_pinned_to_trufflehog_3_97_9(self):
+        """A tripwire: --local-dev is an undocumented upstream flag, and "finished scanning" is the log line run() ends with."""
+        why = ("TruffleHog's pin moved: re-check in the new release's upstream main.go that --local-dev still skips overseer and "
+               "that run() still ends by logging \"finished scanning\" (trufflehog_status relies on both), then update this test.")
+        with open(os.path.join(ROOT, "scripts", "scanner-bins.lock")) as f:
+            rows = [l for l in f if not l.startswith("#") and l.split()[1:2] == ["trufflehog"]]
+        self.assertTrue(rows, why)
+        for row in rows:
+            self.assertIn("TruffleHog 3.97.9 ", row, why)
+        with open(os.path.join(ROOT, "scripts", "install.sh")) as f:
+            self.assertIn('TRUFFLEHOG_VERSION="3.97.9"', f.read(), why)
 
 
 if __name__ == "__main__":

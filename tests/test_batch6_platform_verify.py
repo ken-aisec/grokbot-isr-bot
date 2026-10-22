@@ -16,7 +16,7 @@ watchtower/ sources, rules and scripts, this file in place); "guard" ones keep r
 import copy, hashlib, json, os, subprocess, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, ROOT, wt
+from test_boxes import Box, ROOT, TH_DONE, wt
 import profiles
 
 CACHE = "sand-data/managed-skills/cache.json"
@@ -463,7 +463,7 @@ class GitleaksOnVerifiedFiles(_Units):
 
     def test_a_live_key_in_a_verified_file_is_counted(self):   # replay, Codex 4 (6cd1ab4: a note, no revoke advice)
         th = ("#!/bin/sh\necho '" + json.dumps({"SourceMetadata": {"Data": {"Filesystem": {"file": self.manifest, "line": 5}}},
-                                                 "DetectorName": "Github", "Verified": True}) + "'\n")
+                                                 "DetectorName": "Github", "Verified": True}) + "'\necho '" + TH_DONE + "' >&2\n")
         self.verified_rewrite(gitleaks=gitleaks_hit(self.manifest), trufflehog=th)
         self.audit()
         s2 = self.assert_counted_with_cleanup()

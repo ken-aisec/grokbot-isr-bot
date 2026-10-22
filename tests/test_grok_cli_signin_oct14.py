@@ -3,7 +3,7 @@ Only that exact path. A key anywhere else, including other files under ~/.grok, 
 import base64, json, os, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, SCANNERS, wt  # noqa: E402
+from test_boxes import Box, SCANNERS, TH_DONE, wt  # noqa: E402
 from test_watchtower import fake_key  # noqa: E402
 
 KEY = "sk-ant-api03-" + fake_key(80)
@@ -36,7 +36,7 @@ class GrokCliSignIn(Box):
         stub = SCANNERS["gitleaks"].replace('open(a[a.index("--report-path") + 1], "w").write("[]")',
                                             f'open(a[a.index("--report-path") + 1], "w").write(open({report!r}).read() if a[a.index("--source") + 1] == {self.home!r} else "[]")')
         th = "#!/bin/sh\n" + "".join("echo '" + json.dumps({"SourceMetadata": {"Data": {"Filesystem": {"file": f, "line": 1}}},
-                                                             "DetectorName": "JWT", "Verified": True}) + "'\n" for f in files)
+                                                             "DetectorName": "JWT", "Verified": True}) + "'\n" for f in files) + "echo '" + TH_DONE + "' >&2\n"
         self.scanners(gitleaks=stub, trufflehog=th)
 
     def test_gitleaks_jwt_in_the_sign_in_file_is_platform_and_elsewhere_under_grok_is_critical_s002(self):

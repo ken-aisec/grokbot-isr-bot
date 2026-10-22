@@ -38,7 +38,7 @@ SCANNERS = {
             '    flagged = {n: 1 for n in sorted(os.listdir(stage)) if "HUSK" in open(os.path.join(stage, n, "SKILL.md"), errors="replace").read()}\n'
             '    print(json.dumps({"flagged": flagged})); sys.exit(0)\njson.dump({"runs": [{"results": [{"message": {"text": "obfuscated loader"}}]}]}, open(a[a.index("--output") + 1], "w"))\n',
     "gitleaks": '#!/usr/bin/env python3\nimport sys\na = sys.argv[1:]\nif a and a[0] == "version":\n    print("8.30.1"); sys.exit(0)\nopen(a[a.index("--report-path") + 1], "w").write("[]")\n',
-    "trufflehog": "#!/bin/sh\nexit 0\n",
+    "trufflehog": '#!/bin/sh\necho \'{"level":"info-0","logger":"trufflehog","msg":"finished scanning","chunks":1}\' >&2\nexit 0\n',
     "osv-scanner": "#!/bin/sh\necho '{\"results\": []}'\n",
     "pip-audit": '#!/bin/sh\necho \'{"dependencies": []}\'\n',
 }

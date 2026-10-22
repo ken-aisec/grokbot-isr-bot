@@ -4,7 +4,7 @@ import hashlib, json, os, shutil, stat, subprocess, sys, tempfile, threading, ti
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt, ROOT, SCANNERS  # noqa: E402
+from test_boxes import Box, wt, ROOT, SCANNERS, TH_DONE  # noqa: E402
 from test_scripts import stub, REAL_PY  # noqa: E402
 
 
@@ -154,7 +154,7 @@ class R05R06KeyVerdicts(unittest.TestCase):
 
     def status(self, lines):
         with mock.patch.object(wt, "tool", return_value="/x/trufflehog"), \
-                mock.patch.object(wt, "run", return_value=(0, "\n".join(lines), "")), \
+                mock.patch.object(wt, "run", return_value=(0, "\n".join(lines), TH_DONE)), \
                 mock.patch.object(wt, "save_json"), mock.patch.object(wt.os.path, "exists", return_value=True):
             return wt.trufflehog_status(["/ws/app/.env"], [])
 

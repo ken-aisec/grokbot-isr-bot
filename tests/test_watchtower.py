@@ -551,7 +551,8 @@ class Features(unittest.TestCase):
         lines = [{"DetectorName": "AWS", "Verified": True, "Raw": "SECRET-1", "SourceMetadata": {"Data": {"Filesystem": {"file": chat, "line": 1}}},
                   "ExtraData": {"rotation_guide": "https://howtorotate.com/docs/tutorials/aws/"}},
                  {"DetectorName": "Github", "Verified": False, "Raw": "SECRET-2", "SourceMetadata": {"Data": {"Filesystem": {"file": old, "line": 1}}}}]
-        fake_scanner("trufflehog", "#!/bin/sh\ncat <<'EOF'\n" + "\n".join(json.dumps(l) for l in lines) + "\nEOF\n")
+        fake_scanner("trufflehog", "#!/bin/sh\ncat <<'EOF'\n" + "\n".join(json.dumps(l) for l in lines) + "\nEOF\n"
+                     "echo '{\"level\":\"info-0\",\"logger\":\"trufflehog\",\"msg\":\"finished scanning\",\"chunks\":1}' >&2\n")
         F = wt.finding
         fs = [F("WT-S002", "gitleaks: secrets in file", "critical", ["ASI03"], chat + ":1", "1 hit(s): aws-access-token", "f"),
               F("WT-S002", "gitleaks: secrets in file", "critical", ["ASI03"], old + ":1", "1 hit(s): github-pat", "f")]

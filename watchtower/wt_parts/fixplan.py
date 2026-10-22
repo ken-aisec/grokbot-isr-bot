@@ -338,6 +338,19 @@ def needs_you(findings, limit=None):
     return items[:limit] if limit else items
 
 
+def _trufflehog_finished(err):
+    """b8i1: whether TruffleHog said it finished: its run() ends by logging "finished scanning" (stderr, one JSON object per line
+    with --json). Its signal handler exits 0 without it, so exit 0 alone doesn't show a finished scan."""
+    for line in err.splitlines():
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(d, dict) and d.get("msg") == "finished scanning":
+            return True
+    return False
+
+
 def trufflehog_status(paths, notes):
     """Ask each key's own provider whether it still works (TruffleHog verification). Scoped to files Watchtower
     already flagged. Raw key values are dropped the moment they're read; only detector, file and status are kept."""
@@ -349,9 +362,14 @@ def trufflehog_status(paths, notes):
     if not targets:
         save_json(state_path("key_status.json"), {"at": now(), "ran": True, "files": {}})
         return {}
-    code, out_s, err = run([exe, "filesystem", *targets, "--json", "--no-update", "--results=verified,unverified,unknown"], 150)
-    if code not in (0, 183) and not out_s.strip():
-        fail_note(notes, f"TruffleHog FAILED ({err.strip()[-140:] or 'no output'}): live/dead key status is unavailable this run.")
+    # b8i1: --local-dev (a hidden flag in 3.97.9) skips overseer, which otherwise looks up its own program file, the sealed
+    # in-memory copy, and exits ("failed to stat binary") before scanning anything
+    code, out_s, err = run([exe, "filesystem", *targets, "--json", "--no-update", "--local-dev",
+                            "--results=verified,unverified,unknown"], 150)
+    # b8i1: finished means exit 0 (or 183, results found) and its "finished scanning" line; a non-zero exit fails even with output
+    if code not in (0, 183) or not _trufflehog_finished(err):
+        why = (err.strip()[-140:] or "no output") if code not in (0, 183) else "it stopped without saying it finished scanning"
+        fail_note(notes, f"TruffleHog FAILED ({why}): live/dead key status is unavailable this run.")
         return {}
     status = {}
     for line in out_s.splitlines():

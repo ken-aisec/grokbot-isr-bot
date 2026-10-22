@@ -17,6 +17,8 @@ warnings.simplefilter("ignore", ResourceWarning)
 
 OSV_DATA = {"results": [{"source": {"path": "/ws/app/package-lock.json"}, "packages": [
     {"package": {"name": "leftpad", "version": "1.0.0", "ecosystem": "npm"}, "vulnerabilities": [{"id": "GHSA-demo"}], "groups": [{"max_severity": "8.1"}]}]}]}
+# b8i1 fix round 1: TruffleHog's last log line (stderr) when a scan finished; a stage without it failed
+TH_DONE = '{"level":"info-0","logger":"trufflehog","msg":"finished scanning","chunks":1}'
 
 SCANNERS = {
     "skillspector": '#!/usr/bin/env python3\nimport json, os, sys\na = sys.argv[1:]; stage = a[1]; out = a[a.index("--output") + 1]\n'
@@ -27,7 +29,7 @@ SCANNERS = {
             '    flagged = {n: 1 for n in sorted(os.listdir(stage)) if "HUSK" in open(os.path.join(stage, n, "SKILL.md"), errors="replace").read()}\n'
             '    print(json.dumps({"flagged": flagged})); sys.exit(0)\njson.dump({"runs": [{"results": [{"message": {"text": "obfuscated loader"}}]}]}, open(a[a.index("--output") + 1], "w"))\n',
     "gitleaks": '#!/usr/bin/env python3\nimport sys\na = sys.argv[1:]\nif a and a[0] == "version":\n    print("8.30.1"); sys.exit(0)\nopen(a[a.index("--report-path") + 1], "w").write("[]")\n',
-    "trufflehog": "#!/bin/sh\nexit 0\n",
+    "trufflehog": "#!/bin/sh\necho '" + TH_DONE + "' >&2\nexit 0\n",
     "osv-scanner": "#!/bin/sh\ncat <<'EOF'\n" + json.dumps(OSV_DATA) + "\nEOF\n",
     "pip-audit": '#!/bin/sh\necho \'{"dependencies": []}\'\n',
 }
@@ -805,7 +807,7 @@ class MainBoxLessons(Box):
         self.skills(1)
         resy = os.path.join(self.home, "sand-data", "managed-skills", "skills", "site-playbooks-resy", "SKILL.md")
         th = ("#!/bin/sh\necho '" + json.dumps({"SourceMetadata": {"Data": {"Filesystem": {"file": resy, "line": 8}}}, "DetectorName": "Resy",
-                                                 "Verified": False, "VerificationError": "provider timed out"}) + "'\n")
+                                                 "Verified": False, "VerificationError": "provider timed out"}) + "'\necho '" + TH_DONE + "' >&2\n")
         self.assertEqual(self.playbook_keys("sand-data/managed-skills/skills", trufflehog=th),
                          {"site-playbooks-resy": "medium", "site-playbooks-target": "low"})   # TruffleHog agrees on Resy only
 

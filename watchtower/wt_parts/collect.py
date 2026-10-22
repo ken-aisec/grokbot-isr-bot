@@ -141,47 +141,28 @@ def run(cmd, timeout=120, cwd=None):
     except ScannerUnusable as e:
         return 126, "", f"not run: {e}"
     argv, exe, fds = launch or (cmd, None, ())
-    # b8i1: a scanner that starts its own file again by its path runs from a checked copy on disk (a venv entry point: [python, -I, copy])
-    copy = _DISK_COPIES.get(exe) or (_DISK_COPIES.get(argv[2]) if launch and len(argv) > 2 else None)
     try:
         if not _launch_lock(deadline):
             return timed_out
         try:
             if time.monotonic() >= deadline:
                 return timed_out
-            p = subprocess.Popen(argv, executable=exe, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=cwd, pass_fds=fds,
-                                 start_new_session=bool(copy))
+            p = subprocess.Popen(argv, executable=exe, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=cwd, pass_fds=fds)
         finally:
             _LAUNCH.release()
         with p:
-            if copy:
-                copy.started(p.pid)
             try:
                 out, err = p.communicate(timeout=max(0, deadline - time.monotonic()))
             except subprocess.TimeoutExpired:
-                if copy:   # its whole group: a child it started (overseer's) would go on calling providers
-                    try:
-                        os.killpg(p.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                else:
-                    p.kill()
+                p.kill()
                 p.wait()
-                if copy:
-                    copy.finished()
                 return timed_out
-        if copy:
-            copy.finished()
         return p.returncode, out, err
-    except ScannerUnusable as e:   # b8i1: its private copy changed while it ran (an OSError, so before the line below)
-        return 126, "", f"results discarded: {e}"
     except OSError as e:
         return 127, "", str(e)
     finally:
         for fd in fds:
             os.close(fd)
-        if copy:
-            copy.remove()
 
 
 CRONTAB_SEEN = {}   # "crontab": what the last persistence_snapshot's `crontab -l` said (crontab_state; batch 5 PR B, Codex round 2, 3)
