@@ -20,8 +20,9 @@ Fix round 3 (Codex review of 2b8920c; subtractive): a code-span printenv with an
 without/unless/until/before/first/except before the match, and a line over 4,000 characters keep the finding. Tests marked
 "r3 replay" fail on 2b8920c on their assertion.
 
-DQ-054 (Codex verify of 31873e1; a regression from b8i3, fixed): a `pwd` name (`printenv MYSQL_PWD`) is secret-shaped again, high
-as on 63714e4. Tests marked "dq054 replay" fail on 12a9c5c on their assertion."""
+DQ-054 (Codex verify of 31873e1; a regression from b8i3, partly fixed, still open): a `pwd` name (`printenv MYSQL_PWD`) is
+secret-shaped again, high as on 63714e4. `PW`-style names (`PW`, `DB_PW`, `MYSQL_PW`) still give no finding, unlike 63714e4: open,
+tracked as DQ-054 (KNOWN-LIMITS "b8i3"). Tests marked "dq054 replay" fail on 12a9c5c on their assertion."""
 import os, re, sys, time, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -319,6 +320,7 @@ class FixRound3(unittest.TestCase):
 
 
 # ---------------------------------------------------------------- DQ-054 (Codex verify of 31873e1): password-style names
+# Partly fixed: `pwd`/`passwd` names only; `PW`-style names (`DB_PW`, `MYSQL_PW`) are still exempt, open (KNOWN-LIMITS "b8i3").
 # 63714e4's finding for one `printenv NAME` line on line 1: the rules file is 63714e4's, so it is the bare match, written out here.
 T004_63714E4 = {"key": "774c69631c16284e", "rule": "WT-T004", "title": "Reads credential stores", "severity": "high",
                 "owasp": ["ASI03", "AST03"], "where": SKILL + ":1", "evidence": "printenv",

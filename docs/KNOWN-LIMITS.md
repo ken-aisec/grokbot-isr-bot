@@ -87,12 +87,16 @@ owner decisions:
   `$(printenv HOME)`, `` `printenv HOME >x` ``, `xargs printenv HOME`, a later code span, a code span after any earlier backtick
   in the file (fix round 3: `` `true `` then `` `printenv AWS_ACCESS_`printf KEY_ID` `` on the next line, but also a plain
   `` `printenv HOME` `` below an earlier code span or fence) and `PRINTENV HOME` stay high (more alarms than fix round 1).
-- **`printenv MYSQL_PWD` (DQ-054): fixed in this commit (the one after 12a9c5c), not an accepted limit.** On 31873e1 it gave
-  no WT-T004 finding, a regression from b8i3: `SECRET_SHAPED` (watchtower/wt_parts/text.py) had no `pwd`, so the name passed
-  `one_plain_variable`, though MySQL documents `MYSQL_PWD` as the connection password. The fix adds `pwd`, restoring 63714e4's
-  behaviour: `printenv MYSQL_PWD`, `PGPWD`, `pwd` (and `DB_PASSWD`, already covered by `pass`) are WT-T004 high with 63714e4's
-  evidence, key and WT-X003 effect. The match ignores case, so the shell's own `PWD` and `OLDPWD` are high again too, as on
-  63714e4.
+- **Password-style `printenv` names (DQ-054): partly fixed in 7af37e1, still open; not an accepted limit.** On 31873e1
+  `printenv MYSQL_PWD` gave no WT-T004 finding, a regression from b8i3: `SECRET_SHAPED` (watchtower/wt_parts/text.py) had no
+  `pwd`, so the name passed `one_plain_variable`, though MySQL documents `MYSQL_PWD` as the connection password. 7af37e1 adds
+  `pwd`, restoring 63714e4's behaviour for `pwd`/`passwd` names: `printenv MYSQL_PWD`, `PGPWD`, `pwd` (and `DB_PASSWD`, already
+  covered by `pass`) are WT-T004 high with 63714e4's evidence, key and WT-X003 effect. The match ignores case, so the shell's own
+  `PWD` and `OLDPWD` are high again too, as on 63714e4. Still open (Codex verify of 7af37e1): `PW`-style names (`PW`, `pw`,
+  `DB_PW`, `MYSQL_PW`, bare, quoted, redirected or with `|| true`) still give no WT-T004 finding and lose the WT-X003 agreement,
+  where 63714e4 reported them high. This regression from 63714e4 stays open, tracked as DQ-054. Planned root fix for the next
+  batch: invert the exemption to fail closed, so only a short list of known-harmless names (`PATH`, `HOME`, `USER`, `SHELL`,
+  `LANG`, `TERM` and similar) is exempt and every other single `printenv` name stays high.
 - **Two affirmative reads still get the negation guard** (watchtower/wt_parts/text.py:583). An em dash stays attached to the
   requiring word, so the check misses it ("Do not run the task without—at minimum—using commands such as `env`, or
   `printenv`."), and "prior to" is not a requiring word ("Do not run the deployment prior to checking with tools such as `env`,
