@@ -14,6 +14,13 @@ _SCANNER_LOCK_CACHE = {}
 SCANNER_MAX_BYTES = 512 * 1024 * 1024
 SCANNER_HASH_SECONDS = 60
 _LAUNCH = threading.Lock()   # a sealed copy is made, and every program started, one at a time (see scanner_launch)
+# b8i1: TruffleHog 3.97.9 always runs overseer, which starts its own program file again by its path and exits ("failed to stat
+# binary") when that is a sealed in-memory copy. Programs that do so run from a checked copy on disk instead (_disk_copy).
+DISK_COPY = {"trufflehog"}
+_DISK_COPIES = {}   # program path run() starts -> its _DiskCopy, from scanner_launch until run() removes it
+# The audit stage each single-scanner stage runs in (audit.py's soft() names): a scanner whose stage failed this run isn't used.
+SCANNER_STAGES = {"trufflehog": "TruffleHog (which keys still work)", "gitleaks": "gitleaks (keys in files)",
+                  "pip-audit": "pip-audit (installed Python packages)", "osv-scanner": "OSV-Scanner (project dependencies)"}
 
 
 class ScannerUnusable(OSError):
@@ -233,6 +240,183 @@ def _seal_copy(path):
         if mfd is not None:
             os.close(mfd)
     return ro, digest, venv
+
+
+def _copy_state(dir_fd, name):
+    """((dev, inode, ctime_ns, links, owner, mode), sha256) of the private copy `name` in the folder dir_fd, opened there without
+    following a link."""
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=dir_fd)
+    try:
+        st = os.fstat(fd)
+        return (st.st_dev, st.st_ino, st.st_ctime_ns, st.st_nlink, st.st_uid, stat.S_IMODE(st.st_mode)), _read_program(fd)[0]
+    finally:
+        os.close(fd)
+
+
+class _DiskCopy:
+    """b8i1: a program that starts its own file again by its path (DISK_COPY) runs from a copy in a private folder of this run's
+    own (PrivateDir: mkdtemp, 0700), file 0500. The bytes written are the bytes hashed; the closed copy is hashed again before it
+    runs; the started process's own program file (/proc/<pid>/exe) must be that file with the lock's hash; its children are
+    watched while it runs; after it exits the folder and the file must be the same ones, unchanged, with the lock's hash. Any
+    change is WT-X005 and its results are discarded. Every Bot runs as this user, so 0700/0500 stops nobody: the hashes and the
+    inode and change-time checks are the control (docs/KNOWN-LIMITS.md, "b8i1")."""
+
+    def __init__(self, name, priv, digest, ident, dir_ctime, script):
+        self.name, self.priv, self.digest, self.ident, self.dir_ctime, self.script = name, priv, digest, ident, dir_ctime, script
+        self.path = os.path.join(priv.path, name)
+        self.pid, self.problems, self._stop, self._watcher = None, [], threading.Event(), None
+
+    def _kill(self):
+        if self.pid:
+            try:
+                os.killpg(self.pid, signal.SIGKILL)   # run() started it in a session of its own: its children go too
+            except OSError:   # ProcessLookupError: nothing is left in its group
+                pass
+
+    def _tamper(self, why):
+        self.problems.append(("changed", why))
+        self._kill()
+
+    def _exe(self, exe):
+        """(stat of the program file the process runs, its sha256 when it is this copy, else None)."""
+        fd = os.open(exe, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+        try:
+            st = os.fstat(fd)
+            return st, (_read_program(fd)[0] if (st.st_dev, st.st_ino) == self.ident[:2] else None)
+        finally:
+            os.close(fd)
+
+    def started(self, pid):
+        """Called by run() right after the process started: its program file is checked and its children watched."""
+        self.pid = pid
+        exe = f"/proc/{pid}/exe"
+        try:
+            st, digest = _in_hash_time(lambda: self._exe(exe))
+            link = os.readlink(exe)
+        except ScannerUnusable as e:
+            self.problems.append(_problem_of(e))
+            self._kill()
+            st = None
+        except OSError:   # it has exited already (a zombie has no program file): only the checks after it exits apply
+            st = None
+        if st is not None:
+            if digest is not None:
+                if digest != self.digest or _digest_problem(self.name, digest):
+                    self._tamper("the program it started isn't the one Watchtower checked")
+            elif link in (self.path, self.path + " (deleted)") or not self.script:
+                self._tamper("it started from another program file than Watchtower's checked copy")
+            # else: a script's program file is its interpreter (the venv Python, a test's /bin/sh): no verdict on it here
+        self._watcher = threading.Thread(target=self._watch, name="watchtower-child-watch", daemon=True)
+        self._watcher.start()
+
+    def _watch(self):
+        """Every 20 ms until stopped: a child of the process running a file at this copy's path that isn't this copy is a change.
+        Needs CONFIG_PROC_CHILDREN; a child that starts and exits between two looks, or a grandchild, isn't seen here."""
+        kids = f"/proc/{self.pid}/task/{self.pid}/children"
+        names = (self.path, self.path + " (deleted)")
+        while True:
+            try:
+                with open(kids) as f:
+                    pids = f.read().split()
+            except OSError:
+                pids = []
+            for c in pids:
+                exe = f"/proc/{c}/exe"
+                try:
+                    before, st, after = os.readlink(exe), os.stat(exe), os.readlink(exe)
+                except OSError:
+                    continue
+                if before == after and before in names and (st.st_dev, st.st_ino) != self.ident[:2]:
+                    self._tamper("a program at its private copy's path that isn't the checked copy ran while it ran")
+                    return
+            if self._stop.wait(0.02):
+                return
+
+    def finished(self):
+        """Called by run() after the process exited (or was killed at its time limit): raises ScannerUnusable, with the stage
+        marked and the results to be discarded, when anything changed."""
+        self._stop.set()
+        if self._watcher:
+            self._watcher.join()
+        problems = list(self.problems)
+        try:
+            same = self.priv.same() and os.fstat(self.priv.fd).st_ctime_ns == self.dir_ctime
+        except OSError:
+            same = False
+        if not same:
+            problems.append(("changed", "its private folder changed while it ran"))
+        try:
+            ident, digest = _in_hash_time(lambda: _copy_state(self.priv.fd, self.name))
+            if ident != self.ident:
+                problems.append(("changed", "its private copy changed while it ran"))
+            elif digest != self.digest or _digest_problem(self.name, digest):
+                problems.append(("changed", "its private copy isn't the one Watchtower checked any more"))
+        except (OSError, MemoryError) as e:
+            problems.append(_problem_of(e))
+        if problems:
+            _refuse(self.name, *next((p for p in problems if p[0] == "changed"), problems[0]), said="results discarded")
+
+    def remove(self):
+        """Whatever happened: anything left in its process group is killed, and the private folder removed."""
+        self._stop.set()
+        self._kill()
+        self.priv.close()
+        _DISK_COPIES.pop(self.path, None)
+
+
+def _disk_copy(path, name):
+    """(_DiskCopy, sha256, venv Python or None) for the program at path: its bytes written to a new private copy while they are
+    hashed, the copy closed, then read again through the folder's descriptor and hashed again. A failure to make or write the
+    copy is SealUnavailable (no verdict on the program); a copy that changed before it ran is a change. Run in _in_hash_time's
+    worker, which removes the copy itself on any error (its cleanup runs only for a result)."""
+    try:
+        src = _open_program(path)
+    except OSError as e:
+        raise _program_error(e)
+    priv = None
+    try:
+        try:
+            priv = PrivateDir("watchtower-scanner-")
+            wfd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o500, dir_fd=priv.fd)
+        except OSError:
+            raise SealUnavailable("its private copy couldn't be made right now")
+        head = []
+
+        def sink(b):
+            if not head:
+                head.append(bytes(b[:2]))
+            view = memoryview(b)
+            try:
+                while view:
+                    view = view[os.write(wfd, view):]
+            except OSError:
+                raise SealUnavailable("its private copy couldn't be written right now")
+        try:
+            try:
+                digest, venv = _read_program(src, sink)
+            except OSError as e:
+                raise _program_error(e)
+            try:
+                os.fchmod(wfd, 0o500)
+                os.fsync(wfd)
+            except OSError:
+                raise SealUnavailable("its private copy couldn't be written right now")
+        finally:
+            os.close(wfd)   # an open write descriptor would make starting it fail (ETXTBSY)
+        try:
+            ident, again = _copy_state(priv.fd, name)
+        except OSError as e:
+            raise _program_error(e)
+        if again != digest or ident[3:] != (1, os.getuid(), 0o500):
+            raise ScannerUnusable("its private copy changed before it ran")
+        copy = _DiskCopy(name, priv, digest, ident, os.fstat(priv.fd).st_ctime_ns, head[:1] == [b"#!"])
+    except BaseException:
+        if priv is not None:
+            priv.close()
+        raise
+    finally:
+        os.close(src)
+    return copy, digest, venv
 
 
 LOCK_READER_REL = "scripts/scanner_lock.py"
@@ -556,12 +740,13 @@ def _interpreter_problem():
     return "changed", "the Python it runs with isn't the computer's own"
 
 
-def _refuse(name, kind, why):
+def _refuse(name, kind, why, said="NOT run"):
     """A program in the scanner folder that may not run right now: remembered for the rest of this run (so swapping the
-    checked copy back afterwards hides nothing), its stage marked not checked, and nothing is started."""
+    checked copy back afterwards hides nothing), its stage marked not checked, and nothing is started. b8i1: also a private
+    copy found changed after it ran (said="results discarded")."""
     SCANNER_PROBLEMS[name] = (kind, why, "launch")
     SCANNERS_HELD.add(name)
-    STAGE_FAILS.append(f"{SCANNER_NAMES.get(name, name)} NOT run: {why}")
+    STAGE_FAILS.append(f"{SCANNER_NAMES.get(name, name)} {said}: {why}")
     raise ScannerUnusable(why)
 
 
@@ -595,9 +780,12 @@ def scanner_launch(cmd, deadline=None):
         _refuse(name, *_digest_problem(name, ""))
     if not _launch_lock(deadline):
         raise LaunchTimedOut()
-    no_copy = None
+    no_copy = copy = None
     try:
-        fd, digest, venv = _sealed_copy(p, deadline)
+        if name in DISK_COPY:   # b8i1: it starts its own file again by its path, so it runs from a checked copy on disk
+            copy, digest, venv = _in_hash_time(lambda: _disk_copy(p, name), cleanup=lambda r: r[0].remove(), deadline=deadline)
+        else:
+            fd, digest, venv = _sealed_copy(p, deadline)
     except (SealUnavailable, MemoryError) as e:
         no_copy = _program_error(e)
     except OSError as e:   # Claude review 2 (1): by errno; out of memory or file descriptors is no verdict on the program
@@ -616,8 +804,16 @@ def scanner_launch(cmd, deadline=None):
     if venv and not problem and not interp:
         problem = _interpreter_problem()
     if problem:
-        os.close(fd)
+        if copy:
+            copy.remove()
+        else:
+            os.close(fd)
         _refuse(name, *problem)
+    if copy:
+        _DISK_COPIES[copy.path] = copy   # run() checks it at start and after exit (_DiskCopy), then removes it
+        if venv:
+            return [venv, "-I", copy.path] + list(cmd[1:]), interp, ()
+        return [p] + list(cmd[1:]), copy.path, ()
     if venv:
         return [venv, "-I", f"/proc/self/fd/{fd}"] + list(cmd[1:]), interp, (fd,)
     return [p] + list(cmd[1:]), f"/proc/self/fd/{fd}", (fd,)
@@ -648,8 +844,9 @@ SCANNERS_HELD = set()   # scanners that had a problem at some point this run (fo
 
 
 def scanner_used(name):
-    """Whether `name` counts as a scanner this run used: Watchtower's checked copy now, with no problem at any point this run."""
-    return bool(tool(name)) and name not in SCANNERS_HELD
+    """Whether `name` counts as a scanner this run used: Watchtower's checked copy now, with no problem at any point this run.
+    b8i1: and its stage didn't fail (TruffleHog that exits before scanning anything didn't run)."""
+    return bool(tool(name)) and name not in SCANNERS_HELD and SCANNER_STAGES.get(name) not in STAGE_FAILED
 
 
 def reset_scanner_checks():

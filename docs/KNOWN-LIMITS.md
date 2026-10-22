@@ -7,6 +7,42 @@ Open findings, limits and false alarms that dev carries knowingly. Only the item
 **None are open.** Batch 7d fixed the last ones. Each item that was in this list, or that Ken logged as must-fix, is recorded
 under "Fixed in batch 7d (the last must-fix items)" right below, with its test file.
 
+## b8i1: TruffleHog's launch (batch 8, v0.7.4 dev)
+
+TruffleHog 3.97.9 always runs overseer, which starts its own program file again by its path, so it can't run from the sealed
+in-memory copy the other scanners run from. It runs from a copy on disk in a private folder of this run's own (`_DiskCopy`,
+`_disk_copy` in scanners.py; `DISK_COPY`). No TruffleHog flag turns overseer off as far as is known (not checked offline), and
+overseer's own environment variables are not used.
+
+Guaranteed:
+- The bytes written to the copy are the bytes checked against scripts/scanner-bins.lock, and the closed copy is read and hashed
+  again before it runs.
+- The started process's own program file (`/proc/<pid>/exe`) is that copy and hashes to the lock. A running program's file can't
+  be written (ETXTBSY), so overseer's child running that file runs the same bytes.
+- After it exits, the folder and the file are the same ones (inode), their change times are unchanged (the kernel sets these),
+  the file has one link, mode 0500 and the lock's hash.
+- Any change is WT-X005 and its results are discarded ("results discarded", exit 126); the stage fails, the last key status is
+  kept, and TruffleHog isn't listed in engines_used.json or the score fingerprint.
+
+Not guaranteed:
+- Its children are looked at only while they show up in `/proc/<pid>/task/<pid>/children` during the 20 ms polling (needs
+  CONFIG_PROC_CHILDREN). A child that starts and exits between two looks, or a grandchild, isn't seen there.
+- For those the checks after exit catch any change to the folder or the file, except a change made and undone within the
+  file system's timestamp granularity, and the whole folder renamed away and back on a file system that doesn't update a renamed
+  folder's change time.
+- If TruffleHog has already exited when it is first looked at, only the checks after exit apply.
+- Every Bot runs as the same user, so 0700/0500 is no barrier against another Bot: the hashes and the inode and change-time
+  checks are the control.
+- The folder is made by mkdtemp, which honours TMPDIR. On a tmp mounted noexec TruffleHog can't start (127): its stage fails,
+  its last results are kept and it isn't listed. Nothing reads as clean.
+- A process at a reused pid that names the copy's path while the children are watched would be a false WT-X005 (fails closed).
+
+A single-scanner stage that fails (gitleaks, pip-audit, OSV-Scanner, TruffleHog: `SCANNER_STAGES`) no longer lists its scanner
+as used. SkillSpector and husk share one stage, which also fails on a budget-short run, so they are left out (listing them as not
+used then would say SCANNERS MISSING on every such run). The SCANNERS MISSING wording ("not installed, or not the copy Watchtower
+installed; run install.sh --scanners") is unchanged, though for a failed stage that advice doesn't fit. A daily run still lists
+TruffleHog in engines_used.json without running it (as before; only full runs feed the history).
+
 ## Fixed in batch 7d (the last must-fix items)
 
 Fixed before batch 7d part 2, recorded here so this list is whole:
