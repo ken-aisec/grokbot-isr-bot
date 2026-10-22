@@ -121,6 +121,37 @@ owner decisions:
   rule, so dismissals made before b8i3 don't carry over to newly guarded lines.
 - `env | grep KEY` was never WT-T004 and still isn't; widening the rule to `env` was out of scope.
 
+## b8i4: the platform-file middle path (batch 8, v0.7.4 dev)
+
+Decision, Oct 22: a clean update at a platform path that already exists (a `rules/platform-release.lock` line with any hash,
+or a `baseline.json` line), or a clean new platform skill folder, is the quiet "Platform refresh" line and rolls into the
+baseline on the next full audit. Accepted limits and noise kept by design:
+
+- A plant that reuses an existing platform path, or forms a new clean platform skill folder, and passes every check is quiet
+  too. The quiet line names every file it covers (its `files` list, and as many paths as fit in its evidence).
+- `baseline.json` is Bot-writable, so a Bot that writes a baseline line for a path makes that path "already existing".
+  `state/engine_cache.json` is Bot-writable too: a forged clean answer hides a scanner vote, but Watchtower's own rules
+  still read the file's bytes every run.
+- Metadata JSON (`.grok/bundled/manifest.json`, `managed-skills/cache.json`, a sync bucket's `manifest.json`, `*.meta.json`
+  and `.marketplaces.json`) follows the middle path too (decision D2): a rewrite that enables a plugin
+  (`installation_preference`) or changes `cache.json`'s skill text is quiet when the rules find nothing in it. Such a file is
+  never "verified" (the line doesn't say it was compared with the released version).
+- Still counted highs: a file over 1 MB, one that isn't plain UTF-8 text or can't be read, one the rules flag at medium or
+  above (guarded warning text included, D5), a loose file (in no skill folder, at no known path), a file that is itself a link
+  or whose path leads out of or into a platform folder, a path with a colon, anything under a folder the platform walk couldn't
+  finish, a new file in a known skill folder with no clean update of that folder in the same run (D1), every file of a new
+  skill folder when one of them is held, and everything while the release list can't be used (D4).
+- A first run (a new box or wiped state) is silent for a clean candidate, which stays out of the first baseline (D8); a
+  loose file there is a counted high.
+- In daily, a scanner line kept from the last run (it may lack a kind) makes a quiet update in its folder a counted high
+  until the next full audit scans the folder again.
+- A full audit rolls a quiet update in at once (as a listed one), so the Platform refresh line names it only in daily runs,
+  or when the scanners haven't answered for its folder yet; the audit's note counts what was accepted.
+- A wording-only scanner vote (DQ-042) doesn't hold back a middle-path update's roll; a listed update still waits for it, as
+  before.
+- The same managed skill under `sand-data/managed-skills` and `agent-data/managed-skills` (same path below each, same
+  sha256, same rule) is one finding that names the other place.
+
 ## DQ-047 open mediums (DQ-050, owner decision pending; not fixed)
 
 - (a) plugins.py `plugin_versions` (~:618): an earlier-sorting sibling whose manifest links to the original's and whose
@@ -157,12 +188,14 @@ otf) have their contents skipped. Owner decisions and limits:
   literals joined on one line; another casing of a capitalized one, or a compound split across lines, passes.
 - `ALLOW` holds the digest of the public repo account name exactly as written in the release URLs. Only that whole
   compound is blanked before the scan; any other spelling, casing, separator or longer compound containing it is a hit.
-- Exempt: `CHANGELOG.md` from `## 0.7.3` down (history; the owner decides), and the four item-4 files
-  (`rules/platform-release.lock`, `rules/platform-normalize.json`, `rules/platform-reviewed.json`,
-  `tests/test_item8_churn.py`) until item 4 lands; `test_item4_exemptions_still_needed` fails once a file is clean.
-- The sync-bucket UUID pair in `rules/platform-release.lock` and `tests/test_item8_churn.py` identifies the owner's box (it
-  names that box's synced plugin folder). Both are item-4 files (on hold), so the pair stays for now; item 4 replaces it with
-  a generic id and adds the pair's digests (`SYNC_BUCKET_UUIDS_TODO_ITEM4`).
+- Exempt: `CHANGELOG.md` from `## 0.7.3` down (history; the owner decides), and three rules files
+  (`rules/platform-release.lock`, `rules/platform-normalize.json`, `rules/platform-reviewed.json`);
+  `test_item4_exemptions_still_needed` fails once a file is clean. b8i4 cleaned `tests/test_item8_churn.py` (dropped from the
+  list). The lock stays exempt: one vendor skill path it lists under `.grok/bundled/skills` still joins into a keyed entry, and
+  that line can't be dropped (the owner decides any ALLOW, decision D9); the two other rules files weren't editable in b8i4.
+- b8i4 removed the maintainer's sync-bucket UUID pair from `rules/platform-release.lock` and `tests/test_item8_churn.py` (the
+  lock's lines for it are `<bucket>` lines now, the test uses a random stand-in) and added 3 exact digests, each id and the
+  `<id>_<id>` pair, to the denylist (`SYNC_BUCKET_UUIDS_TODO_ITEM4`, 21 entries in all).
 
 ## Fixed in batch 7d (the last must-fix items)
 

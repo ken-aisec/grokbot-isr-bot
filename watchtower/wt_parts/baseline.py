@@ -79,7 +79,9 @@ def save_baseline(base):
 def save_first_baseline(manifest):
     """The first baseline on a box (R10: it needs no yes). Codex, item 8 review 2 (high 3): it approved every platform file it
     found, with or without provenance. Decision, Oct 18: a first baseline, on a new box or a wiped one, vouches for no
-    platform file. Returns the platform files it left out (they stay high alerts until a Watchtower release lists them)."""
+    platform file. Returns the platform files it left out. b8i4 (decision, Oct 22): a clean one at a path that already exists
+    or in a new platform skill folder raised nothing on this first run and rolls in on a later full audit (the middle path);
+    the rest stay high alerts until a Watchtower release lists them."""
     held = platform_unproven(manifest)
     save_baseline({p: h for p, h in manifest.items() if p not in held})
     return held
@@ -107,12 +109,14 @@ def roll_builtin(fs, meta, notes):
     installed = [n for n, t in (("SkillSpector", "skillspector"), ("husk", "husk")) if tool(t)]
     if engines_blocked():   # batch 3 (R7): an engine that's swapped, not listed or gone never lets a change roll in on rules alone
         return fs
-    flagged = set()
+    flagged, flagged_votes = set(), set()
     for f in fs:
         if f["rule"].startswith("WT-I") or f["severity"] not in ("critical", "high", "medium"):
             continue
         w = f["where"].split(":")[0]
-        flagged.update({w, skill_root(w) or w})
+        # b8i4: a wording-only vote on a platform skill (DQ-042) doesn't hold back a middle-path update: settle_platform_updates
+        # already let it through. A listed update still waits for it, as before.
+        (flagged_votes if f["rule"] == "WT-X003" and unconfirmed_platform_vote(f, fs) else flagged).update({w, skill_root(w) or w})
     keep, rolled = [], 0
     for f in fs:
         w = f["where"].split(":")[0]
@@ -120,11 +124,13 @@ def roll_builtin(fs, meta, notes):
         if f["rule"] in ("WT-I001", "WT-I002", "WT-I003") and builtin(f) and not f.get("unverified_platform"):
             root = skill_root(w)
             checked = (not root) or (not installed) or entry_current(cache.get(root) or {}, skill_dir_hash(root), installed)
-            if w not in flagged and (root or w) not in flagged and checked:
-                if f["rule"] == "WT-I003":
-                    base.pop(w, None)
-                elif w in meta["manifest"]:
-                    base[w] = meta["manifest"][w]
+            held = flagged if f.get("platform_update") else flagged | flagged_votes
+            if w not in held and (root or w) not in held and checked:
+                for q in [w] + list(f.get("also_at") or []):   # b8i4: a managed-skills mirror rolls with it (merge_managed_mirrors)
+                    if f["rule"] == "WT-I003":
+                        base.pop(q, None)
+                    elif q in meta["manifest"]:
+                        base[q] = meta["manifest"][q]
                 rolled += 1
                 continue
         keep.append(f)
@@ -362,7 +368,7 @@ def run_audit_locked(args, quick):
         for f in prev_snap.get("findings", []):
             if f["rule"] in SLOW_RULES and not known(f, have) and f["where"] not in rescanned:
                 fs.append(kept_line(f))
-        fs = sort_findings(fs)
+        fs = sort_findings(merge_managed_mirrors(hold_on_kept_votes(fs, meta["manifest"]), meta["manifest"]))   # b8i4
     if not quick and "SkillSpector and husk" not in STAGE_FAILED:
         fs = roll_builtin(fs, meta, meta["notes"])
     fs = split_facts(platform_owned(fs))

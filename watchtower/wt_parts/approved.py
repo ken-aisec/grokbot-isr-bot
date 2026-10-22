@@ -631,11 +631,12 @@ def upgrade_npm(projects):
 # pages. Decision, Oct 18: there is no yes. A file in a platform folder is trusted only through the release list, so
 # `fix --approve-platform` and `--platform-from` stay in the parser (a Bot following an older SKILL.md gets a plain answer, not an
 # argparse error) and are refused: nothing is read, written or approved. The preview shows the same read-only list daily does
-# (platform_open).
-PLATFORM_YES_REFUSED = ("NOT APPROVED: Watchtower doesn't approve platform files on this computer (Watchtower policy: only a release that lists a platform file clears it). A file in Grok "
-                        f"Bot's, Codex's or Claude's own skill folder is trusted only when Watchtower's release list ({PLATFORM_LOCK_REL}) has its "
-                        "path and exact sha256. Nothing was changed. If you didn't expect these files, remove them; a real vendor update clears "
-                        "when a Watchtower release lists it.")
+# (platform_open). b8i4 (decision, Oct 22): still no yes; a file the middle path's checks pass is accepted on its own.
+PLATFORM_YES_REFUSED = ("NOT APPROVED: Watchtower doesn't approve platform files on this computer (Watchtower policy: the owner's yes never approves a platform file). A file in Grok "
+                        f"Bot's, Codex's or Claude's own skill folder is trusted when Watchtower's release list ({PLATFORM_LOCK_REL}) has its "
+                        "path and exact sha256, or when it is an update Watchtower's checks pass, which is accepted on its own. The rest stay "
+                        "high alerts until they are fixed or a Watchtower release lists them. Nothing was changed. If you didn't expect these "
+                        "files, remove them.")
 
 
 def approve_platform(*_):

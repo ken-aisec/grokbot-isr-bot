@@ -924,18 +924,40 @@ def summarize_refresh(fs):
                 names.append(n)
         c = {r: sum(1 for f in unflagged if f["rule"] == r) for r in ("WT-I001", "WT-I002", "WT-I003")}
         shown = ", ".join(names[:6]) + (f", +{len(names) - 6} more" if len(names) > 6 else "")
+        # b8i4: each vendor's count (platform_vendor), Grok Bot first; one vendor alone keeps the title as it was for Grok Bot
+        per = {}
+        for f in unflagged:
+            v = platform_vendor(f["where"]) if f["where"].startswith("/") else "Grok Bot"
+            per[v] = per.get(v, 0) + 1 + len(f.get("also_at") or [])
+        vendors = sorted(per, key=lambda v: (("Grok Bot", "Codex", "Claude") + (v,)).index(v))
+        head = ", ".join([f"{per[vendors[0]]} of {vendors[0]}'s own files changed"] + [f"{per[v]} of {v}'s" for v in vendors[1:]])
         fix = ("Nothing to do. Grok Bot updated its own skills or plugin catalog; every new or changed file here from its own "
                "skill folders is on Grok Bot's release list. Watchtower re-checks the new files and accepts them on the next full audit when nothing "
                "flags them.")
+        if any(f.get("platform_update") for f in unflagged):   # b8i4: some aren't on the release list; the middle path let them through
+            fix = ("Nothing to do. " + ", ".join([f"{vendors[0]} updated {per[vendors[0]]} of its own files"] + [f"{v} {per[v]}" for v in vendors[1:]])
+                   + ". Watchtower's rules found nothing in the new versions and no two scanners name a dangerous behavior; it accepts "
+                   "them on the next full audit when nothing flags them.")
+        files = sorted({min(_home_rels(q), key=lambda r: (len(r), r), default=q)
+                        for f in unflagged for q in [f["where"]] + list(f.get("also_at") or [])})
+        evidence, n = f"{c['WT-I001']} updated, {c['WT-I002']} added, {c['WT-I003']} removed", 0
+        for q in files:   # the paths that fit in the evidence's 160 characters, then how many more
+            rest = len(files) - n - 1
+            if len(f"{evidence}, {q}") + (len(f", +{rest} more") if rest else 0) > 160:
+                break
+            evidence, n = f"{evidence}{': ' if not n else ', '}{q}", n + 1
+        if n < len(files):
+            evidence += f"{': ' if not n else ', '}+{len(files) - n} more"
         # batch 6 (B1): a metadata file verified by content (platform_verified) says how it was checked
         meta = sorted(dict.fromkeys(_platform_place(f["where"])[0] for f in unflagged if _path_part(f["where"]) in VERIFIED_METADATA))
         if meta:
             fix = (f"Nothing to do. Grok Bot updated its list of what it loads ({', '.join(meta[:4])}{' …' if len(meta) > 4 else ''}). "
                    "Watchtower compared it with the released version: only dates, and copies of files Watchtower checked itself, changed."
                    + (" " + fix[len("Nothing to do. "):] if len(meta) < len(unflagged) else ""))
-        tip = finding(REFRESH_RULE, f"Platform refresh: {len(unflagged)} of Grok Bot's own files changed ({shown})", "info", ["AST07"],
-                      "platform-refresh", f"{c['WT-I001']} updated, {c['WT-I002']} added, {c['WT-I003']} removed", fix, ident="platform-refresh")
+        tip = finding(REFRESH_RULE, f"Platform refresh: {head} ({shown})", "info", ["AST07"], "platform-refresh", evidence, fix,
+                      ident="platform-refresh")
         tip["class"], tip["label"] = "tip", TIP   # created after label_findings; keep it a Tip
+        tip["files"] = files   # b8i4: every file it covers, by its path under the home folder
         out.append(tip)
     return out
 

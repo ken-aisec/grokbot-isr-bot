@@ -452,7 +452,8 @@ def cmd_baseline(args):
     ledger(dict({"event": "baseline", "files": len(meta["manifest"]), "copies": n}, **({"after_reset": True} if status == "reset" else {})))
     print(f"Baseline saved: {len(meta['manifest']) - len(held)} skill and plugin files. Kept a copy of {n} skills so the next change shows as a diff."
           + (f" Not approved by this: {len(held)} file(s) in the platform's own folders that Watchtower's release list ({PLATFORM_LOCK_REL}) "
-             "doesn't include. They stay high alerts until a Watchtower release lists them." if held else ""))
+             "doesn't include. An update Watchtower's checks pass rolls in on its own at a full audit; the rest stay high alerts "
+             "until a Watchtower release lists them." if held else ""))
     return 0
 
 

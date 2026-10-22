@@ -82,7 +82,7 @@ class OwnWalk(_Platform):
 class DailyNeverQuiet(_Platform):
     def test_2_a_finding_copied_into_last_findings_never_silences_daily(self):
         self.start()
-        plant = self.md("helper")
+        plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         snap = self.snap()
         snap["findings"].append(wt.unverified_platform_finding(plant, sha(plant)))   # its deterministic finding and key, in advance
@@ -95,7 +95,7 @@ class DailyNeverQuiet(_Platform):
 
     def test_2_yesterdays_alert_is_still_said_today(self):
         self.start()
-        plant = self.md("helper")
+        plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         self.assertNotEqual(self.daily(), "NO_CHANGES")
         out = self.daily()                                                      # nothing new since yesterday
@@ -105,23 +105,26 @@ class DailyNeverQuiet(_Platform):
 
 class BaselineIsNotProvenance(_Platform):
     def test_3_a_forged_baseline_line_is_not_provenance(self):
+        """b8i4 (decision, Oct 22): a baseline line makes a path "already existing", so a forged one plus clean bytes in a
+        platform skill folder is the middle path's quiet case (an accepted limit: the baseline is Bot-writable); no yes
+        approves anything."""
         self.start()
         plant = self.md("helper")
         put(plant, CLEAN.format(n="helper"))
         base = wt.load_baseline()[0]
         base[plant] = sha(plant)
         wt.save_json(wt.state_path("baseline.json"), base)
-        self.assertNotEqual(self.daily(), "NO_CHANGES")
-        self.assertEqual(len(self.counted_high(plant)), 1)
-        pv = self.preview()["platform_unverified"]
-        self.assertEqual([f["where"] for f in pv["files"]], [plant])
+        self.assertEqual(self.daily(), "NO_CHANGES")
+        self.assertEqual(len(self.counted_high(plant)), 0)
+        self.assertNotIn("platform_unverified", self.preview())
         self.assertIn("platform-release.lock", self.approve("0" * 20))        # Decision, Oct 18: no yes approves it
         self.audit()
-        self.assertEqual(len(self.counted_high(plant)), 1)
+        self.assertEqual(len(self.counted_high(plant)), 0)
 
     def test_3_a_blanket_baseline_yes_never_approves_a_platform_file(self):
+        """b8i4: alpha's clean update at its listed path is the quiet line in daily; the loose plant stays a counted high."""
         self.start()
-        plant = self.md("helper")
+        plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         alpha = self.md("alpha")
         was = wt.load_baseline()[0][alpha]
@@ -134,7 +137,7 @@ class BaselineIsNotProvenance(_Platform):
         self.assertNotIn("--approve-platform", out)
         self.assertNotEqual(self.daily(), "NO_CHANGES")
         self.assertEqual(len(self.counted_high(plant)), 1)
-        self.assertEqual(len(self.counted_high(alpha)), 1)
+        self.assertEqual(len(self.counted_high(alpha)), 0)
 
     def test_3_the_approval_binds_where_the_name_leads(self):
         self.start()
@@ -151,10 +154,10 @@ class BaselineIsNotProvenance(_Platform):
 
 
 class Pages(_Platform):
-    def forge(self, names, text=CLEAN):
+    def forge(self, names, text=CLEAN, at=None):
         snap = self.snap()
         for n in names:
-            p = self.md(n)
+            p = (at or self.md)(n)
             put(p, text.format(n=n))
             snap["findings"].append(dict(wt.unverified_platform_finding(p, "0" * 64), key=sha(p)[:16]))
         wt.save_json(wt.state_path("last_findings.json"), snap)
@@ -174,7 +177,7 @@ class Pages(_Platform):
     def test_4_no_page_or_code_approves_anything(self):
         self.start()
         self.forge([f"a{i:04d}" for i in range(wt.PLATFORM_OPEN_SHOWN)], text=FLAGGED)
-        self.forge(["zz-clean"])
+        self.forge(["zz-clean"], at=self.loose)                                 # b8i4: loose, so never the middle path's quiet line
         pv = self.preview()["platform_unverified"]
         self.assertNotIn("next_page", pv)
         nxt = self.md("a0049").encode().hex()                                   # what a page cursor used to look like
@@ -183,9 +186,9 @@ class Pages(_Platform):
         self.assertIn("NOT APPROVED", self.approve("0" * 20))
         out = self.run_cmd("fix", "--approve-platform", "0" * 20, "--platform-from", nxt, "--owner-said-yes", "--roots", *self.roots)[1]
         self.assertIn("platform-release.lock", out)
-        self.assertNotIn(self.md("zz-clean"), wt.load_baseline()[0])
+        self.assertNotIn(self.loose("zz-clean"), wt.load_baseline()[0])
         self.audit()
-        self.assertEqual(len(self.counted_high(self.md("zz-clean"))), 1)
+        self.assertEqual(len(self.counted_high(self.loose("zz-clean"))), 1)
 
 
 class ApprovedCopyOneRead(_Platform):

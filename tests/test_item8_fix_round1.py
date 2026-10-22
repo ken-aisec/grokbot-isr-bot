@@ -26,7 +26,7 @@ class InventoryAliases(_Platform):
         put(alias, CLEAN.format(n="helper"))
         self.start()
         self.assertIn(alias, wt.load_baseline()[0])
-        plant = self.md("helper")
+        plant = self.loose()
         put(plant, CLEAN.format(n="helper"))                                    # the same bytes, now in a platform folder
         os.remove(alias)
         os.symlink(plant, alias)
@@ -121,7 +121,7 @@ class RevetOneRead(_Platform):
 class KeySuppressions(_Platform):
     def test_4_a_key_in_suppressions_json_never_accepts_an_unverified_platform_file(self):
         self.start()
-        plant = self.md("helper")
+        plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         self.audit()
         f = self.counted_high(plant)[0]
@@ -135,7 +135,7 @@ class KeySuppressions(_Platform):
     def test_4_contrast_dismiss_and_accept_refuse_it_too(self):
         """Contrast: passes on base too (WT-I00x is not acceptable, and these findings aren't Worth-a-look lines)."""
         self.start()
-        plant = self.md("helper")
+        plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         self.audit()
         f = self.counted_high(plant)[0]
@@ -147,6 +147,9 @@ class KeySuppressions(_Platform):
 
 class OwnReleaseAfterProvenance(_Platform):
     def test_5_watchtowers_own_skill_copied_into_a_platform_folder_needs_a_line(self):
+        """b8i4: a clean new platform skill folder is the middle path's quiet line, so the copy is no counted high now; it is
+        still never exempted as Watchtower's own file: it goes through the drift check, so the audit rolls it into the baseline
+        (an exempted file has no finding, so nothing would roll it in)."""
         self.start()
         src = os.path.join(wt.SELF_ROOT, "skills", "watchtower-fix", "SKILL.md")
         plant = self.md("watchtower-fix")
@@ -155,8 +158,8 @@ class OwnReleaseAfterProvenance(_Platform):
         self.assertTrue(wt.own_release_file(plant, sha(plant)))                # what used to exempt it
         self.audit()
         x = self.counted_high(plant)
-        self.assertEqual(len(x), 1)
-        self.assertTrue(x[0].get("unverified_platform"))
+        self.assertEqual(len(x), 0)
+        self.assertEqual(wt.load_baseline()[0].get(plant), sha(plant))
 
     def test_5_contrast_an_installed_copy_in_the_owners_folder_is_still_its_own(self):
         """Contrast: passes on base too."""

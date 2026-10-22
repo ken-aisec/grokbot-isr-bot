@@ -1,0 +1,2 @@
+{"about": "Batch 8 item 4 (b8i4, the platform-file middle path): the output changes made on purpose, compared with f7c28e6 by `bash scripts/golden-check.sh f7c28e6 full --expect tests/golden_expect/batch8.json --items b8i4`.",
+ "entries": []}

@@ -37,15 +37,18 @@ EXACT_ONLY = frozenset({   # exact-form only, case-folded digest pending owner (
     # that test_matcher_misses_lookalikes keeps clean (b8i5).
     "8899ecd1626db63dd12b9c57879efda72a1a78a21b498e943c07229dedc09ea7",
 })
-DENY = KEYED | EXACT_ONLY
+# b8i4: the maintainer's sync bucket, exact form (each id, and the <id>_<id> pair), as the lock rewrite dropped it
+SYNC_BUCKET_UUIDS_TODO_ITEM4 = ("a6af8a9727de5c1f720a52c73a151c50a1241c700c0f119199b085bb1046be47",
+                                "803ca00ca78c653c21c5f450aafe97adf24468831e99d9d17f64d310d3bcc4aa",
+                                "1eeb23c119624deef03f937efe2d90d6c8a3a8cdeb789880dcebfaba9fa75d31")
+DENY = KEYED | EXACT_ONLY | frozenset(SYNC_BUCKET_UUIDS_TODO_ITEM4)
 # The public repo account in the release URLs (owner decision, fix round 1): sha256 of the whole compound exactly as written.
 # Only that exact compound is blanked before scanning; any other spelling, casing or longer compound still hits.
 ALLOW = frozenset({"363a7d48f615cc538634ee46c83655545f415c1ab50de82afb8629e036e00b47"})
-# Item 4 adds the digests of the two sync bucket ids here, with the lock rewrite that drops them.
-SYNC_BUCKET_UUIDS_TODO_ITEM4 = ()
-# Item 4 (on hold) rewrites these; remove when it lands (test_item4_exemptions_still_needed fails then).
-ITEM4_PENDING = frozenset({"rules/platform-release.lock", "rules/platform-normalize.json", "rules/platform-reviewed.json",
-                           "tests/test_item8_churn.py"})
+# Item 4 could not edit these two rules files, and the lock still names a vendor skill path (.grok/bundled/skills/...) whose
+# words join into a keyed entry (decision D9: the owner decides any ALLOW); remove each when it is clean
+# (test_item4_exemptions_still_needed fails then).
+ITEM4_PENDING = frozenset({"rules/platform-release.lock", "rules/platform-normalize.json", "rules/platform-reviewed.json"})
 CHANGELOG_CUT = re.compile(r"^## 0\.7\.3$")   # CHANGELOG.md from this header down is history (owner decision, b8i5)
 NO_CUT = "no-0.7.3-header"
 BINARY = (".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".bmp", ".zip", ".gz", ".tgz", ".bz2", ".xz", ".pdf",
@@ -314,10 +317,12 @@ class Denylist(unittest.TestCase):
             self.assertTrue(scan(ROOT, [rel], DENY), f"{rel} is clean now: drop it from ITEM4_PENDING")
 
     def test_digests_well_formed(self):
-        self.assertEqual(len(DENY), 18)
+        self.assertEqual(len(DENY), 21)
         for d in DENY:
             self.assertRegex(d, r"^[0-9a-f]{64}$")
-        self.assertEqual(SYNC_BUCKET_UUIDS_TODO_ITEM4, ())
+        self.assertEqual(len(set(SYNC_BUCKET_UUIDS_TODO_ITEM4)), 3)
+        for d in SYNC_BUCKET_UUIDS_TODO_ITEM4:
+            self.assertRegex(d, r"^[0-9a-f]{64}$")
 
     def test_keyed_exact_and_allow_sets(self):
         self.assertEqual((len(KEYED), len(EXACT_ONLY), len(ALLOW)), (5, 13, 1))
@@ -411,7 +416,7 @@ class PlatformRefusal(unittest.TestCase):
     def test_platform_refusal_states_the_policy_without_a_name(self):
         s = wt.PLATFORM_YES_REFUSED
         self.assertEqual(scan_text(s, DENY), [])
-        self.assertIn("(Watchtower policy: only a release that lists a platform file clears it)", s)
+        self.assertIn("(Watchtower policy: the owner's yes never approves a platform file)", s)
         self.assertIn("NOT APPROVED", s)
         self.assertIn("Nothing was changed", s)
 

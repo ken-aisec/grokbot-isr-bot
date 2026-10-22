@@ -182,11 +182,12 @@ class VerifiedRewrites(_Units):
         self.assertEqual(r["status"], wt.ALL_GOOD)
 
     def test_a_skill_update_is_one_counted_high_on_its_skill_file(self):   # replay (5dcd0a2: 2, the cache too)
+        """b8i4: the clean skill update at its listed path is the middle path's quiet line now, so nothing is counted."""
         self.baseline()
         self.put("sand-data/managed-skills/skills/pptx/SKILL.md", PPTX2)   # not on the release list
         self.write_cache(cache_doc(pptx=PPTX2, when=1760900000000))
         self.audit()
-        self.assertEqual(self.counted(), [("WT-I001", "high", self.pptx)])
+        self.assertEqual(self.counted(), [])
 
     def test_a_manifest_digest_that_follows_a_listed_file_is_a_tip(self):   # replay (5dcd0a2: a counted high)
         self.baseline()
@@ -206,13 +207,25 @@ class VerifiedRewrites(_Units):
 
 # ---------------------------------------------------------------- B1 guards: everything else stays counted
 class StillCounted(_Units):
-    """Guards: each holds on 5dcd0a2 too (there a unit spec is refused whole, so every metadata file stays counted)."""
+    """Guards: each holds on 5dcd0a2 too (there a unit spec is refused whole, so every metadata file stays counted).
+    b8i4 (decision D2, Oct 22): a metadata file that isn't verified follows the middle path, so a change Watchtower's rules find
+    nothing in is no counted high now: it is still never verified (not in VERIFIED_METADATA), and the full audit rolls it in as
+    any quiet platform update. What the middle path holds (flagged text, over 1 MB) stays counted."""
     def assert_cache_counted(self, data, why, p=None):
         p = p or self.cache
         if data is not None:
             self.write_cache(data)
         self.audit()
         self.assertTrue([r for r, s, _ in self.counted(p) if r in ("WT-I001", "WT-I002") and s == "high"], why)
+
+    def assert_cache_quiet(self, data, why, p=None):
+        p = p or self.cache
+        if data is not None:
+            self.write_cache(data)
+        self.audit()
+        self.assertFalse([r for r, s, _ in self.counted(p) if r in ("WT-I001", "WT-I002") and s == "high"], why)
+        self.assertNotIn(p, wt.VERIFIED_METADATA, why)
+        self.assertEqual(wt.load_baseline()[0].get(p), wt.sha256_file(p), why)
 
     def test_content_changes_stay_counted(self):   # guard
         base = cache_doc()
@@ -230,7 +243,7 @@ class StillCounted(_Units):
                    "a uuid that isn't one": dict(base, sync_id="see https://evil.example")}
         self.baseline(clean=False)
         for why, doc in changes.items():
-            self.assert_cache_counted(text(doc), why)
+            self.assert_cache_quiet(text(doc), why)
 
     def test_a_canonical_line_alone_never_vouches_for_an_unchecked_unit(self):   # guard: the lock lists each canonical form
         self.baseline(clean=False)
@@ -240,7 +253,7 @@ class StillCounted(_Units):
         root = dict(base, skills=base["skills"] + [dict(base["skills"][1], name="/etc")])
         for why, doc in (("a skill with no SKILL.md", ghost), ("a unit pointing at ../", out), ("a unit at an absolute path", root)):
             self.list_canon(CACHE, doc, CACHE_SPEC)
-            self.assert_cache_counted(text(doc), why)
+            self.assert_cache_quiet(text(doc), why)
 
     def test_a_link_or_a_fifo_behind_a_unit_stays_counted(self):   # guard
         self.baseline(clean=False)
@@ -249,25 +262,26 @@ class StillCounted(_Units):
             f.write(PPTX1)
         os.remove(self.pptx)
         os.symlink(elsewhere, self.pptx)
-        self.assert_cache_counted(text(cache_doc(when=1760900000000)), "a link")
+        self.assert_cache_quiet(text(cache_doc(when=1760900000000)), "a link")
         os.remove(self.pptx)
         os.mkfifo(self.pptx)
-        self.assert_cache_counted(text(cache_doc(when=1760900000001)), "a FIFO")
+        self.assert_cache_quiet(text(cache_doc(when=1760900000001)), "a FIFO")
 
     def test_a_digest_leaf_that_doesnt_match_its_file_stays_counted(self):   # guard
         self.baseline(clean=False)
         doc = manifest_doc("a" * 64, when="2026-10-19T06:00:00Z")
         self.list_canon(MANIFEST, doc, MANIFEST_SPEC)   # even with its canonical form listed
         self.write_manifest(doc)
-        self.assert_cache_counted(None, "a digest that isn't the file's", p=self.manifest)
+        self.assert_cache_quiet(None, "a digest that isn't the file's", p=self.manifest)
 
     def test_files_that_are_not_strict_json_stay_counted(self):   # guard
         self.baseline(clean=False)
         body = text(cache_doc(when=1760900000000))
         for why, data in (("a duplicate key", body.replace('"version": 2,', '"version": 2, "version": 3,')),
-                          ("a byte-order mark", b"\xef\xbb\xbf" + body.encode()),
-                          ("NaN", body.replace('"version": 2', '"version": NaN')),
-                          ("over 1 MB", body[:-2] + ', "pad": "' + "x" * (1024 * 1024) + '"}\n')):
+                          ("NaN", body.replace('"version": 2', '"version": NaN'))):
+            self.assert_cache_quiet(data, why)
+        for why, data in (("a byte-order mark", b"\xef\xbb\xbf" + body.encode()),            # the middle path holds these too:
+                          ("over 1 MB", body[:-2] + ', "pad": "' + "x" * (1024 * 1024) + '"}\n')):   # rules flag the BOM; too big
             self.assert_cache_counted(data, why)
 
     def test_the_bytes_the_scan_read_are_the_ones_checked(self):   # guard: snapshot binding of the unit's file
@@ -288,14 +302,21 @@ class StillCounted(_Units):
         bad = dict(CACHE_SPEC, units=[dict(CACHE_SPEC["units"][0], kind="anything_goes")])
         self.spec([{"path": MANIFEST, "fields": MANIFEST_SPEC["fields"]}, bad])
         self.assertIn("entry 2", wt.platform_normalize_problem())
-        self.baseline_counted()
+        self.baseline_counted(held=False)
 
-    def baseline_counted(self):
+    def baseline_counted(self, held=True):
+        """b8i4: a refused spec verifies nothing, but the cache's path is on the release list, so on this first run it is the
+        middle path's (silent, and out of the first baseline: D8); a refused lock turns the middle path off (D4), so it is held."""
         self.write_cache(cache_doc())
         self.list_canon(CACHE, cache_doc(), CACHE_SPEC)
         self.skills(1)
         self.audit()
-        self.assertIn(("WT-I002", "high", self.cache), self.counted(self.cache))
+        if held:
+            self.assertIn(("WT-I002", "high", self.cache), self.counted(self.cache))
+        else:
+            self.assertEqual(self.counted(self.cache), [])
+            self.assertNotIn(self.cache, wt.VERIFIED_METADATA)
+            self.assertNotIn(self.cache, wt.load_baseline()[0])
 
     def test_a_spec_or_lock_that_isnt_the_released_one_is_refused(self):   # guard
         real = wt.release_digest
@@ -303,7 +324,7 @@ class StillCounted(_Units):
             vars(wt)["_PLATFORM_NORMALIZE_CACHE"].clear()
             vars(wt)["_PLATFORM_LOCK_CACHE"].clear()
             with mock.patch.object(wt, "release_digest", lambda r, rel=rel: "0" * 64 if r == rel else real(r)):
-                self.baseline_counted()
+                self.baseline_counted(held=rel == wt.PLATFORM_LOCK_REL)
         vars(wt)["_PLATFORM_LOCK_CACHE"].clear()
 
     def test_the_shipped_spec_is_still_empty_and_verifies_nothing(self):   # guard: no change until the spike's data lands
@@ -474,11 +495,11 @@ class GitleaksOnVerifiedFiles(_Units):
         evil = skill_md("pptx", "Make slide decks.", f"# Decks\n\nBuild a deck from an outline.\n{token}\n")
         self.baseline()
         self.scanners(gitleaks=gitleaks_hit(self.cache, needle=token))
-        self.put("sand-data/managed-skills/skills/pptx/SKILL.md", evil)   # not on the release list: its own counted high
+        self.put("sand-data/managed-skills/skills/pptx/SKILL.md", evil)   # not on the release list (b8i4: a clean update, so quiet)
         self.write_cache(cache_doc(pptx=evil, when=1760900000000))   # the cache repeats it, so B1 still verifies the cache
         self.audit()
         self.assertIn(self.cache, wt.VERIFIED_METADATA)
-        self.assertIn(("WT-I001", "high", self.pptx), self.counted())
+        self.assertNotIn(("WT-I001", "high", self.pptx), self.counted())    # b8i4: the middle path's quiet line
         self.assert_counted_with_cleanup(self.cache)
 
 
@@ -542,7 +563,11 @@ class CanonicalLinesAreNotRawLines(_Units):
         self.assertFalse(wt.platform_listed(self.cache, sha(raw)))
         self.skills(1)
         self.audit()
-        self.assertIn(("WT-I002", "high", self.cache), self.counted(self.cache))
+        # b8i4: still unproven (above), but its path is on the release list and the rules find nothing, so on this first run it
+        # is the middle path's (silent, out of the first baseline: D8), like any other clean version there
+        self.assertEqual(self.counted(self.cache), [])
+        self.assertNotIn(self.cache, wt.VERIFIED_METADATA)
+        self.assertNotIn(self.cache, wt.load_baseline()[0])
 
     def test_the_canonical_bytes_stay_unproven_with_the_skill_files_there(self):   # replay (6cd1ab4: listed)
         self.released_line()

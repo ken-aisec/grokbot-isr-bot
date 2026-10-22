@@ -6,7 +6,12 @@ rewrites; the release list holds the digest of the file without them. The shippe
 proves which fields are unused; these tests use a spec of their own. A file read strictly (no duplicate keys, NaN, BOM, link or
 oversize) with only those fields changed is a Platform refresh Tip; any other change stays a counted WT-I001.
 
-"replay" tests fail on 151e40c on their assertion; "guard" tests keep real changes counted."""
+"replay" tests fail on 151e40c on their assertion; "guard" tests keep real changes counted.
+
+b8i4 (decision D2, Oct 22): metadata JSON follows the middle path, so a change Watchtower's rules find nothing in, at a path
+that already exists, is the quiet Platform refresh line now, though it isn't verified against the released version (it is
+not in VERIFIED_METADATA, so the line never says it was compared). Only a change the middle path holds (over 1 MB here) stays
+counted; the held wording is checked on the finding a held version gets."""
 import hashlib, json, os, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -65,15 +70,18 @@ class MetadataWording(_Meta):
         self.write(text(V1))
         profiles.vendor_release(self, self.p)
         self.skills(1); self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
+        was = wt.sha256_file(self.p)
         self.write(text(dict(V1, generated_at="2026-10-18T08:00:00Z")))
         self.audit()
         i1 = [f for f in self.mine() if f["rule"] == "WT-I001"]
-        self.assertEqual([(f["severity"], wt.counts(f)) for f in i1], [("high", True)])   # still a counted high (Check this week)
-        self.assertEqual(i1[0]["title"], "Grok Bot's list of what it loads changed, and Watchtower's release list doesn't have this version yet")
-        self.assertIn("Don't delete it (Grok Bot needs it)", i1[0]["fix"])
-        self.assertIn("tell Watchtower support", i1[0]["fix"])
-        self.assertNotIn("remove it", i1[0]["fix"])
-        self.assertEqual(self.snap()["status"], wt.CHECK_WEEK)
+        self.assertEqual([(f["severity"], wt.counts(f)) for f in i1 if wt.counts(f)], [])   # b8i4: the middle path's quiet line
+        self.assertNotIn(self.p, wt.VERIFIED_METADATA)                         # not compared with the released version
+        held = wt.unverified_platform_finding(self.p, wt.sha256_file(self.p), was)   # the wording a held version gets
+        self.assertEqual(held["title"], "Grok Bot's list of what it loads changed, and Watchtower's release list doesn't have this version yet")
+        self.assertIn("Don't delete it (Grok Bot needs it)", held["fix"])
+        self.assertIn("tell Watchtower support", held["fix"])
+        self.assertNotIn("remove it", held["fix"])
+        self.assertEqual(self.snap()["status"], wt.ALL_GOOD)
 
     def test_a_new_metadata_file_too(self):   # replay (151e40c: "A new file appeared …")
         self.skills(1)
@@ -91,7 +99,8 @@ class MetadataWording(_Meta):
             f.write("---\nname: learn\n---\nLearn.\n")
         self.audit()
         i2 = [f for f in self.snap()["findings"] if f["where"] == q and f["rule"] == "WT-I002"]
-        self.assertIn("treat it like a file someone added", i2[0]["fix"])
+        self.assertEqual(i2, [])                                                # b8i4: a clean new skill folder on a first run
+        self.assertIn("treat it like a file someone added", wt.unverified_platform_finding(q, wt.sha256_file(q))["fix"])
 
 
 # ---------------------------------------------------------------- d3b: the normalization machinery
@@ -123,6 +132,13 @@ class Normalized(_Meta):
         self.audit()
         self.assertEqual([(f["rule"], f["severity"]) for f in self.counted()], [("WT-I001", "high")], why)
 
+    def assert_quiet_unverified(self, data, why):
+        """b8i4: not normalized (so never verified), and the middle path lets it through: no counted finding, not compared."""
+        self.write(data)
+        self.audit()
+        self.assertEqual([(f["rule"], f["severity"]) for f in self.counted()], [], why)
+        self.assertNotIn(self.p, wt.VERIFIED_METADATA, why)
+
     def test_any_other_change_stays_counted(self):   # guard
         changes = {"installation_preference available -> required": dict(V1, skills=[dict(V1["skills"][0], installation_preference="required"), V1["skills"][1]]),
                    "an added skill": dict(V1, skills=V1["skills"] + [{"name": "evil", "installation_preference": "required"}]),
@@ -132,15 +148,16 @@ class Normalized(_Meta):
                    "the timestamp not a timestamp": dict(V1, generated_at="see https://evil.example")}
         self.baseline_with(V1)
         for why, doc in changes.items():
-            self.assert_counted(text(doc), why)
+            self.assert_quiet_unverified(text(doc), why)
 
     def test_files_that_are_not_strict_json_stay_counted(self):   # guard
         self.baseline_with(V1)
         body = text(dict(V1, generated_at="2026-10-18T09:30:00Z"))
         for why, data in (("a duplicate key", body.replace('"generation": 7,', '"generation": 7, "generation": 9,')),
-                          ("a byte-order mark", b"\xef\xbb\xbf" + body.encode()),
-                          ("NaN", body.replace('"generation": 7', '"generation": NaN')),
-                          ("over 1 MB", body[:-2] + ', "pad": "' + "x" * (1024 * 1024) + '"}\n')):
+                          ("NaN", body.replace('"generation": 7', '"generation": NaN'))):
+            self.assert_quiet_unverified(data, why)
+        for why, data in (("a byte-order mark", b"\xef\xbb\xbf" + body.encode()),            # the middle path holds these too:
+                          ("over 1 MB", body[:-2] + ', "pad": "' + "x" * (1024 * 1024) + '"}\n')):   # rules flag the BOM; too big
             self.assert_counted(data, why)
 
     def test_a_link_stays_counted(self):   # guard
@@ -161,7 +178,8 @@ class Normalized(_Meta):
         with mock.patch.object(wt, "release_digest", lambda rel: "0" * 64 if rel == wt.PLATFORM_NORMALIZE_REL else real(rel)):
             self.audit()
         vars(wt)["_PLATFORM_NORMALIZE_CACHE"].clear()
-        self.assertEqual([(f["rule"], f["severity"]) for f in self.counted()], [("WT-I001", "high")])
+        self.assertEqual([(f["rule"], f["severity"]) for f in self.counted()], [])   # b8i4: the middle path's quiet line
+        self.assertNotIn(self.p, wt.VERIFIED_METADATA)                         # the spec was ignored: nothing was verified
         self.assertTrue([n for n in self.snap()["notes"] if wt.PLATFORM_NORMALIZE_REL in n and "MANIFEST.sha256" in n])
 
     def test_the_shipped_spec_is_empty(self):   # guard: no behavior change until the spike's data lands

@@ -70,7 +70,7 @@ class FirstRunWithHistory(_Platform):
 
     def test_2_an_emptied_baseline_on_a_box_with_history_vouches_for_no_platform_file(self):
         self.start()
-        plant = self.md("helper")
+        plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         self.empty_it()
         self.assertNotEqual(self.daily(), "NO_CHANGES")
@@ -82,7 +82,7 @@ class FirstRunWithHistory(_Platform):
 
     def test_2_the_first_baseline_command_on_such_a_box_holds_the_plant(self):
         self.start()
-        plant = self.md("helper")
+        plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         self.empty_it()
         out = self.run_cmd("baseline", "--roots", *self.roots)[1]
@@ -107,7 +107,7 @@ class ForgedApprovalRecord(_Platform):
 
     def test_3_a_forged_record_alone_is_not_provenance(self):
         self.start()
-        plant = self.md("helper")
+        plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         self.forge(plant)
         self.assertNotEqual(self.daily(), "NO_CHANGES")
@@ -115,7 +115,7 @@ class ForgedApprovalRecord(_Platform):
 
     def test_3_a_record_rewritten_to_new_bytes_after_a_real_yes_is_not_provenance(self):
         self.start()
-        plant = self.md("helper")
+        plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         self.audit()
         self.assertIn("platform-release.lock", self.approve("0" * 20))        # Decision, Oct 18: the yes is refused
@@ -127,7 +127,7 @@ class ForgedApprovalRecord(_Platform):
     def test_3_the_owners_yes_is_not_provenance(self):
         """Was a contrast (the owner's yes was provenance); decision, Oct 18: it is refused."""
         self.start()
-        plant = self.md("helper")
+        plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         self.audit()
         self.assertIn("platform-release.lock", self.approve("0" * 20))

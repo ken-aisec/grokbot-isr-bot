@@ -2,11 +2,14 @@
 # Item 8 (R3, roadmap row 8): vendor provenance for the platform's own folders. None of them ships a manifest, signature or hash
 # list Watchtower can use, and anything inside the home folder is the Bot's to write. The only vendor hash list the Bot can't
 # silently change is one in Watchtower's own release: rules/platform-release.lock, listed in MANIFEST.sha256 and held to it here
-# like the scanner lock. Lines are `sha256sum` output run from the home folder: "<sha256>  <path under the home folder>". A new or
-# changed file in a platform folder is a platform update only when its path and its exact bytes are listed; anything else is a
-# counted high until a Watchtower release lists it. Decision, Oct 18: release list only. Nothing on the computer approves a
-# platform file (no owner's yes, no record, no first-run trust): all of that is state the Bot can write. Filled Oct 18 from the
-# maintainer's box (see its header); the platform's sync bookkeeping (PLATFORM_CHURN) is never listed and never needs to be.
+# like the scanner lock. Lines are `sha256sum` output run from the home folder: "<sha256>  <path under the home folder>". A file
+# whose path and exact bytes are listed is the vendor's. Decision, Oct 22 (b8i4, the middle path): versions differ per user, so
+# the shipped list can't be the only trust. A new or changed file at a path that already exists (on the list, any hash, or in the
+# baseline), or in a new platform skill folder, that Watchtower's rules find nothing in and no two scanners name a dangerous
+# behavior in, is the quiet Platform refresh line and rolls into the baseline on the next full audit (platform_update_candidates,
+# settle_platform_updates). Anything else stays a counted high. Nothing on the computer approves a platform file (no owner's yes,
+# no record). Filled Oct 18 from the maintainer's box (see its header); a `<bucket>` line lists a file in every account's sync
+# bucket; the platform's sync bookkeeping (PLATFORM_CHURN) is never listed and never needs to be.
 PLATFORM_LOCK_REL = "rules/platform-release.lock"
 PLATFORM_LOCK = os.path.join(HERE, "..", PLATFORM_LOCK_REL)   # tests point this at a file in their box; never read from the environment
 PLATFORM_LOCK_MAX_BYTES = 4 * 1024 * 1024
@@ -78,6 +81,8 @@ def _parse_platform_lock(data):
             why = "its path isn't plain (.., //, ./ or a trailing /)"
         elif not rel.startswith(roots):
             why = "its path isn't inside one of the platform's own folders"
+        elif ("<" in rel or ">" in rel) and not re.fullmatch(r"\.claude/plugins/synced/<bucket>/[^<>]+", rel):
+            why = "its path has a placeholder other than <bucket> as the folder right under .claude/plugins/synced"
         else:
             (canon if m.group(1) else out).setdefault(rel, set()).add(m.group(2).lower())
             continue
@@ -110,6 +115,19 @@ def _home_rels(p):
     return out
 
 
+def _lock_hashes(lock, rel):
+    """The hashes a release list (raw or canonical lines) has for one path under the home folder. b8i4: a file in one of
+    Claude's sync buckets (the <id>_<id> folder right under .claude/plugins/synced) also gets its `<bucket>` line's; a path
+    with a < or > is never looked up as written."""
+    if "<" in rel or ">" in rel:
+        return set()
+    out = set(lock.get(rel, ()))
+    m = re.fullmatch(r"\.claude/plugins/synced/" + _SYNC_BUCKET + r"/(.+)", rel)
+    if m:
+        out |= lock.get(".claude/plugins/synced/<bucket>/" + m.group(1), set())
+    return out
+
+
 def platform_listed(p, h, lock=None):
     """True only when p is strictly inside a platform root as written and as its real path (platform_skill_path, no colon
     reading) and both, relative to their home base, are listed in the vendor release list with exactly the sha256 h. A path plus
@@ -125,7 +143,23 @@ def platform_listed(p, h, lock=None):
         rn = os.path.realpath(n)
     except OSError:
         return False
-    return all(any(h in lock.get(r, ()) for r in _home_rels(q)) for q in (n, rn))
+    return all(any(h in _lock_hashes(lock, r) for r in _home_rels(q)) for q in (n, rn))
+
+
+def platform_lock_path(p):
+    """b8i4: True when p's path (as written and its real path, each strictly inside a platform root: platform_skill_path) is on
+    the usable release list with any hash, a raw or a "canonical" line, `<bucket>` lines included."""
+    if not platform_skill_path(p, line=False):
+        return False
+    raw, canon = platform_lock(), platform_lock_canonical() or {}
+    if not raw and not canon:
+        return False
+    try:
+        n = _path_part(p, line=False)
+        rn = os.path.realpath(n)
+    except OSError:
+        return False
+    return all(any(_lock_hashes(raw, r) or _lock_hashes(canon, r) for r in _home_rels(q)) for q in (n, rn))
 
 
 def platform_canonical_listed(p, c):
@@ -171,11 +205,20 @@ def platform_vendor(p):
 PLATFORM_METADATA = re.compile(r"(?:manifest|cache|\.marketplaces|.+\.meta)\.json")
 
 
-def unverified_platform_finding(p, h, was=None):
+def unverified_platform_finding(p, h, was=None, why=""):
     """A new or changed file in a platform folder that the vendor release list doesn't include, with these bytes at this path:
     a counted high. No `refresh` key, so it never goes into the Platform refresh Tip and an audit never rolls it into the
     baseline; `unverified_platform` keeps it out of the platform scope, `fix --revet`, `accept` and `dismiss`. Only a Watchtower
-    release that lists it clears it (decision, Oct 18)."""
+    release that lists it clears it (decision, Oct 18), or (b8i4) a later version that passes the middle path's checks. `why`:
+    the one sentence that says why a middle-path candidate was held (settle_platform_updates); it starts the fix, and rule,
+    title, evidence and key stay as they are."""
+    f = _unverified_platform_finding(p, h, was)
+    if why:
+        f["fix"] = f"{why} {f['fix']}"
+    return f
+
+
+def _unverified_platform_finding(p, h, was=None):
     v = platform_vendor(p)
     fix = (f"Nothing shows {v} made this change, so treat it like a file someone added. Don't use this skill until you've looked. "
            "Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its "
@@ -208,8 +251,11 @@ def unverified_platform_finding(p, h, was=None):
 # owner's yes (`fix --approve-platform`), a record of it in state/platform_approved.json bound to a ledger line, and a first baseline
 # that vouched for every platform file on a new box. All of that lived in Watchtower's state, which the Bot can write, so a Bot
 # that wrote the record and its ledger line, or wiped the state for a new first run, made its own plant a platform file.
-# Decision, Oct 18: release list only. A file in a platform folder is trusted only by platform_listed, on every run, first
-# or not; baseline.json, the old record and the ledger are never read for it, and `--approve-platform` is refused (approve_platform).
+# Decision, Oct 18: release list only; the old record and the ledger are never read, and `--approve-platform` is refused
+# (approve_platform). Decision, Oct 22 (b8i4): the middle path. A path that already exists (a release-list line with any hash, or
+# a baseline line) or a new platform skill folder makes a file a candidate, and only Watchtower's own checks of its bytes this run
+# let it through. The baseline is Bot-writable, so a Bot that writes a line makes a path "already existing" (accepted, Oct 22);
+# a loose file, a link in or out, a colon, an unusable release list, and a first run's loose files stay counted highs.
 OLD_PLATFORM_APPROVALS = "platform_approved.json"   # written by earlier versions; never read, never deleted (one note while it exists)
 
 
@@ -219,6 +265,219 @@ def platform_unproven(manifest):
     checks the spec's units against this same manifest: batch 6, B1)."""
     return {p for p, h in manifest.items() if not p.startswith("persist:") and platform_ish(p) and not platform_listed(p, h)
             and not platform_churn_file(p) and not platform_listed_normalized(p, h, manifest)}
+
+
+def platform_skill_folder(p, manifest):
+    """b8i4: the nearest folder above p, strictly inside the platform root p is in, whose SKILL.md is in this run's manifest,
+    or None (a loose file)."""
+    n = os.path.normpath(str(p))
+    root = max((r for r in platform_roots() if _under(n, {r}, strict=True)), key=len, default=None)
+    if root is None:
+        return None
+    d = os.path.dirname(n)
+    while _under(d, {root}, strict=True):
+        if os.path.join(d, "SKILL.md") in manifest:
+            return d
+        d = os.path.dirname(d)
+    return None
+
+
+def _known_under(d, base):
+    """True when the baseline or the release list (any line, any hash) has a path under the folder d."""
+    if any(q.startswith(d + os.sep) for q in base):
+        return True
+    keys = [k for lk in (platform_lock(), platform_lock_canonical() or {}) for k in lk]
+    try:
+        rels = _home_rels(d) | _home_rels(os.path.realpath(d))
+    except OSError:
+        return True
+    for r in rels:
+        m = re.fullmatch(r"(\.claude/plugins/synced/)" + _SYNC_BUCKET + r"(/.*)?", r)
+        forms = {r} | ({m.group(1) + "<bucket>" + (m.group(2) or "")} if m else set())
+        if any(k.startswith(x + "/") for x in forms for k in keys):
+            return True
+    return False
+
+
+def platform_update_candidates(unproven, manifest, base, short):
+    """b8i4 (decision, Oct 22: the middle path): {path: (kind, skill folder or None)} for the files in `unproven` that may be a
+    platform update without a release-list line for their bytes. Only while the release list is usable (an unusable one turns
+    the quiet path off, so its note stays true); only a path with no colon, strictly inside a platform root as written and as
+    its real path (platform_skill_path: links in or out, lookalike folders and an owner's folder never are), not itself a link
+    (a folder above it may be one, inside the platform roots: agent-data linked to sand-data), fingerprinted as a
+    sha256, and not under a folder platform_inventory couldn't finish (WT-I011). Kinds: "update", the path is on the release
+    list (any hash, `<bucket>` lines included) or in the baseline; "new-skill", its skill folder (platform_skill_folder) has no
+    path the baseline or the release list knows; "in-skill", it has. A loose file at no known path is no candidate."""
+    if platform_lock_problem():
+        return {}
+    gaps = {os.path.normpath(d) for d, _ in short}
+    known, out = {}, {}
+    for p in sorted(unproven):
+        h = manifest.get(p)
+        if (":" in p or not isinstance(h, str) or not re.fullmatch(r"[0-9a-f]{64}", h) or _under(os.path.normpath(p), gaps)
+                or os.path.islink(p) or not platform_skill_path(p, line=False)):
+            continue   # a file that is itself a link (to another file, even in the same root) is no vendor file: never quiet
+        d = platform_skill_folder(p, manifest)
+        if p in base or platform_lock_path(p):
+            out[p] = ("update", d)
+        elif d is not None:
+            if d not in known:
+                known[d] = _known_under(d, base)
+            out[p] = ("in-skill" if known[d] else "new-skill", d)
+    return out
+
+
+PLATFORM_UPDATE_MAX = 1_000_000   # bytes of a candidate Watchtower reads whole (read_scanned's limit)
+
+
+def platform_scan_verdict(batch, t):
+    """What settle_platform_updates needs from one scan of a file's text: the rules that hit at medium or above (guarded
+    records count, at the scan's own severity), and whether the text isn't plain UTF-8 (a NUL, or bytes that didn't decode)."""
+    return (sorted({f["rule"] for f in batch if f.get("severity") in ("critical", "high", "medium")}),
+            "\x00" in t or "\N{REPLACEMENT CHARACTER}" in t)
+
+
+def _candidate_why(p, h, rules, scanned):
+    """Why the candidate p (sha256 h) can't be quiet on its own bytes, or "": Watchtower's rules on exactly those bytes."""
+    got = scanned.get(p)
+    if got is None:
+        t, h2 = read_scanned(p, limit=PLATFORM_UPDATE_MAX)
+        if t is None:
+            return ("It is over 1 MB, so Watchtower can't check all of it." if not h2.startswith("unreadable:")
+                    else "Watchtower couldn't read it.")
+        if h2 != h:
+            return "It changed while Watchtower was checking it."
+        kind = "vendor" if is_vendor(p) else ("skill" if os.path.basename(p) == "SKILL.md" else "reference")
+        batch = scan_text(t, p, rules, kind=kind)
+        if is_vendor_template_file(p):   # DQ-024, as the skill scan does
+            for f in batch:
+                if f["rule"] in ("WT-T008", "WT-T016"):
+                    f["severity"] = "info"
+        got = platform_scan_verdict(batch, t)
+    hit, binary = got
+    if binary:
+        return "Watchtower can't read it as plain text, so its rules can't check it."
+    if hit:
+        return f"Watchtower's rules flagged the new version ({', '.join(hit[:4])})."
+    return ""
+
+
+def _vote_why(p, d, fs):
+    """Why a scanner vote holds the candidate p (in skill folder d), or "": a WT-X003 on d or on a folder above p that isn't a
+    wording-only vote on a platform skill (DQ-042: a dangerous kind, or an answer that may lack one, kinds_incomplete)."""
+    for g in fs:
+        if g.get("rule") != "WT-X003":
+            continue
+        x = _path_part(g.get("where") or "", line=False)
+        if not (p.startswith(x + os.sep) or (d and (d == x or d.startswith(x + os.sep)))):
+            continue
+        if unconfirmed_platform_vote(g, fs):
+            continue
+        if g.get("kinds_incomplete"):
+            return "The scanners' answer for its folder is out of date, so Watchtower can't tell what they found."
+        return "Two scanners name a dangerous behavior in its folder."
+    return ""
+
+
+def settle_platform_updates(fs, cands, manifest, base, rules, scanned):
+    """b8i4: decide each candidate (platform_update_candidates) at the end of audit(), after the engines. One is held when
+    Watchtower's rules hit at medium or above in the bytes it fingerprinted (the skill scan's results, else one read and scan
+    of exactly those bytes), when it is over 1 MB, not plain text or unreadable, or when a WT-X003 covers it that isn't a
+    wording-only platform vote. A new skill folder is all or nothing; a new file in a known skill folder is quiet only beside an
+    update of that folder that is quiet this run, with nothing in the folder held. A held one is a counted high
+    (unverified_platform_finding, its fix starting with why) and its refresh finding goes; a quiet one's refresh finding (the
+    drift loop's low WT-I001/I002) gets `platform_update` and goes into the Platform refresh line, and roll_builtin rolls it on a
+    full audit. A quiet file the baseline already has with these bytes, or seen on a first run, raises nothing."""
+    if not cands:
+        return fs
+    why = {}
+    for p, (kind, d) in sorted(cands.items()):
+        why[p] = _candidate_why(p, manifest[p], rules, scanned) or _vote_why(p, d, fs)
+    held_dirs = {d for p, (_, d) in cands.items() if d and why[p]}
+    for f in fs:   # anything held this run under a skill folder (the files that are no candidate) holds the folder too
+        if f.get("unverified_platform"):
+            w = _path_part(f.get("where") or "", line=False)
+            held_dirs |= {d for _, d in cands.values() if d and _covers(d, w)}
+    updated = {d for p, (kind, d) in cands.items() if kind == "update" and d and not why[p] and base.get(p) != manifest[p]}
+    for p, (kind, d) in cands.items():
+        if why[p] or kind == "update":
+            continue
+        if d in held_dirs:
+            why[p] = ("Another file in this new skill folder didn't pass Watchtower's checks, so none of it is accepted." if kind == "new-skill"
+                      else "Another file in this skill folder didn't pass Watchtower's checks.")
+        elif kind == "in-skill" and d not in updated:
+            why[p] = "It is a new file in a skill folder that wasn't updated in this run."
+    out = []
+    for f in fs:
+        w = f.get("where")
+        if f.get("rule") in ("WT-I001", "WT-I002") and "refresh" in f and w in cands:
+            if why[w]:
+                continue
+            f["platform_update"] = True
+        out.append(f)
+    out += [unverified_platform_finding(p, manifest[p], base.get(p), why=why[p]) for p in sorted(cands) if why[p]]
+    return out
+
+
+def hold_on_kept_votes(fs, manifest):
+    """b8i4, daily: a WT-X003 kept from the last run (kinds_incomplete: its answer may lack a kind) covering a quiet platform
+    update turns it into a counted high until a full audit scans the folder again. The engines answer only in the audit, so this
+    runs after daily keeps last run's scanner lines."""
+    kept = [_path_part(g.get("where") or "", line=False) for g in fs if g.get("rule") == "WT-X003" and g.get("kinds_incomplete")]
+    if not kept:
+        return fs
+    base = load_baseline()[0]
+    out, held = [], []
+    for f in fs:
+        if f.get("platform_update"):
+            ps = [f["where"]] + list(f.get("also_at") or [])
+            if any(q.startswith(x + os.sep) for q in ps for x in kept):
+                held += [q for q in ps if isinstance(manifest.get(q), str) and re.fullmatch(r"[0-9a-f]{64}", manifest[q])]
+                continue
+        out.append(f)
+    why = "The scanners' answer for its folder is from an earlier run, so Watchtower can't tell what they found."
+    return out + [unverified_platform_finding(q, manifest[q], base.get(q), why=why) for q in sorted(set(held))]
+
+
+def merge_managed_mirrors(fs, manifest):
+    """b8i4: the platform keeps the same managed skills under sand-data/managed-skills and agent-data/managed-skills. The same
+    file (same path below each, same sha256, same rule, both held or both quiet) is one finding: the sand-data one keeps its key
+    and names the other place (`also_at`, and a sentence in its fix)."""
+    pairs = [(os.path.join(os.path.normpath(b), "sand-data", "managed-skills"), os.path.join(os.path.normpath(b), "agent-data", "managed-skills"))
+             for b in home_bases()]
+
+    def sort_key(f):
+        return (f["rule"], bool(f.get("unverified_platform")), bool(f.get("platform_update")))
+
+    sand, agent, was = {}, [], {}
+    for f in fs:
+        if (f.get("rule") not in ("WT-I001", "WT-I002", "WT-I003") or not ("refresh" in f or f.get("unverified_platform"))
+                or f.get("platform_coverage")):
+            continue
+        w = str(f.get("where") or "")
+        for s, a in pairs:
+            if w.startswith(s + os.sep):
+                sand.setdefault((s, w[len(s) + 1:]) + sort_key(f), f)
+            elif w.startswith(a + os.sep):
+                agent.append(((s, w[len(a) + 1:]) + sort_key(f), f))
+
+    def sha_of(f):   # a removed file (WT-I003) by the bytes the baseline had for it
+        if f["rule"] != "WT-I003":
+            return manifest.get(f["where"])
+        if "base" not in was:
+            was["base"] = load_baseline()[0]
+        return was["base"].get(f["where"])
+
+    gone = set()
+    for k, f in agent:
+        g = sand.get(k)
+        h = sha_of(f) if g is not None else None
+        if g is None or not isinstance(h, str) or h != sha_of(g):
+            continue
+        g.setdefault("also_at", []).append(f["where"])
+        g["fix"] = f"{g['fix']} The same file (same sha256) is also at {f['where']}."
+        gone.add(id(f))
+    return [f for f in fs if id(f) not in gone] if gone else fs
 
 
 def _release_file(path, rel, max_bytes):

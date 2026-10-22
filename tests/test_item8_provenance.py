@@ -56,6 +56,11 @@ class _Platform(Box):
     def md(self, n, root=None):
         return os.path.join(root or self.root, n, "SKILL.md")
 
+    def loose(self, n="helper"):
+        """b8i4: a plant the middle path never makes quiet, a loose file in a platform folder (in no skill folder, at no path the
+        release list or the baseline has). A new clean skill folder (md("helper")) is the quiet Platform refresh line now."""
+        return os.path.join(self.home, ".grok", "bundled", "notes", f"{n}.md")
+
     def start(self, **fakes):
         self.scanners(**fakes)
         self.audit()                                                            # the first audit takes the baseline
@@ -84,24 +89,27 @@ class CtimeGrouping(_Platform):
     """Codex high 1 (wt.py:1783 on dd27c42): a plant touched within 10 minutes of 2 other pending files became an uncounted Tip,
     and daily said NO_CHANGES."""
 
-    def test_1_a_plant_with_two_other_unlisted_platform_changes_is_three_counted_highs(self):
+    def test_1_a_plant_with_two_other_unlisted_platform_changes_is_still_a_counted_high(self):
+        """b8i4: alpha's and beta's clean updates at their listed paths are the quiet line now (the middle path); the plant
+        beside them is still a counted high."""
         self.start()
-        plant = self.md("helper")
+        plant = self.loose()
         add(self.md("alpha"), "One more line.\n"); add(self.md("beta"), "One more line.\n")
         put(plant, CLEAN.format(n="helper"))
         out = self.daily()
         self.assertNotEqual(out, "NO_CHANGES")
         new = json.loads(out)["new"]
         self.assertEqual([f["severity"] for f in new if f["where"] == plant], ["high"])
-        for p in (plant, self.md("alpha"), self.md("beta")):
-            self.assertEqual(len(self.counted_high(p)), 1, p)
-        self.assertFalse(self.tip())
+        self.assertEqual(len(self.counted_high(plant)), 1, plant)
+        for p in (self.md("alpha"), self.md("beta")):
+            self.assertEqual(len(self.counted_high(p)), 0, p)
+        self.assertIn("2 of Grok Bot's own files changed", self.tip()[0]["title"])
 
     def test_1_a_plant_written_during_a_listed_vendor_update_is_a_counted_high(self):
         self.start()
         add(self.md("alpha"), "Version 2.\n"); add(self.md("beta"), "Version 2.\n")
         profiles.vendor_release(self, self.md("alpha"), self.md("beta"))
-        plant = self.md("helper")
+        plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         self.assertNotEqual(self.daily(), "NO_CHANGES")                         # daily: the listed update waits as the Tip
         tip = self.tip()
@@ -116,7 +124,7 @@ class CtimeGrouping(_Platform):
         profiles.vendor_release(self, self.md("alpha"), self.md("beta"), self.md("gamma"))
         os.chmod(self.md("alpha"), 0o600)                                       # moves ctime forward
         put(self.md("beta"), CLEAN.format(n="beta"))                            # the same bytes, written again
-        plant = self.md("helper")
+        plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         r = self.audit()
         self.assertEqual(len(self.counted_high(plant)), 1)
@@ -128,6 +136,8 @@ class CrossRootMoves(_Platform):
     same bytes planted in .codex/skills/.system."""
 
     def test_2_a_deleted_bundled_skill_never_hides_a_codex_system_plant(self):
+        """b8i4: the plant is a clean new skill folder in Codex's root, so it is the quiet line; it is still no move, and the
+        Platform refresh line names it as Codex's (the deleted alpha doesn't hide it)."""
         self.start()
         with open(self.md("alpha")) as f:
             body = f.read()
@@ -136,11 +146,14 @@ class CrossRootMoves(_Platform):
         put(plant, body)
         self.audit()
         x = self.counted_high(plant)
-        self.assertEqual(len(x), 1)
-        self.assertIn("Codex", x[0]["title"])
-        self.assertIn("Codex", x[0]["fix"])
+        self.assertEqual(x, [])
+        tip = self.tip()
+        self.assertIn("Codex", tip[0]["title"])
+        self.assertIn("Codex", tip[0]["fix"])
+        self.assertIn(os.path.relpath(plant, self.home), tip[0]["files"])
 
     def test_2_relocation_inside_one_root_needs_its_own_line(self):
+        """b8i4: without its own line, the renamed folder is a clean new skill folder: the quiet line, which names it."""
         self.start()
         old = self.md("alpha")
         with open(old) as f:
@@ -150,7 +163,8 @@ class CrossRootMoves(_Platform):
         new = self.md("alpha-renamed")
         put(new, body)
         self.audit()
-        self.assertEqual(len(self.counted_high(new)), 1)
+        self.assertEqual(len(self.counted_high(new)), 0)
+        self.assertIn(os.path.relpath(new, self.home), self.tip()[0]["files"])
 
     def test_2_contrast_listed_at_its_new_path_is_platform(self):
         """Contrast: passes on base too."""
@@ -191,7 +205,7 @@ class EngineBytes(_Platform):
 
     def test_3_a_forged_engine_cache_never_approves_a_platform_change(self):
         self.start()
-        plant = self.md("helper")
+        plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         self.audit()                                                            # the engines run and cache the plant as clean
         p = wt.state_path("engine_cache.json")
@@ -207,7 +221,9 @@ class EngineBytes(_Platform):
         self.assertNotIn(plant, wt.load_baseline()[0])
 
     def test_3_an_engine_that_saw_swapped_bytes_never_approves(self):
-        plant = self.md("helper")
+        """b8i4: a loose plant (no middle path); tests/test_b8i4_middle_path.py's rolled_bytes test holds a quiet update's roll
+        to the bytes the scan fingerprinted."""
+        plant = self.loose()
         swapped = CLEAN.format(n="helper") + "Swapped in while the engine read it.\n"
         self.start()
         put(plant, CLEAN.format(n="helper") + "Planted.\n")
@@ -226,7 +242,7 @@ class EngineBytes(_Platform):
 
     def test_3_the_yes_approves_only_the_bytes_shown(self):
         self.start()
-        plant = self.md("helper")
+        plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         self.audit()
         code = "0" * 20                                                         # the preview has no code to give
@@ -244,7 +260,7 @@ class PlanCantWiden(_Platform):
 
     def test_4_an_edited_plan_tip_or_findings_file_never_widens_the_yes(self):
         self.start()
-        a, b = self.md("helper"), self.md("other")
+        a, b = self.loose("helper"), self.loose("other")
         put(a, CLEAN.format(n="helper"))
         self.audit()
         code = "0" * 20                                                         # the preview has no code to give
@@ -268,7 +284,7 @@ class PlanCantWiden(_Platform):
 
     def test_4_a_forged_code_approves_nothing(self):
         self.start()
-        plant = self.md("helper")
+        plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         self.audit()
         self.assertIn("NOT APPROVED", self.approve("0" * 20))
@@ -277,26 +293,30 @@ class PlanCantWiden(_Platform):
         self.assertNotIn(plant, wt.load_baseline()[0])
 
     def test_4_the_owners_yes_is_refused_and_the_files_stay_high(self):
+        """b8i4: alpha's clean update at its listed path is the middle path's quiet line, so the audit rolls it in on its own;
+        the two loose plants stay counted highs and the yes approves nothing."""
         self.start()
-        a, b = self.md("helper"), self.md("other")
+        a, b = self.loose("helper"), self.loose("other")
         put(a, CLEAN.format(n="helper")); put(b, CLEAN.format(n="other"))
         v1 = sha(self.md("alpha"))
         add(self.md("alpha"), "One more line.\n")
         self.audit()
         pv = self.preview()["platform_unverified"]
-        self.assertEqual(sorted(f["where"] for f in pv["files"]), sorted([a, b, self.md("alpha")]))
-        self.assertEqual(pv["open"], 3)
+        self.assertEqual(sorted(f["where"] for f in pv["files"]), sorted([a, b]))
+        self.assertEqual(pv["open"], 2)
         self.assertNotIn("code", pv)
         self.assertNotIn("--approve-platform", json.dumps(pv))
         self.assertIn("platform-release.lock", self.approve("0" * 20))
         base = wt.load_baseline()[0]
-        self.assertEqual((a in base, b in base, base[self.md("alpha")]), (False, False, v1))
+        self.assertEqual((a in base, b in base, base[self.md("alpha")]), (False, False, sha(self.md("alpha"))))
+        self.assertNotEqual(v1, sha(self.md("alpha")))
         with open(wt.state_path("ledger.jsonl")) as f:
             events = [json.loads(l) for l in f if l.strip()]
         self.assertFalse([e for e in events if e.get("event") == "platform-approved"])
         self.audit()
-        for p in (a, b, self.md("alpha")):
+        for p in (a, b):
             self.assertEqual(len(self.counted_high(p)), 1, p)
+        self.assertEqual(len(self.counted_high(self.md("alpha"))), 0)
         self.assertNotEqual(self.daily(), "NO_CHANGES")
         add(a, "Changed after the yes.\n")
         self.assertNotEqual(self.daily(), "NO_CHANGES")
@@ -369,7 +389,10 @@ class Lock(_Platform):
 class Dq042WithoutProvenance(Box):
     """The fail-loud counterpart of the DQ-042 replay: the same learn update, not on Grok Bot's release list."""
 
-    def test_dq042_learn_update_without_provenance_is_a_counted_high(self):
+    def test_dq042_learn_update_without_provenance_is_the_quiet_line(self):
+        """b8i4 (the middle path): the same learn update at its listed path, not on the release list. Watchtower's rules find
+        nothing in it and the engines agree only on wording (a Platform line), so it is no counted high and no new alert, and
+        the full audit rolls it in (the quiet line, tests/test_b8i4_middle_path.py's wording-only test, shows in daily)."""
         d = os.path.join(self.home, ".grok", "bundled", "skills", "learn")
         md = os.path.join(d, "SKILL.md")
         put(md, dq042.LEARN_V1)
@@ -381,11 +404,12 @@ class Dq042WithoutProvenance(Box):
         r = self.audit()
         fs = self.snap()["findings"]
         x = [f for f in fs if f["where"] == md and f["rule"] == "WT-I001"]
-        self.assertEqual([(f["severity"], wt.counts(f)) for f in x], [("high", True)])
-        self.assertIn(md, [f["where"] for f in r["new"]])
-        self.assertFalse([f for f in fs if f["rule"] == "WT-I008" and "learn" in f["title"]])
+        self.assertEqual([(f["severity"], wt.counts(f)) for f in x if f["severity"] == "high" or wt.counts(f)], [])
+        self.assertNotIn(md, [f["where"] for f in r["new"]])
+        self.assertEqual(wt.load_baseline()[0][md], sha(md))
         self.assertNotIn(d, wt.changed_skills(fs)[0])                           # never re-approved through the engines
-        self.assertTrue(wt.accept_refused(x[0]))
+        v = [f for f in fs if f["rule"] == "WT-X003" and f["where"] == d]
+        self.assertEqual([(f["severity"], f["label"]) for f in v], [("info", wt.PLATFORM)])
 
 
 # ---- real-path platform checks, re-added from dd27c42 (they failed on 7cf8996 there)
