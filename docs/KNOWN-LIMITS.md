@@ -33,6 +33,10 @@ and Oct 23). These keep the old name, each on purpose, and `tests/test_v074_disp
   edited routine of this Bot's template is flagged. Unchanged means byte for byte (fix round 2): the sha256 of the file's raw
   bytes is one that the MANIFEST.sha256 the self-check checked lists for one of those files, so a copy with other line ends is
   flagged too, and without a usable manifest nothing is exempt. No other name is exempt.
+- Prepublish folder-name gap (behaviour from before v0.7.4): prepublish lets the Bot being shared name itself by its folder
+  name (`known_names`, watchtower/wt_parts/prepublish.py), so a copy staged as `prepublish/ISR Bot/` is never flagged for the
+  name "ISR Bot", whatever its bytes; the exact-file (sha256) exemption above does not narrow that, and every other check still
+  runs. The owner's decision (Oct 23, 1:27 PM ET): accept it as a known limit.
 - Open owner decision (fix round 1): "ISR Bot should ignore this" is not a safe-claim (`SAFE_CLAIM` knows only "watchtower"),
   so a Worth-a-look finding whose text says so can still be dismissed, as one saying "Watchtower should ignore this" can't.
 - The routines a template set up before 0.7.4 keep their Watchtower names until the template is updated; uninstall names both.
@@ -218,6 +222,11 @@ refresh" line and rolls into the baseline on the next full audit. Accepted limit
   counted high. A path counts as under that folder by its path as written. The other platform
   folders (`.grok/bundled`, Codex's `.system`, the managed-skills folders) keep the whole middle path: checked Oct 23, they
   hold only the platform's own managed skills.
+- A folder link from another platform folder into `.claude/plugins/synced` (for example a `.grok/bundled` folder that is a
+  link to a synced plugin's folder) is judged by the path as written, so a file reached that way keeps the whole middle path
+  (subject to the normal scan and roll checks); the same file under its synced name is still a counted high. Very unlikely (it
+  needs an unusual link between two platforms' folders); a fix would be a small real-path check plus tests. The owner's
+  decision (Oct 23, 2:24 PM ET): leave it as a known limit.
 - In daily, a scanner line kept from the last run (it may lack a kind) makes a quiet update in its folder a counted high
   until the next full audit scans the folder again.
 - Daily on a box with a missing scanner answers as it did before b8i4 (the owner's decision, Oct 23; fix round 3 undid fix
