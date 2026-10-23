@@ -573,6 +573,15 @@ SUBST_KEEP = ("Watchtower rules", "SkillSpector + Watchtower", "husk + Watchtowe
               "Ask-first rules with no word Watchtower reads in any of its languages",
               "Watchtower daily watch", "Watchtower weekly audit", "Watchtower weekly tidy", "Watchtower monthly roll-call",
               "You are Watchtower", "Watchtower: package caches, lockfiles, headers and its own state")
+# A kept string that the display prose also says in full (the renamed sentence held it too) is counted without that prose: WT-X005's
+# why is its evidence, and its fix text "<name> didn't run <scanner>: its program file isn't the one <name> installed" is display.
+SUBST_KEEP_PROSE = {"its program file isn't the one Watchtower installed": re.compile(r"\bdidn't run [^:\n]{1,40}: its program file "
+                                                                                       r"isn't the one Watchtower installed")}
+
+
+def kept_count(text, k):
+    rx = SUBST_KEEP_PROSE.get(k)
+    return text.count(k) - (len(rx.findall(text)) if rx else 0)
 
 
 def schema_ok(s):
@@ -830,7 +839,7 @@ def subst_change(pre, post, subst):
     if pre is None or post is None or pre == post:
         return False
     pairs = subst["pairs"]
-    if any(to in pre for _, to in pairs) or any(pre.count(k) != post.count(k) for k in SUBST_KEEP):   # fix round 1 (Codex MED2)
+    if any(to in pre for _, to in pairs) or any(kept_count(pre, k) != kept_count(post, k) for k in SUBST_KEEP):   # fix round 1 (Codex MED2)
         return False
     back = post
     for frm, to in pairs:

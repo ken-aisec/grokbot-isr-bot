@@ -454,6 +454,15 @@ class SubstKind(unittest.TestCase):
             self.refused(pre, pre.replace("Watchtower", "Chief Worry Bot"))
             self.assertTrue(gs.subst_change(pre, "# Chief Worry Bot report\n" + k + "\n", self.NAME), k)
 
+    def test_wt_x005_fix_prose_renamed_its_evidence_kept_is_taken(self):   # the kept why is also said inside the renamed fix text
+        ev = "its program file isn't the one Watchtower installed"
+        pre = f'"evidence": "{ev}",\n"fix": "Watchtower didn\'t run gitleaks: {ev}, so its checks weren\'t done."\n'
+        post = pre.replace("Watchtower didn't run gitleaks: its program file isn't the one Watchtower installed",
+                           "Chief Worry Bot didn't run gitleaks: its program file isn't the one Chief Worry Bot installed")
+        self.assertTrue(gs.subst_change(pre, post, self.NAME))
+        self.refused(pre, pre.replace("Watchtower", "Chief Worry Bot"))   # the evidence renamed too
+        self.refused(pre, post.replace(f'"evidence": "{ev}"', '"evidence": "' + ev.replace("Watchtower", "Chief Worry Bot") + '"'))
+
     def test_a_plain_display_rename_is_still_taken(self):   # guard
         pre = "# Watchtower report 2026-W43\nWatchtower checked 3 skills. Tell Watchtower \"fix it\".\nChecked by: Watchtower rules, gitleaks\n"
         hits = {}

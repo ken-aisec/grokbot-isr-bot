@@ -230,267 +230,303 @@
   },
   {
    "item": "v074",
-   "scenario_rx": "^(crash)$",
-   "key_rx": "^003\\ doctor\\ \\[driver\\]\\ :stdout$",
+   "scenario_rx": "^(box\\-busy_clean_box\\-cli|box\\-platform_refresh\\-cli)$",
+   "key_rx": "^tree\\ workspace/watchtower/state/deltas/audit\\-<EPOCH>\\.json$",
    "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Watchtower didn't run gitleaks: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run gitleaks: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of gitleaks isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of gitleaks isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run husk: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run husk: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of husk isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of husk isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run OSV-Scanner: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run OSV-Scanner: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of OSV-Scanner isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of OSV-Scanner isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run pip-audit: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run pip-audit: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of pip-audit isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of pip-audit isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run SkillSpector: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run SkillSpector: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of SkillSpector isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of SkillSpector isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run TruffleHog: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run TruffleHog: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of TruffleHog isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of TruffleHog isn't the one it installed\","
    ],
    "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+   "why": "v074: the display name in a finding's display fields (title, fix, notes) in this machine-read state file, exact lines; its keys, evidence and where are unchanged"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-emoji_names\\-cli|box\\-empty_account\\-cli|box\\-fixtures_vendor\\-cli|box\\-odd_layout\\-cli|box\\-power_user\\-cli|box\\-strict_auto_review\\-cli)$",
+   "key_rx": "^tree\\ workspace/watchtower/state/deltas/audit\\-<EPOCH>\\.json$",
+   "block": [
+    "-      \"fix\": \"Watchtower didn't run gitleaks: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run gitleaks: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of gitleaks isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of gitleaks isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run husk: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run husk: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of husk isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of husk isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run OSV-Scanner: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run OSV-Scanner: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of OSV-Scanner isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of OSV-Scanner isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run pip-audit: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run pip-audit: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of pip-audit isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of pip-audit isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run SkillSpector: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run SkillSpector: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of SkillSpector isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of SkillSpector isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run TruffleHog: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run TruffleHog: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of TruffleHog isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of TruffleHog isn't the one it installed\","
+   ],
+   "must_see": true,
+   "why": "v074: the display name in a finding's display fields (title, fix, notes) in this machine-read state file, exact lines; its keys, evidence and where are unchanged"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-platform_refresh\\-cli)$",
+   "key_rx": "^tree\\ workspace/watchtower/state/deltas/audit\\-<EPOCH>\\.json\\ \\#2$",
+   "block": [
+    "-      \"fix\": \"Another file in this skill folder didn't pass Watchtower's checks. Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Another file in this skill folder didn't pass Chief Worry Bot's checks. Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\","
+   ],
+   "must_see": true,
+   "why": "v074: the display name in a finding's display fields (title, fix, notes) in this machine-read state file, exact lines; its keys, evidence and where are unchanged"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-platform_refresh\\-cli)$",
+   "key_rx": "^tree\\ workspace/watchtower/state/last_findings\\.json$",
+   "block": [
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Another file in this skill folder didn't pass Watchtower's checks. Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Another file in this skill folder didn't pass Chief Worry Bot's checks. Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Watchtower didn't run gitleaks: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run gitleaks: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of gitleaks isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of gitleaks isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run husk: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run husk: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of husk isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of husk isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run OSV-Scanner: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run OSV-Scanner: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of OSV-Scanner isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of OSV-Scanner isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run pip-audit: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run pip-audit: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of pip-audit isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of pip-audit isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run SkillSpector: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run SkillSpector: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of SkillSpector isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of SkillSpector isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run TruffleHog: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run TruffleHog: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of TruffleHog isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of TruffleHog isn't the one it installed\",",
+    "-      \"fix\": \"Nothing to do. Grok Bot updated 4 of its own files. Watchtower's rules found nothing in the new versions and no two scanners name a dangerous behavior; it accepts them on the next full audit when nothing flags them.\",",
+    "+      \"fix\": \"Nothing to do. Grok Bot updated 4 of its own files. Chief Worry Bot's rules found nothing in the new versions and no two scanners name a dangerous behavior; it accepts them on the next full audit when nothing flags them.\","
+   ],
+   "must_see": true,
+   "why": "v074: the display name in a finding's display fields (title, fix, notes) in this machine-read state file, exact lines; its keys, evidence and where are unchanged"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-busy_clean_box\\-cli)$",
+   "key_rx": "^tree\\ workspace/watchtower/state/last_findings\\.json$",
+   "block": [
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "+      \"fix\": \"Nothing shows Grok Bot made this change, so treat it like a file someone added. Don't use this skill until you've looked. Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its platform list. If you didn't expect it, remove it.\",",
+    "-      \"fix\": \"Watchtower didn't run gitleaks: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run gitleaks: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of gitleaks isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of gitleaks isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run husk: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run husk: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of husk isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of husk isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run OSV-Scanner: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run OSV-Scanner: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of OSV-Scanner isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of OSV-Scanner isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run pip-audit: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run pip-audit: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of pip-audit isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of pip-audit isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run SkillSpector: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run SkillSpector: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of SkillSpector isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of SkillSpector isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run TruffleHog: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run TruffleHog: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of TruffleHog isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of TruffleHog isn't the one it installed\",",
+    "-      \"fix\": \"Nothing to do. Grok Bot updated 1 of its own files. Watchtower's rules found nothing in the new versions and no two scanners name a dangerous behavior; it accepts them on the next full audit when nothing flags them.\",",
+    "+      \"fix\": \"Nothing to do. Grok Bot updated 1 of its own files. Chief Worry Bot's rules found nothing in the new versions and no two scanners name a dangerous behavior; it accepts them on the next full audit when nothing flags them.\","
+   ],
+   "must_see": true,
+   "why": "v074: the display name in a finding's display fields (title, fix, notes) in this machine-read state file, exact lines; its keys, evidence and where are unchanged"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-emoji_names\\-cli|box\\-empty_account\\-cli|box\\-odd_layout\\-cli|box\\-power_user\\-cli|box\\-strict_auto_review\\-cli)$",
+   "key_rx": "^tree\\ workspace/watchtower/state/last_findings\\.json$",
+   "block": [
+    "-      \"fix\": \"Watchtower didn't run gitleaks: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run gitleaks: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of gitleaks isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of gitleaks isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run husk: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run husk: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of husk isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of husk isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run OSV-Scanner: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run OSV-Scanner: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of OSV-Scanner isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of OSV-Scanner isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run pip-audit: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run pip-audit: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of pip-audit isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of pip-audit isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run SkillSpector: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run SkillSpector: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of SkillSpector isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of SkillSpector isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run TruffleHog: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run TruffleHog: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of TruffleHog isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of TruffleHog isn't the one it installed\","
+   ],
+   "must_see": true,
+   "why": "v074: the display name in a finding's display fields (title, fix, notes) in this machine-read state file, exact lines; its keys, evidence and where are unchanged"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-fixtures_vendor\\-cli)$",
+   "key_rx": "^tree\\ workspace/watchtower/state/last_findings\\.json$",
+   "block": [
+    "-      \"fix\": \"Watchtower didn't run gitleaks: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run gitleaks: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of gitleaks isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of gitleaks isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run husk: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run husk: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of husk isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of husk isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run OSV-Scanner: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run OSV-Scanner: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of OSV-Scanner isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of OSV-Scanner isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run pip-audit: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run pip-audit: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of pip-audit isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of pip-audit isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run SkillSpector: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run SkillSpector: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of SkillSpector isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of SkillSpector isn't the one it installed\",",
+    "-      \"fix\": \"Watchtower didn't run TruffleHog: its program file isn't the one Watchtower installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Watchtower's files: tell the owner.\",",
+    "+      \"fix\": \"Chief Worry Bot didn't run TruffleHog: its program file isn't the one Chief Worry Bot installed, so its checks weren't done this time and its last results are kept. Put it back with `bash /workspace/watchtower/app/scripts/install.sh --scanners`. If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.\",",
+    "-      \"title\": \"Watchtower's copy of TruffleHog isn't the one it installed\",",
+    "+      \"title\": \"Chief Worry Bot's copy of TruffleHog isn't the one it installed\",",
+    "-      \"fix\": \"Nothing to do. Grok Bot updated 1 of its own files. Watchtower's rules found nothing in the new versions and no two scanners name a dangerous behavior; it accepts them on the next full audit when nothing flags them.\",",
+    "+      \"fix\": \"Nothing to do. Grok Bot updated 1 of its own files. Chief Worry Bot's rules found nothing in the new versions and no two scanners name a dangerous behavior; it accepts them on the next full audit when nothing flags them.\","
+   ],
+   "must_see": true,
+   "why": "v074: the display name in a finding's display fields (title, fix, notes) in this machine-read state file, exact lines; its keys, evidence and where are unchanged"
   },
   {
    "item": "v074",
    "scenario_rx": "^(tierC)$",
-   "key_rx": "^004\\ installed\\ status\\ :stdout$",
+   "key_rx": "^tree\\ workspace/watchtower/state/last_findings\\.json$",
    "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
+    "-    \"gitleaks not installed: secrets checked with Watchtower's rules only.\",",
+    "+    \"gitleaks not installed: secrets checked with Chief Worry Bot's rules only.\","
    ],
    "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(crash)$",
-   "key_rx": "^004\\ status\\ \\[driver\\]\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-emoji_names\\-cli|box\\-empty_account\\-cli|box\\-odd_layout\\-cli|box\\-strict_auto_review\\-cli)$",
-   "key_rx": "^005\\ status\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-emoji_names\\-driver|box\\-empty_account\\-driver|box\\-odd_layout\\-driver|box\\-strict_auto_review\\-driver)$",
-   "key_rx": "^005\\ status\\ \\[driver\\]\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-power_user\\-cli)$",
-   "key_rx": "^006\\ status\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-power_user\\-driver|extended)$",
-   "key_rx": "^006\\ status\\ \\[driver\\]\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-busy_clean_box\\-driver)$",
-   "key_rx": "^007\\ status\\ \\[driver\\]\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-platform_refresh\\-driver)$",
-   "key_rx": "^008\\ status\\ \\[driver\\]\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-busy_clean_box\\-cli)$",
-   "key_rx": "^009\\ status\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-platform_refresh\\-cli)$",
-   "key_rx": "^010\\ status\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-emoji_names\\-cli|box\\-empty_account\\-cli|box\\-odd_layout\\-cli|box\\-strict_auto_review\\-cli)$",
-   "key_rx": "^013\\ doctor\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-emoji_names\\-driver|box\\-empty_account\\-driver|box\\-odd_layout\\-driver|box\\-strict_auto_review\\-driver)$",
-   "key_rx": "^013\\ doctor\\ \\[driver\\]\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-power_user\\-cli)$",
-   "key_rx": "^014\\ doctor\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-power_user\\-driver)$",
-   "key_rx": "^014\\ doctor\\ \\[driver\\]\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-busy_clean_box\\-driver)$",
-   "key_rx": "^015\\ doctor\\ \\[driver\\]\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-platform_refresh\\-driver)$",
-   "key_rx": "^016\\ doctor\\ \\[driver\\]\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-busy_clean_box\\-cli)$",
-   "key_rx": "^017\\ doctor\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-platform_refresh\\-cli)$",
-   "key_rx": "^018\\ doctor\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-fixtures_vendor\\-driver)$",
-   "key_rx": "^019\\ status\\ \\[driver\\]\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-fixtures_vendor\\-cli)$",
-   "key_rx": "^020\\ status\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-fixtures_vendor\\-driver)$",
-   "key_rx": "^027\\ doctor\\ \\[driver\\]\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-fixtures_vendor\\-cli)$",
-   "key_rx": "^028\\ doctor\\ :stdout$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
-  },
-  {
-   "item": "v074",
-   "scenario_rx": "^(box\\-busy_clean_box\\-cli|box\\-busy_clean_box\\-driver|box\\-emoji_names\\-cli|box\\-emoji_names\\-driver|box\\-empty_account\\-cli|box\\-empty_account\\-driver|box\\-fixtures_vendor\\-cli|box\\-fixtures_vendor\\-driver|box\\-odd_layout\\-cli|box\\-odd_layout\\-driver|box\\-platform_refresh\\-cli|box\\-platform_refresh\\-driver|box\\-power_user\\-cli|box\\-power_user\\-driver|box\\-strict_auto_review\\-cli|box\\-strict_auto_review\\-driver|crash|extended|tierC)$",
-   "key_rx": "^tree\\ workspace/watchtower/state/stage_times\\.json$",
-   "block": [
-    "+  \"Chief Worry Bot's own tools\": <DUR>,",
-    "-  \"Watchtower's own tools\": <DUR>,"
-   ],
-   "must_see": true,
-   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+   "why": "v074: the display name in a finding's display fields (title, fix, notes) in this machine-read state file, exact lines; its keys, evidence and where are unchanged"
   },
   {
    "item": "v074",
