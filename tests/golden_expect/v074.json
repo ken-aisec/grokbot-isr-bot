@@ -22,6 +22,39 @@
   },
   {
    "item": "v074",
+   "scenario_rx": "^(tierA)$",
+   "key_rx": "^087\\ codescan\\ /tmp/code/tests/fixtures\\ :stdout$",
+   "block": [
+    "- \"engine\": \"Watchtower patterns only (semgrep isn't one of Watchtower's checked scanners)\",",
+    "+ \"engine\": \"Chief Worry Bot patterns only (semgrep isn't one of Chief Worry Bot's checked scanners)\","
+   ],
+   "must_see": true,
+   "why": "v074: codescan's \"engine\" value is a prose note for the bot (which patterns ran), renamed; exact lines, the key and every other line unchanged (no program reads it)"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(tierA)$",
+   "key_rx": "^174\\ codescan\\ /tmp/code/tests/fixtures\\ \\(cwd\\ /\\)\\ :stdout$",
+   "block": [
+    "- \"engine\": \"Watchtower patterns only (semgrep isn't one of Watchtower's checked scanners)\",",
+    "+ \"engine\": \"Chief Worry Bot patterns only (semgrep isn't one of Chief Worry Bot's checked scanners)\","
+   ],
+   "must_see": true,
+   "why": "v074: codescan's \"engine\" value is a prose note for the bot (which patterns ran), renamed; exact lines, the key and every other line unchanged (no program reads it)"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(tierA)$",
+   "key_rx": "^261\\ codescan\\ /tmp/code/tests/fixtures\\ \\(cwd\\ /tmp/code\\)\\ :stdout$",
+   "block": [
+    "- \"engine\": \"Watchtower patterns only (semgrep isn't one of Watchtower's checked scanners)\",",
+    "+ \"engine\": \"Chief Worry Bot patterns only (semgrep isn't one of Chief Worry Bot's checked scanners)\","
+   ],
+   "must_see": true,
+   "why": "v074: codescan's \"engine\" value is a prose note for the bot (which patterns ran), renamed; exact lines, the key and every other line unchanged (no program reads it)"
+  },
+  {
+   "item": "v074",
    "scenario_rx": "^(box\\-emoji_names\\-cli|box\\-empty_account\\-cli|box\\-odd_layout\\-cli|box\\-strict_auto_review\\-cli)$",
    "key_rx": "^007\\ breakdown\\ :stdout$",
    "block": [
