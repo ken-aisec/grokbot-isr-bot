@@ -314,14 +314,11 @@ def cmd_daily(args):
     # PR A, Codex round 2 (6): a critical or high finding an earlier run had no room to name is still to be said: never NO_CHANGES
     pending = undelivered_open(snap, new)
     moved = snap.get("plugin_version_changes") or []   # DQ-047 fix round 1: a pending plugin's version bump is said, never NO_CHANGES
-    # b8i4 fix round 2 (Codex 5): an open scanner alert (WT-X005: Watchtower's copy of a scanner isn't the one it installed) is said
-    # every day it is open, never NO_CHANGES: the open platform file that used to keep daily from its quiet answer may go quiet now
-    alerts = scanner_alerts(snap)
-    if snap.get("scanners_missing") and not new and not fixed and not plat and not pending and not moved and not alerts:
+    if snap.get("scanners_missing") and not new and not fixed and not plat and not pending and not moved:
         print("SCANNERS_MISSING " + ", ".join(snap["scanners_missing"]) + ": run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, then `wt.py daily` again")
         return 0
     gap = list(snap.get("stages_skipped") or [])
-    if not new and not fixed and not plat and not pending and not moved and not alerts:
+    if not new and not fixed and not plat and not pending and not moved:
         # R04: nothing changed among what WAS checked; a stage that didn't finish is said, never hidden behind NO_CHANGES
         print(f"NO_CHANGES_BUT_NOT_CHECKED {'; '.join(gap)[:300]}: these were not checked this run (last results kept)" if gap else "NO_CHANGES")
         return 0
@@ -350,6 +347,7 @@ def cmd_daily(args):
     if len(rest) > 10:
         out["more_new"] = f"{len(rest) - 10} more new findings not shown, none more severe than {rest[10]['severity']}. `wt.py breakdown` lists everything."
     out["fixed"] = [compact(f) for f in fixed][:10]
+    alerts = scanner_alerts(snap)
     if alerts:
         out["scanner_alerts"] = alerts
     text = fit_owner_first(out, notes, limit=6000, keep=("decoys", "scanner_alerts", "not_yet_reported", "plugin_version_changes"), before="new")

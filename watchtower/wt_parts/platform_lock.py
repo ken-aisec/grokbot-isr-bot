@@ -405,6 +405,7 @@ def platform_still_bound(p):
         return False
 
 
+PLATFORM_MOVED = "It moved out of the platform's own folders while Watchtower was checking it."   # platform_still_bound failed
 PLATFORM_UPDATE_MAX = 1_000_000   # bytes of a candidate Watchtower reads whole (read_scanned's limit)
 
 
@@ -470,15 +471,35 @@ def finding_files(g):
     return [(str(r or ""), _path_part(w)) for r, w in out if isinstance(w, str) and w.startswith("/")]
 
 
+def coverage_gaps(g):
+    """Fix round 3 (Codex 2): the folders a grouped finding stands for without naming every file in them: a result on a folder
+    (its `where` is one) saved without its list of files (`affected_files`: one from before fix round 2, carried by a daily or by
+    an audit whose gitleaks failed), and a root-cause group with more members than it names (`also_count`), by its skill folder.
+    Told by what the finding holds and what is on disk, never by a folder's name."""
+    w = g.get("where")
+    if not isinstance(w, str) or not w.startswith("/"):
+        return []
+    q, out = _path_part(w), []
+    if not isinstance(g.get("affected_files"), list) and os.path.isdir(q):
+        out.append(q)
+    named = g.get("also_flagged_by") if isinstance(g.get("also_flagged_by"), list) else []
+    if isinstance(g.get("also_count"), int) and g["also_count"] > len(named):
+        out.append(skill_root(q) or os.path.dirname(q))
+    return out
+
+
 def flag_index(fs):
     """Fix round 2 (Codex 4): {path: rules} of the findings in fs at medium or above that _flagged_here counts, each file by its
     path as written and its real path, grouped findings by every file they stand for (finding_files). A line carried from the last
-    run by the severity it was found at: there it was a Platform line (mark_platform made it info, keeping `severity_was`)."""
+    run by the severity it was found at: there it was a Platform line (mark_platform made it info, keeping `severity_was`). Fix
+    round 3 (Codex 2): a grouped finding that doesn't name all its files (coverage_gaps) holds every file under its folder, keyed
+    by the folder with a trailing separator, until a scan that finishes gives the files again."""
     idx = {}
     for g in fs:
         if (g.get("severity_was") or g.get("severity")) not in ("critical", "high", "medium"):
             continue
-        for r, q in finding_files(g):
+        keys = [(r, q, "") for r, q in finding_files(g)] + [(str(g.get("rule") or ""), d, os.sep) for d in coverage_gaps(g)]
+        for r, q, tail in keys:
             if r.startswith(("WT-I", "WT-X")):
                 continue
             try:
@@ -486,7 +507,7 @@ def flag_index(fs):
             except (OSError, ValueError):
                 rq = q
             for k in {q, rq}:
-                idx.setdefault(k, set()).add(r)
+                idx.setdefault(k.rstrip(os.sep) + tail if tail else k, set()).add(r)
     return idx
 
 
@@ -494,12 +515,21 @@ def _flagged_here(p, idx):
     """Fix round 1 (Codex 4): the rules of this run's other findings at medium or above on the file p (or its real path): an
     unpinned MCP launcher (WT-M001), a key in it (WT-S001, gitleaks's WT-S002, carried from the last run when gitleaks failed),
     and every other family. The scanners' folder votes (WT-X) are decided by _vote_why; integrity lines (WT-I) are this check's.
-    Fix round 2 (Codex 4): `idx` is flag_index's, so a grouped finding holds every file it stands for."""
+    Fix round 2 (Codex 4): `idx` is flag_index's, so a grouped finding holds every file it stands for. Fix round 3 (Codex 2): and
+    one that doesn't name them all holds every file in a folder above p (or above its real path)."""
     try:
         rp = os.path.realpath(p)
     except (OSError, ValueError):
         rp = p
-    return sorted(idx.get(p, set()) | idx.get(rp, set()))
+    out = idx.get(p, set()) | idx.get(rp, set())
+    for x in {p, rp}:
+        d = os.path.dirname(x)
+        while True:
+            out = out | idx.get(d.rstrip(os.sep) + os.sep, set())
+            if os.path.dirname(d) == d:
+                break
+            d = os.path.dirname(d)
+    return sorted(out)
 
 
 def _candidate_why(p, h, rules, idx):
@@ -507,12 +537,11 @@ def _candidate_why(p, h, rules, idx):
     here and must be exactly the ones the audit fingerprinted (h), and the whole rule set reads them (platform_full_verdict);
     any other finding of this run at medium or above on the file holds it too (_flagged_here). Fix round 2 (Codex 2): it must
     still lead where it led when it was chosen, inside a platform folder (platform_still_bound), before and after the read."""
-    moved = "It moved out of the platform's own folders while Watchtower was checking it."
     if not platform_still_bound(p):
-        return moved
+        return PLATFORM_MOVED
     t, h2 = read_scanned(p, limit=PLATFORM_UPDATE_MAX)
     if not platform_still_bound(p):
-        return moved
+        return PLATFORM_MOVED
     if t is None:
         return ("It is over 1 MB, so Watchtower can't check all of it." if not h2.startswith("unreadable:")
                 else "Watchtower couldn't read it.")
@@ -611,6 +640,33 @@ def hold_on_kept_votes(fs, manifest):
                 continue
         out.append(f)
     return out + [unverified_platform_finding(q, manifest[q], base.get(q), why=held[q]) for q in sorted(held)]
+
+
+def unbound_updates(fs):
+    """Fix round 3 (Codex 1): the quiet platform updates in fs (`platform_update`) with a place, a merged one's also_at included,
+    that no longer leads where it led when it was chosen (platform_still_bound)."""
+    return [f for f in fs if f.get("platform_update")
+            and not all(platform_still_bound(q) for q in [f.get("where")] + list(f.get("also_at") or []))]
+
+
+def hold_moved_updates(fs, moved, manifest):
+    """Fix round 3 (Codex 1): fail closed on the quiet updates in `moved` (unbound_updates) found after settlement: each goes from
+    fs, so the Platform refresh line never names it, and every place it names (also_at included) is a counted high instead
+    (unverified_platform_finding, its fix starting with PLATFORM_MOVED) that never rolls: the baseline keeps its old hash."""
+    if not moved:
+        return fs
+    gone = {id(f) for f in moved}
+    places = sorted({q for f in moved for q in [f["where"]] + list(f.get("also_at") or [])})
+    base = load_baseline()[0]
+    held = [unverified_platform_finding(q, manifest[q], base.get(q), why=PLATFORM_MOVED) for q in places
+            if isinstance(manifest.get(q), str) and re.fullmatch(r"[0-9a-f]{64}", manifest[q])]   # every candidate's is
+    return merge_managed_mirrors([f for f in fs if id(f) not in gone] + held, manifest)
+
+
+def hold_unbound_updates(fs, manifest):
+    """Fix round 3 (Codex 1): every run, after settlement and daily's carried lines and before roll_builtin's gate and the Platform
+    refresh line, each quiet update is checked again where it leads; one that moved is a counted high (hold_moved_updates)."""
+    return hold_moved_updates(fs, unbound_updates(fs), manifest)
 
 
 def merge_managed_mirrors(fs, manifest):

@@ -11,6 +11,8 @@
    so the files' updates were quiet and rolled in. A grouped finding keeps its files (`affected_files`), and settlement, daily's
    carried lines and the roll use them.
 5. Daily said NO_CHANGES over an open WT-X005 (a scanner that isn't the copy Watchtower installed) once nothing else was open.
+   Fix round 3 undid this change (the owner's decision, Oct 23): daily on a box with a missing scanner prints what f7c28e6 printed,
+   and DailyScannerAlerts asserts that now.
 
 Each test marked R in its docstring fails on 47d3aba's sources (the changed files under watchtower/ stashed) at an assertion; G is
 a guard (a contrast) that passes there and here.
@@ -240,19 +242,20 @@ class DailyScannerAlerts(_Middle):
         return [(f["rule"], os.path.basename(f["where"])) for f in json.loads(out).get("scanner_alerts", [])]
 
     def test_an_open_scanner_alert_is_said_beside_a_quiet_platform_update(self):
-        """R: a swapped gitleaks (WT-X005, new the first day), then alpha's clean update (quiet): the next daily still names the
-        swapped scanner and how to put it back (47d3aba: NO_CHANGES)."""
+        """G (changed in fix round 3, the owner's decision of Oct 23: daily on a box with a missing scanner prints what f7c28e6
+        printed, no full alert): a swapped gitleaks (WT-X005, new the first day, in scanner_alerts), then alpha's clean update
+        (quiet): the next daily is f7c28e6's SCANNERS_MISSING line, which says how to put the scanner back, and the WT-X005 stays
+        open in the findings."""
         self.start()
         self.swap_gitleaks()
         self.assertIn(("WT-X005", "gitleaks"), self.alerts(self.daily()))
         add(self.md("alpha"), "One more line.\n")
         out = self.daily()
-        self.assertTrue(out.startswith("{"), out)                               # never NO_CHANGES or SCANNERS_MISSING alone
-        r = json.loads(out)
-        self.assertEqual(self.alerts(out), [("WT-X005", "gitleaks")])
-        self.assertIn("install.sh --scanners", r["scanner_alerts"][0]["fix"])
+        self.assertEqual(out, "SCANNERS_MISSING gitleaks: run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, "
+                              "then `wt.py daily` again")
+        self.assertEqual([os.path.basename(f["where"]) for f in self.snap()["findings"] if f["rule"] == "WT-X005"], ["gitleaks"])
         self.assertEqual(self.counted_high(self.md("alpha")), [])
-        self.assertNotIn("platform_unverified", r)
+        self.assertEqual(self.unverified(), [])
 
     def test_without_an_alert_the_quiet_update_is_no_changes(self):
         """G: the contrast, the same quiet update with every scanner the one Watchtower installed."""

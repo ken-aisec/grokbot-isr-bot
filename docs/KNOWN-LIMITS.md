@@ -147,9 +147,13 @@ refresh" line and rolls into the baseline on the next full audit. Accepted limit
   with or without a blank in it (fix round 2, Codex 3: `"eval(payload)"`), WT-T013 included, and one that isn't JSON
   is held. Keys aren't read that way, only values. Any other finding of the run at medium or above on the file (an
   unpinned MCP launcher, a key gitleaks or Watchtower's own walk found, carried gitleaks results included) holds it too; in
-  daily, so does one kept from the last run. A grouped finding counts for every file it stands for (fix round 2, Codex 4):
+  daily, so does one kept from the last run. A grouped finding counts for every file it stands for: since fix round 2 (Codex 4)
   gitleaks's one WT-S002 for four or more files in a folder keeps their paths (`affected_files`), and a line kept from the last
-  run counts at the severity it was found at, even where it showed as a Platform line. Story wording in a built-in deck template stays info (DQ-024), so it never holds
+  run counts at the severity it was found at, even where it showed as a Platform line. Fix round 2 covered only lines saved
+  with that list: a grouped line saved before it (no `affected_files`), carried by a daily or by an audit whose gitleaks failed,
+  held none of its files. Since fix round 3 (Codex verify 2, high 2) a grouped result that doesn't name all its files (a line
+  on a folder without the list, or a root-cause group naming fewer members than it has) holds every candidate under its folder
+  (the group's skill folder for a root-cause group) until a scan that finishes names the files again. Story wording in a built-in deck template stays info (DQ-024), so it never holds
   one. Noise kept: a vendor skill whose text the owner's rules would flag (an action with no approval line, `eval(`) stays a
   counted high on every update until a release lists it.
 - A first run (a new box or wiped state) is silent for a changed file at a release-list path, which stays out of the first
@@ -165,15 +169,22 @@ refresh" line and rolls into the baseline on the next full audit. Accepted limit
   (fix round 1, Codex 2): `.grok/bundled` leading anywhere else gets no middle path, so every changed file there is a counted
   high. A file that is itself a link is never on the release list (Codex 3), `<bucket>` lines included. Each candidate keeps
   the real path it had when it was chosen (fix round 2, Codex 2), checked again before and after its bytes are read after the
-  scanners, and before it rolls in: a platform folder moved out and replaced by a link while the scanners ran is a counted
-  high and keeps its old baseline bytes. A move after that last check, in the moment before the baseline is written, isn't
-  seen until the next run.
+  scanners: a platform folder moved out and replaced by a link while the scanners ran is a counted high and keeps its old
+  baseline bytes. Fix round 2 also checked it before the roll, but a move found there (after settlement) only kept the update
+  out of the baseline: it stayed the quiet Platform refresh line, with no counted high. Since fix round 3 (Codex verify 2,
+  high 1) every run checks each quiet update again after settlement (and after daily's carried lines), before the roll's gate
+  and the refresh line, and the roll checks it once more right before it writes the baseline: a failure at either is a counted
+  high for every place it names (a merged managed-skills finding's also_at included), no refresh entry, and the old baseline
+  hash. A move after that last check, in the moment before the baseline is written, isn't seen until the next run.
 - A `<bucket>` line covers a folder named exactly like a real UUID pair, 8-4-4-4-12 lowercase hex digits twice, joined by "_"
   (Codex 8). The sync marker test (PLATFORM_CHURN) keeps its older, looser pattern.
 - In daily, a scanner line kept from the last run (it may lack a kind) makes a quiet update in its folder a counted high
   until the next full audit scans the folder again.
-- Daily never answers NO_CHANGES (or SCANNERS_MISSING alone) while a WT-X005 is open (fix round 2, Codex 5): a swapped
-  scanner is named in `scanner_alerts` every day, also once no platform file keeps daily from its quiet answer.
+- Daily on a box with a missing scanner answers as it did before b8i4 (the owner's decision, Oct 23; fix round 3 undid fix
+  round 2's change): with nothing else to say it prints SCANNERS_MISSING (or NO_CHANGES_BUT_NOT_CHECKED, or NO_CHANGES), even
+  while a WT-X005 is open. A swapped scanner's WT-X005 is in `scanner_alerts` the day it is new and in every full answer
+  after; on a quiet day it stays open in the findings and the audit, but daily doesn't repeat it, also once no platform file
+  keeps daily from its quiet answer.
 - A full audit that accepts a quiet update still shows the one info Platform refresh line naming it, saying the audit accepted
   it (fix round 1, Codex 7): no score, no high count, not new. A listed update it accepts is only counted in the audit's note,
   as before.

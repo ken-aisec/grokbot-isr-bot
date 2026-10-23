@@ -136,17 +136,22 @@ def roll_builtin(fs, meta, notes):
         held = flagged if mid else flagged | flagged_votes
         return q not in held and (root or q) not in held and checked
 
-    keep, rolled = [], 0
+    keep, rolled, moved = [], 0, []
     for f in fs:
         w = f["where"].split(":")[0]
+        mid = bool(f.get("platform_update"))
+        # fix round 1 (Codex 6): each place a merged managed-skills finding names (also_at) is checked on its own, and the
+        # finding rolls only when every one of them passes, so a held copy keeps the bytes the baseline had for it
+        places = [w] + list(f.get("also_at") or [])
+        # fix round 2 (Codex 2): and each still leads where it led when it was chosen, inside a platform folder. Fix round 3 (Codex
+        # 1): checked here, before the gate, as the last check before the baseline is written; one that fails is a counted high
+        # (hold_moved_updates), never kept as a quiet update the Platform refresh line names
+        if mid and not all(platform_still_bound(q) for q in places):
+            moved.append(f)
+            continue
         # item 8 (R3): a platform change the vendor release list doesn't include waits for a release that lists it, never rolls
         if f["rule"] in ("WT-I001", "WT-I002", "WT-I003") and builtin(f) and not f.get("unverified_platform"):
-            mid = bool(f.get("platform_update"))
-            # fix round 1 (Codex 6): each place a merged managed-skills finding names (also_at) is checked on its own, and the
-            # finding rolls only when every one of them passes, so a held copy keeps the bytes the baseline had for it
-            places = [w] + list(f.get("also_at") or [])
-            # fix round 2 (Codex 2): and each still leads where it led when it was chosen, inside a platform folder
-            if not (mid and blocked) and all(passes(q, mid) and (not mid or platform_still_bound(q)) for q in places):
+            if not (mid and blocked) and all(passes(q, mid) for q in places):
                 for q in places:
                     if f["rule"] == "WT-I003":
                         base.pop(q, None)
@@ -162,7 +167,7 @@ def roll_builtin(fs, meta, notes):
         save_baseline(base)
         notes.append(f"{rolled} built-in plugin or skill files were added, updated or removed by the platform. Nothing flagged them, so they were accepted automatically.")
         ledger({"event": "builtin-roll", "files": rolled})
-    return keep
+    return hold_moved_updates(keep + moved, moved, meta["manifest"])
 
 
 def is_accepted(f, sup, today):
@@ -393,6 +398,9 @@ def run_audit_locked(args, quick):
             if f["rule"] in SLOW_RULES and not known(f, have) and f["where"] not in rescanned:
                 fs.append(kept_line(f))
         fs = sort_findings(merge_managed_mirrors(hold_on_kept_votes(fs, meta["manifest"]), meta["manifest"]))   # b8i4
+    # b8i4 fix round 3 (Codex 1): every quiet platform update still leads where it led when it was chosen, or it is a counted high
+    # (never the Platform refresh line, never rolled), whether or not this run rolls anything
+    fs = sort_findings(hold_unbound_updates(fs, meta["manifest"]))
     if not quick and "SkillSpector and husk" not in STAGE_FAILED:
         fs = roll_builtin(fs, meta, meta["notes"])
     fs = split_facts(platform_owned(fs))
