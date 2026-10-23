@@ -121,6 +121,10 @@ def roll_builtin(fs, meta, notes):
         # b8i4: a wording-only vote on a platform skill (DQ-042) doesn't hold back a middle-path update: settle_platform_updates
         # already let it through. A listed update still waits for it, as before.
         (flagged_votes if f["rule"] == "WT-X003" and unconfirmed_platform_vote(f, fs) else flagged).update({w, skill_root(w) or w})
+        # fix round 2 (Codex 4): a grouped finding (gitleaks's WT-S002 on a folder) holds every file it stands for
+        for q in f.get("affected_files") or []:
+            if isinstance(q, str):
+                flagged.update({q, skill_root(q) or q})
     # b8i4 fix round 1 (Codex 5): a middle-path update rolls only after every check of it finished: a secret-scanning stage that
     # failed this run (its last results are only carried) holds it, and so does a scanner that ran out of time on its folder
     blocked = [s for s in MIDDLE_PATH_STAGES if s in STAGE_FAILED]
@@ -141,7 +145,8 @@ def roll_builtin(fs, meta, notes):
             # fix round 1 (Codex 6): each place a merged managed-skills finding names (also_at) is checked on its own, and the
             # finding rolls only when every one of them passes, so a held copy keeps the bytes the baseline had for it
             places = [w] + list(f.get("also_at") or [])
-            if not (mid and blocked) and all(passes(q, mid) for q in places):
+            # fix round 2 (Codex 2): and each still leads where it led when it was chosen, inside a platform folder
+            if not (mid and blocked) and all(passes(q, mid) and (not mid or platform_still_bound(q)) for q in places):
                 for q in places:
                     if f["rule"] == "WT-I003":
                         base.pop(q, None)
@@ -442,6 +447,7 @@ def run_audit_locked(args, quick):
     snapshot["notes"] = [mask_secrets(n) if isinstance(n, str) else n for n in snapshot["notes"]]   # round 2: a scanner's error line too
     mask_approved_copies()                       # and its approved skill copies (Codex, round 1)
     save_json(state_path("last_findings.json"), snapshot)
+    save_platform_held(live + suppressed, meta.get("platform_held_before"))   # b8i4 fix round 2 (Codex 1)
     refresh_access_map(snapshot, meta)           # batch 5 (a): state/access_map.json, from what this run collected
     with open(state_path("score_history.csv"), "a") as f:
         f.write(f"{snapshot['at']},{s},{len(live)},{'daily' if quick else 'full'},{score_fingerprint()}\n")

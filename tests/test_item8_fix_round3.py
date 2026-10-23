@@ -70,7 +70,7 @@ class FirstRunWithHistory(_Platform):
 
     def test_2_an_emptied_baseline_on_a_box_with_history_vouches_for_no_platform_file(self):
         self.start()
-        plant = self.loose()
+        plant = self.md("helper")
         put(plant, CLEAN.format(n="helper"))
         self.empty_it()
         self.assertNotEqual(self.daily(), "NO_CHANGES")
@@ -82,7 +82,7 @@ class FirstRunWithHistory(_Platform):
 
     def test_2_the_first_baseline_command_on_such_a_box_holds_the_plant(self):
         self.start()
-        plant = self.loose()
+        plant = self.md("helper")
         put(plant, CLEAN.format(n="helper"))
         self.empty_it()
         out = self.run_cmd("baseline", "--roots", *self.roots)[1]

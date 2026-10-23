@@ -143,25 +143,37 @@ refresh" line and rolls into the baseline on the next full audit. Accepted limit
   skill folder when one of them is held, and everything while the release list can't be used (D4).
 - "The rules find nothing" is the whole rule set (fix round 1, Codex 4): the new bytes are read again, must be exactly the bytes
   the audit fingerprinted, and are read as the owner's own file would be (a SKILL.md as a skill, anything else as a reference
-  file), never with the reduced vendor rules; a metadata JSON file also has every text value with a blank in it read as skill
-  text (WT-T013 included), and one that isn't JSON is held. Any other finding of the run at medium or above on the file (an
+  file), never with the reduced vendor rules; a metadata JSON file also has every string value read as skill text, as decoded,
+  with or without a blank in it (fix round 2, Codex 3: `"eval(payload)"`), WT-T013 included, and one that isn't JSON
+  is held. Keys aren't read that way, only values. Any other finding of the run at medium or above on the file (an
   unpinned MCP launcher, a key gitleaks or Watchtower's own walk found, carried gitleaks results included) holds it too; in
-  daily, so does one kept from the last run. Story wording in a built-in deck template stays info (DQ-024), so it never holds
+  daily, so does one kept from the last run. A grouped finding counts for every file it stands for (fix round 2, Codex 4):
+  gitleaks's one WT-S002 for four or more files in a folder keeps their paths (`affected_files`), and a line kept from the last
+  run counts at the severity it was found at, even where it showed as a Platform line. Story wording in a built-in deck template stays info (DQ-024), so it never holds
   one. Noise kept: a vendor skill whose text the owner's rules would flag (an action with no approval line, `eval(`) stays a
   counted high on every update until a release lists it.
 - A first run (a new box or wiped state) is silent for a changed file at a release-list path, which stays out of the first
   baseline (D8). A new skill folder, or a new file in one, is the middle path's only in an update run (fix round 1, Codex 1): on
   a first run it is a counted high, and it stays one on every later run while it is there (the last run's findings say it was
-  held outside the middle path). That memory is `state/last_findings.json`, which the Bot can write: deleting it makes such a
-  folder look new in the next run (the same class as the baseline-line limit above). The same stickiness holds for a new skill
-  folder held while the release list couldn't be used or its folder couldn't be walked.
+  held outside the middle path). The same holds for a first baseline `wt.py baseline` takes, and for the owner's yes after a
+  reset (fix round 2, Codex 1): every baseline keeps what its audit held in `state/platform_held.json`, and every run keeps it
+  there while the file exists, so a run with other roots doesn't forget it. That memory is `state/last_findings.json` and
+  `state/platform_held.json`, which the Bot can write: deleting both makes such a folder look new in the next run (the same
+  class as the baseline-line limit above). The same stickiness holds for a new skill folder held while the release list
+  couldn't be used or its folder couldn't be walked; one removed and added again later is a new folder.
 - A platform folder that is itself a link is followed only into another platform folder as the home folder really has it
   (fix round 1, Codex 2): `.grok/bundled` leading anywhere else gets no middle path, so every changed file there is a counted
-  high. A file that is itself a link is never on the release list (Codex 3), `<bucket>` lines included.
+  high. A file that is itself a link is never on the release list (Codex 3), `<bucket>` lines included. Each candidate keeps
+  the real path it had when it was chosen (fix round 2, Codex 2), checked again before and after its bytes are read after the
+  scanners, and before it rolls in: a platform folder moved out and replaced by a link while the scanners ran is a counted
+  high and keeps its old baseline bytes. A move after that last check, in the moment before the baseline is written, isn't
+  seen until the next run.
 - A `<bucket>` line covers a folder named exactly like a real UUID pair, 8-4-4-4-12 lowercase hex digits twice, joined by "_"
   (Codex 8). The sync marker test (PLATFORM_CHURN) keeps its older, looser pattern.
 - In daily, a scanner line kept from the last run (it may lack a kind) makes a quiet update in its folder a counted high
   until the next full audit scans the folder again.
+- Daily never answers NO_CHANGES (or SCANNERS_MISSING alone) while a WT-X005 is open (fix round 2, Codex 5): a swapped
+  scanner is named in `scanner_alerts` every day, also once no platform file keeps daily from its quiet answer.
 - A full audit that accepts a quiet update still shows the one info Platform refresh line naming it, saying the audit accepted
   it (fix round 1, Codex 7): no score, no high count, not new. A listed update it accepts is only counted in the audit's note,
   as before.

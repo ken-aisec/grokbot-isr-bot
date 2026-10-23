@@ -87,8 +87,9 @@ def audit(roots, exports, quick=False):
     # (settle_platform_updates); every other unproven file is a counted high here. Fix round 1 (Codex 1): new skill folders and
     # new files in one only in an update run, and never one the last run held outside the middle path.
     unproven = platform_unproven(manifest)
+    held_before = platform_held_before()   # fix round 2 (Codex 1): kept by save_platform_held, after any run or `wt.py baseline`
     cands = platform_update_candidates(unproven, manifest, base, plat_short, established=base_status == "ok",
-                                       held_before=platform_held_before())
+                                       held_before=held_before)
     for p in sorted(unproven - set(cands)):
         fs.append(unverified_platform_finding(p, manifest[p], base.get(p)))
     if base_status == "reset":   # R4: never a fresh start; nothing is re-approved until the owner says yes
@@ -350,7 +351,7 @@ def audit(roots, exports, quick=False):
     fs = merge_managed_mirrors(settle_platform_updates(fs, cands, manifest, base, rules), manifest)   # b8i4
     fs = sort_findings(dedupe(fs))
     meta = {"inventory": {k: len(v) for k, v in inv.items() if k not in ("non_live_skills", "platform_aliases")}, "notes": notes, "plugin_version_changes": version_changes, "manifest": manifest, "persistence": snap, "scanners_missing": gone,
-            "skill_dirs": [os.path.dirname(x) for x in inv["skills"]], "baseline_status": base_status,
+            "skill_dirs": [os.path.dirname(x) for x in inv["skills"]], "baseline_status": base_status, "platform_held_before": sorted(held_before),
             "access_sources": {"roots": list(roots), "mcp": list(inv["mcp_configs"]), "plugin_files": list(inv["plugin_files"]),
                                "browser": jar.get("hosts"),   # batch 5 (a); PR B, Codex round 1 (2): this run's own look at the jar
                                # round 2 (1, 3): the jar and the cookie seed looked at whole (or said not to be), the crontab's

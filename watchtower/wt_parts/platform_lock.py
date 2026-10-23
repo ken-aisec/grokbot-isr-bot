@@ -314,18 +314,40 @@ def platform_real_roots():
     return {os.path.normpath(os.path.join(os.path.realpath(b), sub)) for b in home_bases() for sub in PLATFORM_ROOT_SUBS}
 
 
+PLATFORM_HELD = "platform_held.json"   # fix round 2 (Codex 1): the held paths, kept by every run and by `wt.py baseline`
+
+
+def _held_paths(fs):
+    """The paths of the findings in fs held outside the middle path (an unverified_platform finding without `platform_candidate`),
+    with the other places a merged finding names."""
+    out = set()
+    for f in expand_groups(fs):
+        if isinstance(f, dict) and f.get("unverified_platform") and not f.get("platform_candidate") and not f.get("platform_coverage"):
+            out.update(q for q in [f.get("where")] + list(f.get("also_at") or []) if isinstance(q, str))
+    return out
+
+
 def platform_held_before():
     """Fix round 1 (Codex 1): the platform files the last run held outside the middle path (an unverified_platform finding without
     `platform_candidate`: a first run's, or one held while the release list couldn't be used or its folder couldn't be walked),
     with the other places a merged finding names. Such a file isn't new in this run, so it is no "new-skill" or "in-skill"
-    candidate: held on a first run, held on every run after. Read from state/last_findings.json, which the Bot can write (deleting
-    it is like writing a baseline line: the accepted limit)."""
+    candidate: held on a first run, held on every run after. Read from state/last_findings.json and (fix round 2, Codex 1)
+    state/platform_held.json, which `wt.py baseline` writes too (its audit saves no findings), so a first baseline taken by the
+    command holds as a first audit does. The Bot can write both (deleting them is like writing a baseline line: the accepted limit)."""
     prev = load_json(state_path("last_findings.json"), {}) or {}
-    out = set()
-    for f in expand_groups(list(prev.get("findings") or []) + list(prev.get("suppressed") or [])) if isinstance(prev, dict) else []:
-        if isinstance(f, dict) and f.get("unverified_platform") and not f.get("platform_candidate") and not f.get("platform_coverage"):
-            out.update(q for q in [f.get("where")] + list(f.get("also_at") or []) if isinstance(q, str))
+    out = _held_paths(list(prev.get("findings") or []) + list(prev.get("suppressed") or [])) if isinstance(prev, dict) else set()
+    kept = load_json(state_path(PLATFORM_HELD), None)
+    if isinstance(kept, dict) and isinstance(kept.get("paths"), list):
+        out.update(q for q in kept["paths"] if isinstance(q, str))
     return out
+
+
+def save_platform_held(fs, before):
+    """Fix round 2 (Codex 1): every path this run held outside the middle path, and every one held before that is still there (a
+    run with other roots doesn't see it, and must not forget it), in state/platform_held.json. Written once there is one."""
+    paths = sorted(q for q in _held_paths(fs) | set(before or ()) if os.path.lexists(q))
+    if paths or os.path.lexists(state_path(PLATFORM_HELD)):
+        save_json(state_path(PLATFORM_HELD), {"paths": paths})
 
 
 def platform_update_candidates(unproven, manifest, base, short, established=False, held_before=frozenset()):
@@ -339,7 +361,9 @@ def platform_update_candidates(unproven, manifest, base, short, established=Fals
     list (any hash, `<bucket>` lines included) or in the baseline; "new-skill", its skill folder (platform_skill_folder) has no
     path the baseline or the release list knows; "in-skill", it has. A loose file at no known path is no candidate. Fix round 1
     (Codex 1): "new-skill" and "in-skill" only in an update run (`established`: a baseline to compare with), and never for a file
-    the last run held outside the middle path (`held_before`, platform_held_before)."""
+    the last run held outside the middle path (`held_before`, platform_held_before). Fix round 2 (Codex 2): each candidate is
+    bound to the real path it had here (PLATFORM_BOUND), and platform_still_bound checks it again before it is settled and rolled."""
+    PLATFORM_BOUND.clear()
     if platform_lock_problem():
         return {}
     gaps = {os.path.normpath(d) for d, _ in short}
@@ -348,8 +372,11 @@ def platform_update_candidates(unproven, manifest, base, short, established=Fals
     for p in sorted(unproven):
         h = manifest.get(p)
         if (":" in p or not isinstance(h, str) or not re.fullmatch(r"[0-9a-f]{64}", h) or _under(os.path.normpath(p), gaps)
-                or os.path.islink(p) or not platform_skill_path(p, line=False) or not _under(os.path.realpath(p), real_roots, strict=True)):
+                or os.path.islink(p) or not platform_skill_path(p, line=False)):
             continue   # a file that is itself a link (to another file, even in the same root) is no vendor file: never quiet
+        rp = os.path.realpath(p)
+        if not _under(rp, real_roots, strict=True):
+            continue
         d = platform_skill_folder(p, manifest)
         if p in base or platform_lock_path(p):
             out[p] = ("update", d)
@@ -357,7 +384,25 @@ def platform_update_candidates(unproven, manifest, base, short, established=Fals
             if d not in known:
                 known[d] = _known_under(d, base)
             out[p] = ("in-skill" if known[d] else "new-skill", d)
+        if p in out:
+            PLATFORM_BOUND[p] = rp
     return out
+
+
+PLATFORM_BOUND = {}   # fix round 2 (Codex 2): {candidate: the real path it had when platform_update_candidates chose it}
+
+
+def platform_still_bound(p):
+    """Fix round 2 (Codex 2): True while the candidate p still leads where it led when it was chosen, that place is still inside a
+    platform folder where the home folder really has it, and p is still no link and still a platform skill path. A platform
+    folder moved out and replaced by a link while the scanners ran (the file's bytes kept) fails this, so it is never quiet and
+    never rolled in."""
+    rp = PLATFORM_BOUND.get(p)
+    try:
+        return (rp is not None and os.path.realpath(p) == rp and not os.path.islink(p) and bool(platform_skill_path(p, line=False))
+                and _under(rp, platform_real_roots(), strict=True))
+    except (OSError, ValueError):
+        return False
 
 
 PLATFORM_UPDATE_MAX = 1_000_000   # bytes of a candidate Watchtower reads whole (read_scanned's limit)
@@ -372,9 +417,10 @@ def platform_scan_verdict(batch, t):
 
 def _instruction_texts(t):
     """Fix round 1 (Codex 4): the text values of a platform metadata JSON file (cache.json's skill bodies and descriptions, a
-    plugin's description, a prompt): every string in it with a blank in it, duplicate keys included, each read on its own. None
-    when it isn't JSON, so nothing in it can be read as an instruction."""
-    out = []
+    plugin's description, a prompt): every string value in it, duplicate keys included, each read on its own (once). Fix round 2
+    (Codex 3): with or without a blank in it, as decoded: "eval\\u0028payload\\u0029" is eval(payload) to the platform. None when it
+    isn't JSON, so nothing in it can be read as an instruction."""
+    out = {}
 
     def pairs(ps):
         for _, v in ps:
@@ -382,8 +428,8 @@ def _instruction_texts(t):
         return {}
 
     def walk(v):
-        if isinstance(v, str) and re.search(r"\s", v):
-            out.append(v)
+        if isinstance(v, str):
+            out[v] = None
         elif isinstance(v, list):
             for x in v:
                 walk(x)
@@ -392,7 +438,7 @@ def _instruction_texts(t):
         walk(json.loads(t, object_pairs_hook=pairs))
     except (ValueError, RecursionError):
         return None
-    return out
+    return list(out)
 
 
 def platform_full_verdict(p, t, rules):
@@ -416,30 +462,57 @@ def platform_full_verdict(p, t, rules):
     return hit, binary
 
 
-def _flagged_here(p, fs):
+def finding_files(g):
+    """Fix round 2 (Codex 4): every file a finding is about, with its rule: its own place, each file a grouped finding stands for
+    (gitleaks's WT-S002 on a folder keeps them in `affected_files`) and each finding folded into it (`also_flagged_by`)."""
+    out = [(g.get("rule"), g.get("where"))] + [(g.get("rule"), q) for q in g.get("affected_files") or []]
+    out += [(a.get("rule"), a.get("where")) for a in g.get("also_flagged_by") or [] if isinstance(a, dict)]
+    return [(str(r or ""), _path_part(w)) for r, w in out if isinstance(w, str) and w.startswith("/")]
+
+
+def flag_index(fs):
+    """Fix round 2 (Codex 4): {path: rules} of the findings in fs at medium or above that _flagged_here counts, each file by its
+    path as written and its real path, grouped findings by every file they stand for (finding_files). A line carried from the last
+    run by the severity it was found at: there it was a Platform line (mark_platform made it info, keeping `severity_was`)."""
+    idx = {}
+    for g in fs:
+        if (g.get("severity_was") or g.get("severity")) not in ("critical", "high", "medium"):
+            continue
+        for r, q in finding_files(g):
+            if r.startswith(("WT-I", "WT-X")):
+                continue
+            try:
+                rq = os.path.realpath(q)
+            except (OSError, ValueError):
+                rq = q
+            for k in {q, rq}:
+                idx.setdefault(k, set()).add(r)
+    return idx
+
+
+def _flagged_here(p, idx):
     """Fix round 1 (Codex 4): the rules of this run's other findings at medium or above on the file p (or its real path): an
     unpinned MCP launcher (WT-M001), a key in it (WT-S001, gitleaks's WT-S002, carried from the last run when gitleaks failed),
-    and every other family. The scanners' folder votes (WT-X) are decided by _vote_why; integrity lines (WT-I) are this check's."""
+    and every other family. The scanners' folder votes (WT-X) are decided by _vote_why; integrity lines (WT-I) are this check's.
+    Fix round 2 (Codex 4): `idx` is flag_index's, so a grouped finding holds every file it stands for."""
     try:
         rp = os.path.realpath(p)
     except (OSError, ValueError):
         rp = p
-    out = set()
-    for g in fs:
-        r, w = str(g.get("rule") or ""), g.get("where")
-        if r.startswith(("WT-I", "WT-X")) or g.get("severity") not in ("critical", "high", "medium") or not isinstance(w, str) or not w.startswith("/"):
-            continue
-        q = _path_part(w)
-        if q == p or q == rp or os.path.realpath(q) == rp:
-            out.add(r)
-    return sorted(out)
+    return sorted(idx.get(p, set()) | idx.get(rp, set()))
 
 
-def _candidate_why(p, h, rules, fs):
+def _candidate_why(p, h, rules, idx):
     """Why the candidate p (sha256 h) can't be quiet on its own bytes, or "". Fix round 1 (Codex 4): its bytes are read again
     here and must be exactly the ones the audit fingerprinted (h), and the whole rule set reads them (platform_full_verdict);
-    any other finding of this run at medium or above on the file holds it too (_flagged_here)."""
+    any other finding of this run at medium or above on the file holds it too (_flagged_here). Fix round 2 (Codex 2): it must
+    still lead where it led when it was chosen, inside a platform folder (platform_still_bound), before and after the read."""
+    moved = "It moved out of the platform's own folders while Watchtower was checking it."
+    if not platform_still_bound(p):
+        return moved
     t, h2 = read_scanned(p, limit=PLATFORM_UPDATE_MAX)
+    if not platform_still_bound(p):
+        return moved
     if t is None:
         return ("It is over 1 MB, so Watchtower can't check all of it." if not h2.startswith("unreadable:")
                 else "Watchtower couldn't read it.")
@@ -448,7 +521,7 @@ def _candidate_why(p, h, rules, fs):
     hit, binary = platform_full_verdict(p, t, rules)
     if binary:
         return "Watchtower can't read it as plain text, so its rules can't check it."
-    hit = sorted(set(hit) | set(_flagged_here(p, fs)))
+    hit = sorted(set(hit) | set(_flagged_here(p, idx)))
     if hit:
         return f"Watchtower's rules flagged the new version ({', '.join(hit[:4])})."
     return ""
@@ -483,9 +556,9 @@ def settle_platform_updates(fs, cands, manifest, base, rules):
     bytes, or a changed file at a release-list path seen on a first run, raises nothing."""
     if not cands:
         return fs
-    why = {}
+    why, idx = {}, flag_index(fs)
     for p, (kind, d) in sorted(cands.items()):
-        why[p] = _candidate_why(p, manifest[p], rules, fs) or _vote_why(p, d, fs)
+        why[p] = _candidate_why(p, manifest[p], rules, idx) or _vote_why(p, d, fs)
     held_dirs = {d for p, (_, d) in cands.items() if d and why[p]}
     for f in fs:   # anything held this run under a skill folder (the files that are no candidate) holds the folder too
         if f.get("unverified_platform"):
@@ -522,14 +595,14 @@ def hold_on_kept_votes(fs, manifest):
         return fs
     kept = [_path_part(g.get("where") or "", line=False) for g in fs if g.get("rule") == "WT-X003" and g.get("kinds_incomplete")]
     base = load_baseline()[0]
-    out, held = [], {}
+    out, held, idx = [], {}, flag_index(fs)   # fix round 2 (Codex 4): a kept grouped line by every file it stands for
     for f in fs:
         if f.get("platform_update"):
             ps = [f["where"]] + list(f.get("also_at") or [])
             if any(q.startswith(x + os.sep) for q in ps for x in kept):
                 why = "The scanners' answer for its folder is from an earlier run, so Watchtower can't tell what they found."
             else:
-                hit = sorted({r for q in ps for r in _flagged_here(q, fs)})
+                hit = sorted({r for q in ps for r in _flagged_here(q, idx)})
                 why = f"Watchtower's checks flagged it ({', '.join(hit[:4])})." if hit else ""
             if why:
                 for q in ps:

@@ -435,6 +435,9 @@ def gitleaks_findings(roots, notes):
                 out.append(_note_examples(finding("WT-S002", f"gitleaks: secrets in {len(files)} {'file' if len(files) == 1 else 'files'} under {os.path.basename(d)}", sev,
                                                   ["ASI03", "LLM02"], d, f"{len(leaks)} hit(s): {', '.join(kinds)[:60]} at {at}", why, source="gitleaks",
                                                   ident="gitleaks:" + ",".join(kinds)), leaks, examples))
+                # b8i4 fix round 2 (Codex 4): every file it stands for, by path (its `where` is their folder), so a platform update
+                # of one of them is held and never rolled in, this run and while a daily carries the line (finding_files)
+                out[-1]["affected_files"] = sorted(os.path.abspath(str(fp)) for fp in files if fp)
         bound = metadata_bound(exe, per_file)   # fix round 1 (Codex 2): hits gitleaks also gives on the verified bytes
         for fpath, leaks in per_file.items():
             kinds = sorted({l.get("RuleID", "secret") for l in leaks})
