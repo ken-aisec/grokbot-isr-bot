@@ -210,6 +210,14 @@ refresh" line and rolls into the baseline on the next full audit. Accepted limit
   hash. A move after that last check, in the moment before the baseline is written, isn't seen until the next run.
 - A `<bucket>` line covers a folder named exactly like a real UUID pair, 8-4-4-4-12 lowercase hex digits twice, joined by "_"
   (Codex 8). The sync marker test (PLATFORM_CHURN) keeps its older, looser pattern.
+- `.claude/plugins/synced` (F1, review Oct 23) holds every plugin synced to the account, the ones the owner installs from
+  marketplaces included, and the release list names only cowork-plugin-management there. So there the middle path covers only
+  an update of a path the release list names (an exact line or a `<bucket>` line): a new plugin, a new file in a plugin, and a
+  path only the baseline has (one an older run rolled in, or a line the Bot wrote) are counted highs, as in v0.7.3, until an
+  ISR Bot release lists them. Noise kept: every plugin the owner installs from a marketplace, and each of its updates, is a
+  counted high. A path counts as under that folder by its path as written. The other platform
+  folders (`.grok/bundled`, Codex's `.system`, the managed-skills folders) keep the whole middle path: checked Oct 23, they
+  hold only the platform's own managed skills.
 - In daily, a scanner line kept from the last run (it may lack a kind) makes a quiet update in its folder a counted high
   until the next full audit scans the folder again.
 - Daily on a box with a missing scanner answers as it did before b8i4 (the owner's decision, Oct 23; fix round 3 undid fix

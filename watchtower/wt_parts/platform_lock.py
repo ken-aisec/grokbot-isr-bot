@@ -362,7 +362,9 @@ def platform_update_candidates(unproven, manifest, base, short, established=Fals
     path the baseline or the release list knows; "in-skill", it has. A loose file at no known path is no candidate. Fix round 1
     (Codex 1): "new-skill" and "in-skill" only in an update run (`established`: a baseline to compare with), and never for a file
     the last run held outside the middle path (`held_before`, platform_held_before). Fix round 2 (Codex 2): each candidate is
-    bound to the real path it had here (PLATFORM_BOUND), and platform_still_bound checks it again before it is settled and rolled."""
+    bound to the real path it had here (PLATFORM_BOUND), and platform_still_bound checks it again before it is settled and rolled.
+    F1 (Claude review Oct 23): under .claude/plugins/synced (synced_plugin_path) only "update" at a release-list path; a new
+    plugin, a new file in one, or a path only the baseline has is no candidate there."""
     PLATFORM_BOUND.clear()
     if platform_lock_problem():
         return {}
@@ -378,7 +380,10 @@ def platform_update_candidates(unproven, manifest, base, short, established=Fals
         if not _under(rp, real_roots, strict=True):
             continue
         d = platform_skill_folder(p, manifest)
-        if p in base or platform_lock_path(p):
+        if synced_plugin_path(p):   # F1 (Claude review Oct 23): only an update of a path the release list names
+            if platform_lock_path(p):
+                out[p] = ("update", d)
+        elif p in base or platform_lock_path(p):
             out[p] = ("update", d)
         elif d is not None and established and p not in held_before:
             if d not in known:
@@ -387,6 +392,14 @@ def platform_update_candidates(unproven, manifest, base, short, established=Fals
         if p in out:
             PLATFORM_BOUND[p] = rp
     return out
+
+
+def synced_plugin_path(p):
+    """F1 (Claude review Oct 23): True when p, as written, is strictly inside .claude/plugins/synced under a home base. That
+    folder holds every plugin synced to the account, the ones the owner installs from marketplaces included, and the release
+    list names only cowork-plugin-management there."""
+    roots = {os.path.normpath(os.path.join(b, ".claude/plugins/synced")) for b in home_bases()}
+    return _under(_path_part(p, line=False), roots, strict=True)
 
 
 PLATFORM_BOUND = {}   # fix round 2 (Codex 2): {candidate: the real path it had when platform_update_candidates chose it}
