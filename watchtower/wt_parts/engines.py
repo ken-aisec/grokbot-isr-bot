@@ -15,6 +15,13 @@ TIMED_OUT = "ran out of time"
 
 
 STAGE_FAILED = []        # stages that did not finish in the current run
+# v0.7.4 fix round 1 (Codex MED1): a stage's name is a stored key (stage_times.json, progress.json, stages_skipped) and keeps its
+# old wording; prose shows its label
+STAGE_LABELS = {"Watchtower's own tools": "Chief Worry Bot's own tools"}
+
+
+def stage_label(stage):
+    return STAGE_LABELS.get(stage, stage)
 
 
 def carry(rules):
@@ -53,7 +60,7 @@ def soft(stage, rules, notes, default, fn, *a, **k):
         failed = len(STAGE_FAILS) > fails_before or any(re.search(r"(?i)\bfailed\b", n) for n in notes[before:])
     except Exception as e:   # noqa: BLE001 - nothing a scanner or a strange file does may break the audit
         res, failed = default, True
-        notes.append(f"{stage} FAILED ({type(e).__name__}: {mask_secrets(str(e)[:MASK_WINDOW])[:100]}): skipped, NOT checked this run; "
+        notes.append(f"{stage_label(stage)} FAILED ({type(e).__name__}: {mask_secrets(str(e)[:MASK_WINDOW])[:100]}): skipped, NOT checked this run; "
                      "the last results are kept.")
     if failed:
         STAGE_FAILED.append(stage)

@@ -424,6 +424,73 @@ class SubstKind(unittest.TestCase):
         with self.assertRaises(ValueError):
             gs.parse_expect({"entries": [entry(subst=self.NAME)]}, ["c"])   # with lines_rx beside it too
 
+    # v0.7.4 fix round 1 (Codex MED2): a kept string (gs.SUBST_KEEP) the rename would take along refuses the item
+    def refused(self, pre, post):
+        self.assertFalse(gs.subst_change(pre, post, self.NAME), post)
+        self.assertTrue(self.bad(pre, post), post)
+
+    def test_an_engine_label_rename_is_refused(self):   # replay (cffd4b7: taken whole)
+        self.refused('# Watchtower report\n{"engines": ["Watchtower rules", "gitleaks"]}\n',
+                     '# Chief Worry Bot report\n{"engines": ["Chief Worry Bot rules", "gitleaks"]}\n')
+        self.refused("Watchtower checked it: SkillSpector + Watchtower\n", "Chief Worry Bot checked it: SkillSpector + Chief Worry Bot\n")
+
+    def test_a_user_agent_rename_is_refused(self):   # replay (cffd4b7: taken whole)
+        self.refused("Watchtower brief\nUser-Agent: Watchtower/0.7.4 (+threat brief)\n",
+                     "Chief Worry Bot brief\nUser-Agent: Chief Worry Bot/0.7.4 (+threat brief)\n")
+
+    def test_the_stage_key_rename_is_refused(self):   # replay (cffd4b7: taken whole)
+        self.refused('{\n "seconds_per_stage": {\n  "Watchtower\'s own tools": 1.5\n }\n}\n',
+                     '{\n "seconds_per_stage": {\n  "Chief Worry Bot\'s own tools": 1.5\n }\n}\n')
+
+    KEPT = ("Watchtower rules", "SkillSpector + Watchtower", "husk + Watchtower", "Watchtower/", "Watchtower's own tools",
+            ", during a recorded Watchtower run (", "Ask-first rules with no word Watchtower reads in any of its languages",
+            "Watchtower's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run",
+            "its program file isn't the one Watchtower installed", "Watchtower daily watch", "Watchtower weekly audit",
+            "Watchtower weekly tidy", "Watchtower monthly roll-call", "You are Watchtower")
+
+    def test_every_kept_string_is_refused_renamed_and_accepted_kept(self):   # replay (cffd4b7: every one taken whole)
+        for k in self.KEPT + tuple(getattr(gs, "SUBST_KEEP", ())):
+            pre = "# Watchtower report\n" + k + "\n"
+            self.refused(pre, pre.replace("Watchtower", "Chief Worry Bot"))
+            self.assertTrue(gs.subst_change(pre, "# Chief Worry Bot report\n" + k + "\n", self.NAME), k)
+
+    def test_a_plain_display_rename_is_still_taken(self):   # guard
+        pre = "# Watchtower report 2026-W43\nWatchtower checked 3 skills. Tell Watchtower \"fix it\".\nChecked by: Watchtower rules, gitleaks\n"
+        hits = {}
+        self.assertEqual(gs.unexpected_lines("tierA", "r", pre, pre.replace("Watchtower", "Chief Worry Bot").replace(
+            "Chief Worry Bot rules", "Watchtower rules"), self.entries(), hits), [])
+        self.assertEqual(hits, {0: 4})
+
+    def test_the_kept_strings_cover_the_name_guards_allowed_list(self):   # guard: SUBST_KEEP follows test_v074_display_name.py
+        import ast
+        with open(os.path.join(ROOT, "tests", "test_v074_display_name.py"), encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        kept = {}
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and [getattr(t, "id", None) for t in node.targets] in (["ALLOWED"], ["ALLOWED_FRAGMENTS"]):
+                kept.update(ast.literal_eval(node.value))
+        values = {v for _, v in kept} - {"Watchtower"}   # the bare WT-X003 label: only ever joined, "SkillSpector + Watchtower"
+        self.assertGreater(len(values), 10)
+        self.assertEqual(sorted(v for v in values if not any(k in v for k in getattr(gs, "SUBST_KEEP", ()))), [])
+
+    def test_v074_subst_entries_take_display_outputs_only(self):   # replay (cffd4b7: key_rx "." took every item)
+        import json
+        with open(os.path.join(ROOT, "tests", "golden_expect", "v074.json"), encoding="utf-8") as f:
+            subst = [e for e in gs.parse_expect(json.load(f), ["v074"]) if e.get("_subst")]
+        self.assertTrue(subst)
+        machine = ["tree workspace/watchtower/state/engines_used.json", "tree workspace/watchtower/state/stage_times.json",
+                   "tree workspace/watchtower/state/last_findings.json", "tree workspace/watchtower/state/ledger.jsonl",
+                   "tree workspace/watchtower/state/platform_held.json", "tree workspace/watchtower/state/progress.json",
+                   "tree workspace/watchtower/state/gitleaks.toml", "tree workspace/watchtower/state/deltas/audit-<EPOCH>.json",
+                   "tree workspace/watchtower/reports/support-2026-10-23.json", "tree workspace/watchtower/audit.lock",
+                   "tree workspace/watchtower/state/run.lock", "tree workspace/watchtower/state/score_history.csv",
+                   "tree workspace/watchtower/app/scripts/scanners.lock", "001 audit :rc"]
+        self.assertEqual([(e["id"], k) for e in subst for k in machine if e["_k"].search(k)], [])
+        display = ["003 doctor [driver] :stdout", "019 daily :stderr", "001 installed --version :stdout",
+                   "tree workspace/watchtower/reports/2026-W43.md", "tree workspace/watchtower/reports/dashboard.html",
+                   "tree workspace/watchtower/reports/threat-brief-2026-W43.html"]
+        self.assertEqual([k for k in display if not any(e["_k"].search(k) for e in subst)], [])
+
 
 class StepZero(unittest.TestCase):
     """Without --expect the byte comparison runs exactly as for the split; with it, only compile and loader checks."""

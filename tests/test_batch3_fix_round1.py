@@ -148,13 +148,13 @@ class OwnToolsPython(_Scanners):
         r = self.audit()
         self.assertIn(w1["key"], [f["key"] for f in self.snap()["findings"]])
         self.assertFalse([f for f in r["fixed"] if f["rule"] == "WT-W001"])
-        self.assertIn("Chief Worry Bot's own tools", r.get("stages_skipped", []))
+        self.assertIn("Watchtower's own tools", r.get("stages_skipped", []))
 
     def test_8_contrast_no_scanner_python_ever_is_a_plain_skip(self):
         """Contrast: passes on the build commit too."""
         self.skills(1); self.engines()
         r = self.audit()
-        self.assertNotIn("Chief Worry Bot's own tools", r.get("stages_skipped", []))
+        self.assertNotIn("Watchtower's own tools", r.get("stages_skipped", []))
 
 
 class BoundedHashing(_Scanners):

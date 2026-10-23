@@ -320,7 +320,7 @@ def cmd_daily(args):
     gap = list(snap.get("stages_skipped") or [])
     if not new and not fixed and not plat and not pending and not moved:
         # R04: nothing changed among what WAS checked; a stage that didn't finish is said, never hidden behind NO_CHANGES
-        print(f"NO_CHANGES_BUT_NOT_CHECKED {'; '.join(gap)[:300]}: these were not checked this run (last results kept)" if gap else "NO_CHANGES")
+        print(f"NO_CHANGES_BUT_NOT_CHECKED {'; '.join(map(stage_label, gap))[:300]}: these were not checked this run (last results kept)" if gap else "NO_CHANGES")
         return 0
     out = {"score": snap["score"], "score_line": score_line(snap)}
     out["status"] = snap_status(snap)
@@ -726,7 +726,7 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
     accepted = [f for f in accepted if not f.get("exception")]
     fyi_n = sum(1 for f in (snap or {}).get("findings", []) if not counts(f))
     skipped = (snap or {}).get("stages_skipped", [])
-    acc_html = (f"<p class='small'><b>Skipped this run:</b> {e(', '.join(skipped))}. Their last results were kept, so the score didn't move because of it.</p>" if skipped else "")
+    acc_html = (f"<p class='small'><b>Skipped this run:</b> {e(', '.join(map(stage_label, skipped)))}. Their last results were kept, so the score didn't move because of it.</p>" if skipped else "")
     acc_html += (f"<p class='small'>{fyi_n} notes about built-in plugins and skills are listed for information and not counted in the score.</p>" if fyi_n else "")
     acc_html += "".join(f"<p class='small'><b>⚠ Security-tool exception:</b> {e(x['skill'])} is flagged by two scanners. You confirmed it is a security tool. "
                        f"Ends {e(x['until'])} ({x['days_left']} days) or when the skill changes.</p>" for x in exc)

@@ -25,6 +25,14 @@ on purpose, and `tests/test_v074_display_name.py` lists every engine string that
 - The User-Agent `Watchtower/<version>` (a protocol token can't hold spaces, and nobody sees it) and the gitleaks config's
   `description` (gitleaks reads it; nobody sees it).
 - Paths, the repo, `WATCHTOWER_*`, `wt.py`, the `watchtower-*` skill and routine slugs, state and report file names and JSON keys.
+- The audit stage `Watchtower's own tools`: its name is the key in `stage_times.json` and `progress.json` (status and doctor
+  show them raw) and in `stages_skipped` and `not_checked_this_run` of the audit and daily JSON. Notes, the report, the brief and
+  daily's NO_CHANGES_BUT_NOT_CHECKED line show it as Chief Worry Bot's own tools (`STAGE_LABELS`).
+- Open owner decisions (fix round 1): with Chief Worry Bot on the roll-call roster, prepublish raises WT-PP08 on the name in any
+  text except an unchanged copy of this install's own template files (`bot/`, `routines/`, `skills/*/SKILL.md`), so an edited
+  routine of this Bot's template is flagged. "Chief Worry Bot should ignore this" is not a safe-claim (`SAFE_CLAIM` knows only
+  "watchtower"), so a Worth-a-look finding whose text says so can still be dismissed, as one saying "Watchtower should ignore
+  this" can't.
 - The routines a template set up before 0.7.4 keep their Watchtower names until the template is updated; uninstall names both.
   A saved getting-started skill (it says "You are Watchtower") shows as older until it is re-saved, and a brief saved before the
   upgrade that names the update Watchtower still gives the update note.

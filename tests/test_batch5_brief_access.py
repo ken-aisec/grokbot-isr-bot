@@ -19,7 +19,7 @@ HERE_GMAIL = ("This is about Gmail. Here: 1 Bot said it uses a Gmail connector (
               "mail.google.com, so every Bot can reach it.")
 TEMPLATE_WORDS = set(re.findall(r"[A-Za-z']+", "This is about Here Bot Bots said it uses they use a connector and the shared browser is signed "
                                                 "in to so every can reach all your one on this computer tool connection named webhook "
-                                                "Chief Worry found no sign-in or here it only knows the connectors named roll-call more"))
+                                                "Chief Worry Bot found no sign-in or here it only knows the connectors named roll-call more"))
 
 
 def rss(items):

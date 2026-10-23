@@ -525,7 +525,7 @@
   {
    "item": "v074",
    "scenario_rx": ".",
-   "key_rx": ".",
+   "key_rx": "^(\\d{3} .+ :(stdout|stderr)|tree workspace/watchtower/reports/[^/]+\\.(md|html))$",
    "subst": {
     "pairs": [
      [
@@ -535,7 +535,7 @@
     ]
    },
    "must_see": false,
-   "why": "v074: the display name in any output whose only change it is (post with Chief Worry Bot put back to Watchtower is pre byte for byte)."
+   "why": "v074: the display name in any display output (a command's stdout or stderr, a report, the dashboard, the threat brief) whose only change it is (post with Chief Worry Bot put back to Watchtower is pre byte for byte, and no kept string, SUBST_KEEP, changes count). Never state/, engines_used.json, stage_times.json, lock files, ledgers or any other file a program reads (fix round 1, Codex MED2)."
   }
  ]
 }

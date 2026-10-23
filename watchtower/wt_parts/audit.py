@@ -274,7 +274,7 @@ def audit(roots, exports, quick=False):
                           "Rules saved only in the app can't be seen from the computer. Tell the Bot to add them and save a copy to "
                           "/workspace/watchtower/exports/auto-review.txt."))
     if seen == "unread":
-        fs.append(finding("WT-A003", "If your Ask-first rules are in a language Chief Worry Bot doesn't read, it can't check them", "info",
+        fs.append(finding("WT-A003", "Chief Worry Bot can't check your Ask-first rules if it doesn't read their language", "info",
                           ["ASI09"], "Auto-review rules", ASK_UNREAD_EVIDENCE,
                           "Chief Worry Bot reads Ask-first rules in English, Spanish, French, German, Portuguese, Italian, Russian, Chinese, "
                           "Japanese, Korean, Arabic, Greek and Hindi, and found none of their words in yours. The alert above stays "
@@ -311,7 +311,7 @@ def audit(roots, exports, quick=False):
         fs += soft("gitleaks (keys in files)", ("WT-S002",), notes, [], gitleaks_findings, roots, notes)
         fs += soft("pip-audit (installed Python packages)", ("WT-D001",), notes, [], package_findings, notes)
         fs += soft("OSV-Scanner (project dependencies)", ("WT-D002",), notes, [], osv_findings, roots, notes)
-        fs += soft("Chief Worry Bot's own tools", ("WT-W001",), notes, [], self_findings, notes)
+        fs += soft("Watchtower's own tools", ("WT-W001",), notes, [], self_findings, notes)
         secret_paths = [f["where"].split(":")[0] for f in fs if f["rule"] in ("WT-S001", "WT-S002")]
         ks = soft("TruffleHog (which keys still work)", (), notes, None, trufflehog_status, secret_paths, notes)
         if ks is None or "TruffleHog (which keys still work)" in STAGE_FAILED:

@@ -78,7 +78,7 @@ class MetadataWording(_Meta):
         self.assertEqual([(f["severity"], wt.counts(f)) for f in i1 if wt.counts(f)], [])   # b8i4: the middle path's quiet line
         self.assertNotIn(self.p, wt.VERIFIED_METADATA)                         # not compared with the released version
         held = wt.unverified_platform_finding(self.p, wt.sha256_file(self.p), was)   # the wording a held version gets
-        self.assertEqual(held["title"], "Grok Bot's list of what it loads changed, and Chief Worry Bot's release list doesn't have this version yet")
+        self.assertEqual(held["title"], "Chief Worry Bot's release list doesn't have Grok Bot's changed list of what it loads yet")
         self.assertIn("Don't delete it (Grok Bot needs it)", held["fix"])
         self.assertIn("tell Chief Worry Bot support", held["fix"])
         self.assertNotIn("remove it", held["fix"])
@@ -90,7 +90,7 @@ class MetadataWording(_Meta):
         self.audit()
         i2 = [f for f in self.mine() if f["rule"] == "WT-I002"]
         self.assertEqual([(f["severity"], wt.counts(f)) for f in i2], [("high", True)])
-        self.assertTrue(i2[0]["title"].startswith("Grok Bot's list of what it loads is new here"))
+        self.assertTrue(i2[0]["title"].startswith("Chief Worry Bot's release list doesn't have Grok Bot's new list of what it loads"))
 
     def test_a_skill_file_keeps_its_wording(self):   # guard
         self.skills(1)

@@ -231,8 +231,8 @@ def _unverified_platform_finding(p, h, was=None):
            "platform list. If you didn't expect it, remove it.")
     if PLATFORM_METADATA.fullmatch(os.path.basename(_path_part(p, line=False))):
         f = finding("WT-I002" if was is None or was == h else "WT-I001",
-                    f"{v}'s list of what it loads {'changed' if was is not None and was != h else 'is new here'}, and Chief Worry Bot's "
-                    "release list doesn't have this version yet", "high", ["AST07"] if was is not None and was != h else ["AST09", "AST07"], p,
+                    f"Chief Worry Bot's release list doesn't have {v}'s {'changed' if was is not None and was != h else 'new'} list of "
+                    "what it loads yet", "high", ["AST07"] if was is not None and was != h else ["AST09", "AST07"], p,
                     f"sha256 {was[:12]}→{h[:12]}" if was is not None and was != h else f"sha256 {h[:12]}, not on the release list",
                     f"{v} rewrites this file when it updates itself, but the file also decides which skills and plugins load, so "
                     f"Chief Worry Bot can't tell an update from a change someone else made. Don't delete it ({v} needs it). It stays on "
@@ -244,7 +244,7 @@ def _unverified_platform_finding(p, h, was=None):
         f = finding("WT-I002", f"A new file appeared in {v}'s own skill folder, and {v}'s release list doesn't include it", "high",
                     ["AST09", "AST07"], p, h[:12], fix)
     elif was == h:   # Codex, item 8 review 2 (high 3): in baseline.json, which the Bot can write; a baseline line is never provenance
-        f = finding("WT-I002", f"A file in {v}'s own skill folder is on Chief Worry Bot's list, but {v}'s release list doesn't include it", "high",
+        f = finding("WT-I002", f"On Chief Worry Bot's list, but not on {v}'s release list: a file in {v}'s own skill folder", "high",
                     ["AST09", "AST07"], p, f"sha256 {h[:12]}, not on the release list", fix)
     else:
         f = finding("WT-I001", f"One of {v}'s own files changed, and the new version isn't on {v}'s release list", "high",

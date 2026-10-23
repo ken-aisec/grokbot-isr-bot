@@ -562,6 +562,17 @@ JSON_COUNTS_FIELDS = {"at": list, "delta": dict}
 ALT_FIELDS = {"json_change": dict, "json_shape": dict, "json_exact": dict, "block": list, "json_counts": dict, "json_each": dict,
               "subst": dict}
 SUBST_PAIRS = [["Watchtower", "Chief Worry Bot"]]
+# v0.7.4 fix round 1 (Codex MED2): the strings that keep the old name (ALLOWED and ALLOWED_FRAGMENTS in
+# tests/test_v074_display_name.py): engine labels, the User-Agent token, a stored stage key, evidence that feeds a finding key, the
+# legacy routine names and the legacy getting-started marker. subst_change refuses an item in which any of them is seen a different
+# number of times in post than in pre, so the rename can never take one of them along.
+SUBST_KEEP = ("Watchtower rules", "SkillSpector + Watchtower", "husk + Watchtower", "Watchtower/", "Watchtower's own tools",
+              "during a recorded Watchtower run",
+              "Watchtower's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run",
+              "its program file isn't the one Watchtower installed",
+              "Ask-first rules with no word Watchtower reads in any of its languages",
+              "Watchtower daily watch", "Watchtower weekly audit", "Watchtower weekly tidy", "Watchtower monthly roll-call",
+              "You are Watchtower", "Watchtower: package caches, lockfiles, headers and its own state")
 
 
 def schema_ok(s):
@@ -813,12 +824,13 @@ def json_only_change(pre, post, change):
 
 
 def subst_change(pre, post, subst):
-    """True when pre and post both exist and differ, pre holds none of the pairs' `to` strings, and post with each `to` replaced
-    by its `from` is pre exactly (v0.7.4: the display name, Watchtower -> Chief Worry Bot, in every place and nothing else)."""
+    """True when pre and post both exist and differ, pre holds none of the pairs' `to` strings, every SUBST_KEEP string is seen as
+    often in post as in pre, and post with each `to` replaced by its `from` is pre exactly (v0.7.4: the display name, Watchtower ->
+    Chief Worry Bot, in every place but the kept strings, and nothing else)."""
     if pre is None or post is None or pre == post:
         return False
     pairs = subst["pairs"]
-    if any(to in pre for _, to in pairs):
+    if any(to in pre for _, to in pairs) or any(pre.count(k) != post.count(k) for k in SUBST_KEEP):   # fix round 1 (Codex MED2)
         return False
     back = post
     for frm, to in pairs:

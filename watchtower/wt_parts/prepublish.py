@@ -25,8 +25,25 @@ def known_names(shared):
     for e in items if isinstance(items, list) else []:
         if isinstance(e, dict) and isinstance(e.get("name"), str) and str(e.get("kind", "")).lower() in BOT_KINDS:
             names.append(e["name"].strip())
-    skip = {"watchtower", "chief worry bot", (shared or "").lower()}
+    skip = {"watchtower", (shared or "").lower()}
     return sorted({n for n in names if len(n) >= 3 and n.lower() not in skip})
+
+
+def own_release_texts():
+    """v0.7.4 fix round 1 (Codex MED3): the exact text of this install's own template files (bot/*, routines/*, skills/*/SKILL.md).
+    They name the Bot Chief Worry Bot by design, so that roster name is no leak in an unchanged copy of one; anywhere else it is."""
+    out = set()
+    for sub in ("bot", "routines", "skills"):
+        top = os.path.join(SELF_ROOT, sub)
+        try:
+            entries = sorted(os.listdir(top))
+        except OSError:
+            continue
+        for n in entries:
+            t = read_text(os.path.join(top, n, "SKILL.md") if sub == "skills" else os.path.join(top, n))
+            if t is not None:
+                out.add(t)
+    return out
 
 
 def _body(t):
@@ -53,7 +70,7 @@ def prepublish_extra(where, t, names):
     if "getting-started" in os.path.basename(where):
         cur = read_text(os.path.join(SELF_ROOT, "bot", "getting-started.md"))
         if cur is not None and _body(t) != _body(cur):
-            out.append(finding("WT-PP09", "Getting-started is older than this Chief Worry Bot", "high", ["AST04"], where, "differs from app/bot/getting-started.md",
+            out.append(finding("WT-PP09", "Getting-started older than this Chief Worry Bot", "high", ["AST04"], where, "differs from app/bot/getting-started.md",
                                "Replace the saved getting-started skill's body with /workspace/watchtower/app/bot/getting-started.md, then run prepublish again."))
     return out
 
@@ -69,7 +86,7 @@ def cmd_prepublish(args):
             for fn in files:
                 paths.append(os.path.join(root, fn))
         texts = [(p, read_text(p) or "") for p in paths]
-    fs = []
+    fs, own = [], own_release_texts()
     for where, t in texts:
         fs += [f for f in scan_text(t, where, rules, kind="template")   # batch 6 fix round 3: WT-T011x is WT-T011 (an example-looking one)
                if f["rule"] in ("WT-T011", "WT-T011x", "WT-T013", "WT-T007", "WT-T008", "WT-T005", "WT-T006", "WT-T018")]
@@ -87,7 +104,7 @@ def cmd_prepublish(args):
                 fs.append(finding(rid, title, sev, ["AST04", "LLM02"], f"{where}:{line_of(t, m.start())}", mask(ev) if rid in ("WT-PP01", "WT-PP02") else ev[:120],
                                   "Remove or generalize it before you create the template: anything in a description, skill or routine ships to every installer.",
                                   shown=None if rid in ("WT-PP01", "WT-PP02") else ev))
-        fs += prepublish_extra(where, t, names)
+        fs += prepublish_extra(where, t, [n for n in names if not (n.lower() == "chief worry bot" and t in own)])
         if not has_approval(t, rules) and rules["write_verbs"].search(t):
             fs.append(finding("WT-PP07", "No approval boundary", "high", ["ASI02"], where, "no approval line",
                               "Add: never send, post, buy, publish, delete, or change settings without my approval."))

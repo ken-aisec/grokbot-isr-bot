@@ -16,6 +16,6 @@ Chief Worry Bot is the product's display name (the engine and its files keep the
 | the GitHub host in the link the owner gave | `vet` of a GitHub link | `git clone --depth 1` of that one repository, to vet its files |
 | pypi.org, files.pythonhosted.org | `fix --upgrade` (after the owner's yes) | the newer versions of the outdated Python packages in the preview |
 | registry.npmjs.org; crates.io, index.crates.io, static.crates.io | `fix --upgrade-projects`, only after the owner's own yes for it | npm's lockfile fix and `cargo update --precise` in the owner's own projects |
-| semgrep.dev | `codescan`, only if semgrep is in Watchtower's checked scanner folder | the `p/owasp-top-ten` rules. Watchtower runs it with `--metrics=off` and `--disable-version-check`, so semgrep sends no usage metrics and doesn't ask semgrep.dev for a newer version. semgrep isn't installed by default, and a semgrep found elsewhere (on PATH) is never run |
+| semgrep.dev | `codescan`, only if semgrep is in Chief Worry Bot's checked scanner folder | the `p/owasp-top-ten` rules. Chief Worry Bot runs it with `--metrics=off` and `--disable-version-check`, so semgrep sends no usage metrics and doesn't ask semgrep.dev for a newer version. semgrep isn't installed by default, and a semgrep found elsewhere (on PATH) is never run |
 
 Nothing else. No telemetry. Findings never leave the computer unless you send a report somewhere yourself.

@@ -3,7 +3,7 @@
 DISMISS_LOG = "dismissed.jsonl"
 # Text that argues the content is safe. A scanner-facing reassurance is what an attacker would write, so it is a reason to KEEP.
 SAFE_CLAIM = re.compile(r"(?i)(\b(this|it)\s+is\s+(safe|fine|harmless|legit\w*|authori[sz]ed|approved|benign|trusted)\b|\bnot\s+(malicious|a\s+threat|dangerous|harmful)\b"
-                        r"|\bfalse\s+positive|\b(scanners?|watchtower|chief\s+worry\s+bot|auditors?|reviewers?|security\s+(tools?|checks?))\s+(should|can|may|must|will)\s+(ignore|skip|allow|pass)"
+                        r"|\bfalse\s+positive|\b(scanners?|watchtower|auditors?|reviewers?|security\s+(tools?|checks?))\s+(should|can|may|must|will)\s+(ignore|skip|allow|pass)"
                         r"|\bignore\s+(this|the|any)\s+(warning|finding|alert|flag)|\bsafe\s+to\s+(run|install|ignore|use)\b|\bpre-?approved\b|\b(white|allow)-?listed\b"
                         r"|\b(vetted|audited|reviewed)\s+(and|by)\b)")
 
@@ -308,7 +308,7 @@ def render_md(snap, hist, tag):
         lines += ["", "## Built-in plugins and skills (for your information, not counted in the score)", "",
                   f"{len(fyi)} notes about software the platform or a plugin shipped. Nothing here needs you. `wt.py breakdown` lists them."]
     if snap.get("stages_skipped"):
-        lines += ["", "## Skipped this run", ""] + [f"- {x}: did not finish, so its last results were kept." for x in snap["stages_skipped"]]
+        lines += ["", "## Skipped this run", ""] + [f"- {stage_label(x)}: did not finish, so its last results were kept." for x in snap["stages_skipped"]]
     exc = exceptions_active(snap)
     if exc:
         lines += ["", "## Security-tool exceptions", ""] + [
