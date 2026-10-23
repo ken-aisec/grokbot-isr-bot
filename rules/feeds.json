@@ -58,7 +58,7 @@
  "kev_watch": "(?i)(chrom|linux kernel|\\bkernel\\b|python|node\\.?js|openssh|\\bgit\\b|\\bcurl\\b|libcurl|openssl|\\bsudo\\b|glibc|docker|containerd|runc)",
  "releases": [
   {
-   "name": "Chief Worry Bot",
+   "name": "ISR Bot",
    "repo": "ken-aisec/grokbot-watchtower",
    "installed": "watchtower"
   },

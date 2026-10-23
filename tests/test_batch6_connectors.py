@@ -13,7 +13,7 @@ from test_boxes import wt
 from test_batch5_access_round2 import CANT, DAY
 from test_batch5_access_round3 import GMAIL_STORY, _Round3
 
-COULDNT = "- Golf: Chief Worry Bot couldn't read which connectors it uses."
+COULDNT = "- Golf: ISR Bot couldn't read which connectors it uses."
 
 
 class SavedAnswersAreReadLikeFreshOnes(_Round3):
@@ -72,7 +72,7 @@ class SavedAnswersAreReadLikeFreshOnes(_Round3):
         self.audit_json()
         out = self.access()[1]
         self.assertIn("- Golf: no connectors.", out)
-        self.assertTrue(self.here(GMAIL_STORY).startswith("This is about Gmail. Chief Worry Bot found no Gmail connector"))
+        self.assertTrue(self.here(GMAIL_STORY).startswith("This is about Gmail. ISR Bot found no Gmail connector"))
 
     def test_a_kept_partial_mark_stays(self):   # guard: a fresh "partial" carried over is not made complete by its label list
         self.small()

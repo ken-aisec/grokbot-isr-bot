@@ -92,11 +92,11 @@ def baseline_reset_finding(why):
     m = load_json_regular(state_path(BASELINE_META), None)
     held = (f" (it held {m['files']} files on {m['at'][:10]})" if isinstance(m, dict) and isinstance(m.get("files"), int)
             and isinstance(m.get("at"), str) else "")
-    return finding("WT-I010", "Chief Worry Bot's memory was reset", "high", ["AST07"], "state/baseline.json",
+    return finding("WT-I010", "ISR Bot's memory was reset", "high", ["AST07"], "state/baseline.json",
                    f"baseline.json {RESET_WHY.get(why, why)}{held}",
-                   "Something emptied, damaged or deleted the file where Chief Worry Bot remembers the skills you approved, so it can't tell "
+                   "Something emptied, damaged or deleted the file where ISR Bot remembers the skills you approved, so it can't tell "
                    "whether any of them changed. It has not approved anything on its own. `wt.py diff <skill>` still compares a skill with "
-                   "the copy you approved. When you've looked, say yes and Chief Worry Bot starts a new baseline (`wt.py baseline --owner-said-yes`).",
+                   "the copy you approved. When you've looked, say yes and ISR Bot starts a new baseline (`wt.py baseline --owner-said-yes`).",
                    ident="baseline-reset")
 
 
@@ -275,7 +275,7 @@ def cmd_accept(args):
         if not sup:
             print("No accepted risks.")
         if ignored:
-            print("\"ignored\": an earlier version accepted these, but a decoy alarm, or something Chief Worry Bot saw happen, can't be "
+            print("\"ignored\": an earlier version accepted these, but a decoy alarm, or something ISR Bot saw happen, can't be "
                   "marked as fine. They count again.")
         return 0
     if args.all_current:

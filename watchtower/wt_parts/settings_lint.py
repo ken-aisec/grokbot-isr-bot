@@ -284,7 +284,7 @@ def note_earlier_auto_allow(prev, live):
         save_json_keep_mode(state_path(EARLIER_AUTO_ALLOW), earlier)
     for f in live:
         if f["rule"] == "WT-A002" and f.get("fingerprint") in have:
-            f["fix"] = ("Chief Worry Bot used to accept this exact line for you. It needs your yes once more: say \"keep it\" and Chief Worry Bot runs "
+            f["fix"] = ("ISR Bot used to accept this exact line for you. It needs your yes once more: say \"keep it\" and ISR Bot runs "
                         f"`wt.py auto-allow keep {f['fingerprint']} --owner-said-yes`. Otherwise change it to Ask first.")
 
 
@@ -336,7 +336,7 @@ def cmd_auto_allow(args):
             print(f"{x['id']}  {'accepted' if x['sha256'] in kept else 'not accepted'}  {exact_line(x['where'])}")
             print(f"    {exact_line(x['line'])}")
             if x["sha256"] in earlier and x["sha256"] not in kept:
-                print("    An earlier Chief Worry Bot version accepted this line for you. It needs the owner's yes once more.")
+                print("    An earlier ISR Bot version accepted this line for you. It needs the owner's yes once more.")
         print("To keep one exact line: show the owner that line, and only after their yes run `wt.py auto-allow keep <id> --owner-said-yes`. "
               "Any edit to a kept line makes it count again.")
         return 0
@@ -348,7 +348,7 @@ def cmd_auto_allow(args):
     for ident in ids:
         hits = [x for x in lines if x["sha256"] == ident]
         if len(hits) != 1:
-            print(f"NOT SAVED: “{exact_line(ident[:64])}” isn't one of the lines Chief Worry Bot sees now (`wt.py auto-allow` lists them; an id "
+            print(f"NOT SAVED: “{exact_line(ident[:64])}” isn't one of the lines ISR Bot sees now (`wt.py auto-allow` lists them; an id "
                   "is the whole 64-character sha256). Nothing was kept.")
             return 1
         picked[hits[0]["sha256"]] = hits[0]

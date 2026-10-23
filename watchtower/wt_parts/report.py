@@ -50,7 +50,7 @@ def dismiss(key, reason):
         entry.update(key=f["key"], rule=f["rule"], where=f["where"], cls=f.get("class") or ("evidence" if is_evidence(f) else "pattern"))
         m = SAFE_CLAIM.search(dismiss_context(f))
         if f.get("unverified_platform"):   # item 8 review 1; decision, Oct 18: only a release that lists it clears one
-            ok, why = False, "a platform file not on the vendor's release list: only a Chief Worry Bot release that lists it clears it"
+            ok, why = False, "a platform file not on the vendor's release list: only an ISR Bot release that lists it clears it"
         elif is_evidence(f) or entry["cls"] != "pattern":
             ok, why = False, f"{entry['cls']} finding: only Worth-a-look findings can be dropped"
         elif not (reason or "").strip():
@@ -173,18 +173,18 @@ def platform_note_line(f, unlisted=()):
     v = platform_vendor(f["where"].split(":")[0]) if str(f.get("where", "")).startswith("/") else "Grok Bot"
     kind = _note_kind(f, unlisted)
     if kind == "reviewed":   # d2: an exact-bytes entry of rules/platform-reviewed.json; its note is the fix
-        return f"{f['fix']} Chief Worry Bot checked this exact text{' (line ' + ln + ')' if ln else ''}; nothing to do."
+        return f"{f['fix']} ISR Bot checked this exact text{' (line ' + ln + ')' if ln else ''}; nothing to do."
     if kind == "unlisted":
-        return f"{v}'s own folder, {short}{line}: {f['title']}. Not on Chief Worry Bot's release list: its own alert counts, this line doesn't."
+        return f"{v}'s own folder, {short}{line}: {f['title']}. Not on ISR Bot's release list: its own alert counts, this line doesn't."
     if kind == "pattern":
         return f"{v}'s own file {short}{line}: {f['title']}. A pattern match nothing backs up; not counted."
     sev = f.get("severity_was") or f["severity"]
     said = f"would call {sev}" if sev in ("critical", "high", "medium", "low") else "would list"
     if metadata_hit_note(f):   # batch 6 (B2): a gitleaks hit in a metadata file verified by content (fix round 1: decided afresh)
         return (f"gitleaks {said.replace('would call', 'would call this')} in {v}'s own file {short}{line} ({f['title']}). "
-                f"Chief Worry Bot checked that file against the released version: it's {v}'s list of what it loads, so it isn't counted.")
-    return (f"{v}'s own file {short}{line}: has text Chief Worry Bot {said} in your own skill ({f['title']}). It isn't counted. "
-            f"If it worries you, tell {v} support; Chief Worry Bot keeps it listed.")
+                f"ISR Bot checked that file against the released version: it's {v}'s list of what it loads, so it isn't counted.")
+    return (f"{v}'s own file {short}{line}: has text ISR Bot {said} in your own skill ({f['title']}). It isn't counted. "
+            f"If it worries you, tell {v} support; ISR Bot keeps it listed.")
 
 
 def platform_notes(fs, limit):
@@ -212,7 +212,7 @@ def notes_more(count, loud, shown_):
     """The `more` line of platform_notes when the first `shown_` of `count` lines (the `loud` ones first) are shown."""
     left, loud = count - shown_, max(0, loud - shown_)
     return (f"{left} more platform note{'' if left == 1 else 's'} not shown here"
-            + (f", {loud} of them Chief Worry Bot would call critical or high" if loud else "") + f": {PLATFORM_NOTES_MORE}.")
+            + (f", {loud} of them ISR Bot would call critical or high" if loud else "") + f": {PLATFORM_NOTES_MORE}.")
 
 
 # ---------------------------------------------------------------- report
@@ -255,7 +255,7 @@ def render_md(snap, hist, tag):
     plat = [f for f in shown(snap["findings"]) if platform_scope(f)]   # v0.7.1 item 4: their own section, never scored
     fs = [f for f in shown(snap["findings"]) if not platform_scope(f) and not f.get("guarded")]   # Codex round 1 (5): a counted one is here
     c = by_sev(fs)
-    lines = [f"# Chief Worry Bot report {tag}", "", f"Status: {status_line(snap)}", "",
+    lines = [f"# ISR Bot report {tag}", "", f"Status: {status_line(snap)}", "",
              f"Score {score_line(snap)} (grade {snap_grade(snap)}), {trend(hist)}. Open findings: "
              f"{c['critical']} critical, {c['high']} high, {c['medium']} medium, {c['low']} low.", "",
              "## Top fixes", ""]
@@ -267,7 +267,7 @@ def render_md(snap, hist, tag):
     if amap is not None:   # batch 5 (a): what every Bot can reach, and what each Bot said
         lines += access_md(amap)
     lines += ["", "## All open findings", "", "| Severity | Rule | Finding | Where | Evidence | OWASP |", "| --- | --- | --- | --- | --- | --- |"]
-    lines.insert(-3, f"Confirmed: something Chief Worry Bot saw happen, or two checks agree. {MAYBE_FINE}: a wording or pattern match that is often harmless.")
+    lines.insert(-3, f"Confirmed: something ISR Bot saw happen, or two checks agree. {MAYBE_FINE}: a wording or pattern match that is often harmless.")
     lines.insert(-3, "")
     lows = [f for f in fs if f["severity"] in ("low", "info")]
     for f in [f for f in fs if f["severity"] not in ("low", "info")]:
@@ -292,9 +292,9 @@ def render_md(snap, hist, tag):
                   "example. Not findings, not in the score. `wt.py breakdown` lists them."]
     if plat:   # batch 5 (d1): one plain line each, outside every count
         unlisted = {f["where"].split(":")[0] for f in snap["findings"] if f.get("unverified_platform")}
-        lead = ("Grok Bot's own files, exactly as Chief Worry Bot's release lists them. They don't count toward your problems or your status."
+        lead = ("Grok Bot's own files, exactly as ISR Bot's release lists them. They don't count toward your problems or your status."
                 if not any(_unlisted(f["where"].split(":")[0], unlisted) for f in plat) else
-                "Grok Bot's own files. They don't count toward your problems or your status; a file Chief Worry Bot's release list doesn't "
+                "Grok Bot's own files. They don't count toward your problems or your status; a file ISR Bot's release list doesn't "
                 "include has its own counted alert above.")
         notes = platform_notes(snap["findings"], 40)
         lines += ["", "## Platform notes", "", lead]
@@ -321,7 +321,7 @@ def render_md(snap, hist, tag):
                   f"{sum(1 for k in lb.get('kev', []) if k.get('relevant'))} relevant exploited vulnerabilities."]
     if snap.get("notes"):
         lines += ["", "## Coverage notes", ""] + [f"- {n}" for n in snap["notes"]]
-    lines += ["", f"_Chief Worry Bot {VERSION}, read-only. Scanners can be bypassed; this report is evidence, not proof._", ""]
+    lines += ["", f"_ISR Bot {VERSION}, read-only. Scanners can be bypassed; this report is evidence, not proof._", ""]
     return "\n".join(lines)
 
 
@@ -362,7 +362,7 @@ def render_html(snap, hist, tag):
         f"<td>{html.escape(', '.join(f['owasp']))}</td><td>{html.escape(f['fix'])}</td></tr>" for f in [x for x in fs if x["severity"] not in ("low", "info")][:60])
     tiles = "".join(f"<div class='tile'><b style='color:{colors[s]}'>{c[s]}</b><span>{s}</span></div>" for s in SEV_ORDER[:4])
     return f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>Chief Worry Bot {tag}</title><style>
+<title>ISR Bot {tag}</title><style>
 :root{{--bg:#fff;--fg:#1b1f24;--mut:#5b6470;--line:#e3e6ea}}@media(prefers-color-scheme:dark){{:root{{--bg:#111418;--fg:#e8eaed;--mut:#9aa3ad;--line:#2a3038}}}}
 body{{font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:24px;max-width:1100px}}
 h1{{font-size:20px;margin:0 0 4px}}.mut{{color:var(--mut)}}.row{{display:flex;gap:16px;flex-wrap:wrap;margin:20px 0}}
@@ -370,10 +370,10 @@ h1{{font-size:20px;margin:0 0 4px}}.mut{{color:var(--mut)}}.row{{display:flex;ga
 .tile{{border:1px solid var(--line);border-radius:10px;padding:12px 18px;text-align:center}}.tile b{{font-size:26px;display:block}}
 table{{border-collapse:collapse;width:100%;font-size:13px}}td,th{{border-bottom:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}}
 .sev{{color:#fff;border-radius:4px;padding:2px 6px;font-size:11px;text-transform:uppercase}}.wrap{{overflow-x:auto}}code{{font-size:12px}}
-</style></head><body><h1>Chief Worry Bot · {tag}</h1><div class='mut'>Generated {html.escape(snap['at'])} · read-only audit of this Grok Bot computer</div>
+</style></head><body><h1>ISR Bot · {tag}</h1><div class='mut'>Generated {html.escape(snap['at'])} · read-only audit of this Grok Bot computer</div>
 <div class='row'><div class='card'><div class='mut'>Status</div><div style='font-size:24px;font-weight:700'>{html.escape(status_line(snap))}</div><div class='mut'>Posture score</div><div class='big'>{snap['score']}<span class='mut' style='font-size:18px'>/100 · {snap_grade(snap)}</span></div><div class='mut'>{html.escape(score_line(snap))}</div><div class='mut'>{trend(hist)}</div></div>
 <div class='card'><div class='mut'>Score, last {len(pts)} runs</div><svg width='{w}' height='{h}' viewBox='0 0 {w} {h}' role='img' aria-label='score trend'><polyline fill='none' stroke='#2e86c1' stroke-width='2' points='{poly}'/></svg></div>
 {tiles}</div><h2 style='font-size:16px'>Open findings</h2><div class='wrap'><table><tr><th>Severity</th><th>Finding</th><th>Where</th><th>OWASP</th><th>Fix</th></tr>{rows or "<tr><td colspan=5>Nothing open.</td></tr>"}</table></div>
 {access_card(load_access_map())}{extra_sections(fs)}{platform_details(snap["findings"])}
 <p style='margin-top:16px'>{f"<a href='threat-brief-{tag}.html'>Open this week's threat brief →</a>" if os.path.exists(os.path.join(home(), "reports", f"threat-brief-{tag}.html")) else ""}</p>
-<p class='mut' style='margin-top:20px'>Chief Worry Bot {VERSION}. Scanners can be bypassed; this is evidence, not proof.</p></body></html>"""
+<p class='mut' style='margin-top:20px'>ISR Bot {VERSION}. Scanners can be bypassed; this is evidence, not proof.</p></body></html>"""

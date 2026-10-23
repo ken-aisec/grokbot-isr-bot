@@ -558,10 +558,11 @@ JSON_COUNTS_FIELDS = {"at": list, "delta": dict}
 # v0.7.4 (the display rename): `subst` {"pairs": [[from, to]]}, in place of lines_rx: the item is expected (whole) only when pre and
 # post both exist and differ, pre holds no `to`, and post with every `to` put back to `from` is pre byte for byte (subst_change).
 # It needs both sides, so a new or gone item (a renamed path) never matches. The one pair it may carry is SUBST_PAIRS (the
-# owner's override): any other is refused, so it never becomes a general rewrite rule; a version change is a narrow entry.
+# owner's override): any other is refused, so it never becomes a general rewrite rule; a version change is a narrow entry. The
+# display name is ISR Bot (owner decision, Oct 23).
 ALT_FIELDS = {"json_change": dict, "json_shape": dict, "json_exact": dict, "block": list, "json_counts": dict, "json_each": dict,
               "subst": dict}
-SUBST_PAIRS = [["Watchtower", "Chief Worry Bot"]]
+SUBST_PAIRS = [["Watchtower", "ISR Bot"]]
 # v0.7.4 fix round 1 (Codex MED2): the strings that keep the old name (ALLOWED and ALLOWED_FRAGMENTS in
 # tests/test_v074_display_name.py): engine labels, the User-Agent token, a stored stage key, evidence that feeds a finding key, the
 # legacy routine names and the legacy getting-started marker. subst_change refuses an item in which any of them is seen a different
@@ -954,7 +955,7 @@ def _subst_text(a, b, pairs):
 
 def subst_change(pre, post, subst, key=None):
     """True when pre and post both exist and differ, pre holds none of the pairs' `to` strings, post with each `to` replaced by
-    its `from` is pre exactly, and the rename took no kept string along (v0.7.4: the display name, Watchtower -> Chief Worry Bot,
+    its `from` is pre exactly, and the rename took no kept string along (v0.7.4: the display name, Watchtower -> ISR Bot,
     in display text only, and nothing else). A report or the dashboard (SUBST_PLAIN_KEY) is plain text: every SUBST_KEEP string
     is seen as often in post as in pre. Anything else is read part by part (fix round 2, Codex MED2): a JSON document only as
     _subst_json allows (display fields only), the text around it as _subst_text does."""

@@ -41,7 +41,7 @@ class VersionAfterTheSelfCheck(v068.Base):
         code, out, err = self.version(app)
         self.assertEqual(code, 4, out + err)
         self.assertIn("SELF-CHECK FAILED", out)
-        self.assertIn("1 problem (listed in Chief Worry Bot's ledger)", out)            # Claude review 1 (9): a count, never names
+        self.assertIn("1 problem (listed in ISR Bot's ledger)", out)            # Claude review 1 (9): a count, never names
         self.assertNotIn("watchtower/wt.py", out)
         self.assertNotIn(wt.VERSION, out)
 
@@ -101,7 +101,7 @@ class CodescanNote(unittest.TestCase):
     def test_no_advice_to_install_an_unchecked_semgrep(self):
         src = text("watchtower", "wt.py")
         self.assertNotIn("install semgrep for deeper analysis", src)
-        self.assertIn("semgrep isn't one of Chief Worry Bot's checked scanners", src)
+        self.assertIn("semgrep isn't one of ISR Bot's checked scanners", src)
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ TIMED_OUT = "ran out of time"
 STAGE_FAILED = []        # stages that did not finish in the current run
 # v0.7.4 fix round 1 (Codex MED1): a stage's name is a stored key (stage_times.json, progress.json, stages_skipped) and keeps its
 # old wording; prose shows its label
-STAGE_LABELS = {"Watchtower's own tools": "Chief Worry Bot's own tools"}
+STAGE_LABELS = {"Watchtower's own tools": "ISR Bot's own tools"}
 
 
 def stage_label(stage):
@@ -318,7 +318,7 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
             targets.append(d)
     if len(targets) > ENGINE_MAX_TARGETS:
         notes.append(f"This computer has {len(targets)} skills; SkillSpector and husk cover the first {ENGINE_MAX_TARGETS} (yours first). "
-                     f"The other {len(targets) - ENGINE_MAX_TARGETS} were checked by Chief Worry Bot's own rules only.")
+                     f"The other {len(targets) - ENGINE_MAX_TARGETS} were checked by ISR Bot's own rules only.")
         targets = targets[:ENGINE_MAX_TARGETS]
     cache = load_json(state_path("engine_cache.json"), {}) or {}
     stale = [k for k, v in cache.items() if isinstance(v, dict) and v.get("masked") != MASK_VERSION]
@@ -444,7 +444,7 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
             continue
         if e_.get("stuck"):
             out.append(finding("WT-X004", "A scanner couldn't finish this skill", "low", ["AST08"], d,
-                               f"{e_['stuck']} gave no answer in time", "Chief Worry Bot's own rules still checked it. Chief Worry Bot tries the scanner again in a week, or sooner if the skill changes. "
+                               f"{e_['stuck']} gave no answer in time", "ISR Bot's own rules still checked it. ISR Bot tries the scanner again in a week, or sooner if the skill changes. "
                                "Big or unusual files are the usual cause.", source="engines"))
             if not e_.get("hk"):
                 continue

@@ -100,7 +100,7 @@ class SemgrepInCodescan(_Scanners):
     def test_contrast_no_semgrep_is_a_plain_note(self):
         """Contrast: passes on dd27c42 too."""
         r = self.codescan()
-        self.assertIn("semgrep isn't one of Chief Worry Bot's checked scanners", r["engine"])
+        self.assertIn("semgrep isn't one of ISR Bot's checked scanners", r["engine"])
         self.assertNotIn("not_checked_this_run", r)
         self.assertEqual(self.x005(r), [])
 

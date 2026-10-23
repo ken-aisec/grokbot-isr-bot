@@ -375,9 +375,9 @@ class ExactKinds(unittest.TestCase):
 
 class SubstKind(unittest.TestCase):
     """v0.7.4: `subst` takes an item whole only when post is pre with the display name changed and nothing else."""
-    NAME = {"pairs": [["Watchtower", "Chief Worry Bot"]]}
+    NAME = {"pairs": [["Watchtower", "ISR Bot"]]}
     PRE = "# Watchtower report\nWatchtower rules\nscore 98\n"
-    POST = "# Chief Worry Bot report\nWatchtower rules\nscore 98\n"   # an engine label kept as it was is fine
+    POST = "# ISR Bot report\nWatchtower rules\nscore 98\n"   # an engine label kept as it was is fine
 
     def entries(self, subst=None):
         e = entry(key_rx=r"^r$", subst=self.NAME if subst is None else subst)
@@ -391,17 +391,17 @@ class SubstKind(unittest.TestCase):
         hits = {}
         self.assertEqual(gs.unexpected_lines("tierA", "r", self.PRE, self.POST, self.entries(), hits), [])
         self.assertEqual(hits, {0: 2})
-        self.assertTrue(gs.subst_change("Watchtower's own\n", "Chief Worry Bot's own\n", self.NAME))   # the possessive too
+        self.assertTrue(gs.subst_change("Watchtower's own\n", "ISR Bot's own\n", self.NAME))   # the possessive too
 
     def test_one_more_changed_character_takes_nothing(self):
         for post in (self.POST.replace("98", "97"), self.POST + "x\n", self.POST.replace("report", "Report"), self.POST.rstrip("\n")):
             self.assertTrue(self.bad(self.PRE, post), post)
 
     def test_a_version_change_is_not_a_rename(self):
-        self.assertTrue(self.bad("Watchtower 0.7.3.\n", "Chief Worry Bot 0.7.4.\n"))
+        self.assertTrue(self.bad("Watchtower 0.7.3.\n", "ISR Bot 0.7.4.\n"))
 
     def test_pre_that_already_has_the_new_name_takes_nothing(self):
-        self.assertTrue(self.bad("Chief Worry Bot and Watchtower\n", "Chief Worry Bot and Chief Worry Bot\n"))
+        self.assertTrue(self.bad("ISR Bot and Watchtower\n", "ISR Bot and ISR Bot\n"))
 
     def test_equal_new_or_gone_items_take_nothing(self):
         self.assertFalse(gs.subst_change(self.PRE, self.PRE, self.NAME))
@@ -409,16 +409,16 @@ class SubstKind(unittest.TestCase):
         self.assertEqual(self.bad(self.PRE, None), [gs.GONE_ITEM] + ["-" + l for l in self.PRE.splitlines()])
 
     def test_only_the_name_pair_is_accepted(self):   # the owner's override: never a general rewrite rule
-        for subst in ({"pairs": [["0.7.3", "0.7.4"]]}, {"pairs": [["Watchtower", "Chief Worry Bot"], ["0.7.3", "0.7.4"]]},
-                      {"pairs": [["Chief Worry Bot", "Watchtower"]]}, {"pairs": [["Watchtower", "Chief Worry Bot!"]]},
-                      {"pairs": [["Watchtower", "Chief Worry Bot"], ["Watchtower", "Chief Worry Bot"]]},
-                      {"pairs": [["watchtower", "chief worry bot"]]}, {"pairs": [["", "Chief Worry Bot"]]}, {"pairs": [["a", "a"]]}):
+        for subst in ({"pairs": [["0.7.3", "0.7.4"]]}, {"pairs": [["Watchtower", "ISR Bot"], ["0.7.3", "0.7.4"]]},
+                      {"pairs": [["ISR Bot", "Watchtower"]]}, {"pairs": [["Watchtower", "ISR Bot!"]]},
+                      {"pairs": [["Watchtower", "ISR Bot"], ["Watchtower", "ISR Bot"]]},
+                      {"pairs": [["watchtower", "isr bot"]]}, {"pairs": [["", "ISR Bot"]]}, {"pairs": [["a", "a"]]}):
             with self.assertRaises(ValueError, msg=repr(subst)):
                 self.entries(subst)
 
     def test_malformed_subst_entries_are_refused(self):
-        for subst in ({}, {"pairs": []}, {"pairs": "Watchtower"}, {"pairs": [["Watchtower"]]}, {"pairs": [("Watchtower", "Chief Worry Bot")]},
-                      {"pairs": [["Watchtower", "Chief Worry Bot"]], "also": 1}, {"pairs": [["Watchtower", 1]]}):
+        for subst in ({}, {"pairs": []}, {"pairs": "Watchtower"}, {"pairs": [["Watchtower"]]}, {"pairs": [("Watchtower", "ISR Bot")]},
+                      {"pairs": [["Watchtower", "ISR Bot"]], "also": 1}, {"pairs": [["Watchtower", 1]]}):
             with self.assertRaises(ValueError, msg=repr(subst)):
                 self.entries(subst)
         with self.assertRaises(ValueError):
@@ -431,16 +431,16 @@ class SubstKind(unittest.TestCase):
 
     def test_an_engine_label_rename_is_refused(self):   # replay (cffd4b7: taken whole)
         self.refused('# Watchtower report\n{"engines": ["Watchtower rules", "gitleaks"]}\n',
-                     '# Chief Worry Bot report\n{"engines": ["Chief Worry Bot rules", "gitleaks"]}\n')
-        self.refused("Watchtower checked it: SkillSpector + Watchtower\n", "Chief Worry Bot checked it: SkillSpector + Chief Worry Bot\n")
+                     '# ISR Bot report\n{"engines": ["ISR Bot rules", "gitleaks"]}\n')
+        self.refused("Watchtower checked it: SkillSpector + Watchtower\n", "ISR Bot checked it: SkillSpector + ISR Bot\n")
 
     def test_a_user_agent_rename_is_refused(self):   # replay (cffd4b7: taken whole)
         self.refused("Watchtower brief\nUser-Agent: Watchtower/0.7.4 (+threat brief)\n",
-                     "Chief Worry Bot brief\nUser-Agent: Chief Worry Bot/0.7.4 (+threat brief)\n")
+                     "ISR Bot brief\nUser-Agent: ISR Bot/0.7.4 (+threat brief)\n")
 
     def test_the_stage_key_rename_is_refused(self):   # replay (cffd4b7: taken whole)
         self.refused('{\n "seconds_per_stage": {\n  "Watchtower\'s own tools": 1.5\n }\n}\n',
-                     '{\n "seconds_per_stage": {\n  "Chief Worry Bot\'s own tools": 1.5\n }\n}\n')
+                     '{\n "seconds_per_stage": {\n  "ISR Bot\'s own tools": 1.5\n }\n}\n')
 
     KEPT = ("Watchtower rules", "SkillSpector + Watchtower", "husk + Watchtower", "Watchtower/", "Watchtower's own tools",
             ", during a recorded Watchtower run (", "Ask-first rules with no word Watchtower reads in any of its languages",
@@ -451,23 +451,23 @@ class SubstKind(unittest.TestCase):
     def test_every_kept_string_is_refused_renamed_and_accepted_kept(self):   # replay (cffd4b7: every one taken whole)
         for k in self.KEPT + tuple(getattr(gs, "SUBST_KEEP", ())):
             pre = "# Watchtower report\n" + k + "\n"
-            self.refused(pre, pre.replace("Watchtower", "Chief Worry Bot"))
-            self.assertTrue(gs.subst_change(pre, "# Chief Worry Bot report\n" + k + "\n", self.NAME), k)
+            self.refused(pre, pre.replace("Watchtower", "ISR Bot"))
+            self.assertTrue(gs.subst_change(pre, "# ISR Bot report\n" + k + "\n", self.NAME), k)
 
     def test_wt_x005_fix_prose_renamed_its_evidence_kept_is_taken(self):   # the kept why is also said inside the renamed fix text
         ev = "its program file isn't the one Watchtower installed"
         pre = f'"evidence": "{ev}",\n"fix": "Watchtower didn\'t run gitleaks: {ev}, so its checks weren\'t done."\n'
         post = pre.replace("Watchtower didn't run gitleaks: its program file isn't the one Watchtower installed",
-                           "Chief Worry Bot didn't run gitleaks: its program file isn't the one Chief Worry Bot installed")
+                           "ISR Bot didn't run gitleaks: its program file isn't the one ISR Bot installed")
         self.assertTrue(gs.subst_change(pre, post, self.NAME))
-        self.refused(pre, pre.replace("Watchtower", "Chief Worry Bot"))   # the evidence renamed too
-        self.refused(pre, post.replace(f'"evidence": "{ev}"', '"evidence": "' + ev.replace("Watchtower", "Chief Worry Bot") + '"'))
+        self.refused(pre, pre.replace("Watchtower", "ISR Bot"))   # the evidence renamed too
+        self.refused(pre, post.replace(f'"evidence": "{ev}"', '"evidence": "' + ev.replace("Watchtower", "ISR Bot") + '"'))
 
     def test_a_plain_display_rename_is_still_taken(self):   # guard
         pre = "# Watchtower report 2026-W43\nWatchtower checked 3 skills. Tell Watchtower \"fix it\".\nChecked by: Watchtower rules, gitleaks\n"
         hits = {}
-        self.assertEqual(gs.unexpected_lines("tierA", "r", pre, pre.replace("Watchtower", "Chief Worry Bot").replace(
-            "Chief Worry Bot rules", "Watchtower rules"), self.entries(), hits), [])
+        self.assertEqual(gs.unexpected_lines("tierA", "r", pre, pre.replace("Watchtower", "ISR Bot").replace(
+            "ISR Bot rules", "Watchtower rules"), self.entries(), hits), [])
         self.assertEqual(hits, {0: 4})
 
     def test_the_kept_strings_cover_the_name_guards_allowed_list(self):   # guard: SUBST_KEEP follows test_v074_display_name.py
@@ -510,32 +510,32 @@ class SubstKind(unittest.TestCase):
         return json.dumps({"findings": [dict({"rule": "WT-X005", "severity": "high"}, **fields)]}, indent=1) + "\n"
 
     def renamed(self, fields, which):
-        new = lambda v: [new(x) for x in v] if isinstance(v, list) else v.replace("Watchtower", "Chief Worry Bot")
+        new = lambda v: [new(x) for x in v] if isinstance(v, list) else v.replace("Watchtower", "ISR Bot")
         return self.doc(**{k: new(v) if k in which else v for k, v in fields.items()})
 
     def test_codex_evidence_example_is_refused(self):   # replay (d7758f6: taken, kept_count 0 before and after)
-        self.refused(f'"evidence": "{self.X005}"\n', f'"evidence": "{self.X005}"\n'.replace("Watchtower", "Chief Worry Bot"))
+        self.refused(f'"evidence": "{self.X005}"\n', f'"evidence": "{self.X005}"\n'.replace("Watchtower", "ISR Bot"))
         fields = {"title": "Watchtower's copy of gitleaks isn't the one it installed", "evidence": self.X005,
                   "fix": f"Watchtower {self.X005}, so its checks weren't done."}
         self.refused(self.doc(**fields), self.renamed(fields, ("title", "evidence", "fix")))
 
     def test_an_evidence_rename_is_refused(self):   # replay (d7758f6: taken whole)
-        self.refused('"evidence": "Watchtower foo"\n', '"evidence": "Chief Worry Bot foo"\n')
+        self.refused('"evidence": "Watchtower foo"\n', '"evidence": "ISR Bot foo"\n')
         fields = {"title": "Watchtower title", "evidence": "Watchtower foo", "fix": "Tell Watchtower \"fix it\"."}
         self.refused(self.doc(**fields), self.renamed(fields, ("title", "evidence", "fix")))
         self.refused(self.doc(**fields), self.renamed(fields, ("evidence",)))
         line = '{"rule": "WT-X001", "title": "Watchtower title", "evidence": "Watchtower foo"}\n'   # one object per line
-        self.refused("x\n" + line + line, "x\n" + line + line.replace("Watchtower", "Chief Worry Bot"))
+        self.refused("x\n" + line + line, "x\n" + line + line.replace("Watchtower", "ISR Bot"))
 
     def test_a_where_key_or_object_key_rename_is_refused(self):   # replay (d7758f6: taken whole)
         for k in ("where", "key", "key0", "rule", "engine", "engines_used", "label", "source"):
             fields = {"title": "Watchtower title", k: "Watchtower thing"}
             self.refused(self.doc(**fields), self.renamed(fields, ("title", k)))
-            self.refused(f'"{k}": "Watchtower thing",\n', f'"{k}": "Chief Worry Bot thing",\n')
+            self.refused(f'"{k}": "Watchtower thing",\n', f'"{k}": "ISR Bot thing",\n')
         self.refused('{\n "Watchtower notes": [\n  "Watchtower checked it"\n ]\n}\n',
-                     '{\n "Chief Worry Bot notes": [\n  "Chief Worry Bot checked it"\n ]\n}\n')
-        self.refused('{"notes": {"Watchtower": "x"}}\n', '{"notes": {"Chief Worry Bot": "x"}}\n')   # a key under a display field
-        self.refused('{"engine": "Watchtower patterns only", "files": 3}\n', '{"engine": "Chief Worry Bot patterns only", "files": 3}\n')
+                     '{\n "ISR Bot notes": [\n  "ISR Bot checked it"\n ]\n}\n')
+        self.refused('{"notes": {"Watchtower": "x"}}\n', '{"notes": {"ISR Bot": "x"}}\n')   # a key under a display field
+        self.refused('{"engine": "Watchtower patterns only", "files": 3}\n', '{"engine": "ISR Bot patterns only", "files": 3}\n')
 
     def test_title_and_fix_renamed_in_the_same_json_are_taken(self):   # guard first; replay (d7758f6) at the evidence one
         fields = {"title": "Watchtower title", "where": "/x/Watchtower.md", "evidence": "Watchtower foo",
@@ -557,10 +557,10 @@ class SubstKind(unittest.TestCase):
     def test_json_that_did_not_parse_is_held_to_its_lines(self):   # replay (d7758f6: taken whole)
         pre = ('{\n "notes": [\n  "Watchtower checked it"\n ],\n "engines": [\n  "Watchtower patterns"\n ],\n'
                ' "seconds": <TS>\n')   # cut short, and a bare placeholder PLACEHOLDER_VALUE doesn't read
-        post_notes = pre.replace("Watchtower checked", "Chief Worry Bot checked")
+        post_notes = pre.replace("Watchtower checked", "ISR Bot checked")
         self.assertTrue(gs.subst_change(pre, post_notes, self.NAME))   # guard: a string in the notes list
-        self.refused(pre, post_notes.replace("Watchtower patterns", "Chief Worry Bot patterns"))
-        self.refused('x\n  "Watchtower checked it"\n', 'x\n  "Chief Worry Bot checked it"\n')   # a JSON string in no list
+        self.refused(pre, post_notes.replace("Watchtower patterns", "ISR Bot patterns"))
+        self.refused('x\n  "Watchtower checked it"\n', 'x\n  "ISR Bot checked it"\n')   # a JSON string in no list
 
     def test_real_display_outputs_are_still_taken(self):   # guard: the shapes v0.7.4's own JSON outputs print
         import json
@@ -577,8 +577,8 @@ class SubstKind(unittest.TestCase):
                  "changed_skills": [{"name": "s", "checked_by": ["Watchtower rules"], "why": "only a Watchtower release that lists them"}],
                  "safe_fixes": [{"id": 1, "action": "empty_tool_cache", "path": "/workspace/watchtower/x", "owner": "Watchtower"}]}
         pre = json.dumps(audit, indent=1).replace('"<DUR>"', "<DUR>") + "\n"
-        post = pre.replace("Watchtower", "Chief Worry Bot").replace("Chief Worry Bot's own tools", "Watchtower's own tools").replace(
-            "Chief Worry Bot rules", "Watchtower rules")
+        post = pre.replace("Watchtower", "ISR Bot").replace("ISR Bot's own tools", "Watchtower's own tools").replace(
+            "ISR Bot rules", "Watchtower rules")
         self.assertTrue(gs.subst_change(pre, post, self.NAME))
         self.assertTrue(gs.subst_change("NO_CHANGES\n" + pre, "NO_CHANGES\n" + post, self.NAME))   # text before the document
 
@@ -586,10 +586,10 @@ class SubstKind(unittest.TestCase):
         e = entry(key_rx=".", subst=self.NAME)
         del e["lines_rx"]
         entries = gs.parse_expect({"entries": [e]}, ["c"])
-        pre, post = '# Watchtower report\n"Watchtower, fix it"\n', '# Chief Worry Bot report\n"Chief Worry Bot, fix it"\n'
+        pre, post = '# Watchtower report\n"Watchtower, fix it"\n', '# ISR Bot report\n"ISR Bot, fix it"\n'
         for key in ("tree workspace/watchtower/reports/2026-W43.md", "tree workspace/watchtower/reports/dashboard.html"):
             self.assertEqual(gs.unexpected_lines("tierA", key, pre, post, entries, {}), [], key)
-            self.assertTrue(gs.unexpected_lines("tierA", key, pre + "Watchtower rules\n", post + "Chief Worry Bot rules\n", entries, {}), key)
+            self.assertTrue(gs.unexpected_lines("tierA", key, pre + "Watchtower rules\n", post + "ISR Bot rules\n", entries, {}), key)
         self.assertTrue(gs.unexpected_lines("tierA", "001 status :stdout", pre, post, entries, {}))   # stdout: a JSON string in no list
 
 

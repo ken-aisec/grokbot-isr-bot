@@ -416,7 +416,7 @@ class PlatformRefusal(unittest.TestCase):
     def test_platform_refusal_states_the_policy_without_a_name(self):
         s = wt.PLATFORM_YES_REFUSED
         self.assertEqual(scan_text(s, DENY), [])
-        self.assertIn("(Chief Worry Bot policy: the owner's yes never approves a platform file)", s)
+        self.assertIn("(ISR Bot policy: the owner's yes never approves a platform file)", s)
         self.assertIn("NOT APPROVED", s)
         self.assertIn("Nothing was changed", s)
 
@@ -449,14 +449,14 @@ class RoutineDescriptions(unittest.TestCase):
 
     def test_all_four_names_and_descriptions_exact(self):
         same_safely(self, sorted((d["slug"], d["name"], d["description"]) for d in self.descriptions()), sorted([
-            ("watchtower-daily-watch", "Chief Worry Bot daily watch",
+            ("watchtower-daily-watch", "ISR Bot daily watch",
              "Every morning, check for skill changes, decoy reads and new risks; report what changed and anything that "
              "still needs attention, such as open unverified findings or checks that didn't complete."),
-            ("watchtower-weekly-audit", "Chief Worry Bot weekly audit",
+            ("watchtower-weekly-audit", "ISR Bot weekly audit",
              "Every Sunday, run the full audit, threat brief and weekly report into this chat."),
-            ("watchtower-weekly-tidy", "Chief Worry Bot weekly tidy",
+            ("watchtower-weekly-tidy", "ISR Bot weekly tidy",
              "Every Sunday, preview the safe cleanup (changes nothing) and ask before applying anything."),
-            ("watchtower-monthly-rollcall", "Chief Worry Bot monthly roll-call",   # the name uninstall removes (wt.ROUTINE_NAMES)
+            ("watchtower-monthly-rollcall", "ISR Bot monthly roll-call",   # the name uninstall removes (wt.ROUTINE_NAMES)
              "On the 1st, post a reminder that a roll-call is due; it runs only after the owner says yes."),
         ]))
 

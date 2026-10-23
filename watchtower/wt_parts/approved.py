@@ -227,7 +227,7 @@ def skill_diff(d, context=2):
             continue
         names.append(rel)
         if rel not in cur and rel in old["hashes"] and os.path.islink(os.path.join(d, rel)):
-            out.append(f"~ {rel}: replaced by a link (Chief Worry Bot doesn't follow links inside a skill)")
+            out.append(f"~ {rel}: replaced by a link (ISR Bot doesn't follow links inside a skill)")
             continue
         a = old["files"].get(rel)
         b = read_text(cur[rel], limit=APPROVED_FILE_LIMIT) if rel in cur and os.path.splitext(rel)[1].lower() in TEXT_EXT else None
@@ -324,7 +324,7 @@ def revet(dirs, approve=False):
         if blocked:
             r.update(result="not finished", why=blocked)
         elif base_status == "reset":   # R4: a one-skill baseline would turn every other changed skill into a "new file"
-            r.update(result="not finished", why="Chief Worry Bot's memory of approved skills was reset; nothing is re-approved until the owner starts a new baseline")
+            r.update(result="not finished", why="ISR Bot's memory of approved skills was reset; nothing is re-approved until the owner starts a new baseline")
         elif os.path.normpath(d) in INCOMPLETE_SKILLS:
             r.update(result="not finished", why=f"only {INCOMPLETE_SKILLS[os.path.normpath(d)][0]} of {INCOMPLETE_SKILLS[os.path.normpath(d)][1]} files can be checked, so it can't be re-approved automatically")
         elif installed and (cache.get(d) or {}).get("stuck") and cache[d].get("hash") == h:
@@ -350,7 +350,7 @@ def revet(dirs, approve=False):
                 unlisted = [p for p, hp in digests.items() if platform_ish(p) and not platform_listed(p, hp)]
                 if unlisted:
                     r.update(result="not finished", why=f"{len(unlisted)} file(s) in it aren't on {platform_vendor(d)}'s release list; "
-                             "only a Chief Worry Bot release that lists them clears those")
+                             "only an ISR Bot release that lists them clears those")
                 elif approve:
                     for k in [k for k in base if k.startswith(d + "/") and k not in files]:
                         del base[k]
@@ -632,10 +632,10 @@ def upgrade_npm(projects):
 # `fix --approve-platform` and `--platform-from` stay in the parser (a Bot following an older SKILL.md gets a plain answer, not an
 # argparse error) and are refused: nothing is read, written or approved. The preview shows the same read-only list daily does
 # (platform_open). b8i4 (decision, Oct 22): still no yes; a file the middle path's checks pass is accepted on its own.
-PLATFORM_YES_REFUSED = ("NOT APPROVED: Chief Worry Bot doesn't approve platform files on this computer (Chief Worry Bot policy: the owner's yes never approves a platform file). A file in Grok "
-                        f"Bot's, Codex's or Claude's own skill folder is trusted when Chief Worry Bot's release list ({PLATFORM_LOCK_REL}) has its "
-                        "path and exact sha256, or when it is an update Chief Worry Bot's checks pass, which is accepted on its own. The rest stay "
-                        "high alerts until they are fixed or a Chief Worry Bot release lists them. Nothing was changed. If you didn't expect these "
+PLATFORM_YES_REFUSED = ("NOT APPROVED: ISR Bot doesn't approve platform files on this computer (ISR Bot policy: the owner's yes never approves a platform file). A file in Grok "
+                        f"Bot's, Codex's or Claude's own skill folder is trusted when ISR Bot's release list ({PLATFORM_LOCK_REL}) has its "
+                        "path and exact sha256, or when it is an update ISR Bot's checks pass, which is accepted on its own. The rest stay "
+                        "high alerts until they are fixed or an ISR Bot release lists them. Nothing was changed. If you didn't expect these "
                         "files, remove them.")
 
 

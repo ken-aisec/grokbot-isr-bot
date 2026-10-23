@@ -121,7 +121,7 @@ class PlatformNotes(_SignIn):
         self.put(REL, SIGNIN)
         self.audit()
         md = self.report_md()
-        self.assertIn("## Platform notes\n\nGrok Bot's own files, exactly as Chief Worry Bot's release lists them. They don't count toward "
+        self.assertIn("## Platform notes\n\nGrok Bot's own files, exactly as ISR Bot's release lists them. They don't count toward "
                       "your problems or your status.", md)
         self.assertIn("Open findings: 0 critical, 0 high", md)
 
@@ -144,8 +144,8 @@ class PlatformNotes(_SignIn):
         self.assertEqual([(f["severity"], wt.counts(f)) for f in i2], [("high", True)])
         self.assertEqual(r["status"], wt.CHECK_WEEK)
         self.assertGreaterEqual(r["open_by_severity"]["high"], 1)
-        self.assertTrue(any("Not on Chief Worry Bot's release list: its own alert counts" in l for l in r["platform_notes"]["lines"]))
-        self.assertIn("a file Chief Worry Bot's release list doesn't include has its own counted alert above", self.report_md())
+        self.assertTrue(any("Not on ISR Bot's release list: its own alert counts" in l for l in r["platform_notes"]["lines"]))
+        self.assertIn("a file ISR Bot's release list doesn't include has its own counted alert above", self.report_md())
 
     def test_the_owners_other_findings_are_still_counted(self):   # guard
         lay = profiles.busy_clean_box(self)
@@ -197,7 +197,7 @@ class CheckedPlatformFiles(_SignIn):
                                ("WT-T004", "Platform note (checked)", "info", "high", "Sign-in: the platform's own sign-in tool.")})
         self.assertNotIn("sign-in", self.breakdown().split("Platform notes")[0].split("Confirmed (critical/high/medium)")[-1])
         r = self.audit_json()
-        self.assertTrue(any(l.startswith("Sign-in: not pushing a product. Chief Worry Bot checked this exact text (line 12)")
+        self.assertTrue(any(l.startswith("Sign-in: not pushing a product. ISR Bot checked this exact text (line 12)")
                             for l in r["platform_notes"]["lines"]), r["platform_notes"])
 
     def test_one_byte_more_and_no_entry_applies(self):   # guard

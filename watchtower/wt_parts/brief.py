@@ -176,7 +176,7 @@ def means_here(cat, ctx, amap=None):
         return (f"Templates add skills ({ctx['skills']} are on this computer now), and Bots install packages on request. "
                 "Anything installed runs with every Bot's access.")
     if cat == "creds":
-        extra = f" Chief Worry Bot found {ctx['secrets']} files with live-looking secrets on this computer." if ctx["secrets"] else ""
+        extra = f" ISR Bot found {ctx['secrets']} files with live-looking secrets on this computer." if ctx["secrets"] else ""
         return "Any Bot can read any file on the shared computer, including tokens other tools leave behind." + extra
     if cat == "browser":
         return (f"All your Bots share one browser profile" + (f", signed in to {ctx['sites']} sites" if ctx["sites"] else "") +
@@ -188,10 +188,10 @@ def means_here(cat, ctx, amap=None):
 DO_THIS = {
     "mcp": "Remove connectors no Bot uses, and put Ask first on anything that sends or shares.",
     "hijack": "Make sure every Bot that reads outside content has an approval line before it sends, posts or buys.",
-    "supply": "Ask Chief Worry Bot to vet any template before you add it, and let the daily watch flag new skills.",
-    "creds": "Ask Chief Worry Bot for an audit and clear the secret findings; rotate anything that looks live.",
+    "supply": "Ask ISR Bot to vet any template before you add it, and let the daily watch flag new skills.",
+    "creds": "Ask ISR Bot for an audit and clear the secret findings; rotate anything that looks live.",
     "browser": "Sign the shared browser out of sites no Bot needs; keep AI consoles and admin sites signed out.",
-    "platform": "Skim the change; ask Chief Worry Bot for a fresh audit if it touches approvals, routines or connectors.",
+    "platform": "Skim the change; ask ISR Bot for a fresh audit if it touches approvals, routines or connectors.",
 }
 
 
@@ -402,7 +402,7 @@ def svg_trend(hist):
     grid = "".join(f"<line x1='{pad}' x2='{w - pad}' y1='{pad + (h - 2 * pad) * (1 - v / 100):.1f}' y2='{pad + (h - 2 * pad) * (1 - v / 100):.1f}' class='g'/>" for v in (50, 80))
     last = xy[-1]
     rings = "".join(f"<circle cx='{x:.1f}' cy='{y:.1f}' r='5' class='ring'/>" for (x, y), pt in zip(xy, pts) if len(pt) > 3 and pt[3])
-    note = ("<p class='quiet' style='margin:6px 0 0'>○ Chief Worry Bot itself changed here (a new version or scanner), "
+    note = ("<p class='quiet' style='margin:6px 0 0'>○ ISR Bot itself changed here (a new version or scanner), "
             "so a jump at that point isn't new problems.</p>") if rings else ""
     return (f"<svg viewBox='0 0 {w} {h}' class='trend' role='img' aria-label='Security score over the last {len(pts)} checks, now {pts[-1][1]}'>"
             f"{grid}<polygon points='{area}' class='a'/><polyline points='{line}' class='l'/>{rings}<circle cx='{last[0]:.1f}' cy='{last[1]:.1f}' r='4' class='d'/></svg>"

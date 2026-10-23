@@ -176,7 +176,7 @@ class VerifiedRewrites(_Units):
         tip = [f for f in self.snap()["findings"] if f["rule"] == "WT-I008"]
         self.assertEqual([(f["label"], f["severity"]) for f in tip], [(wt.TIP, "info")])
         self.assertIn("Grok Bot updated its list of what it loads (~/" + CACHE + ")", tip[0]["fix"])
-        self.assertIn("only dates, and copies of files Chief Worry Bot checked itself, changed", tip[0]["fix"])
+        self.assertIn("only dates, and copies of files ISR Bot checked itself, changed", tip[0]["fix"])
         r = self.audit()   # the full audit accepts it like any listed platform update
         self.assertEqual(self.counted(), [])
         self.assertEqual(r["status"], wt.ALL_GOOD)

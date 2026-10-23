@@ -8,7 +8,7 @@ SCRUB = re.compile(
     r"|AIza[0-9A-Za-z_-]{35}|\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
     r"|-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]{0,4000}?-----END [A-Z ]*PRIVATE KEY-----)")
 SCRUB_DIRS = ("/agent-transcripts/",)
-REDACTED = "[removed by Chief Worry Bot]"
+REDACTED = "[removed by ISR Bot]"
 
 REVOKE = [  # gitleaks rule prefix → where the owner turns that key off
     ("aws", "AWS", "https://console.aws.amazon.com/iam/home#/security_credentials"),
@@ -27,8 +27,8 @@ REVOKE = [  # gitleaks rule prefix → where the owner turns that key off
 # rule → (plain title, why it matters, how to fix, who fixes it: "auto" = the fix handles it)
 PLAIN = {
     "WT-S001": ("Keys left in files", "Every Bot can read them and use them.", "Revoke the key at its provider, then delete the file.", "you"),
-    "WT-S002": ("Keys left in files", "Every Bot can read them and use them.", "Revoke the key at its provider; Chief Worry Bot clears the copies.", "you"),
-    "WT-S003": ("A command-line login is stored on the Bot computer", "Any Bot can act as you with it.", "Tell Chief Worry Bot \"fix it\": one yes keeps it, or sign out of that tool.", "you"),
+    "WT-S002": ("Keys left in files", "Every Bot can read them and use them.", "Revoke the key at its provider; ISR Bot clears the copies.", "you"),
+    "WT-S003": ("A command-line login is stored on the Bot computer", "Any Bot can act as you with it.", "Tell ISR Bot \"fix it\": one yes keeps it, or sign out of that tool.", "you"),
     "WT-S004": ("The shared browser is logged in to sensitive sites", "Every Bot uses the same logins.", "In the Bot browser, sign out of sites no Bot needs.", "you"),
     "WT-A001": ("An auto-approve rule is too broad", "Bots can act without asking.", "Settings → General → Auto-review: change it to Ask first.", "you"),
     "WT-A002": ("Sending or buying is auto-approved", "A tricked Bot could act on it.", "Settings → General → Auto-review: change it to Ask first.", "you"),
@@ -40,31 +40,31 @@ PLAIN = {
     # Hooks have their own ID. They first shared WT-C004 with "Connector installed but unused", so a connector finding was described
     # as a hook and accepting one accepted the other. WT-C004 has no entry here, as in v0.6.6: it shows its own title and fix.
     "WT-C005": ("A hook runs a script from a shared temp folder", "Any Bot could plant that script.", "Check what added the hook; report the platform's own to the platform.", "you"),
-    "WT-X001": ("A skill looks risky to the scanner", "It may read secrets or run outside code.", "Tell Chief Worry Bot \"fix it\" and say yes for the ones that are yours.", "you"),
-    "WT-X002": ("A skill looks risky to the scanner", "It may hide what it does.", "Tell Chief Worry Bot \"fix it\" and say yes for the ones that are yours.", "you"),
-    "WT-X003": ("Two scanners agree a skill is dangerous", "This is rarely a false alarm.", "Tell Chief Worry Bot \"fix it\": one yes moves it out of use, and nothing is deleted. If it is a security tool of yours, the fix can keep it for 30 days.", "you"),
-    "WT-W001": ("Chief Worry Bot's own tools need an update", "They live only in Chief Worry Bot's folder.", "Tell Chief Worry Bot \"update yourself\".", "auto"),
-    "WT-X004": ("A scanner couldn't get through a skill", "Chief Worry Bot's own rules still checked it.", "Nothing to do; Chief Worry Bot retries it in a week.", "auto"),
-    "WT-X005": ("One of Chief Worry Bot's scanners was swapped", "Chief Worry Bot didn't run it, so its checks weren't done.",
-                "Reinstall the scanners (install.sh --scanners). If it comes back, tell the owner: something is changing Chief Worry Bot's files.", "you"),
+    "WT-X001": ("A skill looks risky to the scanner", "It may read secrets or run outside code.", "Tell ISR Bot \"fix it\" and say yes for the ones that are yours.", "you"),
+    "WT-X002": ("A skill looks risky to the scanner", "It may hide what it does.", "Tell ISR Bot \"fix it\" and say yes for the ones that are yours.", "you"),
+    "WT-X003": ("Two scanners agree a skill is dangerous", "This is rarely a false alarm.", "Tell ISR Bot \"fix it\": one yes moves it out of use, and nothing is deleted. If it is a security tool of yours, the fix can keep it for 30 days.", "you"),
+    "WT-W001": ("ISR Bot's own tools need an update", "They live only in ISR Bot's folder.", "Tell ISR Bot \"update yourself\".", "auto"),
+    "WT-X004": ("A scanner couldn't get through a skill", "ISR Bot's own rules still checked it.", "Nothing to do; ISR Bot retries it in a week.", "auto"),
+    "WT-X005": ("One of ISR Bot's scanners was swapped", "ISR Bot didn't run it, so its checks weren't done.",
+                "Reinstall the scanners (install.sh --scanners). If it comes back, tell the owner: something is changing ISR Bot's files.", "you"),
     "WT-I004": ("A new plugin was installed", "It brought its own skills, and nothing could vet them before it arrived.",
-                "Tell Chief Worry Bot \"fix it\": one yes keeps it. If you didn't want it, remove it in the app.", "you"),
-    "WT-I001": ("A skill you approved has changed", "Someone or something edited it.", "Tell Chief Worry Bot \"fix it\": it re-scans it with every engine and re-approves it if clean.", "you"),
-    "WT-I010": ("Chief Worry Bot's memory was reset", "It can no longer tell whether a skill you approved has changed.",
-                "Ask Chief Worry Bot what changed since your last approval; when you're happy, say yes to a fresh start.", "you"),
-    "WT-D002": ("Project packages with known security holes", "Attackers know these bugs.", "Tell Chief Worry Bot \"fix it\": it updates each project's lockfile and keeps a backup.", "fix"),
-    "WT-D001": ("Software with known security holes", "Attackers know these bugs.", "Tell Chief Worry Bot \"fix it\": it upgrades them and puts any upgrade back that breaks something.", "fix"),
-    "WT-K005": ("Decoys were read during a recorded Chief Worry Bot run", "Any Bot can write that record, so it proves nothing.", "Tell Chief Worry Bot \"incident check\".", "you"),
-    "WT-K001": ("Something opened a decoy file", "Nothing normal should touch it.", "Tell Chief Worry Bot \"incident check\".", "you"),
-    "WT-K003": ("A decoy's contents were copied", "Something read it and wrote it elsewhere.", "Tell Chief Worry Bot \"incident check\".", "you"),
-    "WT-K006": ("A link was put where a decoy goes", "Writing the decoy would have changed the file it points to.", "Tell Chief Worry Bot \"incident check\".", "you"),
+                "Tell ISR Bot \"fix it\": one yes keeps it. If you didn't want it, remove it in the app.", "you"),
+    "WT-I001": ("A skill you approved has changed", "Someone or something edited it.", "Tell ISR Bot \"fix it\": it re-scans it with every engine and re-approves it if clean.", "you"),
+    "WT-I010": ("ISR Bot's memory was reset", "It can no longer tell whether a skill you approved has changed.",
+                "Ask ISR Bot what changed since your last approval; when you're happy, say yes to a fresh start.", "you"),
+    "WT-D002": ("Project packages with known security holes", "Attackers know these bugs.", "Tell ISR Bot \"fix it\": it updates each project's lockfile and keeps a backup.", "fix"),
+    "WT-D001": ("Software with known security holes", "Attackers know these bugs.", "Tell ISR Bot \"fix it\": it upgrades them and puts any upgrade back that breaks something.", "fix"),
+    "WT-K005": ("Decoys were read during a recorded ISR Bot run", "Any Bot can write that record, so it proves nothing.", "Tell ISR Bot \"incident check\".", "you"),
+    "WT-K001": ("Something opened a decoy file", "Nothing normal should touch it.", "Tell ISR Bot \"incident check\".", "you"),
+    "WT-K003": ("A decoy's contents were copied", "Something read it and wrote it elsewhere.", "Tell ISR Bot \"incident check\".", "you"),
+    "WT-K006": ("A link was put where a decoy goes", "Writing the decoy would have changed the file it points to.", "Tell ISR Bot \"incident check\".", "you"),
     "WT-L001": ("A Bot has the risky combination", "It reads strangers' content, sees private data, and can send.", "Add Ask first on its sends, or split its jobs.", "you"),
     "WT-M010": ("A Bot memory acts like a standing order", "It steers every future run.", "Remove it in that Bot's memory settings.", "you"),
     "WT-R011": ("A Bot answered the roll-call with content", "Bots can't check who sends a roll-call, so that content goes to anyone who asks.", "Add \"Ask the owner before answering any roll-call.\" to that Bot.", "you"),
     "WT-R012": ("A Bot's routine sends or posts without asking", "A tricked run could send on its own.", "Add Ask first on that routine's sends, or have it draft.", "you"),
     "WT-R013": ("A Bot says it sends or posts without asking", "A tricked Bot could send on its own.", "Add Ask first on its email, messages and posts.", "you"),
-    "WT-T013": ("Some skills send or post without asking", "A tricked Bot could act on them.", "Tell Chief Worry Bot \"fix it\" and say yes if they're meant to send on their own.", "you"),
-    "WT-H003": ("A command opened a remote shell", "That's how attackers take over machines.", "Tell Chief Worry Bot \"incident check\".", "you"),
+    "WT-T013": ("Some skills send or post without asking", "A tricked Bot could act on them.", "Tell ISR Bot \"fix it\" and say yes if they're meant to send on their own.", "you"),
+    "WT-H003": ("A command opened a remote shell", "That's how attackers take over machines.", "Tell ISR Bot \"incident check\".", "you"),
 }
 
 
@@ -73,8 +73,8 @@ KEY_LIVE, KEY_DEAD, KEY_UNSURE, KEY_MAYBE = ("Live key in a file every Bot can r
 
 
 PLAIN_BY_TITLE = {
-    KEY_LIVE: ("Keys that still work are sitting in files", "Every Bot can read them and use them.", "Turn them off at the provider, then tell Chief Worry Bot \"fix it\".", "you"),
-    KEY_DEAD: ("Old key copies (they no longer work)", "Nothing to revoke; they're just clutter.", "Tell Chief Worry Bot \"fix it\" to clear them.", "auto"),
+    KEY_LIVE: ("Keys that still work are sitting in files", "Every Bot can read them and use them.", "Turn them off at the provider, then tell ISR Bot \"fix it\".", "you"),
+    KEY_DEAD: ("Old key copies (they no longer work)", "Nothing to revoke; they're just clutter.", "Tell ISR Bot \"fix it\" to clear them.", "auto"),
     KEY_UNSURE: ("Keys we couldn't check", "The provider didn't answer, so we can't say if they work.", "If you recognize one, turn it off; otherwise ignore.", "you"),
     KEY_MAYBE: ("Strings that look like keys", "A pattern matched, but no provider confirmed a working key. Usually test data or docs.", "Skim the list; only act if one is a real key.", "you"),
     # DQ-026: visit-only sensitive domains use the cookies title; signed-in sensitive keep the login headline
@@ -90,7 +90,7 @@ PLAIN_BY_TITLE = {
 
 # batch 6 fix round 3 (Codex 1, 2): a key finding whose hits all look like examples or checksums (annotate_example) keeps its
 # severity and label, but the to-do never offers to clear it or names a provider to revoke it at: the owner checks it
-EXAMPLE_PLAIN = ("Keys that look like examples or checksums", "Chief Worry Bot can't tell an example value from a real key written the same way.",
+EXAMPLE_PLAIN = ("Keys that look like examples or checksums", "ISR Bot can't tell an example value from a real key written the same way.",
                  "Check each one; if one is a real key, rotate it at its provider.", "you")
 
 
@@ -136,7 +136,7 @@ def path_owner(p):
         return bot_name(m.group(2))
     ap = os.path.abspath(p)
     if ap == os.path.abspath(home()) or ap.startswith(os.path.abspath(home()) + "/"):
-        return "Chief Worry Bot"
+        return "ISR Bot"
     if os.path.basename(ap.rstrip("/")) == "agent-tools" or "/agent-tools/" in ap:
         return "every Bot (shared tool results)"
     if "/.grok/sessions/" in ap or "/sessions/" in ap:
@@ -215,13 +215,13 @@ def fix_plan(roots):
             pass
     if spent:
         plan.append({"action": "rearm_canaries", "path": ", ".join(sorted({os.path.dirname(p) for p in spent})), "files": len(spent), "count": len(spent),
-                     "owner": "Chief Worry Bot", "why": "Reset the decoys that were read so the next read is noticed."})
+                     "owner": "ISR Bot", "why": "Reset the decoys that were read so the next read is noticed."})
     rdir = os.path.join(home(), "reports")
     if os.path.isdir(rdir):
         old = sorted(f for f in os.listdir(rdir) if re.match(r"(threat-brief-)?\d{4}-W\d{2}\.(md|html)$", f) or re.match(r"threat-brief-\d{4}-W\d{2}\.html$", f))
         stale = old[:-24]
         if stale:
-            plan.append({"action": "prune_reports", "path": rdir, "files": len(stale), "list": stale, "owner": "Chief Worry Bot", "why": "Keep the last 12 weeks."})
+            plan.append({"action": "prune_reports", "path": rdir, "files": len(stale), "list": stale, "owner": "ISR Bot", "why": "Keep the last 12 weeks."})
     for n, item in enumerate(plan, 1):
         item["id"] = str(n)
     tr = [dict(v, newest=dt.datetime.fromtimestamp(v["newest"]).strftime("%Y-%m-%d") if v["newest"] else None) for _, v in sorted(transcripts.items())]
@@ -320,7 +320,7 @@ def needs_you(findings, limit=None):
     pkgs = sorted({re.sub(r"^Vulnerable package ", "", f["title"]).split(" ")[0] for f in findings if f["rule"] == "WT-D001"})
     for g in items:
         if "WT-D001" in g["rules"] and pkgs:
-            g["how"] = "Tell Chief Worry Bot \"fix it\": it upgrades " + ", ".join(pkgs) + " and puts any upgrade back that breaks something."
+            g["how"] = "Tell ISR Bot \"fix it\": it upgrades " + ", ".join(pkgs) + " and puts any upgrade back that breaks something."
     for g in items:
         cls = {fix_class(f) for f in g["findings"]}
         g["handled"] = "Only you" if "only_you" in cls else ("One yes" if cls & {"decision", "revet", "platform"} else "Fix handles it")
@@ -330,10 +330,10 @@ def needs_you(findings, limit=None):
         g["decoy"] = any(f["rule"].startswith("WT-K") for f in g["findings"])
         g["rows"] = [item_row(f, key_files) for f in sorted(g.pop("findings"), key=lambda f: SEV_ORDER.index(f["severity"]))]
         if g["title"] == "Keys that still work are sitting in files" and live:
-            g["how"] = "Turn these off at the provider: " + ", ".join(n for n, _ in live) + ". Then tell Chief Worry Bot \"fix it\" to clear every copy."
+            g["how"] = "Turn these off at the provider: " + ", ".join(n for n, _ in live) + ". Then tell ISR Bot \"fix it\" to clear every copy."
             g["links"] = live
         elif g["title"] == "Keys left in files" and keys:   # TruffleHog isn't installed: best guess from key types
-            g["how"] = "Turn off these keys: " + ", ".join(n for n, _ in keys) + ". Then tell Chief Worry Bot \"fix it\" to clear the copies."
+            g["how"] = "Turn off these keys: " + ", ".join(n for n, _ in keys) + ". Then tell ISR Bot \"fix it\" to clear the copies."
             g["links"] = keys
     return items[:limit] if limit else items
 
@@ -455,7 +455,7 @@ def key_status_severity(findings, status, ran=None):
             if live:
                 f["severity"], f["title"] = "critical", KEY_LIVE
                 f["evidence"] = f"{names(live)} ({len(live)} live)"
-                f["fix"] = "Turn the key off at its provider, then tell Chief Worry Bot \"fix it\" to clear every copy."
+                f["fix"] = "Turn the key off at its provider, then tell ISR Bot \"fix it\" to clear every copy."
             elif unsure:
                 f["severity"], f["title"] = "medium", KEY_UNSURE
                 f["evidence"] = f"{names(unsure)} ({len(unsure)} not confirmed either way)"
@@ -463,7 +463,7 @@ def key_status_severity(findings, status, ran=None):
             elif dead:
                 f["severity"], f["title"] = "low", KEY_DEAD
                 f["evidence"] = f"{names(dead)} ({len(dead)} dead)"
-                f["fix"] = "Nothing to revoke. Tell Chief Worry Bot \"fix it\" to clear the copies."
+                f["fix"] = "Nothing to revoke. Tell ISR Bot \"fix it\" to clear the copies."
             else:
                 # batch 6 (B5, owner decision): a file's name no longer lowers a key (FIXTURE_PATH is gone); what is here is judged like a
                 # key anywhere else
@@ -625,9 +625,9 @@ ACCEPT_ONE_ALSO = frozenset(("WT-C004",))
 def refusal(rule, title=""):
     if rule.startswith("WT-K"):
         return (f"{rule} is a decoy alarm. A decoy is a file nothing legitimate opens, so this can't be marked as fine. "
-                "Tell Chief Worry Bot \"incident check\".")
+                "Tell ISR Bot \"incident check\".")
     what = f" ({title})" if title else ""
-    out = (f"{rule}{what} is something Chief Worry Bot saw happen, or two checks agree on, so it can't be marked as fine. "
+    out = (f"{rule}{what} is something ISR Bot saw happen, or two checks agree on, so it can't be marked as fine. "
            f"`wt.py show {rule}` shows where.")
     if rule == "WT-A002":
         out += " To keep one exact Allow-automatically line, use `wt.py auto-allow`."
@@ -639,7 +639,7 @@ def accept_refused(f):
     if f.get("unverified_platform"):   # item 8 (R3)
         v = platform_vendor(f.get("where", ""))
         return (f"{f['rule']} is a file in {v}'s own folder that {v}'s release list doesn't include, so it can't be marked as fine. "
-                "Nothing on this computer approves it: only a Chief Worry Bot release that lists it clears it. If you didn't expect it, remove it.")
+                "Nothing on this computer approves it: only an ISR Bot release that lists it clears it. If you didn't expect it, remove it.")
     if f["rule"].startswith("WT-K"):
         return refusal(f["rule"])
     if not acceptable(f) and f["rule"] not in ACCEPT_ONE_ALSO and (is_evidence(f) or f.get("class") == "corroborated"):

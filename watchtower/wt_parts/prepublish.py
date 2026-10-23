@@ -34,10 +34,11 @@ OWN_TEMPLATE_REL = re.compile(r"(bot|routines)/[^/]+|skills/[^/]+/SKILL\.md")
 
 def own_release_digests():
     """v0.7.4 fix round 1 (Codex MED3): this release's own template files (bot/*, routines/*, skills/*/SKILL.md) name the Bot
-    Chief Worry Bot by design, so that roster name is no leak in an unchanged copy of one; anywhere else it is. Fix round 2 (Codex
+    ISR Bot by design, so that roster name is no leak in an unchanged copy of one; anywhere else it is. Fix round 2 (Codex
     MED3): an unchanged copy is told only by the sha256 of its raw bytes, one the MANIFEST.sha256 this process checked itself
     against (release_manifest: self_check's, read once) lists for one of those files. Never a folder listing or a text compare
-    (a CRLF copy or a file put there after the self-check matched); no manifest, no exemption."""
+    (a CRLF copy or a file put there after the self-check matched); no manifest, no exemption. The owner's decision (Oct 23):
+    exempt only those exact files, and only for the name ISR Bot."""
     return {h for rel, h in release_manifest().items() if OWN_TEMPLATE_REL.fullmatch(rel) and re.fullmatch(r"[0-9a-f]{64}", h)}
 
 
@@ -78,7 +79,7 @@ def prepublish_extra(where, t, names):
     if "getting-started" in os.path.basename(where):
         cur = read_text(os.path.join(SELF_ROOT, "bot", "getting-started.md"))
         if cur is not None and _body(t) != _body(cur):
-            out.append(finding("WT-PP09", "Getting-started older than this Chief Worry Bot", "high", ["AST04"], where, "differs from app/bot/getting-started.md",
+            out.append(finding("WT-PP09", "Getting-started is older than this ISR Bot", "high", ["AST04"], where, "differs from app/bot/getting-started.md",
                                "Replace the saved getting-started skill's body with /workspace/watchtower/app/bot/getting-started.md, then run prepublish again."))
     return out
 
@@ -112,7 +113,7 @@ def cmd_prepublish(args):
                 fs.append(finding(rid, title, sev, ["AST04", "LLM02"], f"{where}:{line_of(t, m.start())}", mask(ev) if rid in ("WT-PP01", "WT-PP02") else ev[:120],
                                   "Remove or generalize it before you create the template: anything in a description, skill or routine ships to every installer.",
                                   shown=None if rid in ("WT-PP01", "WT-PP02") else ev))
-        fs += prepublish_extra(where, t, [n for n in names if not (n.lower() == "chief worry bot" and digest in own)])
+        fs += prepublish_extra(where, t, [n for n in names if not (n.lower() == "isr bot" and digest in own)])
         if not has_approval(t, rules) and rules["write_verbs"].search(t):
             fs.append(finding("WT-PP07", "No approval boundary", "high", ["ASI02"], where, "no approval line",
                               "Add: never send, post, buy, publish, delete, or change settings without my approval."))
@@ -172,7 +173,7 @@ def cmd_incident(args):
             ledger_tail = f.readlines()[-20:]
     except OSError:
         pass
-    md = [f"# Chief Worry Bot incident {ts}", "", f"Reported: {args.note or '(no description given)'}", "",
+    md = [f"# ISR Bot incident {ts}", "", f"Reported: {args.note or '(no description given)'}", "",
           "## Containment checklist (each step needs your yes)", ""] + [f"{i}. [ ] {c}" for i, c in enumerate(CONTAINMENT, 1)] + [
           "", "## Open critical and high findings", ""] + [f"- {f['severity']} {f['rule']} {f['title']} at `{f['where']}` ({f['evidence']})" for f in hot[:40]] + [
           "", "## Canaries", "", "\n".join(f"- {f['title']} at `{f['where']}`" for f in canary_findings(record=False)) or "- quiet",
@@ -180,7 +181,7 @@ def cmd_incident(args):
           "", "## Shell history (last 40 lines per file, secrets masked)", "", "```"] + tails + ["```",
           "", "## Processes", "", "```", clean(ps)[:8000], "```", "", "## Network connections", "", "```", clean(net)[:6000], "```",
           "", "## Scheduled jobs", "", "```", clean(cron)[:2000], clean(timers)[:2000], "```",
-          "", "## Chief Worry Bot ledger (last 20 runs)", "", "```"] + [l.rstrip() for l in ledger_tail] + ["```", ""]
+          "", "## ISR Bot ledger (last 20 runs)", "", "```"] + [l.rstrip() for l in ledger_tail] + ["```", ""]
     path = os.path.join(idir, f"incident-{ts}.md")
     with open(path, "w") as f:
         f.write("\n".join(md))

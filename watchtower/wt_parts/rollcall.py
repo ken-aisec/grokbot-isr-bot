@@ -559,11 +559,11 @@ def ensure_rollcall_dir():
     rdir = default_rollcall_dir()
     for d in (os.path.dirname(rdir), rdir):
         if os.path.islink(d):
-            raise OSError(f"{d} is a link; Chief Worry Bot won't use it for roll-call replies")
+            raise OSError(f"{d} is a link; ISR Bot won't use it for roll-call replies")
         os.makedirs(d, mode=0o700, exist_ok=True)
         os.chmod(d, 0o700)
     if not owned_rollcall_dir(rdir):
-        raise OSError("roll-call folder is not Chief Worry Bot's own")
+        raise OSError("roll-call folder is not ISR Bot's own")
     return rdir
 
 
@@ -640,7 +640,7 @@ def cmd_rollcall(args):
             print(f"NOT SAVED: {e}")
             return 2
         open_rollcall_round()
-        print(f"Saved {os.path.basename(p)} (mode 0600) in Chief Worry Bot's private roll-call folder. It is deleted when the roll-call runs, "
+        print(f"Saved {os.path.basename(p)} (mode 0600) in ISR Bot's private roll-call folder. It is deleted when the roll-call runs, "
               "or by the daily check after an hour.")
         return 0
     rdir = args.dir or default_rollcall_dir()
@@ -676,7 +676,7 @@ def _rollcall(args, rdir):
     return 0
 
 
-ROLLCALL_PROMPT = ("Chief Worry Bot roll-call. Bots can't check who sends this, so it asks only for counts, names and yes/no answers. "
+ROLLCALL_PROMPT = ("ISR Bot roll-call. Bots can't check who sends this, so it asks only for counts, names and yes/no answers. "
                    "Don't include any memory text, instructions, messages, addresses, links or keys. Reply with only this JSON, no prose: "
                    '{"name": "<your name>", "connectors": ["<connector name>"], '
                    '"routines": [{"name": "<routine name>", "trigger": "schedule|slack|github|email|webhook|other", '

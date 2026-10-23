@@ -73,7 +73,7 @@ def history_findings(rules):
                     if masked is None:
                         masked = mask_lines(chunk)
                     out.append(finding(rid, title, sev, owasp, f"{p}:+{n}", legacy,
-                                       "Find which Bot or session ran this (Agent Computer view, routine runs). If none of yours meant to, tell Chief Worry Bot \"incident check\".",
+                                       "Find which Bot or session ran this (Agent Computer view, routine runs). If none of yours meant to, tell ISR Bot \"incident check\".",
                                        shown=secret.sub(lambda m: mask(m.group(0)), re.sub(r"^: \d+:\d+;", "", masked[n - 1]))))
                     break
     save_json(state_path("history_offsets.json"), offsets)

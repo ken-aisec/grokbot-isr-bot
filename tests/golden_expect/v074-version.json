@@ -1,5 +1,5 @@
 {
- "about": "v0.7.4 stage 2 (item v074ver): VERSION 0.7.3 -> 0.7.4 only, compared with the stage-1 rename commit: `bash scripts/golden-check.sh <stage-1 commit> full --expect tests/golden_expect/v074-version.json --items v074ver`. The entries are batch7d.json's `ver` entries one version up (same scenarios, keys and checks); footer lines already say Chief Worry Bot in pre.",
+ "about": "v0.7.4 stage 2 (item v074ver): VERSION 0.7.3 -> 0.7.4 only, compared with the stage-1 rename commit: `bash scripts/golden-check.sh <stage-1 commit> full --expect tests/golden_expect/v074-version.json --items v074ver`. The entries are batch7d.json's `ver` entries one version up (same scenarios, keys and checks); footer lines already say ISR Bot in pre.",
  "entries": [
   {
    "item": "v074ver",
@@ -64,8 +64,8 @@
    "scenario_rx": "^tierA$",
    "key_rx": "^tree workspace/watchtower/reports/threat-brief-\\d{4}-W\\d{2}\\.html$",
    "block": [
-    "-<p class='foot'>Read-only: Chief Worry Bot changes nothing unless you run the fix. 0 of 11 news sources responded. Full details: /watchtower-report. Chief Worry Bot 0.7.3.</p>",
-    "+<p class='foot'>Read-only: Chief Worry Bot changes nothing unless you run the fix. 0 of 11 news sources responded. Full details: /watchtower-report. Chief Worry Bot 0.7.4.</p>"
+    "-<p class='foot'>Read-only: ISR Bot changes nothing unless you run the fix. 0 of 11 news sources responded. Full details: /watchtower-report. ISR Bot 0.7.3.</p>",
+    "+<p class='foot'>Read-only: ISR Bot changes nothing unless you run the fix. 0 of 11 news sources responded. Full details: /watchtower-report. ISR Bot 0.7.4.</p>"
    ],
    "must_see": true,
    "why": "v074: the threat brief's footer, where both the name and the version change (a narrow block, never subst)."
@@ -114,8 +114,8 @@
    "scenario_rx": "^(box-empty_account-cli|box-empty_account-driver|box-busy_clean_box-cli|box-busy_clean_box-driver|box-power_user-cli|box-power_user-driver|box-strict_auto_review-cli|box-strict_auto_review-driver|box-emoji_names-cli|box-emoji_names-driver|box-odd_layout-cli|box-odd_layout-driver|box-fixtures_vendor-cli|box-fixtures_vendor-driver|box-platform_refresh-cli|box-platform_refresh-driver|extended)$",
    "key_rx": "^tree workspace/watchtower/reports/\\d{4}-W\\d{2}\\.md$",
    "block": [
-    "-_Chief Worry Bot 0.7.3, read-only. Scanners can be bypassed; this report is evidence, not proof._",
-    "+_Chief Worry Bot 0.7.4, read-only. Scanners can be bypassed; this report is evidence, not proof._"
+    "-_ISR Bot 0.7.3, read-only. Scanners can be bypassed; this report is evidence, not proof._",
+    "+_ISR Bot 0.7.4, read-only. Scanners can be bypassed; this report is evidence, not proof._"
    ],
    "must_see": true,
    "why": "v074: the weekly report's footer, where both the name and the version change (a narrow block)."
@@ -125,8 +125,8 @@
    "scenario_rx": "^(box-empty_account-cli|box-empty_account-driver|box-busy_clean_box-cli|box-busy_clean_box-driver|box-power_user-cli|box-power_user-driver|box-strict_auto_review-cli|box-strict_auto_review-driver|box-emoji_names-cli|box-emoji_names-driver|box-odd_layout-cli|box-odd_layout-driver|box-fixtures_vendor-cli|box-fixtures_vendor-driver|box-platform_refresh-cli|box-platform_refresh-driver|extended)$",
    "key_rx": "^tree workspace/watchtower/reports/dashboard\\.html$",
    "block": [
-    "-<p class='mut' style='margin-top:20px'>Chief Worry Bot 0.7.3. Scanners can be bypassed; this is evidence, not proof.</p></body></html>",
-    "+<p class='mut' style='margin-top:20px'>Chief Worry Bot 0.7.4. Scanners can be bypassed; this is evidence, not proof.</p></body></html>"
+    "-<p class='mut' style='margin-top:20px'>ISR Bot 0.7.3. Scanners can be bypassed; this is evidence, not proof.</p></body></html>",
+    "+<p class='mut' style='margin-top:20px'>ISR Bot 0.7.4. Scanners can be bypassed; this is evidence, not proof.</p></body></html>"
    ],
    "must_see": true,
    "why": "v074: the dashboard's footer, where both the name and the version change (a narrow block)."

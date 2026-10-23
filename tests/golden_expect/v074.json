@@ -1,5 +1,5 @@
 {
- "about": "v0.7.4 stage 1 (item v074): the display rename Watchtower -> Chief Worry Bot only, VERSION still 0.7.3 in this commit. `bash scripts/golden-check.sh accbe5e full --expect tests/golden_expect/v074.json --items v074`. The rename is the `subst` kind (only the name pair; an item is taken whole only when post with the name put back is pre byte for byte). Leftover block entries, if any, are listed with why.",
+ "about": "v0.7.4 stage 1 (item v074): the display rename Watchtower -> ISR Bot only (owner decisions, Oct 22 and Oct 23), VERSION still 0.7.3 in this commit. `bash scripts/golden-check.sh accbe5e full --expect tests/golden_expect/v074.json --items v074`. The rename is the `subst` kind (only the name pair; an item is taken whole only when post with the name put back is pre byte for byte). Leftover block entries, if any, are listed with why.",
  "entries": [
   {
    "item": "v074",
@@ -18,7 +18,7 @@
     "+<p class='foot'>Read-only: Chief Worry Bot changes nothing unless you run the fix. 0 of 11 news sources responded. Full details: /watchtower-report. Chief Worry Bot 0.7.3.</p>"
    ],
    "must_see": true,
-   "why": "v074: the threat brief's fix prompt is reworded (\"your Watchtower Bot\" -> \"your Chief Worry Bot\", not \"Chief Worry Bot Bot\"), with the name in its title, top line and footer"
+   "why": "v074: the threat brief's fix prompt is reworded (\"your Watchtower Bot\" -> \"your ISR Bot\", no doubled Bot), with the name in its title, top line and footer"
   },
   {
    "item": "v074",
@@ -84,7 +84,7 @@
     "+  high     WT-X005  /workspace/watchtower/scanners/bin/trufflehog  Chief Worry Bot's copy of TruffleHog isn't the one it instal"
    ],
    "must_see": true,
-   "why": "v074: breakdown trims each WT-X005 title to its column, so the longer name cuts the title at another place"
+   "why": "v074: breakdown trims each WT-X005 title to its column, so the shorter name cuts the title at another place"
   },
   {
    "item": "v074",
@@ -117,7 +117,7 @@
     "+  high     WT-X005  /workspace/watchtower/scanners/bin/trufflehog  Chief Worry Bot's copy of TruffleHog isn't the one it instal"
    ],
    "must_see": true,
-   "why": "v074: breakdown trims each WT-X005 title to its column, so the longer name cuts the title at another place"
+   "why": "v074: breakdown trims each WT-X005 title to its column, so the shorter name cuts the title at another place"
   },
   {
    "item": "v074",
@@ -152,7 +152,7 @@
     "+  Grok Bot's own folder, ~/.grok/bundled/skills/pptx/templates/deck00.js (line 1): Secrecy or concealment instruction (example text in a built-in template). Not on Chief Worry Bot's release list: its own alert counts, this line doesn't."
    ],
    "must_see": true,
-   "why": "v074: breakdown trims each WT-X005 title to its column, so the longer name cuts the title at another place"
+   "why": "v074: breakdown trims each WT-X005 title to its column, so the shorter name cuts the title at another place"
   },
   {
    "item": "v074",
@@ -187,7 +187,7 @@
     "+  Grok Bot's own folder, ~/.grok/bundled/skills/pptx/templates/deck00.js (line 1): Secrecy or concealment instruction (example text in a built-in template). Not on Chief Worry Bot's release list: its own alert counts, this line doesn't."
    ],
    "must_see": true,
-   "why": "v074: breakdown trims each WT-X005 title to its column, so the longer name cuts the title at another place"
+   "why": "v074: breakdown trims each WT-X005 title to its column, so the shorter name cuts the title at another place"
   },
   {
    "item": "v074",
@@ -220,7 +220,7 @@
     "+  high     WT-X005  /workspace/watchtower/scanners/bin/trufflehog  Chief Worry Bot's copy of TruffleHog isn't the one it instal"
    ],
    "must_see": true,
-   "why": "v074: breakdown trims each WT-X005 title to its column, so the longer name cuts the title at another place"
+   "why": "v074: breakdown trims each WT-X005 title to its column, so the shorter name cuts the title at another place"
   },
   {
    "item": "v074",
@@ -233,7 +233,7 @@
     "+                        Chief Worry Bot's quarantine folder (comma-separated)"
    ],
    "must_see": true,
-   "why": "v074: fix --help's --quarantine text gains a comma (\"out of use, into Chief Worry Bot's\") so argparse doesn't split the name over two lines"
+   "why": "v074: fix --help's --quarantine text says \"out of use and into ISR Bot's\" (was \"out of use into\") so argparse doesn't split the name over two lines"
   },
   {
    "item": "v074",
@@ -246,7 +246,7 @@
     "+                        Chief Worry Bot's quarantine folder (comma-separated)"
    ],
    "must_see": true,
-   "why": "v074: fix --help's --quarantine text gains a comma (\"out of use, into Chief Worry Bot's\") so argparse doesn't split the name over two lines"
+   "why": "v074: fix --help's --quarantine text says \"out of use and into ISR Bot's\" (was \"out of use into\") so argparse doesn't split the name over two lines"
   },
   {
    "item": "v074",
@@ -259,7 +259,7 @@
     "+                        Chief Worry Bot's quarantine folder (comma-separated)"
    ],
    "must_see": true,
-   "why": "v074: fix --help's --quarantine text gains a comma (\"out of use, into Chief Worry Bot's\") so argparse doesn't split the name over two lines"
+   "why": "v074: fix --help's --quarantine text says \"out of use and into ISR Bot's\" (was \"out of use into\") so argparse doesn't split the name over two lines"
   },
   {
    "item": "v074",
@@ -569,7 +569,7 @@
     "pairs": [
      [
       "Watchtower",
-      "Chief Worry Bot"
+      "ISR Bot"
      ]
     ]
    },
@@ -584,7 +584,7 @@
     "pairs": [
      [
       "Watchtower",
-      "Chief Worry Bot"
+      "ISR Bot"
      ]
     ]
    },
@@ -599,12 +599,12 @@
     "pairs": [
      [
       "Watchtower",
-      "Chief Worry Bot"
+      "ISR Bot"
      ]
     ]
    },
    "must_see": false,
-   "why": "v074: the display name in any display output (a command's stdout or stderr, a report, the dashboard, the threat brief) whose only change it is (post with Chief Worry Bot put back to Watchtower is pre byte for byte, and no kept string, SUBST_KEEP, changes count). Never state/, engines_used.json, stage_times.json, lock files, ledgers or any other file a program reads (fix round 1, Codex MED2)."
+   "why": "v074: the display name in any display output (a command's stdout or stderr, a report, the dashboard, the threat brief) whose only change it is (post with ISR Bot put back to Watchtower is pre byte for byte, and no kept string, SUBST_KEEP, changes count). Never state/, engines_used.json, stage_times.json, lock files, ledgers or any other file a program reads (fix round 1, Codex MED2)."
   }
  ]
 }
