@@ -73,7 +73,7 @@
   {
    "item": "v074ver",
    "scenario_rx": "^(box-empty_account-cli|box-empty_account-driver|box-busy_clean_box-cli|box-busy_clean_box-driver|box-power_user-cli|box-power_user-driver|box-strict_auto_review-cli|box-strict_auto_review-driver|box-emoji_names-cli|box-emoji_names-driver|box-odd_layout-cli|box-odd_layout-driver|box-fixtures_vendor-cli|box-fixtures_vendor-driver|box-platform_refresh-cli|box-platform_refresh-driver)$",
-   "key_rx": "^(012 doctor :stdout|013 doctor :stdout|015 doctor :stdout|017 doctor :stdout|027 doctor :stdout|013 doctor \\[driver\\] :stdout|014 doctor \\[driver\\] :stdout|015 doctor \\[driver\\] :stdout|016 doctor \\[driver\\] :stdout|027 doctor \\[driver\\] :stdout)$",
+   "key_rx": "^(012 doctor :stdout|014 doctor :stdout|018 doctor :stdout|028 doctor :stdout|013 doctor :stdout|015 doctor :stdout|017 doctor :stdout|027 doctor :stdout|013 doctor \\[driver\\] :stdout|014 doctor \\[driver\\] :stdout|015 doctor \\[driver\\] :stdout|016 doctor \\[driver\\] :stdout|027 doctor \\[driver\\] :stdout)$",
    "block": [
     "- \"watchtower\": \"0.7.3\",",
     "+ \"watchtower\": \"0.7.4\",",
@@ -148,14 +148,14 @@
    "scenario_rx": "^(box-empty_account-cli|box-emoji_names-cli|box-odd_layout-cli)$",
    "key_rx": "^tree workspace/watchtower/state/score_history\\.csv$",
    "block": [
-    "-<TS>,98,1,full,s5:0.7.3|Watchtower rules",
-    "-<TS>,98,1,daily,s5:0.7.3|Watchtower rules",
-    "-<TS>,98,1,full,s5:0.7.3|Watchtower rules",
-    "-<TS>,98,1,daily,s5:0.7.3|Watchtower rules",
-    "+<TS>,98,1,full,s5:0.7.4|Watchtower rules",
-    "+<TS>,98,1,daily,s5:0.7.4|Watchtower rules",
-    "+<TS>,98,1,full,s5:0.7.4|Watchtower rules",
-    "+<TS>,98,1,daily,s5:0.7.4|Watchtower rules"
+    "-<TS>,92,7,full,s5:0.7.3|Watchtower rules",
+    "-<TS>,92,7,daily,s5:0.7.3|Watchtower rules",
+    "-<TS>,92,7,full,s5:0.7.3|Watchtower rules",
+    "-<TS>,92,7,daily,s5:0.7.3|Watchtower rules",
+    "+<TS>,92,7,full,s5:0.7.4|Watchtower rules",
+    "+<TS>,92,7,daily,s5:0.7.4|Watchtower rules",
+    "+<TS>,92,7,full,s5:0.7.4|Watchtower rules",
+    "+<TS>,92,7,daily,s5:0.7.4|Watchtower rules"
    ],
    "must_see": true,
    "why": "v074: VERSION 0.7.3 -> 0.7.4 in each history line's score fingerprint (the engine label Watchtower rules is kept); scores and counts unchanged."
@@ -182,14 +182,14 @@
    "scenario_rx": "^box-busy_clean_box-cli$",
    "key_rx": "^tree workspace/watchtower/state/score_history\\.csv$",
    "block": [
-    "-<TS>,80,16,full,s5:0.7.3|Watchtower rules",
-    "-<TS>,80,16,daily,s5:0.7.3|Watchtower rules",
-    "-<TS>,80,16,full,s5:0.7.3|Watchtower rules",
-    "-<TS>,80,16,daily,s5:0.7.3|Watchtower rules",
-    "+<TS>,80,16,full,s5:0.7.4|Watchtower rules",
-    "+<TS>,80,16,daily,s5:0.7.4|Watchtower rules",
-    "+<TS>,80,16,full,s5:0.7.4|Watchtower rules",
-    "+<TS>,80,16,daily,s5:0.7.4|Watchtower rules"
+    "-<TS>,74,21,full,s5:0.7.3|Watchtower rules",
+    "-<TS>,74,22,daily,s5:0.7.3|Watchtower rules",
+    "-<TS>,74,22,full,s5:0.7.3|Watchtower rules",
+    "-<TS>,74,22,daily,s5:0.7.3|Watchtower rules",
+    "+<TS>,74,21,full,s5:0.7.4|Watchtower rules",
+    "+<TS>,74,22,daily,s5:0.7.4|Watchtower rules",
+    "+<TS>,74,22,full,s5:0.7.4|Watchtower rules",
+    "+<TS>,74,22,daily,s5:0.7.4|Watchtower rules"
    ],
    "must_see": true,
    "why": "v074: VERSION 0.7.3 -> 0.7.4 in each history line's score fingerprint; scores and counts unchanged."
@@ -216,14 +216,14 @@
    "scenario_rx": "^box-power_user-cli$",
    "key_rx": "^tree workspace/watchtower/state/score_history\\.csv$",
    "block": [
-    "-<TS>,98,2,full,s5:0.7.3|Watchtower rules",
-    "-<TS>,98,2,daily,s5:0.7.3|Watchtower rules",
-    "-<TS>,98,2,full,s5:0.7.3|Watchtower rules",
-    "-<TS>,98,2,daily,s5:0.7.3|Watchtower rules",
-    "+<TS>,98,2,full,s5:0.7.4|Watchtower rules",
-    "+<TS>,98,2,daily,s5:0.7.4|Watchtower rules",
-    "+<TS>,98,2,full,s5:0.7.4|Watchtower rules",
-    "+<TS>,98,2,daily,s5:0.7.4|Watchtower rules"
+    "-<TS>,92,8,full,s5:0.7.3|Watchtower rules",
+    "-<TS>,92,8,daily,s5:0.7.3|Watchtower rules",
+    "-<TS>,92,8,full,s5:0.7.3|Watchtower rules",
+    "-<TS>,92,8,daily,s5:0.7.3|Watchtower rules",
+    "+<TS>,92,8,full,s5:0.7.4|Watchtower rules",
+    "+<TS>,92,8,daily,s5:0.7.4|Watchtower rules",
+    "+<TS>,92,8,full,s5:0.7.4|Watchtower rules",
+    "+<TS>,92,8,daily,s5:0.7.4|Watchtower rules"
    ],
    "must_see": true,
    "why": "v074: VERSION 0.7.3 -> 0.7.4 in each history line's score fingerprint; scores and counts unchanged."
@@ -250,14 +250,14 @@
    "scenario_rx": "^box-strict_auto_review-cli$",
    "key_rx": "^tree workspace/watchtower/state/score_history\\.csv$",
    "block": [
-    "-<TS>,100,1,full,s5:0.7.3|Watchtower rules",
-    "-<TS>,100,1,daily,s5:0.7.3|Watchtower rules",
-    "-<TS>,100,1,full,s5:0.7.3|Watchtower rules",
-    "-<TS>,100,1,daily,s5:0.7.3|Watchtower rules",
-    "+<TS>,100,1,full,s5:0.7.4|Watchtower rules",
-    "+<TS>,100,1,daily,s5:0.7.4|Watchtower rules",
-    "+<TS>,100,1,full,s5:0.7.4|Watchtower rules",
-    "+<TS>,100,1,daily,s5:0.7.4|Watchtower rules"
+    "-<TS>,93,7,full,s5:0.7.3|Watchtower rules",
+    "-<TS>,93,7,daily,s5:0.7.3|Watchtower rules",
+    "-<TS>,93,7,full,s5:0.7.3|Watchtower rules",
+    "-<TS>,93,7,daily,s5:0.7.3|Watchtower rules",
+    "+<TS>,93,7,full,s5:0.7.4|Watchtower rules",
+    "+<TS>,93,7,daily,s5:0.7.4|Watchtower rules",
+    "+<TS>,93,7,full,s5:0.7.4|Watchtower rules",
+    "+<TS>,93,7,daily,s5:0.7.4|Watchtower rules"
    ],
    "must_see": true,
    "why": "v074: VERSION 0.7.3 -> 0.7.4 in each history line's score fingerprint; scores and counts unchanged."
@@ -284,14 +284,14 @@
    "scenario_rx": "^box-fixtures_vendor-cli$",
    "key_rx": "^tree workspace/watchtower/state/score_history\\.csv$",
    "block": [
-    "-<TS>,22,19,full,s5:0.7.3|Watchtower rules",
-    "-<TS>,22,19,daily,s5:0.7.3|Watchtower rules",
-    "-<TS>,22,19,full,s5:0.7.3|Watchtower rules",
-    "-<TS>,22,19,daily,s5:0.7.3|Watchtower rules",
-    "+<TS>,22,19,full,s5:0.7.4|Watchtower rules",
-    "+<TS>,22,19,daily,s5:0.7.4|Watchtower rules",
-    "+<TS>,22,19,full,s5:0.7.4|Watchtower rules",
-    "+<TS>,22,19,daily,s5:0.7.4|Watchtower rules"
+    "-<TS>,22,24,full,s5:0.7.3|Watchtower rules",
+    "-<TS>,22,25,daily,s5:0.7.3|Watchtower rules",
+    "-<TS>,22,25,full,s5:0.7.3|Watchtower rules",
+    "-<TS>,22,25,daily,s5:0.7.3|Watchtower rules",
+    "+<TS>,22,24,full,s5:0.7.4|Watchtower rules",
+    "+<TS>,22,25,daily,s5:0.7.4|Watchtower rules",
+    "+<TS>,22,25,full,s5:0.7.4|Watchtower rules",
+    "+<TS>,22,25,daily,s5:0.7.4|Watchtower rules"
    ],
    "must_see": true,
    "why": "v074: VERSION 0.7.3 -> 0.7.4 in each history line's score fingerprint; scores and counts unchanged."
@@ -318,16 +318,16 @@
    "scenario_rx": "^box-platform_refresh-cli$",
    "key_rx": "^tree workspace/watchtower/state/score_history\\.csv$",
    "block": [
-    "-<TS>,80,16,full,s5:0.7.3|Watchtower rules",
-    "-<TS>,80,18,full,s5:0.7.3|Watchtower rules",
-    "-<TS>,80,18,daily,s5:0.7.3|Watchtower rules",
-    "-<TS>,80,18,full,s5:0.7.3|Watchtower rules",
-    "-<TS>,80,18,daily,s5:0.7.3|Watchtower rules",
-    "+<TS>,80,16,full,s5:0.7.4|Watchtower rules",
-    "+<TS>,80,18,full,s5:0.7.4|Watchtower rules",
-    "+<TS>,80,18,daily,s5:0.7.4|Watchtower rules",
-    "+<TS>,80,18,full,s5:0.7.4|Watchtower rules",
-    "+<TS>,80,18,daily,s5:0.7.4|Watchtower rules"
+    "-<TS>,74,21,full,s5:0.7.3|Watchtower rules",
+    "-<TS>,74,23,full,s5:0.7.3|Watchtower rules",
+    "-<TS>,74,23,daily,s5:0.7.3|Watchtower rules",
+    "-<TS>,74,23,full,s5:0.7.3|Watchtower rules",
+    "-<TS>,74,23,daily,s5:0.7.3|Watchtower rules",
+    "+<TS>,74,21,full,s5:0.7.4|Watchtower rules",
+    "+<TS>,74,23,full,s5:0.7.4|Watchtower rules",
+    "+<TS>,74,23,daily,s5:0.7.4|Watchtower rules",
+    "+<TS>,74,23,full,s5:0.7.4|Watchtower rules",
+    "+<TS>,74,23,daily,s5:0.7.4|Watchtower rules"
    ],
    "must_see": true,
    "why": "v074: VERSION 0.7.3 -> 0.7.4 in each history line's score fingerprint; scores and counts unchanged."
