@@ -911,7 +911,7 @@
   },
   {
    "item": "v074",
-   "scenario_rx": "^(box-empty_account-cli|box-empty_account-driver|box-busy_clean_box-cli|box-busy_clean_box-driver|box-power_user-cli|box-power_user-driver|box-strict_auto_review-cli|box-strict_auto_review-driver|box-emoji_names-cli|box-emoji_names-driver|box-odd_layout-cli|box-odd_layout-driver|box-fixtures_vendor-cli|box-fixtures_vendor-driver|box-platform_refresh-cli|box-platform_refresh-driver|extended)$",
+   "scenario_rx": "^(box-empty_account-cli|box-empty_account-driver|box-busy_clean_box-driver|box-power_user-cli|box-power_user-driver|box-strict_auto_review-cli|box-strict_auto_review-driver|box-emoji_names-cli|box-emoji_names-driver|box-odd_layout-cli|box-odd_layout-driver|box-fixtures_vendor-cli|box-fixtures_vendor-driver|box-platform_refresh-driver|extended)$",
    "key_rx": "^tree workspace/watchtower/reports/\\d{4}-W\\d{2}\\.md$",
    "subst": {
     "pairs": [
@@ -926,7 +926,7 @@
   },
   {
    "item": "v074",
-   "scenario_rx": "^(box-empty_account-cli|box-empty_account-driver|box-busy_clean_box-cli|box-busy_clean_box-driver|box-power_user-cli|box-power_user-driver|box-strict_auto_review-cli|box-strict_auto_review-driver|box-emoji_names-cli|box-emoji_names-driver|box-odd_layout-cli|box-odd_layout-driver|box-fixtures_vendor-cli|box-fixtures_vendor-driver|box-platform_refresh-cli|box-platform_refresh-driver|extended)$",
+   "scenario_rx": "^(box-empty_account-cli|box-empty_account-driver|box-busy_clean_box-driver|box-power_user-cli|box-power_user-driver|box-strict_auto_review-cli|box-strict_auto_review-driver|box-emoji_names-cli|box-emoji_names-driver|box-odd_layout-cli|box-odd_layout-driver|box-fixtures_vendor-cli|box-fixtures_vendor-driver|box-platform_refresh-driver|extended)$",
    "key_rx": "^tree workspace/watchtower/reports/dashboard\\.html$",
    "subst": {
     "pairs": [
