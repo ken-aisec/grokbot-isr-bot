@@ -7,6 +7,7 @@ memories are exact. Replays (marked "replay", each failing on accbe5e at its ass
 recognised as well as the old one."""
 import ast, glob, io, json, os, re, shutil, subprocess, sys, tempfile, unittest, warnings
 from contextlib import redirect_stdout, redirect_stderr
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "watchtower"))
@@ -281,7 +282,10 @@ class _Box(unittest.TestCase):
         d = os.path.join(self.tmp, "bundle")
         os.makedirs(d, exist_ok=True)
         for n, src in files.items():
-            if os.path.isfile(src):
+            if isinstance(src, bytes):   # fix round 2: exact bytes
+                with open(os.path.join(d, n), "wb") as f:
+                    f.write(src)
+            elif os.path.isfile(src):
                 shutil.copy(src, os.path.join(d, n))
             else:
                 with open(os.path.join(d, n), "w") as f:
@@ -325,7 +329,7 @@ class RenderedTitles(_Box):
 
 class Prepublish(_Box):
     # v0.7.4 fix round 1 (Codex MED3): no global exemption for the new name. Only an unchanged copy of this install's own template
-    # files may say Chief Worry Bot while it is on the roster (wt.own_release_texts); any other text naming it is flagged.
+    # files may say Chief Worry Bot while it is on the roster (wt.own_release_digests); any other text naming it is flagged.
     def test_the_templates_own_name_is_no_roster_name(self):   # replay (accbe5e: a WT-PP08 high)
         self.roster("Chief Worry Bot", "bot-a")
         code, r = self.prepublish({"routine-x.md": os.path.join(ROOT, "routines", "daily-watch.md")})
@@ -353,6 +357,65 @@ class Prepublish(_Box):
         files.update({"routine-" + os.path.basename(p): p for p in glob.glob(os.path.join(ROOT, "routines", "*.md"))})
         code, r = self.prepublish(files)
         self.assertEqual((r["verdict"], r["blocking"]), ("PASS", 0), [f for f in r["findings"] if f["severity"] in ("critical", "high")])
+
+    # v0.7.4 fix round 2 (Codex MED3): an unchanged copy is told only by the sha256 of its raw bytes, one the manifest the
+    # self-check checked (wt.release_manifest) lists for bot/*, routines/* or skills/*/SKILL.md
+    def flagged(self, files):
+        code, r = self.prepublish(files)
+        return sorted({f["where"].rsplit("/", 1)[1].split(":")[0] for f in r["findings"] if f["rule"] == "WT-PP08" and f["evidence"] == NAME})
+
+    def raw(self):
+        with open(os.path.join(ROOT, "routines", "daily-watch.md"), "rb") as f:
+            data = f.read()
+        self.assertIn(NAME.encode(), data)
+        self.assertNotIn(b"\r", data)
+        return data
+
+    def as_released(self, manifest, release_files, bundle):
+        """flagged(bundle) run as a copy whose self-check checked `manifest`, its folder holding `release_files` now."""
+        root = os.path.join(self.tmp, "release")   # not "app", no installed_commit: no self-check of its own replaces `manifest`
+        saved = dict(wt._RELEASE)
+        self.addCleanup(lambda: (wt._RELEASE.clear(), wt._RELEASE.update(saved)))
+        for rel, data in release_files.items():
+            os.makedirs(os.path.dirname(os.path.join(root, rel)), exist_ok=True)
+            with open(os.path.join(root, rel), "wb") as f:
+                f.write(data)
+        with mock.patch.object(wt, "SELF_ROOT", root):
+            wt.remember_manifest(os.path.realpath(root), manifest)
+            return self.flagged(bundle)
+
+    def checked(self):
+        with open(os.path.join(ROOT, "MANIFEST.sha256"), encoding="utf-8") as f:
+            return f.read()
+
+    def test_a_crlf_copy_is_flagged(self):   # guard first (an exact byte copy); replay (d7758f6: read_text's line ends matched)
+        self.roster(NAME, "bot-a")
+        raw = self.raw()
+        self.assertEqual(self.flagged({"routine-x.md": raw}), [])
+        self.assertEqual(self.flagged({"routine-x.md": raw.replace(b"\n", b"\r\n")}), ["routine-x.md"])
+        self.assertEqual(self.flagged({"routine-x.md": raw.replace(b"\n", b"\r")}), ["routine-x.md"])
+
+    def test_a_copy_with_one_more_line_is_flagged(self):   # guard first; replay (d7758f6) at the release folder changed after the self-check
+        self.roster(NAME, "bot-a")
+        raw = self.raw()
+        extra = raw + b"One more line.\n"
+        self.assertEqual(self.flagged({"routine-x.md": extra}), ["routine-x.md"])
+        checked, was, now = self.checked(), wt.hashlib.sha256(raw).hexdigest(), wt.hashlib.sha256(extra).hexdigest()
+        self.assertIn(was + "  routines/daily-watch.md\n", checked)
+        # its daily-watch.md replaced, and its manifest rewritten, after the self-check
+        self.assertEqual(self.as_released(checked, {"routines/daily-watch.md": extra, "MANIFEST.sha256": checked.replace(was, now).encode()},
+                                          {"routine-x.md": extra, "routine-y.md": raw}), ["routine-x.md"])
+
+    def test_a_file_the_manifest_does_not_list_is_no_release_file(self):   # replay (d7758f6: the live folder's text matched)
+        self.roster(NAME, "bot-a")
+        text = b"Chief Worry Bot watches this computer. Never send without my approval.\n"
+        planted = {"routines/planted.md": text, "skills/planted/SKILL.md": text, "bot/planted.md": text}   # added after the self-check
+        self.assertEqual(self.as_released(self.checked(), planted, {"routine-x.md": text, "routine-y.md": text.replace(b"\n", b"\r\n")}),
+                         ["routine-x.md", "routine-y.md"])
+
+    def test_no_manifest_no_exemption(self):   # replay (d7758f6: the folder's text matched); fails closed
+        self.roster(NAME, "bot-a")
+        self.assertEqual(self.as_released("", {"routines/daily-watch.md": self.raw()}, {"routine-x.md": self.raw()}), ["routine-x.md"])
 
 
 class StageKey(_Box):

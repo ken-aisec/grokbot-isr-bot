@@ -29,21 +29,29 @@ def known_names(shared):
     return sorted({n for n in names if len(n) >= 3 and n.lower() not in skip})
 
 
-def own_release_texts():
-    """v0.7.4 fix round 1 (Codex MED3): the exact text of this install's own template files (bot/*, routines/*, skills/*/SKILL.md).
-    They name the Bot Chief Worry Bot by design, so that roster name is no leak in an unchanged copy of one; anywhere else it is."""
-    out = set()
-    for sub in ("bot", "routines", "skills"):
-        top = os.path.join(SELF_ROOT, sub)
-        try:
-            entries = sorted(os.listdir(top))
-        except OSError:
-            continue
-        for n in entries:
-            t = read_text(os.path.join(top, n, "SKILL.md") if sub == "skills" else os.path.join(top, n))
-            if t is not None:
-                out.add(t)
-    return out
+OWN_TEMPLATE_REL = re.compile(r"(bot|routines)/[^/]+|skills/[^/]+/SKILL\.md")
+
+
+def own_release_digests():
+    """v0.7.4 fix round 1 (Codex MED3): this release's own template files (bot/*, routines/*, skills/*/SKILL.md) name the Bot
+    Chief Worry Bot by design, so that roster name is no leak in an unchanged copy of one; anywhere else it is. Fix round 2 (Codex
+    MED3): an unchanged copy is told only by the sha256 of its raw bytes, one the MANIFEST.sha256 this process checked itself
+    against (release_manifest: self_check's, read once) lists for one of those files. Never a folder listing or a text compare
+    (a CRLF copy or a file put there after the self-check matched); no manifest, no exemption."""
+    return {h for rel, h in release_manifest().items() if OWN_TEMPLATE_REL.fullmatch(rel) and re.fullmatch(r"[0-9a-f]{64}", h)}
+
+
+def read_once(path, limit=1_000_000):
+    """(the text read_text gives, the sha256 of the raw bytes it was decoded from), from one read; (None, "") as read_text."""
+    try:
+        st = os.stat(path)
+        if not stat.S_ISREG(st.st_mode) or st.st_size > limit:
+            return None, ""
+        with open(path, "rb") as f:
+            data = f.read()
+    except (OSError, ValueError):
+        return None, ""
+    return data.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n"), hashlib.sha256(data).hexdigest()
 
 
 def _body(t):
@@ -80,14 +88,14 @@ def cmd_prepublish(args):
     names = known_names(os.path.basename(os.path.normpath(args.path)) if args.path != "-" else "")
     paths = []
     if args.path == "-":
-        texts = [("stdin", sys.stdin.read())]
+        texts = [("stdin", sys.stdin.read(), "")]
     else:
         for root, _, files in (os.walk(args.path) if os.path.isdir(args.path) else [(os.path.dirname(args.path), [], [os.path.basename(args.path)])]):
             for fn in files:
                 paths.append(os.path.join(root, fn))
-        texts = [(p, read_text(p) or "") for p in paths]
-    fs, own = [], own_release_texts()
-    for where, t in texts:
+        texts = [(p, t or "", h) for p, (t, h) in ((p, read_once(p)) for p in paths)]
+    fs, own = [], own_release_digests()
+    for where, t, digest in texts:
         fs += [f for f in scan_text(t, where, rules, kind="template")   # batch 6 fix round 3: WT-T011x is WT-T011 (an example-looking one)
                if f["rule"] in ("WT-T011", "WT-T011x", "WT-T013", "WT-T007", "WT-T008", "WT-T005", "WT-T006", "WT-T018")]
         for rid, title, sev, rx in PREPUB_RULES:
@@ -104,7 +112,7 @@ def cmd_prepublish(args):
                 fs.append(finding(rid, title, sev, ["AST04", "LLM02"], f"{where}:{line_of(t, m.start())}", mask(ev) if rid in ("WT-PP01", "WT-PP02") else ev[:120],
                                   "Remove or generalize it before you create the template: anything in a description, skill or routine ships to every installer.",
                                   shown=None if rid in ("WT-PP01", "WT-PP02") else ev))
-        fs += prepublish_extra(where, t, [n for n in names if not (n.lower() == "chief worry bot" and t in own)])
+        fs += prepublish_extra(where, t, [n for n in names if not (n.lower() == "chief worry bot" and digest in own)])
         if not has_approval(t, rules) and rules["write_verbs"].search(t):
             fs.append(finding("WT-PP07", "No approval boundary", "high", ["ASI02"], where, "no approval line",
                               "Add: never send, post, buy, publish, delete, or change settings without my approval."))

@@ -30,7 +30,9 @@ on purpose, and `tests/test_v074_display_name.py` lists every engine string that
   daily's NO_CHANGES_BUT_NOT_CHECKED line show it as Chief Worry Bot's own tools (`STAGE_LABELS`).
 - Open owner decisions (fix round 1): with Chief Worry Bot on the roll-call roster, prepublish raises WT-PP08 on the name in any
   text except an unchanged copy of this install's own template files (`bot/`, `routines/`, `skills/*/SKILL.md`), so an edited
-  routine of this Bot's template is flagged. "Chief Worry Bot should ignore this" is not a safe-claim (`SAFE_CLAIM` knows only
+  routine of this Bot's template is flagged. Unchanged means byte for byte (fix round 2): the sha256 of the file's raw bytes is
+  one that the MANIFEST.sha256 the self-check checked lists for one of those files, so a copy with other line ends is flagged too,
+  and without a usable manifest nothing is exempt. "Chief Worry Bot should ignore this" is not a safe-claim (`SAFE_CLAIM` knows only
   "watchtower"), so a Worth-a-look finding whose text says so can still be dismissed, as one saying "Watchtower should ignore
   this" can't.
 - The routines a template set up before 0.7.4 keep their Watchtower names until the template is updated; uninstall names both.

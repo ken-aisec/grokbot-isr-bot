@@ -500,6 +500,98 @@ class SubstKind(unittest.TestCase):
                    "tree workspace/watchtower/reports/threat-brief-2026-W43.html"]
         self.assertEqual([k for k in display if not any(e["_k"].search(k) for e in subst)], [])
 
+    # v0.7.4 fix round 2 (Codex MED2): in JSON the rename may change only display fields (gs.SUBST_FIELDS); SUBST_KEEP_PROSE's
+    # exception holds only in a `fix` value or plain text
+    X005 = "didn't run gitleaks: its program file isn't the one Watchtower installed"
+
+    @staticmethod
+    def doc(**fields):
+        import json
+        return json.dumps({"findings": [dict({"rule": "WT-X005", "severity": "high"}, **fields)]}, indent=1) + "\n"
+
+    def renamed(self, fields, which):
+        new = lambda v: [new(x) for x in v] if isinstance(v, list) else v.replace("Watchtower", "Chief Worry Bot")
+        return self.doc(**{k: new(v) if k in which else v for k, v in fields.items()})
+
+    def test_codex_evidence_example_is_refused(self):   # replay (d7758f6: taken, kept_count 0 before and after)
+        self.refused(f'"evidence": "{self.X005}"\n', f'"evidence": "{self.X005}"\n'.replace("Watchtower", "Chief Worry Bot"))
+        fields = {"title": "Watchtower's copy of gitleaks isn't the one it installed", "evidence": self.X005,
+                  "fix": f"Watchtower {self.X005}, so its checks weren't done."}
+        self.refused(self.doc(**fields), self.renamed(fields, ("title", "evidence", "fix")))
+
+    def test_an_evidence_rename_is_refused(self):   # replay (d7758f6: taken whole)
+        self.refused('"evidence": "Watchtower foo"\n', '"evidence": "Chief Worry Bot foo"\n')
+        fields = {"title": "Watchtower title", "evidence": "Watchtower foo", "fix": "Tell Watchtower \"fix it\"."}
+        self.refused(self.doc(**fields), self.renamed(fields, ("title", "evidence", "fix")))
+        self.refused(self.doc(**fields), self.renamed(fields, ("evidence",)))
+        line = '{"rule": "WT-X001", "title": "Watchtower title", "evidence": "Watchtower foo"}\n'   # one object per line
+        self.refused("x\n" + line + line, "x\n" + line + line.replace("Watchtower", "Chief Worry Bot"))
+
+    def test_a_where_key_or_object_key_rename_is_refused(self):   # replay (d7758f6: taken whole)
+        for k in ("where", "key", "key0", "rule", "engine", "engines_used", "label", "source"):
+            fields = {"title": "Watchtower title", k: "Watchtower thing"}
+            self.refused(self.doc(**fields), self.renamed(fields, ("title", k)))
+            self.refused(f'"{k}": "Watchtower thing",\n', f'"{k}": "Chief Worry Bot thing",\n')
+        self.refused('{\n "Watchtower notes": [\n  "Watchtower checked it"\n ]\n}\n',
+                     '{\n "Chief Worry Bot notes": [\n  "Chief Worry Bot checked it"\n ]\n}\n')
+        self.refused('{"notes": {"Watchtower": "x"}}\n', '{"notes": {"Chief Worry Bot": "x"}}\n')   # a key under a display field
+        self.refused('{"engine": "Watchtower patterns only", "files": 3}\n', '{"engine": "Chief Worry Bot patterns only", "files": 3}\n')
+
+    def test_title_and_fix_renamed_in_the_same_json_are_taken(self):   # guard first; replay (d7758f6) at the evidence one
+        fields = {"title": "Watchtower title", "where": "/x/Watchtower.md", "evidence": "Watchtower foo",
+                  "fix": "Tell Watchtower \"fix it\".", "notes": ["Watchtower checked it", "plain"]}
+        self.assertTrue(gs.subst_change(self.doc(**fields), self.renamed(fields, ("title", "fix")), self.NAME))
+        self.assertTrue(gs.subst_change(self.doc(**fields), self.renamed(fields, ("title", "fix", "notes")), self.NAME))
+        self.refused(self.doc(**fields), self.renamed(fields, ("title", "fix", "where")))
+        self.refused(self.doc(**fields), self.renamed(fields, ("title", "fix", "evidence")))
+
+    def test_wt_x005_sentence_renamed_in_fix_is_taken_in_evidence_refused(self):   # replay (d7758f6: both taken)
+        fields = {"evidence": f"Watchtower {self.X005}", "fix": f"Watchtower {self.X005}, so its checks weren't done."}
+        self.assertTrue(gs.subst_change(self.doc(**fields), self.renamed(fields, ("fix",)), self.NAME))
+        self.refused(self.doc(**fields), self.renamed(fields, ("evidence",)))
+        for k in ("why", "notes", "title", "next"):   # display fields, but the kept sentence counts in full there
+            other = {k: f"Watchtower {self.X005}.", "fix": "Tell Watchtower \"fix it\"."}
+            self.refused(self.doc(**other), self.renamed(other, (k, "fix")))
+            self.assertTrue(gs.subst_change(self.doc(**other), self.renamed(other, ("fix",)), self.NAME), k)
+
+    def test_json_that_did_not_parse_is_held_to_its_lines(self):   # replay (d7758f6: taken whole)
+        pre = ('{\n "notes": [\n  "Watchtower checked it"\n ],\n "engines": [\n  "Watchtower patterns"\n ],\n'
+               ' "seconds": <TS>\n')   # cut short, and a bare placeholder PLACEHOLDER_VALUE doesn't read
+        post_notes = pre.replace("Watchtower checked", "Chief Worry Bot checked")
+        self.assertTrue(gs.subst_change(pre, post_notes, self.NAME))   # guard: a string in the notes list
+        self.refused(pre, post_notes.replace("Watchtower patterns", "Chief Worry Bot patterns"))
+        self.refused('x\n  "Watchtower checked it"\n', 'x\n  "Chief Worry Bot checked it"\n')   # a JSON string in no list
+
+    def test_real_display_outputs_are_still_taken(self):   # guard: the shapes v0.7.4's own JSON outputs print
+        import json
+        audit = {"status": "ok", "new": [{"rule": "WT-X004", "title": "A scanner couldn't get through a skill", "where": "/s",
+                                          "evidence": "husk timed out", "fix": "Nothing to do; Watchtower retries it in a week."}],
+                 "notes": ["gitleaks not installed: secrets checked with Watchtower's rules only."],
+                 "platform_notes": {"count": 9, "lines": ["Grok Bot's own folder: Not on Watchtower's release list."],
+                                    "more": "8 more, 2 of them Watchtower would call critical or high"},
+                 "platform": ["Grok Bot's own folder: Not on Watchtower's release list."],
+                 "seconds_per_stage": {"Watchtower's own tools": "<DUR>"}, "engines": {"used": ["Watchtower rules"],
+                 "warning": "No outside scanner is installed, so this vet used Watchtower's own rules only. Say so."},
+                 "platform_unverified": {"open": 1, "next": "a real vendor update clears when a Watchtower release lists it."},
+                 "only_you": [{"what": "One of Watchtower's scanners was swapped", "how": "Tell Watchtower \"fix it\".", "links": []}],
+                 "changed_skills": [{"name": "s", "checked_by": ["Watchtower rules"], "why": "only a Watchtower release that lists them"}],
+                 "safe_fixes": [{"id": 1, "action": "empty_tool_cache", "path": "/workspace/watchtower/x", "owner": "Watchtower"}]}
+        pre = json.dumps(audit, indent=1).replace('"<DUR>"', "<DUR>") + "\n"
+        post = pre.replace("Watchtower", "Chief Worry Bot").replace("Chief Worry Bot's own tools", "Watchtower's own tools").replace(
+            "Chief Worry Bot rules", "Watchtower rules")
+        self.assertTrue(gs.subst_change(pre, post, self.NAME))
+        self.assertTrue(gs.subst_change("NO_CHANGES\n" + pre, "NO_CHANGES\n" + post, self.NAME))   # text before the document
+
+    def test_reports_stay_plain_text(self):   # guard (SUBST_PLAIN_KEY: no field rules, kept strings still counted); replay at stdout
+        e = entry(key_rx=".", subst=self.NAME)
+        del e["lines_rx"]
+        entries = gs.parse_expect({"entries": [e]}, ["c"])
+        pre, post = '# Watchtower report\n"Watchtower, fix it"\n', '# Chief Worry Bot report\n"Chief Worry Bot, fix it"\n'
+        for key in ("tree workspace/watchtower/reports/2026-W43.md", "tree workspace/watchtower/reports/dashboard.html"):
+            self.assertEqual(gs.unexpected_lines("tierA", key, pre, post, entries, {}), [], key)
+            self.assertTrue(gs.unexpected_lines("tierA", key, pre + "Watchtower rules\n", post + "Chief Worry Bot rules\n", entries, {}), key)
+        self.assertTrue(gs.unexpected_lines("tierA", "001 status :stdout", pre, post, entries, {}))   # stdout: a JSON string in no list
+
 
 class StepZero(unittest.TestCase):
     """Without --expect the byte comparison runs exactly as for the split; with it, only compile and loader checks."""

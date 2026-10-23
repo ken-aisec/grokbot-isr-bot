@@ -575,12 +575,23 @@ SUBST_KEEP = ("Watchtower rules", "SkillSpector + Watchtower", "husk + Watchtowe
               "You are Watchtower", "Watchtower: package caches, lockfiles, headers and its own state")
 # A kept string that the display prose also says in full (the renamed sentence held it too) is counted without that prose: WT-X005's
 # why is its evidence, and its fix text "<name> didn't run <scanner>: its program file isn't the one <name> installed" is display.
+# Fix round 2 (Codex MED2): only in plain display text or a JSON `fix` value (SUBST_PROSE_FIELDS); anywhere else it counts in full.
 SUBST_KEEP_PROSE = {"its program file isn't the one Watchtower installed": re.compile(r"\bdidn't run [^:\n]{1,40}: its program file "
                                                                                        r"isn't the one Watchtower installed")}
+# v0.7.4 fix round 2 (Codex MED2): in JSON (a document that starts a line, one per line or pretty-printed, or a `"key": value` line
+# of one that didn't parse) the rename may change only the string values of these display fields: a string under one of these keys,
+# or in a list under one. Any other change (evidence, where, key, key0, rule, engine, engines_used, a stage key, any object key, a
+# field not listed) refuses the item. The ones v0.7.4's own JSON outputs carry the name in: a finding's title and fix (compact,
+# alert_line), notes (audit, doctor's last_run), platform_notes' lines and more and audit's `platform` copy of those lines, `next`
+# (platform_unverified), vet's engines warning, fix's only_you what and how, a revet row's why and a cleanup row's owner.
+SUBST_FIELDS = frozenset(("title", "fix", "notes", "lines", "more", "platform", "next", "warning", "what", "how", "why", "owner"))
+SUBST_PROSE_FIELDS = frozenset(("fix",))
+# The display items whose text is plain (a report or the dashboard): no field rules, SUBST_KEEP counted over the whole text
+SUBST_PLAIN_KEY = re.compile(r"^tree .+/reports/[^/]+\.(md|html)$")
 
 
-def kept_count(text, k):
-    rx = SUBST_KEEP_PROSE.get(k)
+def kept_count(text, k, prose=True):
+    rx = SUBST_KEEP_PROSE.get(k) if prose else None
     return text.count(k) - (len(rx.findall(text)) if rx else 0)
 
 
@@ -832,19 +843,131 @@ def json_only_change(pre, post, change):
     return _same(dict(a[1], **{f: change["to"]}), b[1])
 
 
-def subst_change(pre, post, subst):
-    """True when pre and post both exist and differ, pre holds none of the pairs' `to` strings, every SUBST_KEEP string is seen as
-    often in post as in pre, and post with each `to` replaced by its `from` is pre exactly (v0.7.4: the display name, Watchtower ->
-    Chief Worry Bot, in every place but the kept strings, and nothing else)."""
+def _put_back(text, pairs):
+    for frm, to in pairs:
+        text = text.replace(to, frm)
+    return text
+
+
+def _subst_str(a, b, pairs, field):
+    """A string that changed: only in a SUBST_FIELDS field, only by the rename, and every kept string as often (SUBST_KEEP_PROSE's
+    exception only in a SUBST_PROSE_FIELDS field)."""
+    prose = field in SUBST_PROSE_FIELDS
+    return (field in SUBST_FIELDS and not any(to in a for _, to in pairs) and _put_back(b, pairs) == a
+            and all(kept_count(a, k, prose) == kept_count(b, k, prose) for k in SUBST_KEEP))
+
+
+def _subst_json(a, b, pairs, field=None):
+    """True when JSON value b is a with the rename only in display strings (_subst_str): the same keys in the same order, the
+    same lengths, every other value equal with its exact type. A string's field is the key of the object it (or its list) is in."""
+    if isinstance(a, dict):
+        return isinstance(b, dict) and list(a) == list(b) and all(_subst_json(a[k], b[k], pairs, k) for k in a)
+    if isinstance(a, list):
+        return isinstance(b, list) and len(a) == len(b) and all(_subst_json(x, y, pairs, field) for x, y in zip(a, b))
+    if isinstance(a, str) and isinstance(b, str) and a != b:
+        return _subst_str(a, b, pairs, field)
+    return _same(a, b)
+
+
+_SUBST_DECODER = json.JSONDecoder(object_pairs_hook=_unique_pairs, parse_constant=_no_constant)
+
+
+def _subst_parts(text):
+    """The text cut into ("json", document) for each JSON document that starts a line ("{" or "[" first) and parses (strict
+    JSON, the bare placeholders read as strings: PLACEHOLDER_VALUE), whether it takes one line or many, and ("text", the rest)."""
+    text = PLACEHOLDER_VALUE.sub(r'"<\1>"', text)
+    parts, buf, pos = [], [], 0
+    while pos < len(text):
+        nl = text.find("\n", pos)
+        eol = len(text) if nl < 0 else nl + 1
+        if text[pos] in "{[":
+            try:
+                doc, end = _SUBST_DECODER.raw_decode(text, pos)
+            except ValueError:
+                end = None
+            if end is not None:
+                if buf:
+                    parts.append(("text", "".join(buf)))
+                    buf = []
+                parts.append(("json", doc))
+                pos = end
+                continue
+        buf.append(text[pos:eol])
+        pos = eol
+    if buf:
+        parts.append(("text", "".join(buf)))
+    return parts
+
+
+_MEMBER_LINE = re.compile(r'^\s*("(?:[^"\\\n]|\\.)*")\s*:\s*(.*?)\s*$')
+_STRING_LINE = re.compile(r'^\s*("(?:[^"\\\n]|\\.)*")\s*,?\s*$')
+_CLOSE_LINE = re.compile(r"^\s*[\]}]\s*,?\s*$")
+
+
+def _json_line(line):
+    """("member", key, value) for a `"key": value` line of pretty-printed JSON (value "{" or "[" when it opens one), ("string",
+    None, value) for a line that is one JSON string, or None for a plain line."""
+    m = _MEMBER_LINE.match(line)
+    if m:
+        v = m.group(2)[:-1].rstrip() if m.group(2).endswith(",") else m.group(2)
+        try:
+            key = json.loads(m.group(1))
+            return ("member", key, v) if v in ("{", "[") else ("member", key, json.loads(v, parse_constant=_no_constant))
+        except ValueError:
+            pass
+    m = _STRING_LINE.match(line)
+    if m:
+        try:
+            return ("string", None, json.loads(m.group(1)))
+        except ValueError:
+            pass
+    return None
+
+
+def _subst_text(a, b, pairs):
+    """Text outside the parsed JSON, line by line: a changed plain line keeps every kept string as often (SUBST_KEEP_PROSE's
+    exception allowed); a changed `"key": value` line (JSON that didn't parse whole) is the same key, a SUBST_FIELDS one, and a
+    string value changed as _subst_str allows; a changed line that is one JSON string is held to the key of the list it is in."""
+    la, lb = a.split("\n"), b.split("\n")
+    if len(la) != len(lb):
+        return False
+    opened = []   # the keys of the lists and objects a `"key": [` / `"key": {` line opened (None for a bare one)
+    for x, y in zip(la, lb):
+        jx = _json_line(x)
+        if x != y:
+            jy = _json_line(y)
+            if jx is None:
+                if jy is not None or not all(kept_count(x, k) == kept_count(y, k) for k in SUBST_KEEP):
+                    return False
+            elif jy is None or jx[:2] != jy[:2] or not (isinstance(jx[2], str) and isinstance(jy[2], str)) or jx[2] in ("{", "["):
+                return False
+            elif not _subst_str(jx[2], jy[2], pairs, jx[1] if jx[0] == "member" else (opened[-1] if opened else None)):
+                return False
+        if jx is not None and jx[0] == "member" and jx[2] in ("{", "["):
+            opened.append(jx[1] if jx[2] == "[" else None)
+        elif x.strip() in ("{", "["):
+            opened.append(None)
+        elif _CLOSE_LINE.match(x) and opened:
+            opened.pop()
+    return True
+
+
+def subst_change(pre, post, subst, key=None):
+    """True when pre and post both exist and differ, pre holds none of the pairs' `to` strings, post with each `to` replaced by
+    its `from` is pre exactly, and the rename took no kept string along (v0.7.4: the display name, Watchtower -> Chief Worry Bot,
+    in display text only, and nothing else). A report or the dashboard (SUBST_PLAIN_KEY) is plain text: every SUBST_KEEP string
+    is seen as often in post as in pre. Anything else is read part by part (fix round 2, Codex MED2): a JSON document only as
+    _subst_json allows (display fields only), the text around it as _subst_text does."""
     if pre is None or post is None or pre == post:
         return False
     pairs = subst["pairs"]
-    if any(to in pre for _, to in pairs) or any(kept_count(pre, k) != kept_count(post, k) for k in SUBST_KEEP):   # fix round 1 (Codex MED2)
+    if any(to in pre for _, to in pairs) or _put_back(post, pairs) != pre:
         return False
-    back = post
-    for frm, to in pairs:
-        back = back.replace(to, frm)
-    return back == pre
+    if key is not None and SUBST_PLAIN_KEY.search(key):
+        return all(kept_count(pre, k) == kept_count(post, k) for k in SUBST_KEEP)   # fix round 1 (Codex MED2)
+    pa, pb = _subst_parts(pre), _subst_parts(post)
+    return len(pa) == len(pb) and all(x[0] == y[0] and (_subst_json(x[1], y[1], pairs) if x[0] == "json" else _subst_text(x[1], y[1], pairs))
+                                      for x, y in zip(pa, pb))
 
 
 def diff_lines(pre, post):
@@ -888,7 +1011,7 @@ def unexpected_lines(sid, key, pre, post, entries, hits):
                   or (e.get("_exact") and json_new_exact(pre, post, e["_exact"]))
                   or (e.get("_counts") and json_counts_change(pre, post, e["_counts"]))
                   or (e.get("_each") and json_each_change(pre, post, e["_each"]))
-                  or (e.get("_subst") and subst_change(pre, post, e["_subst"]))), None)
+                  or (e.get("_subst") and subst_change(pre, post, e["_subst"], key))), None)
     if whole is not None:   # exactly the one field changed, or a new item of exactly that shape or content: the whole item is expected
         hits[whole["id"]] = hits.get(whole["id"], 0) + len(lines)
         return []
