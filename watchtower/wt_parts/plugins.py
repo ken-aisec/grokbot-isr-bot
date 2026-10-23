@@ -4,6 +4,12 @@ def norm_body(t):
     return re.sub(r"\s+", " ", t).strip()
 
 
+# v0.7.4 (display rename): a getting-started copy saved earlier says "You are Watchtower", and a brief saved earlier names the
+# update Watchtower; both still count
+GETTING_STARTED_MARKERS = ("You are Chief Worry Bot", "You are Watchtower")
+UPDATE_NAMES = ("chief worry bot", "watchtower")
+
+
 def saved_skill_notes(notes):
     """The template's first-run skill is the owner's saved `getting-started` skill, and an update doesn't refresh it. After
     v0.6.6 moved the decoys, the saved copy on the main computer still named the old places. Say so when it differs."""
@@ -18,10 +24,10 @@ def saved_skill_notes(notes):
             continue
         seen.add(rp)
         saved = read_text(p) or ""
-        if "You are Watchtower" not in saved or norm_body(saved) == norm_body(app):
+        if not any(x in saved for x in GETTING_STARTED_MARKERS) or norm_body(saved) == norm_body(app):
             continue
         old = [x for x in OLD_CANARY_PATHS + PUBLISHED_CANARY_PATHS if x in saved]
-        msg = (f"Your saved getting-started skill ({short_path(p)}) is older than this Watchtower"
+        msg = (f"Your saved getting-started skill ({short_path(p)}) is older than this Chief Worry Bot"
                + (f": it still names the old decoy places ({', '.join(old)})" if old else "")
                + ". A template made from this Bot would ship it. Re-save it from /workspace/watchtower/app/bot/getting-started.md.")
         if msg not in notes:                   # the check can run twice in one audit; say it once
@@ -31,11 +37,11 @@ def saved_skill_notes(notes):
 def update_notes(notes):
     """Tell the owner a newer Watchtower is out. Only tells: nothing here installs or updates anything."""
     b = load_json(state_path("last_brief.json"), {}) or {}
-    upd = [u for u in b.get("updates", []) if "watchtower" in u.get("name", "").lower()]
+    upd = [u for u in b.get("updates", []) if any(n in u.get("name", "").lower() for n in UPDATE_NAMES)]
     if upd:
         u = upd[0]
-        notes.append(f"A newer Watchtower is out ({u.get('have')} → {u.get('latest')}" + (f", commit {u['commit'][:12]}" if u.get("commit") else "")
-                     + "). Tell Watchtower \"update yourself\" when you want it.")
+        notes.append(f"A newer Chief Worry Bot is out ({u.get('have')} → {u.get('latest')}" + (f", commit {u['commit'][:12]}" if u.get("commit") else "")
+                     + "). Tell Chief Worry Bot \"update yourself\" when you want it.")
     moved = b.get("watchtower_tag_moved")
     if moved:
         notes.append(f"The {moved.get('tag')} tag on GitHub now points at commit {str(moved.get('now'))[:12]}, not {str(moved.get('installed'))[:12]}, "
@@ -910,7 +916,7 @@ def summarize_refresh(fs):
         title = (f"Grok Bot's own {n} changed and now {b['title']}; it's theirs to fix, but don't use it until they do")
         alert = finding(rf["rule"], title, b["severity"], ["AST07", "ASI03"], rf["where"],
                         rf.get("evidence") or b.get("evidence", ""),
-                        "Grok Bot's own skill went bad. Don't use it until they fix it. Watchtower keeps it listed.",
+                        "Grok Bot's own skill went bad. Don't use it until they fix it. Chief Worry Bot keeps it listed.",
                         ident=f"platform-bad-{n}")
         alert["scope"] = "platform"
         alert["label"] = CONFIRMED
@@ -932,12 +938,12 @@ def summarize_refresh(fs):
         vendors = sorted(per, key=lambda v: (("Grok Bot", "Codex", "Claude") + (v,)).index(v))
         head = ", ".join([f"{per[vendors[0]]} of {vendors[0]}'s own files changed"] + [f"{per[v]} of {v}'s" for v in vendors[1:]])
         fix = ("Nothing to do. Grok Bot updated its own skills or plugin catalog; every new or changed file here from its own "
-               "skill folders is on Grok Bot's release list. Watchtower re-checks the new files and accepts them on the next full audit when nothing "
+               "skill folders is on Grok Bot's release list. Chief Worry Bot re-checks the new files and accepts them on the next full audit when nothing "
                "flags them.")
         if any(f.get("platform_update") for f in unflagged):   # b8i4: some aren't on the release list; the middle path let them through
             # fix round 1 (Codex 7): a full audit that accepted them (roll_builtin) still shows this line, and says so
             fix = ("Nothing to do. " + ", ".join([f"{vendors[0]} updated {per[vendors[0]]} of its own files"] + [f"{v} {per[v]}" for v in vendors[1:]])
-                   + ". Watchtower's rules found nothing in the new versions and no two scanners name a dangerous behavior; "
+                   + ". Chief Worry Bot's rules found nothing in the new versions and no two scanners name a dangerous behavior; "
                    + ("this full audit accepted them." if all(f.get("platform_accepted") for f in unflagged)
                       else "it accepts them on the next full audit when nothing flags them."))
         files = sorted({min(_home_rels(q), key=lambda r: (len(r), r), default=q)
@@ -954,7 +960,7 @@ def summarize_refresh(fs):
         meta = sorted(dict.fromkeys(_platform_place(f["where"])[0] for f in unflagged if _path_part(f["where"]) in VERIFIED_METADATA))
         if meta:
             fix = (f"Nothing to do. Grok Bot updated its list of what it loads ({', '.join(meta[:4])}{' …' if len(meta) > 4 else ''}). "
-                   "Watchtower compared it with the released version: only dates, and copies of files Watchtower checked itself, changed."
+                   "Chief Worry Bot compared it with the released version: only dates, and copies of files Chief Worry Bot checked itself, changed."
                    + (" " + fix[len("Nothing to do. "):] if len(meta) < len(unflagged) else ""))
         tip = finding(REFRESH_RULE, f"Platform refresh: {head} ({shown})", "info", ["AST07"], "platform-refresh", evidence, fix,
                       ident="platform-refresh")
@@ -982,7 +988,7 @@ SECRET_RULES = ("WT-S001", "WT-S002", "WT-K003")   # a key or a decoy copy count
 PLATFORM = "Platform (Grok Bot's own file)"
 PLATFORM_FIX = "This is Grok Bot's own file; nothing for you to do."
 PLATFORM_CONFIRMED_FIX = ("This is Grok Bot's own file, so it doesn't move your score. Two checks agree it matters, so tell Grok Bot "
-                          "support (it's theirs to fix); Watchtower keeps it listed until it changes.")
+                          "support (it's theirs to fix); Chief Worry Bot keeps it listed until it changes.")
 CATALOG_CACHE = tuple(f"/plugins/cache/{m}/" for m in CATALOG_MARKETS)
 _CATALOG = {"at": None, "roots": ()}
 _RUNS_CODE = {}
@@ -1047,11 +1053,11 @@ def platform_secret_store_note(p):
     tight = mode is not None and not (mode & 0o077)
     if os.path.normpath(str(p)).endswith(os.sep + os.path.normpath(GROK_CLI_SIGN_IN)):
         return finding("WT-I009", "Grok CLI sign-in file present" + ("" if tight else " (readable beyond its owner)"), "info", ["ASI03"], p,
-                       f"{m}; value not read", "This is the platform's own Grok CLI sign-in file. Watchtower never reads it. Nothing for you to do"
+                       f"{m}; value not read", "This is the platform's own Grok CLI sign-in file. Chief Worry Bot never reads it. Nothing for you to do"
                        + ("." if tight else "; its permissions are wider than 0600, worth reporting to the platform."), ident="platform-grok-cli-sign-in")
     return finding("WT-I009", "Platform secret store present" + ("" if tight else " (readable beyond its owner)"), "info", ["ASI03"], p,
                    f"{m}; value not read", "This is the platform's own store for secrets saved through the secure secret request. "
-                   "Watchtower never reads it. Nothing for you to do" + ("." if tight else "; its permissions are wider than 0600, worth reporting to the platform."),
+                   "Chief Worry Bot never reads it. Nothing for you to do" + ("." if tight else "; its permissions are wider than 0600, worth reporting to the platform."),
                    ident="platform-secret-store")
 
 

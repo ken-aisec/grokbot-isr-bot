@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Watchtower installer. Pinned, checksummed, and confined to /workspace/watchtower.
-# Usage: bash install.sh v0.7.3 [commit]   install that tagged release; with a commit ID, refuse anything else
+# Chief Worry Bot installer. Pinned, checksummed, and confined to /workspace/watchtower.
+# Usage: bash install.sh v0.7.4 [commit]   install that tagged release; with a commit ID, refuse anything else
 #        bash install.sh --scanners        add the optional scanners (second half of this file)
 set -euo pipefail
 WT_HOME="${WATCHTOWER_HOME:-/workspace/watchtower}"
@@ -8,7 +8,7 @@ REPO="https://github.com/ken-aisec/grokbot-watchtower"
 
 if [[ "${1:-}" != "--scanners" ]]; then
   # ---- This is everything that runs for `bash install.sh <tag>`. It only writes inside $WT_HOME.
-  TAG="${1:?usage: install.sh <tag> [commit]  (for example v0.7.3)}"; WANT="${2:-}"
+  TAG="${1:?usage: install.sh <tag> [commit]  (for example v0.7.4)}"; WANT="${2:-}"
   mkdir -p "$WT_HOME"/{state,reports,exports,vet}
   # Private staging (0700, unpredictable name, removed on any exit): nothing else can plant a link in it.
   STAGE="$(mktemp -d "$WT_HOME/.stage.XXXXXXXX")"; chmod 700 "$STAGE"; OLD="$STAGE/old"
@@ -33,7 +33,7 @@ if [[ "${1:-}" != "--scanners" ]]; then
     if [[ -n "$PREV" ]]; then echo "$PREV" > "$WT_HOME/state/installed_commit"; else rm -f "$WT_HOME/state/installed_commit"; fi
     echo "ACTIVATION FAILED - put the previous version back"; exit 1
   fi
-  echo "Watchtower $TAG installed at $WT_HOME/app (commit $GOT, manifest verified$([[ -n "$WANT" ]] && echo ", commit matches the template"))."
+  echo "Chief Worry Bot $TAG installed at $WT_HOME/app (commit $GOT, manifest verified$([[ -n "$WANT" ]] && echo ", commit matches the template"))."
   echo "NEXT: read $WT_HOME/app/skills/watchtower-setup/SKILL.md and follow it from section 2."
   echo "Your skills are the SKILL.md files under $WT_HOME/app/skills/<name>/. Read the one you need when asked; never edit them."
   exit 0
@@ -87,7 +87,7 @@ if [[ -n "$ga" ]]; then
     && curl -fsSL -o "$DL/gitleaks_checksums.txt" "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt" \
     && (cd "$DL" && grep " $tgz\$" gitleaks_checksums.txt | sha256sum -c -) \
     && tar --no-same-owner -xzf "$DL/$tgz" -C "$SB" gitleaks && rm -f "$WT_HOME/bin/gitleaks" \
-    || echo "gitleaks did not install; Watchtower works without it."
+    || echo "gitleaks did not install; Chief Worry Bot works without it."
   # TruffleHog: tells live keys from dead ones (asks each key's own provider)
   th="trufflehog_${TRUFFLEHOG_VERSION}_linux_$( [ "$ga" = x64 ] && echo amd64 || echo arm64 ).tar.gz"
   tb="https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}"
@@ -95,20 +95,20 @@ if [[ -n "$ga" ]]; then
     && curl -fsSL -o "$DL/trufflehog_checksums.txt" "$tb/trufflehog_${TRUFFLEHOG_VERSION}_checksums.txt" \
     && (cd "$DL" && grep " $th\$" trufflehog_checksums.txt | sha256sum -c -) \
     && tar --no-same-owner -xzf "$DL/$th" -C "$SB" trufflehog && rm -f "$WT_HOME/bin/trufflehog" \
-    || echo "TruffleHog did not install; Watchtower works without it."
+    || echo "TruffleHog did not install; Chief Worry Bot works without it."
   # OSV-Scanner: known holes in Node, Go and other project dependencies
   ob="osv-scanner_linux_$( [ "$ga" = x64 ] && echo amd64 || echo arm64 )"
   curl -fsSL -o "$SB/osv-scanner.new" "https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}/$ob" \
     && curl -fsSL -o "$DL/osv_sums.txt" "https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}/osv-scanner_SHA256SUMS" \
     && (cd "$SB" && grep " $ob\$" "$DL/osv_sums.txt" | sed "s/$ob/osv-scanner.new/" | sha256sum -c -) \
     && chmod +x "$SB/osv-scanner.new" && mv "$SB/osv-scanner.new" "$SB/osv-scanner" && rm -f "$WT_HOME/bin/osv-scanner" \
-    || { rm -f "$SB/osv-scanner.new"; echo "OSV-Scanner did not install; Watchtower works without it."; }
+    || { rm -f "$SB/osv-scanner.new"; echo "OSV-Scanner did not install; Chief Worry Bot works without it."; }
 fi
-[[ -z "$LOCK_FAILED" ]] && { "$WT_HOME/scanners/bin/skillspector" --version || echo "SkillSpector did not install; Watchtower works without it and says so in the audit."; }
+[[ -z "$LOCK_FAILED" ]] && { "$WT_HOME/scanners/bin/skillspector" --version || echo "SkillSpector did not install; Chief Worry Bot works without it and says so in the audit."; }
 [[ -x "$SB/gitleaks" ]] && "$SB/gitleaks" version || true
 rm -f "$DL"/gitleaks_*_linux_*.tar.gz "$DL/gitleaks_checksums.txt" "$DL"/trufflehog_*_linux_*.tar.gz "$DL/trufflehog_checksums.txt" "$DL/osv_sums.txt" "$LOCK_ERR"
 if [[ -n "$LOCK_FAILED" ]]; then
-  echo "CHECKSUM LOCK FAILED - the Python scanners (SkillSpector, husk) were not installed. Watchtower works without them and the audit says which are missing."
+  echo "CHECKSUM LOCK FAILED - the Python scanners (SkillSpector, husk) were not installed. Chief Worry Bot works without them and the audit says which are missing."
   exit 1
 fi
-echo "Scanners installed in $SB. Watchtower runs only these programs, and only when each matches scripts/scanner-bins.lock."
+echo "Scanners installed in $SB. Chief Worry Bot runs only these programs, and only when each matches scripts/scanner-bins.lock."

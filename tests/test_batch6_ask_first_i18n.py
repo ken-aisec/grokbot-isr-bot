@@ -91,7 +91,7 @@ class OtherLanguages(_Settings):
         self.assertEqual(sorted((f["class"], f["severity"]) for f in fs), [("evidence", "medium"), ("tip", "info")])
         self.assertEqual(self.counted(), [("WT-A003", "medium", "Ask-first rules don't say what they cover", ", ".join(AREAS))])
         tip = next(f for f in fs if f["class"] == "tip")
-        self.assertIn("in a language Watchtower doesn't read", tip["title"])
+        self.assertIn("in a language Chief Worry Bot doesn't read", tip["title"])
         self.assertIn("The alert above stays", tip["fix"])
         r = self.audit()
         self.assertEqual(r["open_by_severity"]["medium"], 1, r)

@@ -555,7 +555,13 @@ JSON_COUNTS_FIELDS = {"at": list, "delta": dict}
 # post are each one JSON object of objects (strict JSON, the same lines before the document, the same keys in the same order) and
 # EVERY one of those objects has `field` going from `from` to `to`, everything else equal (json_each_change). Line patterns on
 # "masked": 7 / 8 lines let one entry migrate while another stayed at 7.
-ALT_FIELDS = {"json_change": dict, "json_shape": dict, "json_exact": dict, "block": list, "json_counts": dict, "json_each": dict}
+# v0.7.4 (the display rename): `subst` {"pairs": [[from, to]]}, in place of lines_rx: the item is expected (whole) only when pre and
+# post both exist and differ, pre holds no `to`, and post with every `to` put back to `from` is pre byte for byte (subst_change).
+# It needs both sides, so a new or gone item (a renamed path) never matches. The one pair it may carry is SUBST_PAIRS (the
+# owner's override): any other is refused, so it never becomes a general rewrite rule; a version change is a narrow entry.
+ALT_FIELDS = {"json_change": dict, "json_shape": dict, "json_exact": dict, "block": list, "json_counts": dict, "json_each": dict,
+              "subst": dict}
+SUBST_PAIRS = [["Watchtower", "Chief Worry Bot"]]
 
 
 def schema_ok(s):
@@ -644,6 +650,10 @@ def _entry_shape(e):
         return False
     if "block" in e:
         return bool(e["block"]) and all(isinstance(x, str) and (x[:1] in ("+", "-") or x == NEW_ITEM) for x in e["block"])
+    if "subst" in e:
+        p = e["subst"].get("pairs")
+        return (set(e["subst"]) == {"pairs"} and isinstance(p, list) and all(isinstance(x, list) and all(isinstance(s, str) for s in x) for x in p)
+                and p == SUBST_PAIRS)
     if "json_counts" in e:
         jc = e["json_counts"]
         return (set(jc) == set(JSON_COUNTS_FIELDS) and isinstance(jc["at"], list) and jc["at"]
@@ -675,8 +685,8 @@ def parse_expect(doc, items):
     for n, e in enumerate(entries):
         if not _entry_shape(e):
             raise ValueError(f"entry {n}: needs exactly {sorted(EXPECT_FIELDS)} with those types (or json_change {{field, from, to}} "
-                             "or json_shape {head, doc}, json_exact, block, json_counts {at, delta} or json_each {field, from, to} "
-                             "in place of lines_rx)")
+                             "or json_shape {head, doc}, json_exact, block, json_counts {at, delta}, json_each {field, from, to} "
+                             f"or subst {{pairs: {SUBST_PAIRS}}} in place of lines_rx)")
         lines = e.get("lines_rx", [])
         if not e["why"].strip() or (not any(alt in e for alt in ALT_FIELDS) and not lines):
             raise ValueError(f"entry {n} ({e['item']}): an empty why or lines_rx")
@@ -692,7 +702,8 @@ def parse_expect(doc, items):
         every += rxs[2:]
         if e["item"] in items:
             out.append(dict(e, id=n, _s=rxs[0], _k=rxs[1], _l=rxs[2:], _j=e.get("json_change"), _shape=e.get("json_shape"),
-                            _exact=e.get("json_exact"), _block=e.get("block"), _counts=e.get("json_counts"), _each=e.get("json_each")))
+                            _exact=e.get("json_exact"), _block=e.get("block"), _counts=e.get("json_counts"), _each=e.get("json_each"),
+                            _subst=e.get("subst")))
     if every and _covers_a_side(every):
         raise ValueError("the entries' lines_rx together would accept any line; write narrow ones")
     return out
@@ -801,6 +812,20 @@ def json_only_change(pre, post, change):
     return _same(dict(a[1], **{f: change["to"]}), b[1])
 
 
+def subst_change(pre, post, subst):
+    """True when pre and post both exist and differ, pre holds none of the pairs' `to` strings, and post with each `to` replaced
+    by its `from` is pre exactly (v0.7.4: the display name, Watchtower -> Chief Worry Bot, in every place and nothing else)."""
+    if pre is None or post is None or pre == post:
+        return False
+    pairs = subst["pairs"]
+    if any(to in pre for _, to in pairs):
+        return False
+    back = post
+    for frm, to in pairs:
+        back = back.replace(to, frm)
+    return back == pre
+
+
 def diff_lines(pre, post):
     """The lines by which `post` differs from `pre` (an item's text; None when the run has no such item): "+text" or "-text", a
     NEW_ITEM or GONE_ITEM line first when only one side has the item, and one "~" line when they differ in line ends only."""
@@ -841,7 +866,8 @@ def unexpected_lines(sid, key, pre, post, entries, hits):
     whole = next((e for e in cand if (e["_j"] and json_only_change(pre, post, e["_j"])) or (e["_shape"] and json_new_shape(pre, post, e["_shape"]))
                   or (e.get("_exact") and json_new_exact(pre, post, e["_exact"]))
                   or (e.get("_counts") and json_counts_change(pre, post, e["_counts"]))
-                  or (e.get("_each") and json_each_change(pre, post, e["_each"]))), None)
+                  or (e.get("_each") and json_each_change(pre, post, e["_each"]))
+                  or (e.get("_subst") and subst_change(pre, post, e["_subst"]))), None)
     if whole is not None:   # exactly the one field changed, or a new item of exactly that shape or content: the whole item is expected
         hits[whole["id"]] = hits.get(whole["id"], 0) + len(lines)
         return []
@@ -857,7 +883,7 @@ def unexpected_lines(sid, key, pre, post, entries, hits):
             bad.append(lines[i])
         hits[e["id"]] = hits.get(e["id"], 0) + len(span[0])
     cand = [e for e in cand if not e["_j"] and not e["_shape"] and not e.get("_exact") and not e.get("_block") and not e.get("_counts")
-            and not e.get("_each")]
+            and not e.get("_each") and not e.get("_subst")]
     for line in [x for x, t in zip(lines, taken) if not t]:
         e = next((e for e in cand if any(r.search(line) for r in e["_l"])), None)
         if e is None:

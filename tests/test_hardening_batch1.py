@@ -72,7 +72,7 @@ class NoShippedAutoAllow(Batch):
         code, o, _ = self.run_cmd("auto-allow")
         self.assertEqual(code, 0, o)
         self.assertIn(id3, o); self.assertIn(id5, o)
-        self.assertEqual(o.count("earlier Watchtower version accepted this line"), 2, o)
+        self.assertEqual(o.count("earlier Chief Worry Bot version accepted this line"), 2, o)
         code, o, _ = self.run_cmd("auto-allow", "keep", f"{id3},{id5}")
         self.assertEqual(code, 1, o); self.assertIn("NOT SAVED", o)
         self.assertFalse(os.path.exists(wt.state_path("accepted_auto_allow.json")))

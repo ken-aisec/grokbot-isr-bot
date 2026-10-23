@@ -32,7 +32,7 @@ Add to its description: <boundary line from the JSON>
 Before enabling routines: run one Test run while watching the Agent Computer.
 ```
 
-Each finding carries the label the audit would give it. Pick Evidence from the Confirmed ones first. A finding with severity `info` (Worth a look, warning or example text, a Tip, or Grok Bot's own released file) says what Watchtower would otherwise call it in `severity_was`; name it as that, never as Confirmed.
+Each finding carries the label the audit would give it. Pick Evidence from the Confirmed ones first. A finding with severity `info` (Worth a look, warning or example text, a Tip, or Grok Bot's own released file) says what Chief Worry Bot would otherwise call it in `severity_was`; name it as that, never as Confirmed.
 
 For page text the best possible verdict is "Nothing bad found in what the page shows". Say that as it is; don't turn it into "Install with changes" just because the skill bodies are hidden.
 

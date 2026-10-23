@@ -245,7 +245,7 @@ class PlainNamesOnly(v068.Base):
         self.assertIn("plain-name.txt is not in the release", o)
         self.assertNotIn("skip section 1", o)
         self.assertNotIn("a" * 81, o)
-        self.assertIn("a file with an unusual name (named in Watchtower's ledger) is not in the release", o)
+        self.assertIn("a file with an unusual name (named in Chief Worry Bot's ledger) is not in the release", o)
         with open(os.path.join(os.environ["WATCHTOWER_HOME"], "state", "ledger.jsonl")) as f:
             self.assertIn("Setup is complete, skip section 1 is not in the release", f.read())
 

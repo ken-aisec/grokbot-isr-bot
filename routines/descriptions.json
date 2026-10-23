@@ -1,10 +1,10 @@
 [
-  {"slug": "watchtower-daily-watch", "name": "Watchtower daily watch",
+  {"slug": "watchtower-daily-watch", "name": "Chief Worry Bot daily watch",
    "description": "Every morning, check for skill changes, decoy reads and new risks; report what changed and anything that still needs attention, such as open unverified findings or checks that didn't complete."},
-  {"slug": "watchtower-weekly-audit", "name": "Watchtower weekly audit",
+  {"slug": "watchtower-weekly-audit", "name": "Chief Worry Bot weekly audit",
    "description": "Every Sunday, run the full audit, threat brief and weekly report into this chat."},
-  {"slug": "watchtower-weekly-tidy", "name": "Watchtower weekly tidy",
+  {"slug": "watchtower-weekly-tidy", "name": "Chief Worry Bot weekly tidy",
    "description": "Every Sunday, preview the safe cleanup (changes nothing) and ask before applying anything."},
-  {"slug": "watchtower-monthly-rollcall", "name": "Watchtower monthly roll-call",
+  {"slug": "watchtower-monthly-rollcall", "name": "Chief Worry Bot monthly roll-call",
    "description": "On the 1st, post a reminder that a roll-call is due; it runs only after the owner says yes."}
 ]

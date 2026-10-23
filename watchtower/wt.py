@@ -21,7 +21,7 @@ State lives in $WATCHTOWER_HOME (default /workspace/watchtower).
 """
 import sys
 if sys.version_info < (3, 8):   # degrade with one plain line, not a traceback (v0.6.9 old-Python profile)
-    print("Watchtower needs Python 3.8 or newer; this computer has " + ".".join(map(str, sys.version_info[:3])) + ". Nothing was run.")
+    print("Chief Worry Bot needs Python 3.8 or newer; this computer has " + ".".join(map(str, sys.version_info[:3])) + ". Nothing was run.")
     sys.exit(3)
 import argparse, bisect, builtins, concurrent.futures, datetime as dt, difflib, errno, functools, gzip, hashlib, heapq, html, json, math, os, platform, re, shutil, signal, stat, subprocess, sys, tempfile, threading, time, traceback
 
@@ -65,8 +65,8 @@ def _wt_part(name):
                 os.close(fd)
         code = compile(src, path, "exec", dont_inherit=True)
     except (OSError, ValueError, SyntaxError):
-        print(f"SELF-CHECK FAILED - Watchtower stopped before doing anything. Its own file watchtower/wt_parts/{name}.py is missing"
-              " or not a plain file. Tell the owner now. Don't run Watchtower again until they reinstall it from the release"
+        print(f"SELF-CHECK FAILED - Chief Worry Bot stopped before doing anything. Its own file watchtower/wt_parts/{name}.py is missing"
+              " or not a plain file. Tell the owner now. Don't run Chief Worry Bot again until they reinstall it from the release"
               " (setup skill, section 1).")
         sys.exit(4)
     exec(code, globals())   # noqa: S102 - Watchtower's own file, from its bytes; held to MANIFEST.sha256 by self_check
@@ -122,7 +122,7 @@ def cmd_audit(args):
     try:
         snap, new, fixed = run_audit(args, quick=False)
     except Busy:
-        print("ERROR another Watchtower run has been going for 15 minutes; try again when it finishes (`wt.py status`)", file=sys.stderr)
+        print("ERROR another Chief Worry Bot run has been going for 15 minutes; try again when it finishes (`wt.py status`)", file=sys.stderr)
         return 2
     all_new, new = new, [f for f in new if not platform_scope(f)]   # batch 5 (d1): Grok Bot's own files are platform notes, never new
     out = {"status": snap_status(snap), "score": snap["score"], "score_line": score_line(snap), "grade": snap_grade(snap), "new": [compact(f) for f in new][:20],
@@ -291,9 +291,9 @@ def platform_open(snap):
         return None
     out = {"open": len(fs), "files": [dict({k: f[k] for k in ("rule", "severity", "title", "where")}, evidence=f.get("evidence", ""))
                                       for f in fs[:PLATFORM_OPEN_SHOWN]],
-           "next": f"Still open from any earlier day too: files in the platform's own folders that Watchtower's release list ({PLATFORM_LOCK_REL}) "
+           "next": f"Still open from any earlier day too: files in the platform's own folders that Chief Worry Bot's release list ({PLATFORM_LOCK_REL}) "
                    "doesn't include. Don't use them until someone has looked. Nothing on this computer approves them: remove any the owner "
-                   "didn't expect; a real vendor update clears when a Watchtower release lists it. `wt.py show WT-I002 --limit 100000` and "
+                   "didn't expect; a real vendor update clears when a Chief Worry Bot release lists it. `wt.py show WT-I002 --limit 100000` and "
                    "`wt.py show WT-I001 --limit 100000` list every one."}
     if len(fs) > PLATFORM_OPEN_SHOWN:
         out["more"] = len(fs) - PLATFORM_OPEN_SHOWN
@@ -305,7 +305,7 @@ def cmd_daily(args):
     try:
         snap, new, fixed = run_audit(args, quick=True)
     except Busy:
-        print("BUSY another Watchtower run is in progress; this daily check was skipped")
+        print("BUSY another Chief Worry Bot run is in progress; this daily check was skipped")
         return 0
     # Codex, item 8 review 2 (high 2): an open platform file without provenance is said before any quiet answer. "New" means not in
     # last run's findings file, which the Bot can write: a plant whose finding was copied into it in advance was never new, and
@@ -454,9 +454,9 @@ def cmd_baseline(args):
     n = save_approved_all(meta.get("skill_dirs", []), held, load_baseline()[0])
     ledger(dict({"event": "baseline", "files": len(meta["manifest"]), "copies": n}, **({"after_reset": True} if status == "reset" else {})))
     print(f"Baseline saved: {len(meta['manifest']) - len(held)} skill and plugin files. Kept a copy of {n} skills so the next change shows as a diff."
-          + (f" Not approved by this: {len(held)} file(s) in the platform's own folders that Watchtower's release list ({PLATFORM_LOCK_REL}) "
-             "doesn't include. An update Watchtower's checks pass rolls in on its own at a full audit; the rest stay high alerts "
-             "until a Watchtower release lists them." if held else ""))
+          + (f" Not approved by this: {len(held)} file(s) in the platform's own folders that Chief Worry Bot's release list ({PLATFORM_LOCK_REL}) "
+             "doesn't include. An update Chief Worry Bot's checks pass rolls in on its own at a full audit; the rest stay high alerts "
+             "until a Chief Worry Bot release lists them." if held else ""))
     return 0
 
 
@@ -558,7 +558,7 @@ def cmd_codescan(args):
                         mask(m.group(0)), "Move it to an environment variable or secret store and revoke the exposed one.")
             out.append(annotate_example(f, why) if why else f)
     semgrep = tool("semgrep")
-    note = "Watchtower patterns only (semgrep isn't one of Watchtower's checked scanners)"
+    note = "Chief Worry Bot patterns only (semgrep isn't one of Chief Worry Bot's checked scanners)"
     # Codex, batch 3 final review: a semgrep refused at launch (exit 126), failed (non-zero exit, time out) or with no results
     # in its output still said "semgrep found and used too". It is "used" only after a clean exit with a results list;
     # anything else is "not checked" (its findings, if any, are still listed) and a refused or changed copy is a WT-X005.
@@ -601,7 +601,7 @@ def cmd_codescan(args):
                 n = len({str(e.get("path") or i) for i, e in enumerate(partial)})
                 note += f" ({n} file{'s' if n != 1 else ''} only partly parsed)"
     if gap:
-        note = f"Watchtower patterns only: {gap}, so its checks weren't done this time"
+        note = f"Chief Worry Bot patterns only: {gap}, so its checks weren't done this time"
     x005 = scanner_x005()
     out = sort_findings(dedupe(out + x005))
     # Claude review 1 (5): criticals sort first and fit() trims the findings list, so a swapped semgrep's WT-X005 could be cut
@@ -645,7 +645,7 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
     delta, why_changed = None, ""
     if len(hist) >= 2:
         delta = hist[-1][1] - hist[-2][1]
-        why_changed = " · Watchtower updated" if len(hist[-1]) > 3 and hist[-1][3] else ""
+        why_changed = " · Chief Worry Bot updated" if len(hist[-1]) > 3 and hist[-1][3] else ""
     exp = [dict(r, area=AREA_SHORT.get(r["area"], r["area"])) for r in exposure(snap)]
     rel_kev = [k for k in b["kev"] if k["relevant"]]
     accepted = (snap or {}).get("suppressed", [])
@@ -670,7 +670,7 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
                f"<div class='m'><span class='k'>Needs you</span><b>{len(urgent)}</b><span class='s'>{len(todo) - len(urgent)} smaller {'item' if len(todo) - len(urgent) == 1 else 'items'}</span></div>"
                f"<div class='m'><span class='k'>Handled this week</span><b>{fixed + cleaned}</b><span class='s'>fixed or cleaned up</span></div>")
 
-    fix_prompt = "Watchtower, fix it"   # batch 4 (R10): the owner runs it; the brief no longer offers a routine that fixes without asking
+    fix_prompt = "Chief Worry Bot, fix it"   # batch 4 (R10): the owner runs it; the brief no longer offers a routine that fixes without asking
 
     def rows_table(t):
         rows = t.get("rows", [])
@@ -681,9 +681,9 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
         extra = f"<p class='quiet'>And {len(rows) - 40} more. Run <code>wt.py show {e(rows[0]['rule'])}</code> for all of them.</p>" if len(rows) > 40 else ""
         label = "Show which" if len(rows) > 1 else "Show where"
         if t.get("can_accept"):
-            ok = f"Fine on purpose? Tell Watchtower: <code>accept {e(rows[0]['rule'])} {e(rows[0]['name'])} because …</code>"
+            ok = f"Fine on purpose? Tell Chief Worry Bot: <code>accept {e(rows[0]['rule'])} {e(rows[0]['name'])} because …</code>"
         else:   # batch 4 (R10): never suggest an accept that batch 1's gate refuses
-            ok = "This one can't be marked as fine. Tell Watchtower " + ("\"incident check\"." if t.get("decoy") else "\"fix it\".")
+            ok = "This one can't be marked as fine. Tell Chief Worry Bot " + ("\"incident check\"." if t.get("decoy") else "\"fix it\".")
         return (f"<details class='dd'><summary>{label}</summary><div class='scroll'><table><tr><th>What</th><th>Why it was flagged</th><th>Rule</th></tr>{body}</table></div>"
                 f"{extra}<p class='quiet'>For the exact lines: <code>wt.py show {e(rows[0]['rule'])}</code>. {ok}</p></details>")
 
@@ -739,7 +739,7 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
                     + (f" Not installed: {e(', '.join(missing))} (run setup step 2)." if missing else "") + "</p>")
     generated = dt.datetime.now(dt.timezone.utc).strftime("%-d %b %Y")
     return f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>Watchtower: {e(status)}</title><style>
+<title>Chief Worry Bot: {e(status)}</title><style>
 :root{{--bg:#eef1f0;--card:#fff;--ink:#17202b;--soft:#5b6572;--line:#d9dfdd;--navy:#1f3a5f;--red:#b3261e;--amber:#b77900;--green:#2e7d5b;--sea:#3f6f8f;
 --f:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,"Helvetica Neue",Arial,sans-serif}}
 @media(prefers-color-scheme:dark){{:root{{--bg:#0e1621;--card:#152030;--ink:#e6ecf2;--soft:#9aa7b4;--line:#263447;--navy:#8fb3dc;--red:#ff7a6e;--amber:#f2b632;--green:#5cc493;--sea:#7fb0cf}}}}
@@ -781,15 +781,15 @@ ol.small-todo{{margin-top:8px}}ol.small-todo li{{padding:10px 12px}}ol.small-tod
 @media(max-width:700px){{.metrics{{grid-template-columns:1fr 1fr}}.charts,.fix{{grid-template-columns:1fr}}.hero h1{{font-size:23px}}.ar{{grid-template-columns:110px 1fr 24px}}}}
 @media print{{body{{background:#fff}}button{{display:none}}details{{display:block}}.hero,.panel,.fx,ol.todo li,ul.threats li{{break-inside:avoid}}}}
 </style></head><body><div class='wrap'>
-<div class='top'><span><b>Watchtower</b> weekly report</span><span>{e(generated)}</span></div>
+<div class='top'><span><b>Chief Worry Bot</b> weekly report</span><span>{e(generated)}</span></div>
 <header class='hero {tone}'><h1>{e(status)}</h1><p class='sub'>{e(sub)}</p><div class='metrics'>{metrics}</div></header>
 <div class='charts'><div class='panel'><h3>Security score over time</h3>{svg_trend(hist)}</div><div class='panel'><h3>Where the open issues are</h3>{svg_areas(exp)}</div></div>
 {engines_html}
-<div class='fix'><div class='fx'><h3>Fix it all</h3><p>Paste this into your Watchtower Bot. It cleans up, upgrades outdated software (and undoes any upgrade that breaks something), then asks you one yes or no for everything that's fine on purpose.</p>
+<div class='fix'><div class='fx'><h3>Fix it all</h3><p>Paste this into your Chief Worry Bot. It cleans up, upgrades outdated software (and undoes any upgrade that breaks something), then asks you one yes or no for everything that's fine on purpose.</p>
 <div class='cmd'><code id='c1' tabindex='0'>{e(fix_prompt)}</code><button type='button' data-copy='c1' hidden>Copy</button></div><p class='hint'>Click the text to select it, then copy.</p></div></div>
 <section class='sec'><h2>What needs you</h2><ol class='todo'>{todo_html}</ol>{rest_html}{acc_html}</section>
 <section class='sec'><h2>Threats this week</h2><ul class='threats'>{threats}</ul>{later_html}<p class='quiet' style='margin-top:10px'>{kev_line}</p></section>
-<p class='foot'>Read-only: Watchtower changes nothing unless you run the fix. {len(b['sources']) - len(down)} of {len(b['sources'])} news sources responded{(' (' + e(', '.join(down)) + ' did not)') if 0 < len(down) <= 2 else ''}. Full details: /watchtower-report. Watchtower {e(VERSION)}.</p>
+<p class='foot'>Read-only: Chief Worry Bot changes nothing unless you run the fix. {len(b['sources']) - len(down)} of {len(b['sources'])} news sources responded{(' (' + e(', '.join(down)) + ' did not)') if 0 < len(down) <= 2 else ''}. Full details: /watchtower-report. Chief Worry Bot {e(VERSION)}.</p>
 </div><script>
 (function(){{
   function sel(el){{var r=document.createRange();r.selectNodeContents(el);var s=window.getSelection();s.removeAllRanges();s.addRange(r);}}
@@ -866,7 +866,9 @@ _wt_part("quarantine")
 # Only what install.sh itself leaves in /tmp. A name like wt-audit-066.json is not Watchtower's: the owner's Bot saved its
 # own copy of a run there (`audit --json > /tmp/...`), and v0.6.3 to v0.6.6 deleted those along with the installer's files.
 TMP_LEFTOVERS = re.compile(r"^(gitleaks_.*\.tar\.gz|gitleaks_checksums\.txt|trufflehog_.*\.tar\.gz|trufflehog_checksums\.txt|osv_sums\.txt|wt-lock\.err)$")
-ROUTINE_NAMES = ("Watchtower daily watch", "Watchtower weekly audit", "Watchtower weekly tidy", "Watchtower monthly roll-call")
+ROUTINE_NAMES = ("Chief Worry Bot daily watch", "Chief Worry Bot weekly audit", "Chief Worry Bot weekly tidy", "Chief Worry Bot monthly roll-call")
+# v0.7.4: the names routines set up before the display rename still have (the template keeps them until it is updated)
+LEGACY_ROUTINE_NAMES = ("Watchtower daily watch", "Watchtower weekly audit", "Watchtower weekly tidy", "Watchtower monthly roll-call")
 
 
 def cmd_uninstall(args):
@@ -886,7 +888,8 @@ def cmd_uninstall(args):
     if not args.apply:
         print(fit({"mode": "preview (nothing removed)",
                    "order": "routines first, then `wt.py uninstall --apply --remove-folder`. Any audit or daily run after the decoys are gone would not re-plant them, but a routine left on would report errors.",
-                   "you_do_first_after_the_owners_yes": ["Delete these routines (or tell the owner to, under your Details tab): " + ", ".join(ROUTINE_NAMES)],
+                   "you_do_first_after_the_owners_yes": ["Delete these routines (or tell the owner to, under your Details tab): " + ", ".join(ROUTINE_NAMES)
+                                                         + " (set up before 0.7.4: " + ", ".join(LEGACY_ROUTINE_NAMES) + ")"],
                    "this_command_removes": {"decoys": [short_path(p) for p in decoys if os.path.exists(p)],
                                             "decoy_folders_if_empty": [short_path(d) for d in decoy_dirs if os.path.isdir(d)],
                                             "installer_and_scratch_files_in_tmp": len(tmp), "scanner_cache": short_path(cache) if os.path.isdir(cache) else None,
@@ -894,8 +897,8 @@ def cmd_uninstall(args):
                    "not_removed_outside_watchtower": [short_path(p) for p in refused] or None,
                    "quarantined_skills": [e["name"] for e in held] or None,
                    "quarantine_note": "These go with the folder. Restore any the owner wants first (`wt.py quarantine --restore <name>`)." if held else None,
-                   "only_the_owner_can": ["Keep the three Ask-first rules in Auto-review: they protect every Bot, with or without Watchtower.",
-                                          "Delete the Watchtower Bot itself (right-click it in the sidebar → Delete). That also removes its memories and chat.",
+                   "only_the_owner_can": ["Keep the three Ask-first rules in Auto-review: they protect every Bot, with or without Chief Worry Bot.",
+                                          "Delete Chief Worry Bot itself (right-click it in the sidebar → Delete). That also removes its memories and chat.",
                                           "Roll-call messages already sent to other Bots stay in those chats."],
                    "not_touched": "~/.cache/pip (shared with other tools), other Bots, their memories and routines."}, limit=6000))
         return 0
@@ -931,15 +934,15 @@ def cmd_uninstall(args):
         done.append(f"Removed the scanner cache {short_path(cache)}")
     if args.remove_folder:
         if not safe_home:
-            done.append(f"Did not remove {h}: it doesn't look like a Watchtower folder. Remove it by hand.")
+            done.append(f"Did not remove {h}: it doesn't look like a Chief Worry Bot folder. Remove it by hand.")
         else:
             shutil.rmtree(h, ignore_errors=True)
             done.append(f"Removed {h}" + (f" (including {len(held)} quarantined skill(s))" if held else ""))
     else:
         ledger({"event": "uninstall", "steps": len(done)})
     print(json.dumps({"done": done, "left_for_the_owner": ["the three Ask-first rules in Auto-review (worth keeping)",
-                                                            "deleting the Watchtower Bot itself, which removes its memories and chat"],
-                      "check": f"`ls {h}` should now fail" if args.remove_folder and safe_home else (f"remove {h} by hand" if args.remove_folder else "run again with --remove-folder to delete the Watchtower folder")}, indent=1))
+                                                            "deleting Chief Worry Bot itself, which removes its memories and chat"],
+                      "check": f"`ls {h}` should now fail" if args.remove_folder and safe_home else (f"remove {h} by hand" if args.remove_folder else "run again with --remove-folder to delete the Chief Worry Bot folder")}, indent=1))
     return 0
 
 
@@ -1104,7 +1107,7 @@ def main(argv=None):
             where = " The detail is saved; `wt.py doctor --save` makes a file you can send to the author."
         except OSError:
             where = ""
-        kind = "Watchtower can't write to its folder " + home() if isinstance(e, OSError) and not where else f"Watchtower hit a problem it didn't expect ({type(e).__name__})"
+        kind = "Chief Worry Bot can't write to its folder " + home() if isinstance(e, OSError) and not where else f"Chief Worry Bot hit a problem it didn't expect ({type(e).__name__})"
         print(f"ERROR {kind}. Nothing was changed.{where}", file=sys.stderr)
         return 3
     finally:
@@ -1125,7 +1128,7 @@ def shown_problem(p):
     its name, so a name is shown only when it is plain (letters, digits, . _ / -, at most 80 characters); the ledger keeps it."""
     m = _PROBLEM_NAMED.fullmatch(p)
     if m and not re.fullmatch(r"[A-Za-z0-9._/-]{1,80}", m.group(1)):
-        return "a file with an unusual name (named in Watchtower's ledger)" + m.group(2)
+        return "a file with an unusual name (named in Chief Worry Bot's ledger)" + m.group(2)
     return p
 
 
@@ -1137,10 +1140,10 @@ def self_check_gate(count_only=False):
     problems = self_check()
     if problems:
         ledger({"event": "self-check-failed", "problems": problems[:20]})
-        what = (f"{len(problems)} problem{'s' if len(problems) != 1 else ''} (listed in Watchtower's ledger)" if count_only else
+        what = (f"{len(problems)} problem{'s' if len(problems) != 1 else ''} (listed in Chief Worry Bot's ledger)" if count_only else
                 "; ".join(map(shown_problem, problems[:5])) + (f" (and {len(problems) - 5} more)" if len(problems) > 5 else ""))
-        print("SELF-CHECK FAILED - Watchtower stopped before doing anything. Its own files don't match the release it installed: "
-              + what + ". Tell the owner now. Don't run Watchtower again until they reinstall it from the release (setup skill, section 1).")
+        print("SELF-CHECK FAILED - Chief Worry Bot stopped before doing anything. Its own files don't match the release it installed: "
+              + what + ". Tell the owner now. Don't run Chief Worry Bot again until they reinstall it from the release (setup skill, section 1).")
         return 4
     return None
 
@@ -1161,7 +1164,7 @@ class VersionAction(argparse.Action):
 
 
 def build_parser():
-    ap = argparse.ArgumentParser(prog="wt", description="Watchtower security watch for Grok Bot")
+    ap = argparse.ArgumentParser(prog="wt", description="Chief Worry Bot security watch for Grok Bot")
     ap.add_argument("--version", action=VersionAction)
     sub = ap.add_subparsers(dest="cmd", required=True)
     v = sub.add_parser("vet"); v.add_argument("path"); v.add_argument("--json", action="store_true"); v.add_argument("--deep", action="store_true"); v.add_argument("--page-only", action="store_true", help="the text was copied from a marketplace page; skill bodies were not visible")
@@ -1193,7 +1196,7 @@ def build_parser():
     fx.add_argument("--revet", action="store_true", help="re-scan changed skills with every engine and re-approve the clean ones")
     fx.add_argument("--only", help="with --revet: re-approve only these skills (names, comma-separated); works on skills the daily check or audit already reported as changed (a fresh fix preview is not required); every other changed skill stays open")
     fx.add_argument("--exception", help="skill name(s) the owner confirmed as security tools (30 days)")
-    fx.add_argument("--quarantine", help="the owner's own skill(s) to move out of use into Watchtower's quarantine folder (comma-separated)")
+    fx.add_argument("--quarantine", help="the owner's own skill(s) to move out of use, into Chief Worry Bot's quarantine folder (comma-separated)")
     fx.add_argument("--owner-said-yes", action="store_true", help="with --apply: the owner said yes to the cleanup list in the last preview")
     fx.add_argument("--approve-platform", metavar="CODE", help="refused: platform files are trusted only by rules/platform-release.lock (kept so older instructions get a plain answer)")
     fx.add_argument("--platform-from", metavar="CURSOR", help="refused, like --approve-platform")

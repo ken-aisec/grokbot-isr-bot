@@ -15,6 +15,12 @@ def real_version():
     return open(os.path.join(ROOT, "watchtower", "wt.py")).read().split('\nVERSION = "')[1].split('"')[0]
 
 
+def next_version():
+    """The release after this one: its patch number plus one (v0.7.4: the hardcoded 0.7.4 was no bump once VERSION was 0.7.4)."""
+    major, minor, patch = real_version().split(".")
+    return f"{major}.{minor}.{int(patch) + 1}"
+
+
 def stub(d, name, body):
     p = os.path.join(d, name)
     open(p, "w").write("#!/bin/bash\n" + body)
@@ -304,8 +310,8 @@ class Publish(unittest.TestCase):
         for left in VERSIONED_DOCS:
             with self.subTest(left=left):
                 self.git("reset", "-q", "--hard", self.git("rev-list", "--max-parents=0", "HEAD"))
-                self.bump_docs("0.7.4", [d for d in VERSIONED_DOCS if d != left])
-                self.commit_file("watchtower/wt.py", 'VERSION = "0.7.4"\n')
+                self.bump_docs(next_version(), [d for d in VERSIONED_DOCS if d != left])
+                self.commit_file("watchtower/wt.py", f'VERSION = "{next_version()}"\n')
                 main = self.remote_ref("refs/heads/main")
                 r, gh = self.publish()
                 self.stopped(r, gh, main, f"STOPPED: {left} line ")
@@ -313,12 +319,12 @@ class Publish(unittest.TestCase):
 
     def test_batch3_the_tag_comes_from_wt_version(self):
         """Batch 3 (docs drift): publish.sh hardcoded v0.7.1, so a new release would have been tagged with the old number."""
-        self.bump_docs("0.7.4")                                                        # Claude review 1 (3): a bump moves these too
-        self.commit_file("watchtower/wt.py", 'import os\nVERSION = "0.7.4"\n')
+        self.bump_docs(next_version())                                                 # Claude review 1 (3): a bump moves these too
+        self.commit_file("watchtower/wt.py", f'import os\nVERSION = "{next_version()}"\n')
         r, _ = self.publish()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertEqual(self.remote_ref("refs/tags/v0.7.4^{commit}"), self.git("rev-parse", "HEAD"))
-        self.assertIn("Publishing ownerx/grokbot-watchtower v0.7.4 at", r.stdout)
+        self.assertEqual(self.remote_ref(f"refs/tags/v{next_version()}^{{commit}}"), self.git("rev-parse", "HEAD"))
+        self.assertIn(f"Publishing ownerx/grokbot-watchtower v{next_version()} at", r.stdout)
 
     def test_batch3_no_version_line_stops(self):
         self.commit_file("watchtower/wt.py", "# no version here\n")

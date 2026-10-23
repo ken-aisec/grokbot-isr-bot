@@ -475,11 +475,11 @@ def _digest_problem(name, digest):
         return None
     want = _scanner_listed(name)
     if not want and scanner_list_changed():
-        return "changed", "Watchtower's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run"
+        return "changed", "Watchtower's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run"  # v0.7.4: the old name kept, this is WT-X005's evidence, part of the finding key
     if not want:
-        return "unlisted", f"its checksum isn't in Watchtower's list for this computer ({scanner_arch()}) yet"
+        return "unlisted", f"its checksum isn't in Chief Worry Bot's list for this computer ({scanner_arch()}) yet"
     if digest not in want:
-        return "changed", "its program file isn't the one Watchtower installed"
+        return "changed", "its program file isn't the one Watchtower installed"  # v0.7.4: the old name kept, this is WT-X005's evidence, part of the finding key
     return None
 
 
@@ -528,7 +528,7 @@ def scanner_verdict(name):
         st = os.lstat(path)
     except OSError:
         if os.path.lexists(os.path.join(home(), "bin", name)):
-            return None, ("old-folder", "it is in Watchtower's old scanner folder")
+            return None, ("old-folder", "it is in Chief Worry Bot's old scanner folder")
         return None, (None, "")
     if not stat.S_ISREG(st.st_mode) or not os.access(path, os.X_OK):
         return None, ("changed", "it isn't a plain program file")
@@ -555,7 +555,7 @@ def _interpreter_problem():
     """(kind, why) for a venv Python trusted_interpreter refused: "unreadable" when this computer can't say which Python
     Watchtower runs (no /proc; Claude review 1, finding 4), else "changed"."""
     if running_interpreter() is None:
-        return "unreadable", "this computer doesn't say which Python Watchtower runs with (/proc/self/exe)"
+        return "unreadable", "this computer doesn't say which Python Chief Worry Bot runs with (/proc/self/exe)"
     return "changed", "the Python it runs with isn't the computer's own"
 
 
@@ -584,7 +584,7 @@ def scanner_launch(cmd, deadline=None):
         interp = trusted_interpreter(p)
         if not interp:
             kind, why = _interpreter_problem()
-            _refuse("python", kind, "Watchtower's scanner Python isn't the computer's own" if kind == "changed" else why)
+            _refuse("python", kind, "Chief Worry Bot's scanner Python isn't the computer's own" if kind == "changed" else why)
         return [p, "-I"] + list(cmd[1:]), interp, ()
     try:
         st = os.lstat(p)
@@ -679,9 +679,9 @@ def scanner_unavailable(name):
     elif kind == "unreadable":   # Claude review 1 (4): not checked, so kept and revet is blocked, but no verdict on the copy
         line = f"{label} NOT run: {why}, so its checks weren't done this time and its last results are kept."
     elif kind == "unlisted":
-        line = f"{label} not run: this copy is not listed in Watchtower's scanner checksums ({why}), so its last results are kept."
+        line = f"{label} not run: this copy is not listed in Chief Worry Bot's scanner checksums ({why}), so its last results are kept."
     elif kind == "old-folder":
-        line = f"{label} is in Watchtower's old scanner folder; run install.sh --scanners once to move it."
+        line = f"{label} is in Chief Worry Bot's old scanner folder; run install.sh --scanners once to move it."
     elif ran:
         line = f"{label} ran last time and is gone now, so its last results are kept. Run install.sh --scanners to put it back."
     else:
@@ -723,11 +723,11 @@ def scanner_x005():
         label = SCANNER_NAMES.get(name) or X005_OPTIONAL[name]
         put_back = (f"Put it back with `bash {home()}/app/scripts/install.sh --scanners`." if name in SCANNER_NAMES else
                     f"install.sh doesn't install {label}: put back the copy scripts/scanner-bins.lock lists, or remove it from {scanner_bin()}.")
-        out.append(finding("WT-X005", f"Watchtower's copy of {label} isn't the one it installed", "high", ["ASI04", "AST02"],
+        out.append(finding("WT-X005", f"Chief Worry Bot's copy of {label} isn't the one it installed", "high", ["ASI04", "AST02"],
                            os.path.join(scanner_bin(), name), why,
-                           f"Watchtower didn't run {label}: its program file isn't the one Watchtower installed, so its checks weren't "
+                           f"Chief Worry Bot didn't run {label}: its program file isn't the one Chief Worry Bot installed, so its checks weren't "
                            f"done this time and its last results are kept. {put_back} "
-                           "If this comes back, something on this computer is changing Watchtower's files: tell the owner.",
+                           "If this comes back, something on this computer is changing Chief Worry Bot's files: tell the owner.",
                            source="watchtower", ident=name))
     return out
 

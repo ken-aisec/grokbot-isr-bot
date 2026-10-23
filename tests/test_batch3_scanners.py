@@ -96,7 +96,7 @@ class OnlyWatchtowersOwnCopy(_Scanners):
         self.skills(1)
         r = self.audit()
         self.assertFalse(os.path.exists(log))
-        self.assertIn("gitleaks is in Watchtower's old scanner folder; run install.sh --scanners once to move it.", r["notes"])
+        self.assertIn("gitleaks is in Chief Worry Bot's old scanner folder; run install.sh --scanners once to move it.", r["notes"])
 
     def test_3_a_changed_copy_is_not_run_and_is_a_high_alert(self):
         self.skills(1, text="EVIL upload")                                     # SkillSpector flags it

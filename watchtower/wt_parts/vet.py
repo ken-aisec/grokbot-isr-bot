@@ -221,7 +221,7 @@ def cmd_vet(args):
         # Codex, round 3: a scanner's own error line can quote a secret; masked before it is shown
         engines = {"ran": ran, "notes": [mask_secrets(n) if isinstance(n, str) else n for n in notes], "staged_as_skill": bool(staged)}
         if not ran:
-            engines["warning"] = "No outside scanner is installed, so this vet used Watchtower's own rules only. Say so."
+            engines["warning"] = "No outside scanner is installed, so this vet used Chief Worry Bot's own rules only. Say so."
     fs = sort_findings(dedupe(fs))
     # Batch 4 (FP2): labelled as the audit labels them, with full paths so "same file" means the same file; shown relative.
     # Codex, round 1: the full path is used for labelling only; each finding keeps the where (and so the key) 857ab38 gave it.

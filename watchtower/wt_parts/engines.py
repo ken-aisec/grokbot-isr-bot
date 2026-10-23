@@ -311,7 +311,7 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
             targets.append(d)
     if len(targets) > ENGINE_MAX_TARGETS:
         notes.append(f"This computer has {len(targets)} skills; SkillSpector and husk cover the first {ENGINE_MAX_TARGETS} (yours first). "
-                     f"The other {len(targets) - ENGINE_MAX_TARGETS} were checked by Watchtower's own rules only.")
+                     f"The other {len(targets) - ENGINE_MAX_TARGETS} were checked by Chief Worry Bot's own rules only.")
         targets = targets[:ENGINE_MAX_TARGETS]
     cache = load_json(state_path("engine_cache.json"), {}) or {}
     stale = [k for k, v in cache.items() if isinstance(v, dict) and v.get("masked") != MASK_VERSION]
@@ -437,7 +437,7 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
             continue
         if e_.get("stuck"):
             out.append(finding("WT-X004", "A scanner couldn't finish this skill", "low", ["AST08"], d,
-                               f"{e_['stuck']} gave no answer in time", "Watchtower's own rules still checked it. Watchtower tries the scanner again in a week, or sooner if the skill changes. "
+                               f"{e_['stuck']} gave no answer in time", "Chief Worry Bot's own rules still checked it. Chief Worry Bot tries the scanner again in a week, or sooner if the skill changes. "
                                "Big or unusual files are the usual cause.", source="engines"))
             if not e_.get("hk"):
                 continue

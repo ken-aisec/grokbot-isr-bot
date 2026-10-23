@@ -25,7 +25,7 @@ def known_names(shared):
     for e in items if isinstance(items, list) else []:
         if isinstance(e, dict) and isinstance(e.get("name"), str) and str(e.get("kind", "")).lower() in BOT_KINDS:
             names.append(e["name"].strip())
-    skip = {"watchtower", (shared or "").lower()}
+    skip = {"watchtower", "chief worry bot", (shared or "").lower()}
     return sorted({n for n in names if len(n) >= 3 and n.lower() not in skip})
 
 
@@ -53,7 +53,7 @@ def prepublish_extra(where, t, names):
     if "getting-started" in os.path.basename(where):
         cur = read_text(os.path.join(SELF_ROOT, "bot", "getting-started.md"))
         if cur is not None and _body(t) != _body(cur):
-            out.append(finding("WT-PP09", "Getting-started is older than this Watchtower", "high", ["AST04"], where, "differs from app/bot/getting-started.md",
+            out.append(finding("WT-PP09", "Getting-started is older than this Chief Worry Bot", "high", ["AST04"], where, "differs from app/bot/getting-started.md",
                                "Replace the saved getting-started skill's body with /workspace/watchtower/app/bot/getting-started.md, then run prepublish again."))
     return out
 
@@ -147,7 +147,7 @@ def cmd_incident(args):
             ledger_tail = f.readlines()[-20:]
     except OSError:
         pass
-    md = [f"# Watchtower incident {ts}", "", f"Reported: {args.note or '(no description given)'}", "",
+    md = [f"# Chief Worry Bot incident {ts}", "", f"Reported: {args.note or '(no description given)'}", "",
           "## Containment checklist (each step needs your yes)", ""] + [f"{i}. [ ] {c}" for i, c in enumerate(CONTAINMENT, 1)] + [
           "", "## Open critical and high findings", ""] + [f"- {f['severity']} {f['rule']} {f['title']} at `{f['where']}` ({f['evidence']})" for f in hot[:40]] + [
           "", "## Canaries", "", "\n".join(f"- {f['title']} at `{f['where']}`" for f in canary_findings(record=False)) or "- quiet",
@@ -155,7 +155,7 @@ def cmd_incident(args):
           "", "## Shell history (last 40 lines per file, secrets masked)", "", "```"] + tails + ["```",
           "", "## Processes", "", "```", clean(ps)[:8000], "```", "", "## Network connections", "", "```", clean(net)[:6000], "```",
           "", "## Scheduled jobs", "", "```", clean(cron)[:2000], clean(timers)[:2000], "```",
-          "", "## Watchtower ledger (last 20 runs)", "", "```"] + [l.rstrip() for l in ledger_tail] + ["```", ""]
+          "", "## Chief Worry Bot ledger (last 20 runs)", "", "```"] + [l.rstrip() for l in ledger_tail] + ["```", ""]
     path = os.path.join(idir, f"incident-{ts}.md")
     with open(path, "w") as f:
         f.write("\n".join(md))

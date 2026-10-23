@@ -114,7 +114,7 @@ class NoManifest(_Copies):
     def test_every_release_file_is_refused_without_a_manifest(self):   # replay (5dcd0a2: every one used as it was)
         self.checkout(manifest=False)
         for problem in (wt.platform_reviewed_problem(), wt.platform_normalize_problem(), wt.platform_lock_problem(), wt.access_vocab_problem()):
-            self.assertIn("Watchtower's release files can't be checked", problem)
+            self.assertIn("Chief Worry Bot's release files can't be checked", problem)
         self.assertEqual(wt.access_vocab(), [])
         self.assertEqual(wt.scanner_lock(), {})
         self.assertTrue(wt.scanner_list_changed())
@@ -122,7 +122,7 @@ class NoManifest(_Copies):
     def test_the_audit_says_so(self):   # replay (5dcd0a2: no note)
         self.checkout(manifest=False)
         notes = self.audit()["notes"]
-        said = [n for n in notes if "Watchtower's release files can't be checked" in n]
+        said = [n for n in notes if "Chief Worry Bot's release files can't be checked" in n]
         self.assertTrue(any(wt.PLATFORM_LOCK_REL in n for n in said), notes)
         self.assertTrue(any(wt.PLATFORM_REVIEWED_REL in n for n in said), notes)
 
@@ -137,7 +137,7 @@ class NoManifest(_Copies):
         with open(os.path.join(real, wt.PLATFORM_LOCK_REL), "a") as f:
             f.write("# one more line\n")
         forget()
-        self.assertIn("isn't the file this release of Watchtower shipped (MANIFEST.sha256)", wt.platform_lock_problem())
+        self.assertIn("isn't the file this release of Chief Worry Bot shipped (MANIFEST.sha256)", wt.platform_lock_problem())
 
 
 class DeveloperCheckout(_Copies):

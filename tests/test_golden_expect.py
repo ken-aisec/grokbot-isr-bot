@@ -373,6 +373,58 @@ class ExactKinds(unittest.TestCase):
                 self.entries(**alt)
 
 
+class SubstKind(unittest.TestCase):
+    """v0.7.4: `subst` takes an item whole only when post is pre with the display name changed and nothing else."""
+    NAME = {"pairs": [["Watchtower", "Chief Worry Bot"]]}
+    PRE = "# Watchtower report\nWatchtower rules\nscore 98\n"
+    POST = "# Chief Worry Bot report\nWatchtower rules\nscore 98\n"   # an engine label kept as it was is fine
+
+    def entries(self, subst=None):
+        e = entry(key_rx=r"^r$", subst=self.NAME if subst is None else subst)
+        del e["lines_rx"]
+        return gs.parse_expect({"entries": [e]}, ["c"])
+
+    def bad(self, pre, post):
+        return gs.unexpected_lines("tierA", "r", pre, post, self.entries(), {})
+
+    def test_an_exact_rename_is_taken_whole(self):
+        hits = {}
+        self.assertEqual(gs.unexpected_lines("tierA", "r", self.PRE, self.POST, self.entries(), hits), [])
+        self.assertEqual(hits, {0: 2})
+        self.assertTrue(gs.subst_change("Watchtower's own\n", "Chief Worry Bot's own\n", self.NAME))   # the possessive too
+
+    def test_one_more_changed_character_takes_nothing(self):
+        for post in (self.POST.replace("98", "97"), self.POST + "x\n", self.POST.replace("report", "Report"), self.POST.rstrip("\n")):
+            self.assertTrue(self.bad(self.PRE, post), post)
+
+    def test_a_version_change_is_not_a_rename(self):
+        self.assertTrue(self.bad("Watchtower 0.7.3.\n", "Chief Worry Bot 0.7.4.\n"))
+
+    def test_pre_that_already_has_the_new_name_takes_nothing(self):
+        self.assertTrue(self.bad("Chief Worry Bot and Watchtower\n", "Chief Worry Bot and Chief Worry Bot\n"))
+
+    def test_equal_new_or_gone_items_take_nothing(self):
+        self.assertFalse(gs.subst_change(self.PRE, self.PRE, self.NAME))
+        self.assertEqual(self.bad(None, self.POST), [gs.NEW_ITEM] + ["+" + l for l in self.POST.splitlines()])
+        self.assertEqual(self.bad(self.PRE, None), [gs.GONE_ITEM] + ["-" + l for l in self.PRE.splitlines()])
+
+    def test_only_the_name_pair_is_accepted(self):   # the owner's override: never a general rewrite rule
+        for subst in ({"pairs": [["0.7.3", "0.7.4"]]}, {"pairs": [["Watchtower", "Chief Worry Bot"], ["0.7.3", "0.7.4"]]},
+                      {"pairs": [["Chief Worry Bot", "Watchtower"]]}, {"pairs": [["Watchtower", "Chief Worry Bot!"]]},
+                      {"pairs": [["Watchtower", "Chief Worry Bot"], ["Watchtower", "Chief Worry Bot"]]},
+                      {"pairs": [["watchtower", "chief worry bot"]]}, {"pairs": [["", "Chief Worry Bot"]]}, {"pairs": [["a", "a"]]}):
+            with self.assertRaises(ValueError, msg=repr(subst)):
+                self.entries(subst)
+
+    def test_malformed_subst_entries_are_refused(self):
+        for subst in ({}, {"pairs": []}, {"pairs": "Watchtower"}, {"pairs": [["Watchtower"]]}, {"pairs": [("Watchtower", "Chief Worry Bot")]},
+                      {"pairs": [["Watchtower", "Chief Worry Bot"]], "also": 1}, {"pairs": [["Watchtower", 1]]}):
+            with self.assertRaises(ValueError, msg=repr(subst)):
+                self.entries(subst)
+        with self.assertRaises(ValueError):
+            gs.parse_expect({"entries": [entry(subst=self.NAME)]}, ["c"])   # with lines_rx beside it too
+
+
 class StepZero(unittest.TestCase):
     """Without --expect the byte comparison runs exactly as for the split; with it, only compile and loader checks."""
     def setUp(self):

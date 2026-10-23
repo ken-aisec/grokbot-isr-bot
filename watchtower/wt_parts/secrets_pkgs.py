@@ -372,7 +372,7 @@ def group_dir(fpath):
 def gitleaks_findings(roots, notes):
     exe = tool("gitleaks")
     if not exe:
-        scanner_absent(notes, "gitleaks", "gitleaks not installed: secrets checked with Watchtower's rules only.")
+        scanner_absent(notes, "gitleaks", "gitleaks not installed: secrets checked with Chief Worry Bot's rules only.")
         return []
     out = []
     # the owner's copy of the config gitleaks is given; fix round 2 (Codex 2): gitleaks reads its own, in a private folder
@@ -586,7 +586,7 @@ def package_findings(notes):
         if str(d.get("name", "")).lower() not in mine:      # came with the computer: the platform's to update, not the user's
             out.append(finding("WT-D001", f"Built-in Python package {d.get('name')} {d.get('version')} has known holes", "low", ["ASI04", "AST02"],
                                f"system python package {d.get('name')}", f"{len(ids)} known: {', '.join(ids[:4])}{'…' if len(ids) > 4 else ''}",
-                               "It came with the computer and every Bot shares it. The platform's updates fix it; Watchtower doesn't touch system packages.",
+                               "It came with the computer and every Bot shares it. The platform's updates fix it; Chief Worry Bot doesn't touch system packages.",
                                source="pip-audit", ident=f"{d.get('name')} {d.get('version')}"))
             continue
         out.append(finding("WT-D001", f"Vulnerable package {d.get('name')} {d.get('version')}", "high", ["ASI04", "AST02"],
@@ -614,21 +614,21 @@ def self_findings(notes):
         # run's WT-W001 lines read as fixed. When there is a Python that isn't trusted, or there were W001 results to keep,
         # this is "not checked", never "clean". A computer that never had the scanners stays a plain skip, as before.
         if os.path.lexists(os.path.join(scanner_bin(), "python")) or carry(("WT-W001",)):
-            fail_note(notes, "Watchtower's own tools were NOT checked for known holes this run (its scanner Python is missing or "
+            fail_note(notes, "Chief Worry Bot's own tools were NOT checked for known holes this run (its scanner Python is missing or "
                              "isn't the computer's own); the last results are kept.")
         return out
     if not os.path.isfile(os.path.join(os.path.dirname(os.path.dirname(py)), "LOCKED")):
-        out.append(finding("WT-W002", "Watchtower's scanners were installed without the checksum lock", "low", ["ASI04", "AST02"], "watchtower scanners",
+        out.append(finding("WT-W002", "Chief Worry Bot's scanners were installed without the checksum lock", "low", ["ASI04", "AST02"], "watchtower scanners",
                            "no LOCKED marker", "Run `bash /workspace/watchtower/app/scripts/install.sh --scanners` again; it installs only from the lock, and stops and says why if this computer's Python doesn't fit it."))
     if not exe:
         if scanner_unavailable("pip-audit")[0]:   # batch 3: pip-audit's own line says why; this stage's last results are kept too
-            fail_note(notes, "Watchtower's own tools were NOT checked for known holes this run (pip-audit didn't run); the last results are kept.")
+            fail_note(notes, "Chief Worry Bot's own tools were NOT checked for known holes this run (pip-audit didn't run); the last results are kept.")
         return out
     code, out_s, _ = run([py, "-m", "pip", "list", "--format", "json", "--disable-pip-version-check"], 60)
     try:
         pkgs = {p_["name"]: p_["version"] for p_ in json.loads(out_s)}
     except (ValueError, KeyError, TypeError):
-        fail_note(notes, "Watchtower's own tools FAILED to list their packages: they were NOT checked this run.")
+        fail_note(notes, "Chief Worry Bot's own tools FAILED to list their packages: they were NOT checked this run.")
         return out
     req = state_path("scanner-requirements.txt")
     with open(req, "w") as f:
@@ -638,12 +638,12 @@ def self_findings(notes):
         data = json.loads(out_s)
         deps = data.get("dependencies", [])
     except (ValueError, AttributeError):
-        fail_note(notes, f"Watchtower's own tools FAILED their package check ({(err.strip().splitlines() or ['no answer'])[-1][:100]}): NOT checked this run.")
+        fail_note(notes, f"Chief Worry Bot's own tools FAILED their package check ({(err.strip().splitlines() or ['no answer'])[-1][:100]}): NOT checked this run.")
         return out
     for d in deps:
         if d.get("vulns"):
             ids = list(dict.fromkeys(v.get("id", "") for v in d["vulns"]))
-            out.append(finding("WT-W001", f"Watchtower's own tool needs an update: {d.get('name')} {d.get('version')}", "low", ["ASI04", "AST02"],
+            out.append(finding("WT-W001", f"Chief Worry Bot's own tool needs an update: {d.get('name')} {d.get('version')}", "low", ["ASI04", "AST02"],
                                "watchtower scanners", f"{len(ids)} known: {', '.join(ids[:3])}",
-                               "Update Watchtower: each release carries newer pinned scanners. This package lives only in Watchtower's own folder.", source="pip-audit"))
+                               "Update Chief Worry Bot: each release carries newer pinned scanners. This package lives only in Chief Worry Bot's own folder.", source="pip-audit"))
     return out

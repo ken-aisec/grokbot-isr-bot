@@ -400,7 +400,7 @@ class OwnerFirst(_SignIn):
             out = self.run_cmd("daily", "--roots", *self.roots)[1]
         pn = json.loads(out)["platform_notes"]
         self.assertEqual((pn["count"], len(pn["lines"])), (6, 5))
-        self.assertIn("1 more platform note not shown here, 1 of them Watchtower would call critical or high", pn.get("more", ""))
+        self.assertIn("1 more platform note not shown here, 1 of them Chief Worry Bot would call critical or high", pn.get("more", ""))
         self.assertIn("`wt.py breakdown`", pn.get("more", ""))
         wt.save_json(wt.state_path("last_findings.json"), snap)
         rows = self.breakdown()

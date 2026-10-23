@@ -324,7 +324,7 @@ class EngineSwapOnASkill(_Middle):
         self.assertEqual(sha(plant), hashlib.sha256(swapped.encode()).hexdigest())   # the engine did swap the bytes
         x = self.counted_high(plant)
         self.assertEqual(len(x), 1)
-        self.assertTrue(x[0]["fix"].startswith("It changed while Watchtower was checking it."), x[0]["fix"])
+        self.assertTrue(x[0]["fix"].startswith("It changed while Chief Worry Bot was checking it."), x[0]["fix"])
         self.assertNotIn(plant, wt.load_baseline()[0])
 
 

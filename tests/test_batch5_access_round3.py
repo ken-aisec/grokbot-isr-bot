@@ -42,7 +42,7 @@ class TheScanSaysWhatItLeftOut(_Round3):
         w(os.path.join(locked, "mcp.json"), SLACK_MCP)
         os.chmod(locked, 0)   # (the box's tearDown opens it up again before removing it)
         self.audit_json()
-        self.assertEqual(self.shared(), ["- Tool connections (MCP): Watchtower couldn't check all of it this time (something there couldn't be read)."])
+        self.assertEqual(self.shared(), ["- Tool connections (MCP): Chief Worry Bot couldn't check all of it this time (something there couldn't be read)."])
         self.assertNotIn("- Tool connections (MCP): none found.", self.section(self.report()[0]))
         self.assertEqual(json.loads(self.map_file())["shared"]["incomplete"].get("mcp"), "unreadable")
 
@@ -50,7 +50,7 @@ class TheScanSaysWhatItLeftOut(_Round3):
         m = wt.access_record({"shared": {"checked": ["mcp"], "incomplete": {"mcp": "unreadable"},
                                          "mcp": {"files": 0, "count": 0, "tools": [], "unreadable": 0, "unreadable_files": []}}})
         lines = [x for x in wt.access_shared_lines(m) if x.startswith("Tool connections")]
-        self.assertEqual(lines, ["Tool connections (MCP): Watchtower couldn't check all of it this time (something there couldn't be read)."])
+        self.assertEqual(lines, ["Tool connections (MCP): Chief Worry Bot couldn't check all of it this time (something there couldn't be read)."])
 
     def test_a_tool_list_below_the_depth_limit_is_not_found_no(self):   # replay (2e84aa8: "found no Slack ... here")
         self.small()
@@ -59,7 +59,7 @@ class TheScanSaysWhatItLeftOut(_Round3):
         self.audit_json()
         self.assertEqual(self.here(SLACK_STORY), CANT.format("Slack"))
         self.assertEqual(json.loads(self.map_file())["shared"]["incomplete"].get("mcp"), "skipped")
-        self.assertEqual(self.shared(), ["- Tool connections (MCP): Watchtower couldn't check all of it this time (the scan leaves some folders "
+        self.assertEqual(self.shared(), ["- Tool connections (MCP): Chief Worry Bot couldn't check all of it this time (the scan leaves some folders "
                                          "out: links to folders, caches and package folders, and folders too deep)."])
 
     def test_a_linked_folder_is_not_found_no(self):   # replay (2e84aa8: "found no Slack ... here")
@@ -90,7 +90,7 @@ class TheScanSaysWhatItLeftOut(_Round3):
         w(os.path.join(self.home, *"abcdefg", "notes.txt"), "eight folders down is still scanned")
         self.audit_json()
         self.assertEqual(self.shared(), ["- Tool connections (MCP): none found."])
-        self.assertTrue(self.here(SLACK_STORY).startswith("This is about Slack. Watchtower found no Slack connector"))
+        self.assertTrue(self.here(SLACK_STORY).startswith("This is about Slack. Chief Worry Bot found no Slack connector"))
 
     def test_the_walk_counts_what_it_leaves_out(self):   # guard: and nothing else
         w(os.path.join(self.home, "a", "f.txt"), "x")
@@ -162,7 +162,7 @@ class EveryConnectorAnswer(_Round3):
         self.small()
         self.rollcall({"name": "Golf", "connectors": [{"name": "Gmail"}]})
         self.audit_json()
-        self.assertIn("- Golf: Watchtower couldn't read which connectors it uses.", self.access()[1])
+        self.assertIn("- Golf: Chief Worry Bot couldn't read which connectors it uses.", self.access()[1])
         self.assertEqual(self.here(GMAIL_STORY), CANT.format("Gmail"))
 
     def test_an_answer_that_isnt_an_object_is_didnt_say(self):   # replay (2e84aa8 left Golf out: "found no Gmail")
@@ -177,7 +177,7 @@ class EveryConnectorAnswer(_Round3):
         self.small(names)
         self.said({n: {"said_at": DAY.isoformat(), "connectors": [], "routines": []} if n != "Bot40" else {} for n in names})
         self.audit_json()
-        self.assertIn("- Watchtower doesn't know every connector of 1 Bot not listed here (an answer without them, or one it couldn't read).",
+        self.assertIn("- Chief Worry Bot doesn't know every connector of 1 Bot not listed here (an answer without them, or one it couldn't read).",
                       self.access()[1])
         self.assertEqual(self.here(GMAIL_STORY), CANT.format("Gmail"))
 
@@ -186,7 +186,7 @@ class EveryConnectorAnswer(_Round3):
         self.rollcall({"name": "Golf", "connectors": ["none"]})
         self.audit_json()
         self.assertIn("- Golf: no connectors.", self.access()[1])
-        self.assertTrue(self.here(GMAIL_STORY).startswith("This is about Gmail. Watchtower found no Gmail"))
+        self.assertTrue(self.here(GMAIL_STORY).startswith("This is about Gmail. Chief Worry Bot found no Gmail"))
 
 
 # ---------------------------------------------------------------- 3: the JSON's counts after fitting
@@ -261,7 +261,7 @@ class TheProfileLineIsAlwaysSaid(_Round3):
     def test_without_a_recent_roll_call(self):   # replay (2e84aa8: only the no-roll-call line)
         m = wt.access_record({"rollcall": {"fresh": False, "profiles_unreadable": 1}})
         lines = wt.access_bot_lines(m)
-        self.assertEqual(lines[-1], "Watchtower couldn't read 1 Bot profile (a link, or not plain JSON), so a Bot may be missing from this list.")
+        self.assertEqual(lines[-1], "Chief Worry Bot couldn't read 1 Bot profile (a link, or not plain JSON), so a Bot may be missing from this list.")
         self.assertTrue(lines[0].startswith("No Bot has answered a roll-call in the last 35 days"), lines)
 
     def test_on_a_box(self):   # replay
@@ -270,7 +270,7 @@ class TheProfileLineIsAlwaysSaid(_Round3):
         os.makedirs(os.path.join(self.home, "agent-data", "agents", AGENT))
         os.symlink(target, os.path.join(self.home, "agent-data", "agents", AGENT, "profile.json"))
         self.audit_json()
-        self.assertIn("- Watchtower couldn't read 1 Bot profile (a link, or not plain JSON), so a Bot may be missing from this list.", self.access()[1])
+        self.assertIn("- Chief Worry Bot couldn't read 1 Bot profile (a link, or not plain JSON), so a Bot may be missing from this list.", self.access()[1])
 
 
 # ---------------------------------------------------------------- 4: golden must_see, per scenario

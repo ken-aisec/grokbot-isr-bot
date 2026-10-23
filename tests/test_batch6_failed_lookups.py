@@ -17,7 +17,7 @@ from test_batch5_access_map import AGENT, w
 from test_batch5_access_round2 import CANT, DAY, _Small
 
 GMAIL_STORY = "Gmail flaw lets attackers steal session tokens"
-UNREAD = "Watchtower couldn't check all of it this time (something there couldn't be read)."
+UNREAD = "Chief Worry Bot couldn't check all of it this time (something there couldn't be read)."
 
 
 class Denied:
@@ -191,7 +191,7 @@ class AbsentIsStillNone(_Lookups):
             self.assertNotIn(k, d["incomplete"])
         self.assertEqual(d["shared"]["scheduled_jobs"], 0)
         self.assertEqual(self.lines("Command-line sign-ins"), ["- Command-line sign-ins: none found."])
-        self.assertTrue(self.here(GMAIL_STORY).startswith("This is about Gmail. Watchtower found no Gmail"))
+        self.assertTrue(self.here(GMAIL_STORY).startswith("This is about Gmail. Chief Worry Bot found no Gmail"))
 
     def test_a_sign_in_beside_one_it_couldnt_look_at_is_still_shown(self):   # guard (the line); replay (1aed58a: not incomplete)
         self.small()

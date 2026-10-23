@@ -116,7 +116,7 @@ class WhoCanReachWhat(_Access):
         day = dt.date.today()
         for line in ("All your Bots share this computer, so every Bot can use everything in the first list.",
                      "- Browser: signed in to 2 sites, including github.com and mail.google.com.",
-                     "- Command-line sign-ins: OpenAI Codex CLI login. Grok Bot's own CLI sign-in is there too (Watchtower never reads it).",
+                     "- Command-line sign-ins: OpenAI Codex CLI login. Grok Bot's own CLI sign-in is there too (Chief Worry Bot never reads it).",
                      "- Allowed without asking: 1 rule lets Bots send things out without asking you (\"HTTP POST to the reply hook at [link] only\"); "
                      "1 rule lets Bots run commands without asking you (\"Run the test suite in ~/projects/app\").",
                      "- Running programs: Bots can run programs without asking you (Execution on Local Computer: Always allow).",
@@ -125,13 +125,13 @@ class WhoCanReachWhat(_Access):
                      f"- Chat webhooks (from the last audit, {day.strftime('%b')} {day.day}): a Slack webhook in \"digest\". Anyone who has that "
                      "link can post to that channel.",
                      "- Tool connections (MCP): 2 tools in 2 files: github and notion (mcp.notion.com).",
-                     "- Watchtower couldn't read the tool list in ~/projects/tools/mcp.json.",
+                     "- Chief Worry Bot couldn't read the tool list in ~/projects/tools/mcp.json.",
                      "- bot-f: Gmail and Google Calendar connectors; 2 routines, 1 sends without asking you; 14 memories.",
                      "- bot-e: no connectors; 1 routine; 2 memories.",
                      "- bot-d: didn't answer the roll-call.",
-                     "- What's inside memories, messages or saved passwords. Watchtower never reads them."):
+                     "- What's inside memories, messages or saved passwords. Chief Worry Bot never reads them."):
             self.assertIn(line, out)
-        self.assertIn(f"Each Bot (what each Bot said in the roll-call on {day.strftime('%b')} {day.day}; Watchtower can't check it)", out)
+        self.assertIn(f"Each Bot (what each Bot said in the roll-call on {day.strftime('%b')} {day.day}; Chief Worry Bot can't check it)", out)
 
     def test_the_state_file_has_the_planned_shape(self):   # replay (77dedd1: no state/access_map.json)
         self.build()
@@ -162,7 +162,7 @@ class WhoCanReachWhat(_Access):
         self.assertLess(md.index("## Top fixes"), md.index("## Who can reach what"))
         self.assertLess(md.index("## Who can reach what"), md.index("## All open findings"))
         self.assertIn("\nShared by all Bots\n- Browser: signed in to 2 sites", sec)
-        self.assertIn("\nWhat Watchtower can't see\n- Which connectors a Bot uses", sec)
+        self.assertIn("\nWhat Chief Worry Bot can't see\n- Which connectors a Bot uses", sec)
         self.assertIn("<h2 style='font-size:16px'>Who can reach what</h2><div class='card'>", page)
         self.assertIn("<li>bot-d: didn&#x27;t answer the roll-call.</li>", page)
 
@@ -291,8 +291,8 @@ class UnknownsAreStated(_Access):
         self.build(rollcall=False)
         self.audit_json()
         out = self.access()[1]
-        self.assertIn("- No Bot has answered a roll-call in the last 35 days, so Watchtower doesn't know which connectors each Bot uses. "
-                      "Ask Watchtower to run a roll-call.", out)
+        self.assertIn("- No Bot has answered a roll-call in the last 35 days, so Chief Worry Bot doesn't know which connectors each Bot uses. "
+                      "Ask Chief Worry Bot to run a roll-call.", out)
         self.assertNotIn("bot-d: didn't answer", out)
 
     def test_a_stale_roll_call(self):   # replay
@@ -302,28 +302,28 @@ class UnknownsAreStated(_Access):
                                                                "access": {"bot-f": {"connectors": ["Gmail"], "routines": []}}})
         self.audit_json()
         out = self.access()[1]
-        self.assertIn(f"- The last roll-call answers are from {old.strftime('%b')} {old.day}, more than 35 days ago, so Watchtower doesn't know "
-                      "which connectors each Bot uses now. Ask Watchtower to run a roll-call.", out)
+        self.assertIn(f"- The last roll-call answers are from {old.strftime('%b')} {old.day}, more than 35 days ago, so Chief Worry Bot doesn't know "
+                      "which connectors each Bot uses now. Ask Chief Worry Bot to run a roll-call.", out)
         self.assertNotIn("Gmail", out)
 
     def test_no_settings_file(self):   # replay
         self.build(settings=False)
         self.audit_json()
         out = self.access()[1]
-        self.assertIn("- Allowed without asking: Watchtower couldn't find Grok Bot's approval settings, so it can't say what Bots may do without asking.", out)
-        self.assertIn("- Grok Bot's approval settings: Watchtower couldn't find them on this computer.", out)
+        self.assertIn("- Allowed without asking: Chief Worry Bot couldn't find Grok Bot's approval settings, so it can't say what Bots may do without asking.", out)
+        self.assertIn("- Grok Bot's approval settings: Chief Worry Bot couldn't find them on this computer.", out)
         self.assertNotIn("Running programs", out)
 
     def test_an_unreadable_tool_list(self):   # replay
         self.build()
         self.audit_json()
-        self.assertIn("- Watchtower couldn't read the tool list in ~/projects/tools/mcp.json.", self.access()[1])
+        self.assertIn("- Chief Worry Bot couldn't read the tool list in ~/projects/tools/mcp.json.", self.access()[1])
 
     def test_a_bot_that_answered_before_access_was_kept(self):   # replay
         self.build(rollcall=False)
         wt.save_json(wt.state_path("rollcall_findings.json"), {"at": wt.now(), "masked": wt.VERSION, "bots": ["bot-f"], "findings": []})
         self.audit_json()
-        self.assertIn("- bot-f: answered the roll-call before Watchtower kept what each Bot can reach; the next roll-call fills this in.", self.access()[1])
+        self.assertIn("- bot-f: answered the roll-call before Chief Worry Bot kept what each Bot can reach; the next roll-call fills this in.", self.access()[1])
 
     def test_no_audit_yet(self):   # replay (77dedd1: argparse exit 2, not the plain error)
         try:

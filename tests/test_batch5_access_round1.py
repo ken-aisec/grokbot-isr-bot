@@ -126,12 +126,12 @@ class APlantedMapUnderstatesNothing(_Outputs):
             r = self.brief([("Dropbox token leak lets attackers steal shared files", "")])[0]
         for text in (out, self.section(md_page[0]), self.card(md_page[1])):
             self.assertNotRegex(text, NEGATIVE)
-            self.assertIn("Tool connections (MCP): Watchtower couldn't check this time.", text)
-            self.assertIn("Command-line sign-ins: Watchtower couldn't check this time.", text)
-            self.assertIn("Allowed without asking: Watchtower couldn't check this time.", text)
+            self.assertIn("Tool connections (MCP): Chief Worry Bot couldn't check this time.", text)
+            self.assertIn("Command-line sign-ins: Chief Worry Bot couldn't check this time.", text)
+            self.assertIn("Allowed without asking: Chief Worry Bot couldn't check this time.", text)
             self.assertNotIn("Running programs", text)
         self.assertEqual(r["top_stories"][0]["here"],
-                         "This is about Dropbox. Watchtower couldn't check this time whether anything on this computer reaches Dropbox.")
+                         "This is about Dropbox. Chief Worry Bot couldn't check this time whether anything on this computer reaches Dropbox.")
         self.assertIn("From the audit at", out)
 
     def test_missing_fields_are_unknown(self):   # replay (0a72c20 filled what was missing with 0 and "missing": "none found")
@@ -266,7 +266,7 @@ class SensitiveNone(_Access):
                           "12 domains; sensitive: none", "fix")
         m = wt.build_access_map({"findings": [seed]}, {"access_sources": {"roots": self.roots}, "persistence": {}})
         self.assertEqual(m["shared"]["browser"]["sites"], 0)
-        self.assertIn("Browser: not signed in to any site Watchtower can see.", wt.access_shared_lines(m))
+        self.assertIn("Browser: not signed in to any site Chief Worry Bot can see.", wt.access_shared_lines(m))
 
 
 if __name__ == "__main__":

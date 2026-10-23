@@ -358,7 +358,7 @@ class Flow(unittest.TestCase):
         self.assertIn("WT-S001", {f["rule"] for f in delta["new"]})
         self.assertNotIn(self.key, json.dumps(delta))
         rep = self.call("report")
-        self.assertIn("Watchtower report", rep)
+        self.assertIn("Chief Worry Bot report", rep)
         rdir = os.path.join(os.environ["WATCHTOWER_HOME"], "reports")
         self.assertTrue(os.path.exists(os.path.join(rdir, "dashboard.html")))
         ledger = open(os.path.join(os.environ["WATCHTOWER_HOME"], "state", "ledger.jsonl")).read().splitlines()
@@ -620,7 +620,7 @@ class Features(unittest.TestCase):
         self.assertEqual([r[3] for r in h], [False, False, True])   # the third audit ran with a new scanner
         page = wt.svg_trend(h)
         self.assertIn("class='ring'", page)
-        self.assertIn("Watchtower itself changed here", page)
+        self.assertIn("Chief Worry Bot itself changed here", page)
 
     def test_osv_one_finding_per_package_never_critical(self):
         def res(path, sev):
@@ -995,11 +995,19 @@ class Features(unittest.TestCase):
         import re
         text = open(os.path.join(ROOT, "bot", "memories.md")).read().replace("{TAG}", "v10.20.30").replace("{COMMIT}", "a" * 40)
         mems = re.findall(r"(?m)^\d+\. (.+)$", text)
-        self.assertEqual(len(mems), 8)
+        self.assertEqual(len(mems), 10)                          # v0.7.4: memories 9 and 10 added
         for m in mems:
             self.assertLessEqual(len(m), 480, m[:60])           # the platform cuts a memory at about 500 characters
         self.assertIn("never write your own scan scripts", mems[6])
         self.assertIn("install.sh v10.20.30 " + "a" * 40, mems[6])
+        self.assertEqual(mems[2], "The scripts find; you judge. Run Chief Worry Bot scripts and read their JSON. Don't paste raw scan output "
+                                  "into chat unless the owner asks for it, and never paste secrets; findings show masked values only.")
+        self.assertEqual(mems[8], "If any Chief Worry Bot command prints SELF-CHECK FAILED, stop and tell the owner at once: "
+                                  "Chief Worry Bot's own files changed. Don't run it again until they reinstall it from the release.")
+        self.assertEqual(mems[9], "You are Chief Worry Bot, the security officer for this Grok Bot roster. Your engine and files keep their "
+                                  "original folder names: /workspace/watchtower, wt.py, the watchtower-* skill files and WT-* rule IDs. "
+                                  "Never rename or move them; updates expect those paths. Keep it cheap: one pass over script output per "
+                                  "run, short replies, no narration of tool calls. Roll-call is off unless the owner asks for it.")
 
     def test_accept_a_kind_but_keep_named_items_open(self):
         F = wt.finding
@@ -1165,7 +1173,7 @@ class Features(unittest.TestCase):
             notes = []
             wt.update_notes(notes)
             self.assertEqual(len(notes), 1)
-            self.assertIn("A newer Watchtower is out (0.6.6 → 0.6.10, commit aaaaaaaaaaaa)", notes[0])
+            self.assertIn("A newer Chief Worry Bot is out (0.6.6 → 0.6.10, commit aaaaaaaaaaaa)", notes[0])
             tags[0]["commit"]["sha"] = "c" * 40                                  # the tag for the installed version was moved
             offline[next(iter(offline))] = json.dumps(tags)
             wt.save_json(wt.state_path("last_brief.json"), wt.gather_brief(cfg, offline=offline))
@@ -1197,7 +1205,7 @@ class Features(unittest.TestCase):
         code, o = self.out("brief", "--offline", path)
         r = json.loads(o)
         page = open(r["brief"]).read()
-        self.assertIn("Watchtower</b> weekly report", page)
+        self.assertIn("Chief Worry Bot</b> weekly report", page)
         self.assertIn("CVE-2026-0001", page)
         self.assertNotIn("CVE-2020-0002", page)
         self.assertEqual(page.count("<script>"), 1)                     # only the copy-button script

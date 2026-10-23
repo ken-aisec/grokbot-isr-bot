@@ -113,7 +113,7 @@ def audit(roots, exports, quick=False):
             elif p in base and base[p] != h:
                 fs.append(finding("WT-I001", "Reviewed skill or plugin changed", "high", ["AST07"], p,
                                   f"sha256 {base[p][:12]}→{h[:12]}",
-                                  "Tell Watchtower \"fix it\": it re-scans the skill with every engine and re-approves it if clean. `wt.py diff <skill>` shows what changed."))
+                                  "Tell Chief Worry Bot \"fix it\": it re-scans the skill with every engine and re-approves it if clean. `wt.py diff <skill>` shows what changed."))
             elif p not in base:
                 fs.append(finding("WT-I002", "New skill or plugin file", "low", ["AST09"], p, h[:12],
                                   "Vet it (`wt vet`), then run `wt baseline` to accept it."))
@@ -139,17 +139,17 @@ def audit(roots, exports, quick=False):
         notes.append("No baseline yet: integrity drift starts next run.")
     if platform_lock_problem():
         notes.append(f"The platform release list ({PLATFORM_LOCK_REL}) can't be used: {platform_lock_problem()}. So no file in a platform "
-                     "folder is verified by it: every new or changed one is a high alert until a Watchtower release lists it.")
+                     "folder is verified by it: every new or changed one is a high alert until a Chief Worry Bot release lists it.")
     for rel, problem in ((PLATFORM_REVIEWED_REL, platform_reviewed_problem()), (PLATFORM_NORMALIZE_REL, platform_normalize_problem()),
                          (ACCESS_VOCAB_REL, access_vocab_problem()), (ASK_FIRST_VOCAB_REL, ask_first_vocab_problem())):
         if problem:   # batch 5 (d2, d3b): ignored whole, so nothing in a platform file is checked or normalized by it (b: no story is matched)
-            notes.append(f"Watchtower's {rel} can't be used: {problem}. It is ignored, so nothing it lists applies this run.")
+            notes.append(f"Chief Worry Bot's {rel} can't be used: {problem}. It is ignored, so nothing it lists applies this run.")
     if os.path.lexists(state_path(OLD_PLATFORM_APPROVALS)):
-        notes.append(f"state/{OLD_PLATFORM_APPROVALS} is left from an earlier Watchtower and is no longer read: platform files it listed are "
+        notes.append(f"state/{OLD_PLATFORM_APPROVALS} is left from an earlier Chief Worry Bot and is no longer read: platform files it listed are "
                      "alerts again unless the release list includes them. You can delete it.")
     for d, (n_done, n_all) in sorted(INCOMPLETE_SKILLS.items()):
         fs.append(finding("WT-I006", "Skill too large to check completely", "info", ["AST07"], d, f"{n_done} of {n_all} files fingerprinted and scanned",
-                          "Files past the limit are NOT checked for changes; Watchtower can't re-approve this skill automatically. Trim it, or review changes by hand."))
+                          "Files past the limit are NOT checked for changes; Chief Worry Bot can't re-approve this skill automatically. Trim it, or review changes by hand."))
     new_plugins = note_plugins(inv)
     synced = catalog_sync(new_plugins)
     for market, commit, names in synced:
@@ -169,7 +169,7 @@ def audit(roots, exports, quick=False):
         fs = [f for f in fs if not (f["rule"] in ("WT-I001", "WT-I002") and inside(f["where"].split(":")[0]) and not f.get("unverified_platform"))]
         fs.append(finding("WT-I004", "New plugin installed", "medium", ["AST02", "AST09"], proots[0], f"{name}: {n_files} files, {n_skills} skills",
                           "A plugin's skills can't be vetted before it is installed, so they are checked now. Anything the scanners flag in it is "
-                          "listed and counts until you decide. Tell Watchtower \"fix it\" to keep it with one yes, or remove it in the app (Marketplace → Your plugins)."))
+                          "listed and counts until you decide. Tell Chief Worry Bot \"fix it\" to keep it with one yes, or remove it in the app (Marketplace → Your plugins)."))
         rel = [sorted(os.path.relpath(p, r) for p in manifest if p == r or p.startswith(r + "/")) for r in proots]
         was = PLUGIN_MOVES.get(name)
         if not was or (len(was[0]) == len(was[1]) and not any(os.path.lexists(r) for r in was[0])):
@@ -274,9 +274,9 @@ def audit(roots, exports, quick=False):
                           "Rules saved only in the app can't be seen from the computer. Tell the Bot to add them and save a copy to "
                           "/workspace/watchtower/exports/auto-review.txt."))
     if seen == "unread":
-        fs.append(finding("WT-A003", "If your Ask-first rules are in a language Watchtower doesn't read, it can't check them", "info",
+        fs.append(finding("WT-A003", "If your Ask-first rules are in a language Chief Worry Bot doesn't read, it can't check them", "info",
                           ["ASI09"], "Auto-review rules", ASK_UNREAD_EVIDENCE,
-                          "Watchtower reads Ask-first rules in English, Spanish, French, German, Portuguese, Italian, Russian, Chinese, "
+                          "Chief Worry Bot reads Ask-first rules in English, Spanish, French, German, Portuguese, Italian, Russian, Chinese, "
                           "Japanese, Korean, Arabic, Greek and Hindi, and found none of their words in yours. The alert above stays "
                           "until your rules name sending, publishing, payments, deleting and permission changes in one of those."))
         fs[-1]["ask_first_unread"] = True   # a Tip (ask_first_unread: this evidence only, so it never matches the medium)
@@ -311,7 +311,7 @@ def audit(roots, exports, quick=False):
         fs += soft("gitleaks (keys in files)", ("WT-S002",), notes, [], gitleaks_findings, roots, notes)
         fs += soft("pip-audit (installed Python packages)", ("WT-D001",), notes, [], package_findings, notes)
         fs += soft("OSV-Scanner (project dependencies)", ("WT-D002",), notes, [], osv_findings, roots, notes)
-        fs += soft("Watchtower's own tools", ("WT-W001",), notes, [], self_findings, notes)
+        fs += soft("Chief Worry Bot's own tools", ("WT-W001",), notes, [], self_findings, notes)
         secret_paths = [f["where"].split(":")[0] for f in fs if f["rule"] in ("WT-S001", "WT-S002")]
         ks = soft("TruffleHog (which keys still work)", (), notes, None, trufflehog_status, secret_paths, notes)
         if ks is None or "TruffleHog (which keys still work)" in STAGE_FAILED:
@@ -345,7 +345,7 @@ def audit(roots, exports, quick=False):
     gone = [n for n in before if n not in used_now]
     save_json(state_path("engines_used.json"), {"at": now(), "engines": used_now, **({"expected": list(dict.fromkeys(before + used_now))} if gone else {})})
     if gone:
-        notes.insert(0, f"SCANNERS MISSING: {', '.join(gone)} ran last time and didn't run now (not installed, or not the copy Watchtower installed), "
+        notes.insert(0, f"SCANNERS MISSING: {', '.join(gone)} ran last time and didn't run now (not installed, or not the copy Chief Worry Bot installed), "
                         "so this is a partial scan and their last results are kept. Run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, then audit again.")
     fs += scanner_x005()   # batch 3 (R7): every scanner was looked at just above, in audit and daily alike
     fs = merge_managed_mirrors(settle_platform_updates(fs, cands, manifest, base, rules), manifest)   # b8i4

@@ -1,6 +1,6 @@
-# Watchtower threat model
+# Chief Worry Bot threat model
 
-Watchtower runs on the same shared Grok Bot computer it audits, so it is held to the rules it enforces.
+Chief Worry Bot (the engine and its files keep the name Watchtower) runs on the same shared Grok Bot computer it audits, so it is held to the rules it enforces.
 
 ## What it defends
 | Risk | OWASP | Check |

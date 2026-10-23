@@ -1,0 +1,541 @@
+{
+ "about": "v0.7.4 stage 1 (item v074): the display rename Watchtower -> Chief Worry Bot only, VERSION still 0.7.3 in this commit. `bash scripts/golden-check.sh accbe5e full --expect tests/golden_expect/v074.json --items v074`. The rename is the `subst` kind (only the name pair; an item is taken whole only when post with the name put back is pre byte for byte). Leftover block entries, if any, are listed with why.",
+ "entries": [
+  {
+   "item": "v074",
+   "scenario_rx": "^(tierA)$",
+   "key_rx": "^tree\\ workspace/watchtower/reports/threat\\-brief\\-2026\\-W43\\.html$",
+   "block": [
+    "-<title>Watchtower: You&#x27;re in good shape. Nothing needs you this week.</title><style>",
+    "+<title>Chief Worry Bot: You&#x27;re in good shape. Nothing needs you this week.</title><style>",
+    "-<div class='top'><span><b>Watchtower</b> weekly report</span><span>23 Oct 2026</span></div>",
+    "+<div class='top'><span><b>Chief Worry Bot</b> weekly report</span><span>23 Oct 2026</span></div>",
+    "-<div class='fix'><div class='fx'><h3>Fix it all</h3><p>Paste this into your Watchtower Bot. It cleans up, upgrades outdated software (and undoes any upgrade that breaks something), then asks you one yes or no for everything that's fine on purpose.</p>",
+    "-<div class='cmd'><code id='c1' tabindex='0'>Watchtower, fix it</code><button type='button' data-copy='c1' hidden>Copy</button></div><p class='hint'>Click the text to select it, then copy.</p></div></div>",
+    "+<div class='fix'><div class='fx'><h3>Fix it all</h3><p>Paste this into your Chief Worry Bot. It cleans up, upgrades outdated software (and undoes any upgrade that breaks something), then asks you one yes or no for everything that's fine on purpose.</p>",
+    "+<div class='cmd'><code id='c1' tabindex='0'>Chief Worry Bot, fix it</code><button type='button' data-copy='c1' hidden>Copy</button></div><p class='hint'>Click the text to select it, then copy.</p></div></div>",
+    "-<p class='foot'>Read-only: Watchtower changes nothing unless you run the fix. 0 of 11 news sources responded. Full details: /watchtower-report. Watchtower 0.7.3.</p>",
+    "+<p class='foot'>Read-only: Chief Worry Bot changes nothing unless you run the fix. 0 of 11 news sources responded. Full details: /watchtower-report. Chief Worry Bot 0.7.3.</p>"
+   ],
+   "must_see": true,
+   "why": "v074: the threat brief's fix prompt is reworded (\"your Watchtower Bot\" -> \"your Chief Worry Bot\", not \"Chief Worry Bot Bot\"), with the name in its title, top line and footer"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-emoji_names\\-cli|box\\-empty_account\\-cli|box\\-odd_layout\\-cli|box\\-strict_auto_review\\-cli)$",
+   "key_rx": "^007\\ breakdown\\ :stdout$",
+   "block": [
+    "-high     WT-X005  ×1     Watchtower's copy of gitleaks isn't the one it i /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of husk isn't the one it insta /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of OSV-Scanner isn't the one i /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of pip-audit isn't the one it  /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of SkillSpector isn't the one  /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of TruffleHog isn't the one it /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of gitleaks isn't the one /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of husk isn't the one it  /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of OSV-Scanner isn't the  /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of pip-audit isn't the on /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of SkillSpector isn't the /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of TruffleHog isn't the o /workspace/watchtower/scanners/bin ×1",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/gitleaks  Watchtower's copy of gitleaks isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/husk  Watchtower's copy of husk isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/osv-scanner  Watchtower's copy of OSV-Scanner isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/pip-audit  Watchtower's copy of pip-audit isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/skillspector  Watchtower's copy of SkillSpector isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/trufflehog  Watchtower's copy of TruffleHog isn't the one it installed",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/gitleaks  Chief Worry Bot's copy of gitleaks isn't the one it installe",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/husk  Chief Worry Bot's copy of husk isn't the one it installed",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/osv-scanner  Chief Worry Bot's copy of OSV-Scanner isn't the one it insta",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/pip-audit  Chief Worry Bot's copy of pip-audit isn't the one it install",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/skillspector  Chief Worry Bot's copy of SkillSpector isn't the one it inst",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/trufflehog  Chief Worry Bot's copy of TruffleHog isn't the one it instal"
+   ],
+   "must_see": true,
+   "why": "v074: breakdown trims each WT-X005 title to its column, so the longer name cuts the title at another place"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-power_user\\-cli)$",
+   "key_rx": "^008\\ breakdown\\ :stdout$",
+   "block": [
+    "-high     WT-X005  ×1     Watchtower's copy of gitleaks isn't the one it i /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of husk isn't the one it insta /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of OSV-Scanner isn't the one i /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of pip-audit isn't the one it  /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of SkillSpector isn't the one  /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of TruffleHog isn't the one it /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of gitleaks isn't the one /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of husk isn't the one it  /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of OSV-Scanner isn't the  /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of pip-audit isn't the on /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of SkillSpector isn't the /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of TruffleHog isn't the o /workspace/watchtower/scanners/bin ×1",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/gitleaks  Watchtower's copy of gitleaks isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/husk  Watchtower's copy of husk isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/osv-scanner  Watchtower's copy of OSV-Scanner isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/pip-audit  Watchtower's copy of pip-audit isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/skillspector  Watchtower's copy of SkillSpector isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/trufflehog  Watchtower's copy of TruffleHog isn't the one it installed",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/gitleaks  Chief Worry Bot's copy of gitleaks isn't the one it installe",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/husk  Chief Worry Bot's copy of husk isn't the one it installed",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/osv-scanner  Chief Worry Bot's copy of OSV-Scanner isn't the one it insta",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/pip-audit  Chief Worry Bot's copy of pip-audit isn't the one it install",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/skillspector  Chief Worry Bot's copy of SkillSpector isn't the one it inst",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/trufflehog  Chief Worry Bot's copy of TruffleHog isn't the one it instal"
+   ],
+   "must_see": true,
+   "why": "v074: breakdown trims each WT-X005 title to its column, so the longer name cuts the title at another place"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-busy_clean_box\\-cli)$",
+   "key_rx": "^011\\ breakdown\\ :stdout$",
+   "block": [
+    "-high     WT-X005  ×1     Watchtower's copy of gitleaks isn't the one it i /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of husk isn't the one it insta /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of OSV-Scanner isn't the one i /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of pip-audit isn't the one it  /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of SkillSpector isn't the one  /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of TruffleHog isn't the one it /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of gitleaks isn't the one /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of husk isn't the one it  /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of OSV-Scanner isn't the  /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of pip-audit isn't the on /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of SkillSpector isn't the /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of TruffleHog isn't the o /workspace/watchtower/scanners/bin ×1",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/gitleaks  Watchtower's copy of gitleaks isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/husk  Watchtower's copy of husk isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/osv-scanner  Watchtower's copy of OSV-Scanner isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/pip-audit  Watchtower's copy of pip-audit isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/skillspector  Watchtower's copy of SkillSpector isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/trufflehog  Watchtower's copy of TruffleHog isn't the one it installed",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/gitleaks  Chief Worry Bot's copy of gitleaks isn't the one it installe",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/husk  Chief Worry Bot's copy of husk isn't the one it installed",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/osv-scanner  Chief Worry Bot's copy of OSV-Scanner isn't the one it insta",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/pip-audit  Chief Worry Bot's copy of pip-audit isn't the one it install",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/skillspector  Chief Worry Bot's copy of SkillSpector isn't the one it inst",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/trufflehog  Chief Worry Bot's copy of TruffleHog isn't the one it instal",
+    "-  Grok Bot's own folder, ~/.grok/bundled/skills/pptx/templates/deck00.js (line 1): Secrecy or concealment instruction (example text in a built-in template). Not on Watchtower's release list: its own alert counts, this line doesn't.",
+    "+  Grok Bot's own folder, ~/.grok/bundled/skills/pptx/templates/deck00.js (line 1): Secrecy or concealment instruction (example text in a built-in template). Not on Chief Worry Bot's release list: its own alert counts, this line doesn't."
+   ],
+   "must_see": true,
+   "why": "v074: breakdown trims each WT-X005 title to its column, so the longer name cuts the title at another place"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-platform_refresh\\-cli)$",
+   "key_rx": "^012\\ breakdown\\ :stdout$",
+   "block": [
+    "-high     WT-X005  ×1     Watchtower's copy of gitleaks isn't the one it i /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of husk isn't the one it insta /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of OSV-Scanner isn't the one i /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of pip-audit isn't the one it  /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of SkillSpector isn't the one  /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of TruffleHog isn't the one it /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of gitleaks isn't the one /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of husk isn't the one it  /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of OSV-Scanner isn't the  /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of pip-audit isn't the on /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of SkillSpector isn't the /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of TruffleHog isn't the o /workspace/watchtower/scanners/bin ×1",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/gitleaks  Watchtower's copy of gitleaks isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/husk  Watchtower's copy of husk isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/osv-scanner  Watchtower's copy of OSV-Scanner isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/pip-audit  Watchtower's copy of pip-audit isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/skillspector  Watchtower's copy of SkillSpector isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/trufflehog  Watchtower's copy of TruffleHog isn't the one it installed",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/gitleaks  Chief Worry Bot's copy of gitleaks isn't the one it installe",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/husk  Chief Worry Bot's copy of husk isn't the one it installed",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/osv-scanner  Chief Worry Bot's copy of OSV-Scanner isn't the one it insta",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/pip-audit  Chief Worry Bot's copy of pip-audit isn't the one it install",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/skillspector  Chief Worry Bot's copy of SkillSpector isn't the one it inst",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/trufflehog  Chief Worry Bot's copy of TruffleHog isn't the one it instal",
+    "-  Grok Bot's own folder, ~/.grok/bundled/skills/pptx/templates/deck00.js (line 1): Secrecy or concealment instruction (example text in a built-in template). Not on Watchtower's release list: its own alert counts, this line doesn't.",
+    "+  Grok Bot's own folder, ~/.grok/bundled/skills/pptx/templates/deck00.js (line 1): Secrecy or concealment instruction (example text in a built-in template). Not on Chief Worry Bot's release list: its own alert counts, this line doesn't."
+   ],
+   "must_see": true,
+   "why": "v074: breakdown trims each WT-X005 title to its column, so the longer name cuts the title at another place"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-fixtures_vendor\\-cli)$",
+   "key_rx": "^022\\ breakdown\\ :stdout$",
+   "block": [
+    "-high     WT-X005  ×1     Watchtower's copy of gitleaks isn't the one it i /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of husk isn't the one it insta /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of OSV-Scanner isn't the one i /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of pip-audit isn't the one it  /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of SkillSpector isn't the one  /workspace/watchtower/scanners/bin ×1",
+    "-high     WT-X005  ×1     Watchtower's copy of TruffleHog isn't the one it /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of gitleaks isn't the one /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of husk isn't the one it  /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of OSV-Scanner isn't the  /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of pip-audit isn't the on /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of SkillSpector isn't the /workspace/watchtower/scanners/bin ×1",
+    "+high     WT-X005  ×1     Chief Worry Bot's copy of TruffleHog isn't the o /workspace/watchtower/scanners/bin ×1",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/gitleaks  Watchtower's copy of gitleaks isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/husk  Watchtower's copy of husk isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/osv-scanner  Watchtower's copy of OSV-Scanner isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/pip-audit  Watchtower's copy of pip-audit isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/skillspector  Watchtower's copy of SkillSpector isn't the one it installed",
+    "-  high     WT-X005  /workspace/watchtower/scanners/bin/trufflehog  Watchtower's copy of TruffleHog isn't the one it installed",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/gitleaks  Chief Worry Bot's copy of gitleaks isn't the one it installe",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/husk  Chief Worry Bot's copy of husk isn't the one it installed",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/osv-scanner  Chief Worry Bot's copy of OSV-Scanner isn't the one it insta",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/pip-audit  Chief Worry Bot's copy of pip-audit isn't the one it install",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/skillspector  Chief Worry Bot's copy of SkillSpector isn't the one it inst",
+    "+  high     WT-X005  /workspace/watchtower/scanners/bin/trufflehog  Chief Worry Bot's copy of TruffleHog isn't the one it instal"
+   ],
+   "must_see": true,
+   "why": "v074: breakdown trims each WT-X005 title to its column, so the longer name cuts the title at another place"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(tierA)$",
+   "key_rx": "^015\\ fix\\ \\-\\-help\\ :stdout$",
+   "block": [
+    "-                        the owner's own skill(s) to move out of use into",
+    "-                        Watchtower's quarantine folder (comma-separated)",
+    "+                        the owner's own skill(s) to move out of use, into",
+    "+                        Chief Worry Bot's quarantine folder (comma-separated)"
+   ],
+   "must_see": true,
+   "why": "v074: fix --help's --quarantine text gains a comma (\"out of use, into Chief Worry Bot's\") so argparse doesn't split the name over two lines"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(tierA)$",
+   "key_rx": "^102\\ fix\\ \\-\\-help\\ \\(cwd\\ /\\)\\ :stdout$",
+   "block": [
+    "-                        the owner's own skill(s) to move out of use into",
+    "-                        Watchtower's quarantine folder (comma-separated)",
+    "+                        the owner's own skill(s) to move out of use, into",
+    "+                        Chief Worry Bot's quarantine folder (comma-separated)"
+   ],
+   "must_see": true,
+   "why": "v074: fix --help's --quarantine text gains a comma (\"out of use, into Chief Worry Bot's\") so argparse doesn't split the name over two lines"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(tierA)$",
+   "key_rx": "^189\\ fix\\ \\-\\-help\\ \\(cwd\\ /tmp/code\\)\\ :stdout$",
+   "block": [
+    "-                        the owner's own skill(s) to move out of use into",
+    "-                        Watchtower's quarantine folder (comma-separated)",
+    "+                        the owner's own skill(s) to move out of use, into",
+    "+                        Chief Worry Bot's quarantine folder (comma-separated)"
+   ],
+   "must_see": true,
+   "why": "v074: fix --help's --quarantine text gains a comma (\"out of use, into Chief Worry Bot's\") so argparse doesn't split the name over two lines"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(crash)$",
+   "key_rx": "^003\\ doctor\\ \\[driver\\]\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(tierC)$",
+   "key_rx": "^004\\ installed\\ status\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(crash)$",
+   "key_rx": "^004\\ status\\ \\[driver\\]\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-emoji_names\\-cli|box\\-empty_account\\-cli|box\\-odd_layout\\-cli|box\\-strict_auto_review\\-cli)$",
+   "key_rx": "^005\\ status\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-emoji_names\\-driver|box\\-empty_account\\-driver|box\\-odd_layout\\-driver|box\\-strict_auto_review\\-driver)$",
+   "key_rx": "^005\\ status\\ \\[driver\\]\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-power_user\\-cli)$",
+   "key_rx": "^006\\ status\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-power_user\\-driver|extended)$",
+   "key_rx": "^006\\ status\\ \\[driver\\]\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-busy_clean_box\\-driver)$",
+   "key_rx": "^007\\ status\\ \\[driver\\]\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-platform_refresh\\-driver)$",
+   "key_rx": "^008\\ status\\ \\[driver\\]\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-busy_clean_box\\-cli)$",
+   "key_rx": "^009\\ status\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-platform_refresh\\-cli)$",
+   "key_rx": "^010\\ status\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-emoji_names\\-cli|box\\-empty_account\\-cli|box\\-odd_layout\\-cli|box\\-strict_auto_review\\-cli)$",
+   "key_rx": "^013\\ doctor\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-emoji_names\\-driver|box\\-empty_account\\-driver|box\\-odd_layout\\-driver|box\\-strict_auto_review\\-driver)$",
+   "key_rx": "^013\\ doctor\\ \\[driver\\]\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-power_user\\-cli)$",
+   "key_rx": "^014\\ doctor\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-power_user\\-driver)$",
+   "key_rx": "^014\\ doctor\\ \\[driver\\]\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-busy_clean_box\\-driver)$",
+   "key_rx": "^015\\ doctor\\ \\[driver\\]\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-platform_refresh\\-driver)$",
+   "key_rx": "^016\\ doctor\\ \\[driver\\]\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-busy_clean_box\\-cli)$",
+   "key_rx": "^017\\ doctor\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-platform_refresh\\-cli)$",
+   "key_rx": "^018\\ doctor\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-fixtures_vendor\\-driver)$",
+   "key_rx": "^019\\ status\\ \\[driver\\]\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-fixtures_vendor\\-cli)$",
+   "key_rx": "^020\\ status\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-fixtures_vendor\\-driver)$",
+   "key_rx": "^027\\ doctor\\ \\[driver\\]\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-fixtures_vendor\\-cli)$",
+   "key_rx": "^028\\ doctor\\ :stdout$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box\\-busy_clean_box\\-cli|box\\-busy_clean_box\\-driver|box\\-emoji_names\\-cli|box\\-emoji_names\\-driver|box\\-empty_account\\-cli|box\\-empty_account\\-driver|box\\-fixtures_vendor\\-cli|box\\-fixtures_vendor\\-driver|box\\-odd_layout\\-cli|box\\-odd_layout\\-driver|box\\-platform_refresh\\-cli|box\\-platform_refresh\\-driver|box\\-power_user\\-cli|box\\-power_user\\-driver|box\\-strict_auto_review\\-cli|box\\-strict_auto_review\\-driver|crash|extended|tierC)$",
+   "key_rx": "^tree\\ workspace/watchtower/state/stage_times\\.json$",
+   "block": [
+    "+  \"Chief Worry Bot's own tools\": <DUR>,",
+    "-  \"Watchtower's own tools\": <DUR>,"
+   ],
+   "must_see": true,
+   "why": "v074: a renamed JSON key sorts to a new place (stage_times' \"Chief Worry Bot's own tools\" stage, shown by status and doctor): same keys and values, only the order"
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box-empty_account-cli|box-empty_account-driver|box-busy_clean_box-cli|box-busy_clean_box-driver|box-power_user-cli|box-power_user-driver|box-strict_auto_review-cli|box-strict_auto_review-driver|box-emoji_names-cli|box-emoji_names-driver|box-odd_layout-cli|box-odd_layout-driver|box-fixtures_vendor-cli|box-fixtures_vendor-driver|box-platform_refresh-cli|box-platform_refresh-driver|extended)$",
+   "key_rx": "^tree workspace/watchtower/reports/\\d{4}-W\\d{2}\\.md$",
+   "subst": {
+    "pairs": [
+     [
+      "Watchtower",
+      "Chief Worry Bot"
+     ]
+    ]
+   },
+   "must_see": true,
+   "why": "v074: the rename is seen in every box's weekly report (its title and text)."
+  },
+  {
+   "item": "v074",
+   "scenario_rx": "^(box-empty_account-cli|box-empty_account-driver|box-busy_clean_box-cli|box-busy_clean_box-driver|box-power_user-cli|box-power_user-driver|box-strict_auto_review-cli|box-strict_auto_review-driver|box-emoji_names-cli|box-emoji_names-driver|box-odd_layout-cli|box-odd_layout-driver|box-fixtures_vendor-cli|box-fixtures_vendor-driver|box-platform_refresh-cli|box-platform_refresh-driver|extended)$",
+   "key_rx": "^tree workspace/watchtower/reports/dashboard\\.html$",
+   "subst": {
+    "pairs": [
+     [
+      "Watchtower",
+      "Chief Worry Bot"
+     ]
+    ]
+   },
+   "must_see": true,
+   "why": "v074: the rename is seen in every box's dashboard (its title, heading and footer)."
+  },
+  {
+   "item": "v074",
+   "scenario_rx": ".",
+   "key_rx": ".",
+   "subst": {
+    "pairs": [
+     [
+      "Watchtower",
+      "Chief Worry Bot"
+     ]
+    ]
+   },
+   "must_see": false,
+   "why": "v074: the display name in any output whose only change it is (post with Chief Worry Bot put back to Watchtower is pre byte for byte)."
+  }
+ ]
+}

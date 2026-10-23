@@ -111,4 +111,4 @@ for m in re.findall(r"(?m)^\d+\. (.+)$", text):
     print(m + "\n")
 PYEOF
 echo "Template memories for $TAG are in ${TMPDIR:-/tmp}/template-memories-$TAG.txt (outside the repo, so the checkout stays clean)."
-echo "Tell your Watchtower Bot: replace the template's memories with that text, then click Update template."
+echo "Tell your Chief Worry Bot: replace the template's memories with that text, then click Update template."

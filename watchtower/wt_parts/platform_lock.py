@@ -227,24 +227,24 @@ def unverified_platform_finding(p, h, was=None, why=""):
 def _unverified_platform_finding(p, h, was=None):
     v = platform_vendor(p)
     fix = (f"Nothing shows {v} made this change, so treat it like a file someone added. Don't use this skill until you've looked. "
-           "Watchtower can't approve it on this computer: it clears only when a Watchtower release lists this exact file in its "
+           "Chief Worry Bot can't approve it on this computer: it clears only when a Chief Worry Bot release lists this exact file in its "
            "platform list. If you didn't expect it, remove it.")
     if PLATFORM_METADATA.fullmatch(os.path.basename(_path_part(p, line=False))):
         f = finding("WT-I002" if was is None or was == h else "WT-I001",
-                    f"{v}'s list of what it loads {'changed' if was is not None and was != h else 'is new here'}, and Watchtower's "
+                    f"{v}'s list of what it loads {'changed' if was is not None and was != h else 'is new here'}, and Chief Worry Bot's "
                     "release list doesn't have this version yet", "high", ["AST07"] if was is not None and was != h else ["AST09", "AST07"], p,
                     f"sha256 {was[:12]}→{h[:12]}" if was is not None and was != h else f"sha256 {h[:12]}, not on the release list",
                     f"{v} rewrites this file when it updates itself, but the file also decides which skills and plugins load, so "
-                    f"Watchtower can't tell an update from a change someone else made. Don't delete it ({v} needs it). It stays on "
-                    "this list until a Watchtower release includes this version. If it's still here after the next Watchtower update, "
-                    "tell Watchtower support.")
+                    f"Chief Worry Bot can't tell an update from a change someone else made. Don't delete it ({v} needs it). It stays on "
+                    "this list until a Chief Worry Bot release includes this version. If it's still here after the next Chief Worry Bot update, "
+                    "tell Chief Worry Bot support.")
         f["unverified_platform"] = True
         return f
     if was is None:
         f = finding("WT-I002", f"A new file appeared in {v}'s own skill folder, and {v}'s release list doesn't include it", "high",
                     ["AST09", "AST07"], p, h[:12], fix)
     elif was == h:   # Codex, item 8 review 2 (high 3): in baseline.json, which the Bot can write; a baseline line is never provenance
-        f = finding("WT-I002", f"A file in {v}'s own skill folder is on Watchtower's list, but {v}'s release list doesn't include it", "high",
+        f = finding("WT-I002", f"A file in {v}'s own skill folder is on Chief Worry Bot's list, but {v}'s release list doesn't include it", "high",
                     ["AST09", "AST07"], p, f"sha256 {h[:12]}, not on the release list", fix)
     else:
         f = finding("WT-I001", f"One of {v}'s own files changed, and the new version isn't on {v}'s release list", "high",
@@ -405,7 +405,7 @@ def platform_still_bound(p):
         return False
 
 
-PLATFORM_MOVED = "It moved out of the platform's own folders while Watchtower was checking it."   # platform_still_bound failed
+PLATFORM_MOVED = "It moved out of the platform's own folders while Chief Worry Bot was checking it."   # platform_still_bound failed
 PLATFORM_UPDATE_MAX = 1_000_000   # bytes of a candidate Watchtower reads whole (read_scanned's limit)
 
 
@@ -543,16 +543,16 @@ def _candidate_why(p, h, rules, idx):
     if not platform_still_bound(p):
         return PLATFORM_MOVED
     if t is None:
-        return ("It is over 1 MB, so Watchtower can't check all of it." if not h2.startswith("unreadable:")
-                else "Watchtower couldn't read it.")
+        return ("It is over 1 MB, so Chief Worry Bot can't check all of it." if not h2.startswith("unreadable:")
+                else "Chief Worry Bot couldn't read it.")
     if h2 != h:
-        return "It changed while Watchtower was checking it."
+        return "It changed while Chief Worry Bot was checking it."
     hit, binary = platform_full_verdict(p, t, rules)
     if binary:
-        return "Watchtower can't read it as plain text, so its rules can't check it."
+        return "Chief Worry Bot can't read it as plain text, so its rules can't check it."
     hit = sorted(set(hit) | set(_flagged_here(p, idx)))
     if hit:
-        return f"Watchtower's rules flagged the new version ({', '.join(hit[:4])})."
+        return f"Chief Worry Bot's rules flagged the new version ({', '.join(hit[:4])})."
     return ""
 
 
@@ -568,7 +568,7 @@ def _vote_why(p, d, fs):
         if unconfirmed_platform_vote(g, fs):
             continue
         if g.get("kinds_incomplete"):
-            return "The scanners' answer for its folder is out of date, so Watchtower can't tell what they found."
+            return "The scanners' answer for its folder is out of date, so Chief Worry Bot can't tell what they found."
         return "Two scanners name a dangerous behavior in its folder."
     return ""
 
@@ -599,8 +599,8 @@ def settle_platform_updates(fs, cands, manifest, base, rules):
         if why[p] or kind == "update":
             continue
         if d in held_dirs:
-            why[p] = ("Another file in this new skill folder didn't pass Watchtower's checks, so none of it is accepted." if kind == "new-skill"
-                      else "Another file in this skill folder didn't pass Watchtower's checks.")
+            why[p] = ("Another file in this new skill folder didn't pass Chief Worry Bot's checks, so none of it is accepted." if kind == "new-skill"
+                      else "Another file in this skill folder didn't pass Chief Worry Bot's checks.")
         elif kind == "in-skill" and d not in updated:
             why[p] = "It is a new file in a skill folder that wasn't updated in this run."
     out = []
@@ -629,10 +629,10 @@ def hold_on_kept_votes(fs, manifest):
         if f.get("platform_update"):
             ps = [f["where"]] + list(f.get("also_at") or [])
             if any(q.startswith(x + os.sep) for q in ps for x in kept):
-                why = "The scanners' answer for its folder is from an earlier run, so Watchtower can't tell what they found."
+                why = "The scanners' answer for its folder is from an earlier run, so Chief Worry Bot can't tell what they found."
             else:
                 hit = sorted({r for q in ps for r in _flagged_here(q, idx)})
-                why = f"Watchtower's checks flagged it ({', '.join(hit[:4])})." if hit else ""
+                why = f"Chief Worry Bot's checks flagged it ({', '.join(hit[:4])})." if hit else ""
             if why:
                 for q in ps:
                     if isinstance(manifest.get(q), str) and re.fullmatch(r"[0-9a-f]{64}", manifest[q]):
@@ -741,10 +741,10 @@ def _release_file(path, rel, max_bytes):
 def _not_shipped(want):
     """Why a rules file that isn't its MANIFEST.sha256 line is refused."""
     if not want and release_files_unchecked():
-        return "Watchtower's release files can't be checked (its MANIFEST.sha256 is missing or unreadable)"
+        return "Chief Worry Bot's release files can't be checked (its MANIFEST.sha256 is missing or unreadable)"
     if not want:
         return "MANIFEST.sha256 doesn't list it, so it can't be checked"
-    return "it isn't the file this release of Watchtower shipped (MANIFEST.sha256)"
+    return "it isn't the file this release of Chief Worry Bot shipped (MANIFEST.sha256)"
 
 
 def _stat_key(path):
@@ -1309,7 +1309,7 @@ def platform_inventory(roots):
 
 def platform_coverage_finding(d, why):
     v = platform_vendor(d)
-    f = finding("WT-I011", f"Watchtower couldn't check all of {v}'s own skill folder", "high", ["AST07", "AST09"], d, why,
+    f = finding("WT-I011", f"Chief Worry Bot couldn't check all of {v}'s own skill folder", "high", ["AST07", "AST09"], d, why,
                 f"A file added or changed in the part it couldn't check would raise no alert. Look at this folder; when {v}'s folder "
                 "is back to a normal size and readable, the next audit checks it again.", ident=f"platform-coverage|{d}")
     f["unverified_platform"] = f["platform_coverage"] = True

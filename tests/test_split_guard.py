@@ -20,8 +20,8 @@ from golden_split import BANNER, CALL, lines_of, read  # noqa: E402  (the reasse
 from golden_split import reassemble as _reassemble  # noqa: E402
 
 LOADER_NAMES = {"_WT_PARTS", "_wt_part"}
-D3 =("SELF-CHECK FAILED - Watchtower stopped before doing anything. Its own file watchtower/wt_parts/{}.py is missing or not a"
-      " plain file. Tell the owner now. Don't run Watchtower again until they reinstall it from the release (setup skill, section 1).")
+D3 =("SELF-CHECK FAILED - Chief Worry Bot stopped before doing anything. Its own file watchtower/wt_parts/{}.py is missing or not a"
+      " plain file. Tell the owner now. Don't run Chief Worry Bot again until they reinstall it from the release (setup skill, section 1).")
 DUNDERS = {"__name__", "__file__", "__doc__", "__builtins__", "__spec__", "__loader__", "__package__", "__cached__", "__annotations__"}
 
 

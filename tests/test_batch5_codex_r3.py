@@ -211,7 +211,7 @@ class DailyCap(_SignIn):
         with open(os.path.join(ROOT, "routines", "daily-watch.md")) as f:
             routine = f.read()
         self.assertIn("Never cut to fit either, and never counted in the 6: every critical or high finding in `new` (one line each), "
-                      "every `platform_notes` line that says Watchtower would call it critical or high (one line each)", routine)
+                      "every `platform_notes` line that says Chief Worry Bot would call it critical or high (one line each)", routine)
         self.assertIn("The 6 lines are only for everything else", routine)
 
     def test_what_overflows_is_still_owed(self):   # guard (round 2's overflow runs unmodified in test_batch5_codex_r2)

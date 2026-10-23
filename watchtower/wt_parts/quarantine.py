@@ -82,7 +82,7 @@ def cmd_quarantine(args):
         e_ = hit[-1]
         if not (owned_path(e_["to"], "quarantine") and (owned_path(e_["from"], "skill", log=False) or restorable_to_workspace(e_["from"])
                                                        or owned_path(e_["from"], "skill"))):   # the last call only writes the refusal
-            print(f"Not restored: the quarantine record for {args.restore} points outside Watchtower's quarantine folder or your own "
+            print(f"Not restored: the quarantine record for {args.restore} points outside Chief Worry Bot's quarantine folder or your own "
                   "skill folders. Nothing was moved; the refusal is in the ledger.")
             return 1
         if os.path.exists(e_["from"]):

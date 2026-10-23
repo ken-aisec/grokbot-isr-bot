@@ -24,7 +24,7 @@ TODAY = f"{DAY.strftime('%b')} {DAY.day}"
 VOCAB_LABELS = ("Gmail", "Google Drive", "Google Calendar", "Slack", "Discord", "Microsoft Teams", "Microsoft 365", "GitHub", "Notion",
                 "1Password", "Bitwarden", "Telegram", "Dropbox", "Jira", "Linear", "Stripe", "Shopify", "Zapier", "OpenAI", "Claude",
                 "Codex", "Grok")
-CANT = "This is about {0}. Watchtower couldn't check this time whether anything on this computer reaches {0}."
+CANT = "This is about {0}. Chief Worry Bot couldn't check this time whether anything on this computer reaches {0}."
 
 
 class _Small(_Brief):
@@ -74,7 +74,7 @@ class TheSeedIsLookedAtNow(_Small):
         self.audit_json()
         self.forget_the_seed_finding()
         out = self.access()[1]
-        self.assertIn("- Browser: Watchtower couldn't check all of it this time (something there couldn't be read).", out)
+        self.assertIn("- Browser: Chief Worry Bot couldn't check all of it this time (something there couldn't be read).", out)
         self.assertNotIn("found no shared browser cookies", out)
         self.assertNotIn("not signed in to any site", out)
 
@@ -281,7 +281,7 @@ class NoLinkFromTheRootDown(_Small):
         self.rollcall({"name": "Golf"})
         self.audit_json()
         out = self.access()[1]
-        self.assertIn("- Watchtower couldn't read 1 Bot profile (a link, or not plain JSON), so a Bot may be missing from this list.", out)
+        self.assertIn("- Chief Worry Bot couldn't read 1 Bot profile (a link, or not plain JSON), so a Bot may be missing from this list.", out)
         self.assertNotIn("Kilo", out)
 
     def test_the_fallback_map_is_read_the_same_way(self):   # replay (3170952 read it through a linked state folder)

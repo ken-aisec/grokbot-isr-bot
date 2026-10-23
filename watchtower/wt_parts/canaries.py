@@ -255,8 +255,8 @@ def link_target(p):
 
 def decoy_link_finding(name, p, why):
     return finding("WT-K006", "A link was put where a decoy goes", "high", ["ASI10", "ASI05"], p, f"{name}: {why}"[:160],
-                   "Watchtower refused to write the decoy, because writing through that link would have changed the file it points to. "
-                   "Something put the link there on purpose. Tell Watchtower \"incident check\"; once you know what did it, remove the link and plant the decoys again.",
+                   "Chief Worry Bot refused to write the decoy, because writing through that link would have changed the file it points to. "
+                   "Something put the link there on purpose. Tell Chief Worry Bot \"incident check\"; once you know what did it, remove the link and plant the decoys again.",
                    ident=f"{name}|{p}")
 
 
@@ -341,7 +341,7 @@ def tend_canaries(notes):
                          "after every Bot turn, so a read there meant nothing. It doesn't read the new places, so a read now is worth an alarm.")
         if renamed:
             notes.append(f"Moved {len(renamed)} decoys to new folders and names picked at random for this computer. The old names were printed in "
-                         "Watchtower's own instructions, so anything that read them knew which files to leave alone.")
+                         "Chief Worry Bot's own instructions, so anything that read them knew which files to leave alone.")
         ledger({"event": "canary-move", "count": len(moved)})
         reg = load_json(state_path("canaries.json"), {}) or {}
     boot = boot_time()
@@ -396,7 +396,7 @@ def cmd_canary(args):
         return 0
     if args.action == "remove":
         if not getattr(args, "owner_said_yes", False):   # R10: removing the tripwires is the owner's call, never a Bot's
-            print("NOT REMOVED: the decoys are how Watchtower notices someone going through files. Ask the owner; only after their yes "
+            print("NOT REMOVED: the decoys are how Chief Worry Bot notices someone going through files. Ask the owner; only after their yes "
                   "in this conversation run `wt.py canary remove --owner-said-yes`.")
             return 1
         for v in reg.values():
@@ -469,8 +469,8 @@ def canary_findings(record=True):
             out.append(finding("WT-K007", "Decoy file rewritten since it was planted", "high", ["ASI10"], p,
                                f"{name}: written {dt.datetime.fromtimestamp(st.st_mtime, dt.timezone.utc).isoformat(timespec='minutes')}, "
                                f"planted {str(v.get('planted', ''))[:16]}",
-                               "The decoy on disk is not the one Watchtower recorded: something rewrote it, or this state was copied from "
-                               "another run. Re-plant with `wt.py canary plant`; if no Watchtower run or dry run explains it, tell Watchtower \"incident check\"."))
+                               "The decoy on disk is not the one Chief Worry Bot recorded: something rewrote it, or this state was copied from "
+                               "another run. Re-plant with `wt.py canary plant`; if no Chief Worry Bot run or dry run explains it, tell Chief Worry Bot \"incident check\"."))
             continue
         if st.st_atime > v["atime"] + 1:
             reads.append((name, p, st.st_atime))
@@ -489,24 +489,24 @@ def canary_findings(record=True):
             f = finding("WT-K004", "Several decoys were read by the platform's backup", "low", ["ASI03"], places,
                         f"{len(reads)} of {len(reg)} decoys within {int(max(times) - min(times))}s at {when(min(times))} ({each})",
                         "The file next to each decoy that only a privileged reader can open was read with it: the platform's file backup. "
-                        "It is listed once and updated each time. If it lines up with something you didn't expect, tell Watchtower \"incident check\".")
+                        "It is listed once and updated each time. If it lines up with something you didn't expect, tell Chief Worry Bot \"incident check\".")
             f["key"] = BULK_KEY                           # one line that is updated, not a new finding every time the backup runs
             out.append(f)
         elif all(own(t) for t in times):
-            out.append(finding("WT-K005", "Decoys were read while a Watchtower run was recorded", "high", ["ASI03", "ASI10"], places,
-                               f"{len(reads)} decoy(s) at {when(min(times))}, during a recorded Watchtower run ({each})",
-                               "The run record can be written by any Bot, so it doesn't prove the read was Watchtower's, and the backup's proof "
-                               "is missing. Tell Watchtower \"incident check\"."))
+            out.append(finding("WT-K005", "Decoys were read while a Chief Worry Bot run was recorded", "high", ["ASI03", "ASI10"], places,
+                               f"{len(reads)} decoy(s) at {when(min(times))}, during a recorded Watchtower run ({each})",   # v0.7.4: the old name kept, the evidence is part of the finding key
+                               "The run record can be written by any Bot, so it doesn't prove the read was Chief Worry Bot's, and the backup's proof "
+                               "is missing. Tell Chief Worry Bot \"incident check\"."))
         elif len(reads) >= 2 and max(times) - min(times) <= 180:
             out.append(finding("WT-K004", "Several decoys were read together", "high", ["ASI03", "ASI10"], places,
                                f"{len(reads)} of {len(reg)} decoys within {int(max(times) - min(times))}s at {when(min(times))} ({each})",
                                "Something read several decoys at once, and nothing shows it was the platform's backup. A Bot searching every "
-                               "file does this. Tell Watchtower \"incident check\"."))
+                               "file does this. Tell Chief Worry Bot \"incident check\"."))
         else:
             for name, p, t in reads:
                 out.append(finding("WT-K001", "Something opened a decoy file", "critical", ["ASI03", "ASI10"], p, f"{name} read at {when(t)}",
                                    "Nothing legitimate needs this file, and nothing else was searched with it. "
-                                   "Find which Bot or routine ran then (Agent Computer view, run history) and tell Watchtower \"incident check\"."))
+                                   "Find which Bot or routine ran then (Agent Computer view, run history) and tell Chief Worry Bot \"incident check\"."))
     if not record:
         return out
     if reads:
@@ -622,5 +622,5 @@ def canary_copies(text, path):
     for name, v in reg.items():
         if v.get("token") and v["token"] in text and os.path.expanduser(v["path"]) != path:
             return finding("WT-K003", "Canary value copied into another file", "critical", ["ASI03", "ASI04"], path, name,
-                           "A decoy's contents turned up somewhere else: something read it and wrote it out. Tell Watchtower \"incident check\".")
+                           "A decoy's contents turned up somewhere else: something read it and wrote it out. Tell Chief Worry Bot \"incident check\".")
     return None

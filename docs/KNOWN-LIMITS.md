@@ -2,10 +2,32 @@
 
 Open findings, limits and false alarms that dev carries knowingly. Only the items under a heading titled **Must-fix before release** are release blockers: each of those must be fixed before any release. Everything else in this file (open limits, open false alarms, follow-ups, and the record of fixed items) is documented and kept knowingly, and is not a release blocker on its own.
 
+Chief Worry Bot is the product's display name (the engine and its files keep the name Watchtower). Older entries below say Watchtower: they were written before the display rename.
+
 ## Must-fix before release
 
 **None are open.** Batch 7d fixed the last ones. Each item that was in this list, or that the owner logged as must-fix, is recorded
 under "Fixed in batch 7d (the last must-fix items)" right below, with its test file.
+
+## v0.7.4: the name kept on purpose (display rename)
+
+0.7.4 renames the product to Chief Worry Bot in display text only (an owner decision, Oct 22). These keep the old name, each
+on purpose, and `tests/test_v074_display_name.py` lists every engine string that still says Watchtower:
+- The engine labels `Watchtower rules` and `Watchtower` (the WT-* rule set's name, like the WT-* IDs). They are in
+  `engines_used.json` and the score fingerprint, and the X003 agreement's evidence ("SkillSpector + Watchtower") is part of its
+  finding key: renaming them would print a false SCANNERS MISSING after the upgrade and bring every reported, accepted or
+  dismissed WT-X003 back as new.
+- The evidence of two findings without an ident: WT-K005 ("during a recorded Watchtower run") and the WT-A003 language Tip
+  (`ASK_UNREAD_EVIDENCE`). Their evidence is part of their finding key.
+- WT-X005's evidence, why a scanner is held as changed ("its program file isn't the one Watchtower installed", or the scanner
+  list changing during the run). It is part of the finding key, so renaming it would bring every reported or accepted WT-X005
+  back as new. Doctor's scanner note repeats it, so that one line still says Watchtower.
+- The User-Agent `Watchtower/<version>` (a protocol token can't hold spaces, and nobody sees it) and the gitleaks config's
+  `description` (gitleaks reads it; nobody sees it).
+- Paths, the repo, `WATCHTOWER_*`, `wt.py`, the `watchtower-*` skill and routine slugs, state and report file names and JSON keys.
+- The routines a template set up before 0.7.4 keep their Watchtower names until the template is updated; uninstall names both.
+  A saved getting-started skill (it says "You are Watchtower") shows as older until it is re-saved, and a brief saved before the
+  upgrade that names the update Watchtower still gives the update note.
 
 ## b8i1: TruffleHog's launch (batch 8, v0.7.4 dev)
 
