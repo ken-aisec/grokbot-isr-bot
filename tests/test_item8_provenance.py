@@ -221,24 +221,27 @@ class EngineBytes(_Platform):
         self.assertNotIn(plant, wt.load_baseline()[0])
 
     def test_3_an_engine_that_saw_swapped_bytes_never_approves(self):
-        """b8i4: a loose plant (no middle path); tests/test_b8i4_middle_path.py's rolled_bytes test holds a quiet update's roll
-        to the bytes the scan fingerprinted."""
-        plant = self.loose()
+        """b8i4 fix round 1 (Codex 9): the plant is a new skill folder again, so the engine scans it and the swap happens (checked);
+        the bytes it left aren't the ones the audit fingerprinted, so the middle path holds it. The same bytes later, with an
+        honest engine, are a clean new skill folder in an update run: the middle path's quiet line (decision, Oct 22)."""
+        plant = self.md("helper")
         swapped = CLEAN.format(n="helper") + "Swapped in while the engine read it.\n"
         self.start()
         put(plant, CLEAN.format(n="helper") + "Planted.\n")
         self.scanners(skillspector=SWAP_ENGINE % (plant, swapped))
         self.audit()
+        self.assertEqual(sha(plant), hashlib.sha256(swapped.encode()).hexdigest())   # the engine ran on it and swapped the bytes
         self.assertNotIn(plant, wt.load_baseline()[0])
         self.assertEqual(len(self.counted_high(plant)), 1)
         pv = self.preview()["platform_unverified"]                             # listed, never approved (decision, Oct 18)
         self.assertEqual([f["where"] for f in pv["files"]], [plant])
         self.assertIn("platform-release.lock", self.approve("0" * 20))
         self.assertNotIn(plant, wt.load_baseline()[0])
-        put(plant, CLEAN.format(n="helper") + "Planted.\n")                    # other bytes than the ones shown: a new high
+        put(plant, CLEAN.format(n="helper") + "Planted.\n")                    # b8i4: the planted bytes, scanned honestly
         self.scanners()
-        self.assertNotEqual(self.daily(), "NO_CHANGES")
-        self.assertEqual(len(self.counted_high(plant)), 1)
+        self.daily()
+        self.assertEqual(len(self.counted_high(plant)), 0)
+        self.assertIn(os.path.relpath(plant, self.home), self.tip()[0]["files"])
 
     def test_3_the_yes_approves_only_the_bytes_shown(self):
         self.start()

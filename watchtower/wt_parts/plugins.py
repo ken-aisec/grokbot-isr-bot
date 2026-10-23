@@ -935,9 +935,11 @@ def summarize_refresh(fs):
                "skill folders is on Grok Bot's release list. Watchtower re-checks the new files and accepts them on the next full audit when nothing "
                "flags them.")
         if any(f.get("platform_update") for f in unflagged):   # b8i4: some aren't on the release list; the middle path let them through
+            # fix round 1 (Codex 7): a full audit that accepted them (roll_builtin) still shows this line, and says so
             fix = ("Nothing to do. " + ", ".join([f"{vendors[0]} updated {per[vendors[0]]} of its own files"] + [f"{v} {per[v]}" for v in vendors[1:]])
-                   + ". Watchtower's rules found nothing in the new versions and no two scanners name a dangerous behavior; it accepts "
-                   "them on the next full audit when nothing flags them.")
+                   + ". Watchtower's rules found nothing in the new versions and no two scanners name a dangerous behavior; "
+                   + ("this full audit accepted them." if all(f.get("platform_accepted") for f in unflagged)
+                      else "it accepts them on the next full audit when nothing flags them."))
         files = sorted({min(_home_rels(q), key=lambda r: (len(r), r), default=q)
                         for f in unflagged for q in [f["where"]] + list(f.get("also_at") or [])})
         evidence, n = f"{c['WT-I001']} updated, {c['WT-I002']} added, {c['WT-I003']} removed", 0

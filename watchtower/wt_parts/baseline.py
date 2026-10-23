@@ -79,9 +79,10 @@ def save_baseline(base):
 def save_first_baseline(manifest):
     """The first baseline on a box (R10: it needs no yes). Codex, item 8 review 2 (high 3): it approved every platform file it
     found, with or without provenance. Decision, Oct 18: a first baseline, on a new box or a wiped one, vouches for no
-    platform file. Returns the platform files it left out. b8i4 (decision, Oct 22): a clean one at a path that already exists
-    or in a new platform skill folder raised nothing on this first run and rolls in on a later full audit (the middle path);
-    the rest stay high alerts until a Watchtower release lists them."""
+    platform file. Returns the platform files it left out. b8i4 (decision, Oct 22): a clean changed one at a release-list path
+    raised nothing on this first run and rolls in on a later full audit (the middle path). Fix round 1 (Codex 1): a new skill
+    folder, or a new file in one, is a counted high on a first run and on every run after (platform_held_before), like the rest,
+    until a Watchtower release lists it."""
     held = platform_unproven(manifest)
     save_baseline({p: h for p, h in manifest.items() if p not in held})
     return held
@@ -97,6 +98,9 @@ def baseline_reset_finding(why):
                    "whether any of them changed. It has not approved anything on its own. `wt.py diff <skill>` still compares a skill with "
                    "the copy you approved. When you've looked, say yes and Watchtower starts a new baseline (`wt.py baseline --owner-said-yes`).",
                    ident="baseline-reset")
+
+
+MIDDLE_PATH_STAGES = ("SkillSpector and husk", "gitleaks (keys in files)")   # b8i4 fix round 1: a failed one holds a middle-path roll
 
 
 def roll_builtin(fs, meta, notes):
@@ -117,21 +121,36 @@ def roll_builtin(fs, meta, notes):
         # b8i4: a wording-only vote on a platform skill (DQ-042) doesn't hold back a middle-path update: settle_platform_updates
         # already let it through. A listed update still waits for it, as before.
         (flagged_votes if f["rule"] == "WT-X003" and unconfirmed_platform_vote(f, fs) else flagged).update({w, skill_root(w) or w})
+    # b8i4 fix round 1 (Codex 5): a middle-path update rolls only after every check of it finished: a secret-scanning stage that
+    # failed this run (its last results are only carried) holds it, and so does a scanner that ran out of time on its folder
+    blocked = [s for s in MIDDLE_PATH_STAGES if s in STAGE_FAILED]
+
+    def passes(q, mid):
+        root = skill_root(q)
+        e_ = (cache.get(root) or {}) if root else {}
+        checked = (not root) or (not installed) or (entry_current(e_, skill_dir_hash(root), installed) and not (mid and e_.get("stuck")))
+        held = flagged if mid else flagged | flagged_votes
+        return q not in held and (root or q) not in held and checked
+
     keep, rolled = [], 0
     for f in fs:
         w = f["where"].split(":")[0]
         # item 8 (R3): a platform change the vendor release list doesn't include waits for a release that lists it, never rolls
         if f["rule"] in ("WT-I001", "WT-I002", "WT-I003") and builtin(f) and not f.get("unverified_platform"):
-            root = skill_root(w)
-            checked = (not root) or (not installed) or entry_current(cache.get(root) or {}, skill_dir_hash(root), installed)
-            held = flagged if f.get("platform_update") else flagged | flagged_votes
-            if w not in held and (root or w) not in held and checked:
-                for q in [w] + list(f.get("also_at") or []):   # b8i4: a managed-skills mirror rolls with it (merge_managed_mirrors)
+            mid = bool(f.get("platform_update"))
+            # fix round 1 (Codex 6): each place a merged managed-skills finding names (also_at) is checked on its own, and the
+            # finding rolls only when every one of them passes, so a held copy keeps the bytes the baseline had for it
+            places = [w] + list(f.get("also_at") or [])
+            if not (mid and blocked) and all(passes(q, mid) for q in places):
+                for q in places:
                     if f["rule"] == "WT-I003":
                         base.pop(q, None)
                     elif q in meta["manifest"]:
                         base[q] = meta["manifest"][q]
                 rolled += 1
+                if mid:   # fix round 1 (Codex 7): accepted, and still the one Platform refresh line naming it (summarize_refresh)
+                    f["platform_accepted"] = True
+                    keep.append(f)
                 continue
         keep.append(f)
     if rolled:

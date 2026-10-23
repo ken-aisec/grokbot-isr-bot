@@ -34,7 +34,6 @@ def audit(roots, exports, quick=False):
             f["_snap"] = h
         return batch
 
-    verdicts = {}   # b8i4: {path: platform_scan_verdict} of each text file scanned here, for settle_platform_updates
     for skill in inv["skills"]:
         for p in skill_dir_files(skill):
             if os.path.splitext(p)[1].lower() in TEXT_EXT:
@@ -47,16 +46,13 @@ def audit(roots, exports, quick=False):
                             if f["rule"] in ("WT-T008", "WT-T016"):   # story wording only; never exfil/pipe/override (R2)
                                 f["severity"] = "info"
                                 f["title"] = f["title"] + " (example text in a built-in template)"
-                    verdicts[p] = platform_scan_verdict(batch, t)
                     fs += scanned_from(batch, manifest[p])
             else:
                 manifest[p] = sha256_file(p)
     for p in inv["plugin_files"] + inv["mcp_configs"]:
         t, h = read_scanned(p)
         if t is not None:
-            batch = scan_text(t, p, rules, kind="reference")
-            verdicts[p] = platform_scan_verdict(batch, t)
-            fs += scanned_from(batch, h)
+            fs += scanned_from(scan_text(t, p, rules, kind="reference"), h)
             manifest[p] = h
             for ln, ev in mcp_unpinned(t):   # batch 6 (B8): every launcher alike, read from the server's command and args
                 fs.append(finding("WT-M001", "MCP server launched unpinned", "medium", ["AST02", "ASI04"],
@@ -70,9 +66,8 @@ def audit(roots, exports, quick=False):
                     scanned.add(rp)
                     t, manifest[p] = read_scanned(p)
                     if t is not None:
-                        batch = scan_text(t, p, rules, kind="vendor" if is_vendor(p) else ("skill" if os.path.basename(p) == "SKILL.md" else "reference"))
-                        verdicts[p] = platform_scan_verdict(batch, t)
-                        fs += scanned_from(batch, manifest[p])
+                        fs += scanned_from(scan_text(t, p, rules, kind="vendor" if is_vendor(p) else ("skill" if os.path.basename(p) == "SKILL.md" else "reference")),
+                                           manifest[p])
                 else:
                     manifest[p] = sha256_file(p)
     # item 8 review 2 (high 1): every file name in the platform folders, found by their own walk, is fingerprinted
@@ -89,9 +84,11 @@ def audit(roots, exports, quick=False):
     # (high 3): a matching baseline.json line is not provenance. Decision, Oct 18: only the release list is, on every run; a
     # first run (a new box, or one whose state was wiped) vouches for nothing. Decision, Oct 22 (b8i4): the middle path. A
     # candidate (platform_update_candidates) goes through the drift loop like a listed update and is decided after the engines
-    # (settle_platform_updates); every other unproven file is a counted high here.
+    # (settle_platform_updates); every other unproven file is a counted high here. Fix round 1 (Codex 1): new skill folders and
+    # new files in one only in an update run, and never one the last run held outside the middle path.
     unproven = platform_unproven(manifest)
-    cands = platform_update_candidates(unproven, manifest, base, plat_short)
+    cands = platform_update_candidates(unproven, manifest, base, plat_short, established=base_status == "ok",
+                                       held_before=platform_held_before())
     for p in sorted(unproven - set(cands)):
         fs.append(unverified_platform_finding(p, manifest[p], base.get(p)))
     if base_status == "reset":   # R4: never a fresh start; nothing is re-approved until the owner says yes
@@ -350,7 +347,7 @@ def audit(roots, exports, quick=False):
         notes.insert(0, f"SCANNERS MISSING: {', '.join(gone)} ran last time and didn't run now (not installed, or not the copy Watchtower installed), "
                         "so this is a partial scan and their last results are kept. Run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, then audit again.")
     fs += scanner_x005()   # batch 3 (R7): every scanner was looked at just above, in audit and daily alike
-    fs = merge_managed_mirrors(settle_platform_updates(fs, cands, manifest, base, rules, verdicts), manifest)   # b8i4
+    fs = merge_managed_mirrors(settle_platform_updates(fs, cands, manifest, base, rules), manifest)   # b8i4
     fs = sort_findings(dedupe(fs))
     meta = {"inventory": {k: len(v) for k, v in inv.items() if k not in ("non_live_skills", "platform_aliases")}, "notes": notes, "plugin_version_changes": version_changes, "manifest": manifest, "persistence": snap, "scanners_missing": gone,
             "skill_dirs": [os.path.dirname(x) for x in inv["skills"]], "baseline_status": base_status,

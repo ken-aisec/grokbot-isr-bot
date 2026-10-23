@@ -99,22 +99,22 @@ class H1LocalRecords(_ForgedState):
 
 
 class H2FirstRunTrust(_ForgedState):
-    """b8i4 (decision D8, Oct 22): a clean new platform skill folder on a first run (a new box or wiped state) raises nothing
-    and stays out of the first baseline; a later full audit rolls it in."""
+    """b8i4 fix round 1 (Codex 1): a new platform skill folder is the middle path's only in an update run, so on a first run (a
+    new box or wiped state) it is a counted high and stays out of the first baseline, and it stays held on the runs after."""
 
     def test_h2_a_brand_new_box_trusts_no_unlisted_platform_file(self):
         plant = self.plant()
         self.start()
-        self.assertEqual(len(self.counted_high(plant)), 0)
+        self.assertEqual(len(self.counted_high(plant)), 1)
         self.assertNotIn(plant, wt.load_baseline()[0])
-        self.assertEqual(self.daily(), "NO_CHANGES")
+        self.assertNotEqual(self.daily(), "NO_CHANGES")
 
     def test_h2_wiped_state_trusts_nothing(self):
         self.start()
         plant = self.plant()
         shutil.rmtree(os.path.join(os.environ["WATCHTOWER_HOME"], "state"))
         self.audit()
-        self.assertEqual(len(self.counted_high(plant)), 0)
+        self.assertEqual(len(self.counted_high(plant)), 1)
         self.assertNotIn(plant, wt.load_baseline()[0])
 
     def test_h2_the_first_baseline_command_holds_unlisted_files(self):

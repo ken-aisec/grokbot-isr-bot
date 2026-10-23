@@ -124,8 +124,8 @@ owner decisions:
 ## b8i4: the platform-file middle path (batch 8, v0.7.4 dev)
 
 Decision, Oct 22: a clean update at a platform path that already exists (a `rules/platform-release.lock` line with any hash,
-or a `baseline.json` line), or a clean new platform skill folder, is the quiet "Platform refresh" line and rolls into the
-baseline on the next full audit. Accepted limits and noise kept by design:
+or a `baseline.json` line), or a clean new platform skill folder that appears in an update run, is the quiet "Platform
+refresh" line and rolls into the baseline on the next full audit. Accepted limits and noise kept by design:
 
 - A plant that reuses an existing platform path, or forms a new clean platform skill folder, and passes every check is quiet
   too. The quiet line names every file it covers (its `files` list, and as many paths as fit in its evidence).
@@ -141,16 +141,39 @@ baseline on the next full audit. Accepted limits and noise kept by design:
   or whose path leads out of or into a platform folder, a path with a colon, anything under a folder the platform walk couldn't
   finish, a new file in a known skill folder with no clean update of that folder in the same run (D1), every file of a new
   skill folder when one of them is held, and everything while the release list can't be used (D4).
-- A first run (a new box or wiped state) is silent for a clean candidate, which stays out of the first baseline (D8); a
-  loose file there is a counted high.
+- "The rules find nothing" is the whole rule set (fix round 1, Codex 4): the new bytes are read again, must be exactly the bytes
+  the audit fingerprinted, and are read as the owner's own file would be (a SKILL.md as a skill, anything else as a reference
+  file), never with the reduced vendor rules; a metadata JSON file also has every text value with a blank in it read as skill
+  text (WT-T013 included), and one that isn't JSON is held. Any other finding of the run at medium or above on the file (an
+  unpinned MCP launcher, a key gitleaks or Watchtower's own walk found, carried gitleaks results included) holds it too; in
+  daily, so does one kept from the last run. Story wording in a built-in deck template stays info (DQ-024), so it never holds
+  one. Noise kept: a vendor skill whose text the owner's rules would flag (an action with no approval line, `eval(`) stays a
+  counted high on every update until a release lists it.
+- A first run (a new box or wiped state) is silent for a changed file at a release-list path, which stays out of the first
+  baseline (D8). A new skill folder, or a new file in one, is the middle path's only in an update run (fix round 1, Codex 1): on
+  a first run it is a counted high, and it stays one on every later run while it is there (the last run's findings say it was
+  held outside the middle path). That memory is `state/last_findings.json`, which the Bot can write: deleting it makes such a
+  folder look new in the next run (the same class as the baseline-line limit above). The same stickiness holds for a new skill
+  folder held while the release list couldn't be used or its folder couldn't be walked.
+- A platform folder that is itself a link is followed only into another platform folder as the home folder really has it
+  (fix round 1, Codex 2): `.grok/bundled` leading anywhere else gets no middle path, so every changed file there is a counted
+  high. A file that is itself a link is never on the release list (Codex 3), `<bucket>` lines included.
+- A `<bucket>` line covers a folder named exactly like a real UUID pair, 8-4-4-4-12 lowercase hex digits twice, joined by "_"
+  (Codex 8). The sync marker test (PLATFORM_CHURN) keeps its older, looser pattern.
 - In daily, a scanner line kept from the last run (it may lack a kind) makes a quiet update in its folder a counted high
   until the next full audit scans the folder again.
-- A full audit rolls a quiet update in at once (as a listed one), so the Platform refresh line names it only in daily runs,
-  or when the scanners haven't answered for its folder yet; the audit's note counts what was accepted.
+- A full audit that accepts a quiet update still shows the one info Platform refresh line naming it, saying the audit accepted
+  it (fix round 1, Codex 7): no score, no high count, not new. A listed update it accepts is only counted in the audit's note,
+  as before.
+- A middle-path update rolls in only when every check of it finished (Codex 5): a scanner that ran out of time on its folder
+  (a low WT-X004), or a failed SkillSpector-and-husk or gitleaks stage, keeps it the quiet line, not accepted, until a full
+  audit where they finish.
 - A wording-only scanner vote (DQ-042) doesn't hold back a middle-path update's roll; a listed update still waits for it, as
   before.
 - The same managed skill under `sand-data/managed-skills` and `agent-data/managed-skills` (same path below each, same
-  sha256, same rule) is one finding that names the other place.
+  sha256, same rule) is one finding that names the other place. Each place is checked on its own (Codex 6): one with a finding
+  at medium or above on it is its own counted high, and the merged finding rolls in only when every place it names passes, so
+  a held copy keeps the bytes the baseline had.
 
 ## DQ-047 open mediums (DQ-050, owner decision pending; not fixed)
 

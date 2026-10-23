@@ -122,7 +122,7 @@ def _lock_hashes(lock, rel):
     if "<" in rel or ">" in rel:
         return set()
     out = set(lock.get(rel, ()))
-    m = re.fullmatch(r"\.claude/plugins/synced/" + _SYNC_BUCKET + r"/(.+)", rel)
+    m = re.fullmatch(r"\.claude/plugins/synced/" + _BUCKET_PAIR + r"/(.+)", rel)
     if m:
         out |= lock.get(".claude/plugins/synced/<bucket>/" + m.group(1), set())
     return out
@@ -140,6 +140,8 @@ def platform_listed(p, h, lock=None):
         return False
     try:
         n = _path_part(p, line=False)
+        if os.path.islink(n):   # b8i4 fix round 1 (Codex 3): a file that is itself a link is never listed, whatever both names say
+            return False
         rn = os.path.realpath(n)
     except OSError:
         return False
@@ -156,6 +158,8 @@ def platform_lock_path(p):
         return False
     try:
         n = _path_part(p, line=False)
+        if os.path.islink(n):   # fix round 1 (Codex 3)
+            return False
         rn = os.path.realpath(n)
     except OSError:
         return False
@@ -211,10 +215,12 @@ def unverified_platform_finding(p, h, was=None, why=""):
     baseline; `unverified_platform` keeps it out of the platform scope, `fix --revet`, `accept` and `dismiss`. Only a Watchtower
     release that lists it clears it (decision, Oct 18), or (b8i4) a later version that passes the middle path's checks. `why`:
     the one sentence that says why a middle-path candidate was held (settle_platform_updates); it starts the fix, and rule,
-    title, evidence and key stay as they are."""
+    title, evidence and key stay as they are. Fix round 1 (Codex 1): such a finding is marked `platform_candidate`; one without
+    the mark (a first run's, or any held outside the middle path) keeps a new skill folder's files held (platform_held_before)."""
     f = _unverified_platform_finding(p, h, was)
     if why:
         f["fix"] = f"{why} {f['fix']}"
+        f["platform_candidate"] = True
     return f
 
 
@@ -255,7 +261,9 @@ def _unverified_platform_finding(p, h, was=None):
 # (approve_platform). Decision, Oct 22 (b8i4): the middle path. A path that already exists (a release-list line with any hash, or
 # a baseline line) or a new platform skill folder makes a file a candidate, and only Watchtower's own checks of its bytes this run
 # let it through. The baseline is Bot-writable, so a Bot that writes a line makes a path "already existing" (accepted, Oct 22);
-# a loose file, a link in or out, a colon, an unusable release list, and a first run's loose files stay counted highs.
+# a loose file, a link in or out, a colon, an unusable release list, and a first run's loose files stay counted highs. Fix round 1
+# (Codex 1): a new skill folder, or a new file in one, is a candidate only in an update run (an established baseline), and never
+# while the last run held it outside the middle path (a first run's file stays held on every later run, platform_held_before).
 OLD_PLATFORM_APPROVALS = "platform_approved.json"   # written by earlier versions; never read, never deleted (one note while it exists)
 
 
@@ -292,35 +300,60 @@ def _known_under(d, base):
     except OSError:
         return True
     for r in rels:
-        m = re.fullmatch(r"(\.claude/plugins/synced/)" + _SYNC_BUCKET + r"(/.*)?", r)
+        m = re.fullmatch(r"(\.claude/plugins/synced/)" + _BUCKET_PAIR + r"(/.*)?", r)
         forms = {r} | ({m.group(1) + "<bucket>" + (m.group(2) or "")} if m else set())
         if any(k.startswith(x + "/") for x in forms for k in keys):
             return True
     return False
 
 
-def platform_update_candidates(unproven, manifest, base, short):
+def platform_real_roots():
+    """Fix round 1 (Codex 2): where each platform folder really is, worked out from each home base's own real folder, never from
+    where the platform folder itself leads: a .grok/bundled replaced by a link to a folder outside makes that folder no platform
+    folder. A link from one platform folder into another (agent-data's managed skills leading into sand-data's) still lands in one."""
+    return {os.path.normpath(os.path.join(os.path.realpath(b), sub)) for b in home_bases() for sub in PLATFORM_ROOT_SUBS}
+
+
+def platform_held_before():
+    """Fix round 1 (Codex 1): the platform files the last run held outside the middle path (an unverified_platform finding without
+    `platform_candidate`: a first run's, or one held while the release list couldn't be used or its folder couldn't be walked),
+    with the other places a merged finding names. Such a file isn't new in this run, so it is no "new-skill" or "in-skill"
+    candidate: held on a first run, held on every run after. Read from state/last_findings.json, which the Bot can write (deleting
+    it is like writing a baseline line: the accepted limit)."""
+    prev = load_json(state_path("last_findings.json"), {}) or {}
+    out = set()
+    for f in expand_groups(list(prev.get("findings") or []) + list(prev.get("suppressed") or [])) if isinstance(prev, dict) else []:
+        if isinstance(f, dict) and f.get("unverified_platform") and not f.get("platform_candidate") and not f.get("platform_coverage"):
+            out.update(q for q in [f.get("where")] + list(f.get("also_at") or []) if isinstance(q, str))
+    return out
+
+
+def platform_update_candidates(unproven, manifest, base, short, established=False, held_before=frozenset()):
     """b8i4 (decision, Oct 22: the middle path): {path: (kind, skill folder or None)} for the files in `unproven` that may be a
     platform update without a release-list line for their bytes. Only while the release list is usable (an unusable one turns
     the quiet path off, so its note stays true); only a path with no colon, strictly inside a platform root as written and as
-    its real path (platform_skill_path: links in or out, lookalike folders and an owner's folder never are), not itself a link
+    its real path (platform_skill_path: links in or out, lookalike folders and an owner's folder never are), whose real path is
+    inside a platform folder where the home folder really has it (platform_real_roots: fix round 1, Codex 2), not itself a link
     (a folder above it may be one, inside the platform roots: agent-data linked to sand-data), fingerprinted as a
     sha256, and not under a folder platform_inventory couldn't finish (WT-I011). Kinds: "update", the path is on the release
     list (any hash, `<bucket>` lines included) or in the baseline; "new-skill", its skill folder (platform_skill_folder) has no
-    path the baseline or the release list knows; "in-skill", it has. A loose file at no known path is no candidate."""
+    path the baseline or the release list knows; "in-skill", it has. A loose file at no known path is no candidate. Fix round 1
+    (Codex 1): "new-skill" and "in-skill" only in an update run (`established`: a baseline to compare with), and never for a file
+    the last run held outside the middle path (`held_before`, platform_held_before)."""
     if platform_lock_problem():
         return {}
     gaps = {os.path.normpath(d) for d, _ in short}
+    real_roots = platform_real_roots()
     known, out = {}, {}
     for p in sorted(unproven):
         h = manifest.get(p)
         if (":" in p or not isinstance(h, str) or not re.fullmatch(r"[0-9a-f]{64}", h) or _under(os.path.normpath(p), gaps)
-                or os.path.islink(p) or not platform_skill_path(p, line=False)):
+                or os.path.islink(p) or not platform_skill_path(p, line=False) or not _under(os.path.realpath(p), real_roots, strict=True)):
             continue   # a file that is itself a link (to another file, even in the same root) is no vendor file: never quiet
         d = platform_skill_folder(p, manifest)
         if p in base or platform_lock_path(p):
             out[p] = ("update", d)
-        elif d is not None:
+        elif d is not None and established and p not in held_before:
             if d not in known:
                 known[d] = _known_under(d, base)
             out[p] = ("in-skill" if known[d] else "new-skill", d)
@@ -337,26 +370,85 @@ def platform_scan_verdict(batch, t):
             "\x00" in t or "\N{REPLACEMENT CHARACTER}" in t)
 
 
-def _candidate_why(p, h, rules, scanned):
-    """Why the candidate p (sha256 h) can't be quiet on its own bytes, or "": Watchtower's rules on exactly those bytes."""
-    got = scanned.get(p)
-    if got is None:
-        t, h2 = read_scanned(p, limit=PLATFORM_UPDATE_MAX)
-        if t is None:
-            return ("It is over 1 MB, so Watchtower can't check all of it." if not h2.startswith("unreadable:")
-                    else "Watchtower couldn't read it.")
-        if h2 != h:
-            return "It changed while Watchtower was checking it."
-        kind = "vendor" if is_vendor(p) else ("skill" if os.path.basename(p) == "SKILL.md" else "reference")
-        batch = scan_text(t, p, rules, kind=kind)
-        if is_vendor_template_file(p):   # DQ-024, as the skill scan does
-            for f in batch:
-                if f["rule"] in ("WT-T008", "WT-T016"):
-                    f["severity"] = "info"
-        got = platform_scan_verdict(batch, t)
-    hit, binary = got
+def _instruction_texts(t):
+    """Fix round 1 (Codex 4): the text values of a platform metadata JSON file (cache.json's skill bodies and descriptions, a
+    plugin's description, a prompt): every string in it with a blank in it, duplicate keys included, each read on its own. None
+    when it isn't JSON, so nothing in it can be read as an instruction."""
+    out = []
+
+    def pairs(ps):
+        for _, v in ps:
+            walk(v)
+        return {}
+
+    def walk(v):
+        if isinstance(v, str) and re.search(r"\s", v):
+            out.append(v)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x)
+
+    try:
+        walk(json.loads(t, object_pairs_hook=pairs))
+    except (ValueError, RecursionError):
+        return None
+    return out
+
+
+def platform_full_verdict(p, t, rules):
+    """Fix round 1 (Codex 4): the rules that hit at medium or above in the text t of the platform file p, read as the owner's own
+    file would be (the whole rule set: a SKILL.md as a skill, anything else as a reference file; never the reduced vendor set),
+    with DQ-024's template exception kept (story wording in a built-in deck template is info). A metadata JSON file
+    (PLATFORM_METADATA) also has each of its text values read as skill text (WT-T013 included): that is what the platform loads as
+    a skill's instructions. Returns platform_scan_verdict's (rules, not plain text); "WT-JSON" stands for metadata that isn't JSON."""
+    batch = scan_text(t, p, rules, kind="skill" if os.path.basename(p) == "SKILL.md" else "reference")
+    if is_vendor_template_file(p):   # DQ-024, as the skill scan does
+        for f in batch:
+            if f["rule"] in ("WT-T008", "WT-T016"):
+                f["severity"] = "info"
+    hit, binary = platform_scan_verdict(batch, t)
+    if PLATFORM_METADATA.fullmatch(os.path.basename(p)):
+        texts = _instruction_texts(t)
+        if texts is None:
+            hit = sorted(set(hit) | {"WT-JSON"})
+        for s in texts or ():
+            hit = sorted(set(hit) | set(platform_scan_verdict(scan_text(s, p, rules, kind="skill"), s)[0]))
+    return hit, binary
+
+
+def _flagged_here(p, fs):
+    """Fix round 1 (Codex 4): the rules of this run's other findings at medium or above on the file p (or its real path): an
+    unpinned MCP launcher (WT-M001), a key in it (WT-S001, gitleaks's WT-S002, carried from the last run when gitleaks failed),
+    and every other family. The scanners' folder votes (WT-X) are decided by _vote_why; integrity lines (WT-I) are this check's."""
+    try:
+        rp = os.path.realpath(p)
+    except (OSError, ValueError):
+        rp = p
+    out = set()
+    for g in fs:
+        r, w = str(g.get("rule") or ""), g.get("where")
+        if r.startswith(("WT-I", "WT-X")) or g.get("severity") not in ("critical", "high", "medium") or not isinstance(w, str) or not w.startswith("/"):
+            continue
+        q = _path_part(w)
+        if q == p or q == rp or os.path.realpath(q) == rp:
+            out.add(r)
+    return sorted(out)
+
+
+def _candidate_why(p, h, rules, fs):
+    """Why the candidate p (sha256 h) can't be quiet on its own bytes, or "". Fix round 1 (Codex 4): its bytes are read again
+    here and must be exactly the ones the audit fingerprinted (h), and the whole rule set reads them (platform_full_verdict);
+    any other finding of this run at medium or above on the file holds it too (_flagged_here)."""
+    t, h2 = read_scanned(p, limit=PLATFORM_UPDATE_MAX)
+    if t is None:
+        return ("It is over 1 MB, so Watchtower can't check all of it." if not h2.startswith("unreadable:")
+                else "Watchtower couldn't read it.")
+    if h2 != h:
+        return "It changed while Watchtower was checking it."
+    hit, binary = platform_full_verdict(p, t, rules)
     if binary:
         return "Watchtower can't read it as plain text, so its rules can't check it."
+    hit = sorted(set(hit) | set(_flagged_here(p, fs)))
     if hit:
         return f"Watchtower's rules flagged the new version ({', '.join(hit[:4])})."
     return ""
@@ -379,26 +471,28 @@ def _vote_why(p, d, fs):
     return ""
 
 
-def settle_platform_updates(fs, cands, manifest, base, rules, scanned):
+def settle_platform_updates(fs, cands, manifest, base, rules):
     """b8i4: decide each candidate (platform_update_candidates) at the end of audit(), after the engines. One is held when
-    Watchtower's rules hit at medium or above in the bytes it fingerprinted (the skill scan's results, else one read and scan
-    of exactly those bytes), when it is over 1 MB, not plain text or unreadable, or when a WT-X003 covers it that isn't a
-    wording-only platform vote. A new skill folder is all or nothing; a new file in a known skill folder is quiet only beside an
-    update of that folder that is quiet this run, with nothing in the folder held. A held one is a counted high
-    (unverified_platform_finding, its fix starting with why) and its refresh finding goes; a quiet one's refresh finding (the
-    drift loop's low WT-I001/I002) gets `platform_update` and goes into the Platform refresh line, and roll_builtin rolls it on a
-    full audit. A quiet file the baseline already has with these bytes, or seen on a first run, raises nothing."""
+    Watchtower's whole rule set hits at medium or above in exactly the bytes it fingerprinted, read again here, or another finding
+    of this run at medium or above is on it (_candidate_why, fix round 1), when it is over 1 MB, not plain text or unreadable,
+    or when a WT-X003 covers it that isn't a wording-only platform vote. A new skill folder is all or nothing; a new file in a
+    known skill folder is quiet only beside an update of a file the baseline has in that folder that is quiet this run, with
+    nothing in the folder held. A held one is a counted high (unverified_platform_finding, its fix starting with why) and its
+    refresh finding goes; a quiet one's refresh finding (the drift loop's low WT-I001/I002) gets `platform_update` and goes into
+    the Platform refresh line, and roll_builtin rolls it on a full audit. A quiet file the baseline already has with these
+    bytes, or a changed file at a release-list path seen on a first run, raises nothing."""
     if not cands:
         return fs
     why = {}
     for p, (kind, d) in sorted(cands.items()):
-        why[p] = _candidate_why(p, manifest[p], rules, scanned) or _vote_why(p, d, fs)
+        why[p] = _candidate_why(p, manifest[p], rules, fs) or _vote_why(p, d, fs)
     held_dirs = {d for p, (_, d) in cands.items() if d and why[p]}
     for f in fs:   # anything held this run under a skill folder (the files that are no candidate) holds the folder too
         if f.get("unverified_platform"):
             w = _path_part(f.get("where") or "", line=False)
             held_dirs |= {d for _, d in cands.values() if d and _covers(d, w)}
-    updated = {d for p, (kind, d) in cands.items() if kind == "update" and d and not why[p] and base.get(p) != manifest[p]}
+    # fix round 1 (Codex 1): an update is a change of a file the baseline has; a path missing from it is no update of the folder
+    updated = {d for p, (kind, d) in cands.items() if kind == "update" and d and not why[p] and p in base and base[p] != manifest[p]}
     for p, (kind, d) in cands.items():
         if why[p] or kind == "update":
             continue
@@ -422,21 +516,28 @@ def settle_platform_updates(fs, cands, manifest, base, rules, scanned):
 def hold_on_kept_votes(fs, manifest):
     """b8i4, daily: a WT-X003 kept from the last run (kinds_incomplete: its answer may lack a kind) covering a quiet platform
     update turns it into a counted high until a full audit scans the folder again. The engines answer only in the audit, so this
-    runs after daily keeps last run's scanner lines."""
-    kept = [_path_part(g.get("where") or "", line=False) for g in fs if g.get("rule") == "WT-X003" and g.get("kinds_incomplete")]
-    if not kept:
+    runs after daily keeps last run's scanner lines. Fix round 1 (Codex 4): so does a line kept from the last run at medium or
+    above on the file itself (gitleaks's WT-S002: daily doesn't run gitleaks)."""
+    if not any(f.get("platform_update") for f in fs):
         return fs
+    kept = [_path_part(g.get("where") or "", line=False) for g in fs if g.get("rule") == "WT-X003" and g.get("kinds_incomplete")]
     base = load_baseline()[0]
-    out, held = [], []
+    out, held = [], {}
     for f in fs:
         if f.get("platform_update"):
             ps = [f["where"]] + list(f.get("also_at") or [])
             if any(q.startswith(x + os.sep) for q in ps for x in kept):
-                held += [q for q in ps if isinstance(manifest.get(q), str) and re.fullmatch(r"[0-9a-f]{64}", manifest[q])]
+                why = "The scanners' answer for its folder is from an earlier run, so Watchtower can't tell what they found."
+            else:
+                hit = sorted({r for q in ps for r in _flagged_here(q, fs)})
+                why = f"Watchtower's checks flagged it ({', '.join(hit[:4])})." if hit else ""
+            if why:
+                for q in ps:
+                    if isinstance(manifest.get(q), str) and re.fullmatch(r"[0-9a-f]{64}", manifest[q]):
+                        held.setdefault(q, why)
                 continue
         out.append(f)
-    why = "The scanners' answer for its folder is from an earlier run, so Watchtower can't tell what they found."
-    return out + [unverified_platform_finding(q, manifest[q], base.get(q), why=why) for q in sorted(set(held))]
+    return out + [unverified_platform_finding(q, manifest[q], base.get(q), why=held[q]) for q in sorted(held)]
 
 
 def merge_managed_mirrors(fs, manifest):
@@ -446,8 +547,8 @@ def merge_managed_mirrors(fs, manifest):
     pairs = [(os.path.join(os.path.normpath(b), "sand-data", "managed-skills"), os.path.join(os.path.normpath(b), "agent-data", "managed-skills"))
              for b in home_bases()]
 
-    def sort_key(f):
-        return (f["rule"], bool(f.get("unverified_platform")), bool(f.get("platform_update")))
+    def sort_key(f):   # fix round 1: and both middle-path holds or both not (platform_held_before reads each place's)
+        return (f["rule"], bool(f.get("unverified_platform")), bool(f.get("platform_update")), bool(f.get("platform_candidate")))
 
     sand, agent, was = {}, [], {}
     for f in fs:
@@ -961,6 +1062,10 @@ def platform_listed_normalized(p, h, manifest=None):
 # .bucket-<id>_<id> marker is left: Claude's plugin discovery tests that it exists and never reads it.
 _SYNC_BUCKET = r"[0-9a-f-]{36}_[0-9a-f-]{36}"
 PLATFORM_CHURN = re.compile(r"\.claude/plugins/synced/\.bucket-" + _SYNC_BUCKET)
+# b8i4 fix round 1 (Codex 8): the folder a `<bucket>` line stands for is a real UUID pair, 8-4-4-4-12 lowercase hex digits
+# twice, joined by "_"; 36 hyphens, a hyphen out of place or a third part never takes that line's trust
+_SYNC_BUCKET_ID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+_BUCKET_PAIR = _SYNC_BUCKET_ID + "_" + _SYNC_BUCKET_ID
 
 
 def platform_churn(rel):

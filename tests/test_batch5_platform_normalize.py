@@ -11,7 +11,8 @@ oversize) with only those fields changed is a Platform refresh Tip; any other ch
 b8i4 (decision D2, Oct 22): metadata JSON follows the middle path, so a change Watchtower's rules find nothing in, at a path
 that already exists, is the quiet Platform refresh line now, though it isn't verified against the released version (it is
 not in VERIFIED_METADATA, so the line never says it was compared). Only a change the middle path holds (over 1 MB here) stays
-counted; the held wording is checked on the finding a held version gets."""
+counted; the held wording is checked on the finding a held version gets. Fix round 1 (Codex 1): a new skill folder on a
+first run is no middle-path candidate, so the skill-file wording test reads its counted high again, as on f7c28e6."""
 import hashlib, json, os, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -99,8 +100,7 @@ class MetadataWording(_Meta):
             f.write("---\nname: learn\n---\nLearn.\n")
         self.audit()
         i2 = [f for f in self.snap()["findings"] if f["where"] == q and f["rule"] == "WT-I002"]
-        self.assertEqual(i2, [])                                                # b8i4: a clean new skill folder on a first run
-        self.assertIn("treat it like a file someone added", wt.unverified_platform_finding(q, wt.sha256_file(q))["fix"])
+        self.assertIn("treat it like a file someone added", i2[0]["fix"])
 
 
 # ---------------------------------------------------------------- d3b: the normalization machinery
