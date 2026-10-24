@@ -74,7 +74,7 @@ class LockHeldToTheManifest(_Scanners):
     never compared with MANIFEST.sha256, so a line added during a run made any program a verified scanner."""
 
     def installed(self):
-        self.app = os.path.join(os.environ["WATCHTOWER_HOME"], "app")
+        self.app = os.path.join(os.environ["ISR_BOT_HOME"], "app")
         for d in ("watchtower", "scripts", ".git"):
             os.makedirs(os.path.join(self.app, d), exist_ok=True)
         shutil.copy(READER, os.path.join(self.app, "scripts", "scanner_lock.py"))
@@ -84,8 +84,8 @@ class LockHeldToTheManifest(_Scanners):
         self.manifest()
         with open(os.path.join(self.app, ".git", "HEAD"), "w") as f:
             f.write("a" * 40 + "\n")
-        os.makedirs(os.path.join(os.environ["WATCHTOWER_HOME"], "state"), exist_ok=True)
-        with open(os.path.join(os.environ["WATCHTOWER_HOME"], "state", "installed_commit"), "w") as f:
+        os.makedirs(os.path.join(os.environ["ISR_BOT_HOME"], "state"), exist_ok=True)
+        with open(os.path.join(os.environ["ISR_BOT_HOME"], "state", "installed_commit"), "w") as f:
             f.write("a" * 40 + "\n")
         for name, value in (("SELF_ROOT", self.app), ("HERE", os.path.join(self.app, "watchtower")), ("SCANNER_LOCK", self.app_lock)):
             p = mock.patch.object(wt, name, value)
@@ -257,7 +257,7 @@ class VersionPrintsOnlyACount(v068.Base):
         self.assertIn("2 problems", p.stdout)
         self.assertNotIn(wt.VERSION, p.stdout)
         self.assertNotIn("skip section 1", p.stdout)
-        with open(os.path.join(os.environ["WATCHTOWER_HOME"], "state", "ledger.jsonl")) as f:   # the names are kept for the owner
+        with open(os.path.join(os.environ["ISR_BOT_HOME"], "state", "ledger.jsonl")) as f:   # the names are kept for the owner
             self.assertIn(f"{wt.VERSION} is not in the release", f.read())
 
 

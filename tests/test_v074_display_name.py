@@ -354,9 +354,9 @@ class _Box(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        self.env = {k: os.environ.get(k) for k in ("WATCHTOWER_HOME", "WT_DECOY_ROOT", "HOME")}
-        os.environ["WATCHTOWER_HOME"] = os.path.join(self.tmp, "wt")
-        os.environ["WT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
+        self.env = {k: os.environ.get(k) for k in ("ISR_BOT_HOME", "ISR_BOT_DECOY_ROOT", "HOME")}
+        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "wt")
+        os.environ["ISR_BOT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
         os.environ["HOME"] = self.home = os.path.join(self.tmp, "home")
         os.makedirs(wt.state_path(""), exist_ok=True)
         os.makedirs(self.home)

@@ -36,7 +36,7 @@ class _Expect(unittest.TestCase):
         return h
 
     def outcome(self, h):
-        with mock.patch.dict(os.environ, {"WT_GOLDEN_ONLY": "^tierA$"}):
+        with mock.patch.dict(os.environ, {"ISR_GOLDEN_ONLY": "^tierA$"}):
             try:
                 h.test_1_tiers()
             except AssertionError as e:
@@ -647,8 +647,8 @@ class Script(unittest.TestCase):
         shutil.copy2(os.path.join(ROOT, "scripts", "golden-check.sh"), self.script)
         with open(os.path.join(self.tmp, "x.json"), "w") as f:
             f.write('{"entries": []}')
-        for name, body in (("git", "exit 0\n"), ("python3", 'echo "STUB pre=$WT_GOLDEN_PRE tiers=$WT_GOLDEN_TIERS only=$WT_GOLDEN_ONLY '
-                                                            'expect=$WT_GOLDEN_EXPECT items=$WT_GOLDEN_ITEMS"\n')):
+        for name, body in (("git", "exit 0\n"), ("python3", 'echo "STUB pre=$ISR_GOLDEN_PRE tiers=$ISR_GOLDEN_TIERS only=$ISR_GOLDEN_ONLY '
+                                                            'expect=$ISR_GOLDEN_EXPECT items=$ISR_GOLDEN_ITEMS"\n')):
             p = os.path.join(self.tmp, "bin", name)
             with open(p, "w") as f:
                 f.write("#!/bin/sh\n" + body)

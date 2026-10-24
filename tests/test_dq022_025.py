@@ -38,11 +38,11 @@ SCANNERS = {
 class Box(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.env = {k: os.environ.get(k) for k in ("HOME", "WATCHTOWER_HOME", "WT_DECOY_ROOT")}
+        self.env = {k: os.environ.get(k) for k in ("HOME", "ISR_BOT_HOME", "ISR_BOT_DECOY_ROOT")}
         self.home = os.path.join(self.tmp, "home", "box"); os.makedirs(self.home)
         os.environ["HOME"] = self.home
-        os.environ["WATCHTOWER_HOME"] = os.path.join(self.tmp, "workspace", "watchtower")
-        os.environ["WT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
+        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "workspace", "watchtower")
+        os.environ["ISR_BOT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
         self.ws = os.path.join(self.tmp, "workspace"); os.makedirs(self.ws, exist_ok=True)
         self.roots = [self.home, self.ws]
         self.saved = (wt.RUN_LIMIT, wt.DAILY_LIMIT, wt.ENGINE_BUDGET)
@@ -57,7 +57,7 @@ class Box(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def scanners(self):
-        b = os.path.join(os.environ["WATCHTOWER_HOME"], "scanners", "bin"); os.makedirs(b, exist_ok=True)   # batch 3: the checked folder
+        b = os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin"); os.makedirs(b, exist_ok=True)   # batch 3: the checked folder
         for name, body in SCANNERS.items():
             p = os.path.join(b, name)
             open(p, "w").write(body); os.chmod(p, 0o755)
@@ -118,7 +118,7 @@ class DQ023QuarantineNotScored(Box):
         self.assertGreaterEqual(r["score"], 90)  # no Ask-first noise when NATIVE_SETTINGS is ~-only
 
     def test_watchtower_home_quarantine_does_not_score(self):
-        q = os.path.join(os.environ["WATCHTOWER_HOME"], "quarantine", "held-skill")
+        q = os.path.join(os.environ["ISR_BOT_HOME"], "quarantine", "held-skill")
         self.write_skill(q)
         # official quarantine renames SKILL.md; leave SKILL.md to prove the path rule alone is enough
         self.scanners()

@@ -68,9 +68,9 @@ def decoy_places():
 
 
 def decoy_path(path):
-    """The spec's path on this computer. WT_DECOY_ROOT moves them under another folder (the tests use it)."""
+    """The spec's path on this computer. ISR_BOT_DECOY_ROOT moves them under another folder (the tests use it)."""
     p = os.path.expanduser(path)
-    root = os.environ.get("WT_DECOY_ROOT", "")
+    root = os.environ.get("ISR_BOT_DECOY_ROOT", "")
     return os.path.join(root, p.lstrip("/")) if root and not path.startswith("~") else p
 
 

@@ -83,7 +83,7 @@ class MovedInstall(_Copies):
         os.rename(self.app, real)
         other = os.path.join(self.tmp, "elsewhere")
         os.makedirs(other)
-        with mock.patch.dict(os.environ, {"WATCHTOWER_HOME": other}):
+        with mock.patch.dict(os.environ, {"ISR_BOT_HOME": other}):
             self.at(real)
             self.refused()
 
@@ -159,7 +159,7 @@ class DeveloperCheckout(_Copies):
         planted = os.path.join(self.tmp, "planted.json")
         with open(planted, "w") as f:
             json.dump({"entries": []}, f)
-        with mock.patch.dict(os.environ, {"WATCHTOWER_PLATFORM_REVIEWED": planted, "WATCHTOWER_PLATFORM_NORMALIZE": planted}):
+        with mock.patch.dict(os.environ, {"ISR_BOT_PLATFORM_REVIEWED": planted, "ISR_BOT_PLATFORM_NORMALIZE": planted}):
             self.at(os.path.realpath(ROOT))
             self.assertEqual(os.path.realpath(wt.PLATFORM_REVIEWED), os.path.realpath(os.path.join(ROOT, wt.PLATFORM_REVIEWED_REL)))
 

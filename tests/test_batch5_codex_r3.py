@@ -178,7 +178,7 @@ class RenamedInstall(Box):
         other = os.path.join(self.tmp, "elsewhere")
         os.makedirs(other)
         with mock.patch.object(wt, "SELF_ROOT", real), mock.patch.object(wt, "PLATFORM_REVIEWED", os.path.join(real, wt.PLATFORM_REVIEWED_REL)), \
-                mock.patch.dict(os.environ, {"WATCHTOWER_HOME": other}):
+                mock.patch.dict(os.environ, {"ISR_BOT_HOME": other}):
             self.forget()
             self.assertEqual(wt.installed_root(), os.path.realpath(real))
             self.assertIn(f"{wt.PLATFORM_REVIEWED_REL} changed since install", wt.self_check())

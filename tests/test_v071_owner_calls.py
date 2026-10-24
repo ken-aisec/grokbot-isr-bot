@@ -26,12 +26,12 @@ class AcceptedExactAutoAllow(Box):
         self.assertEqual(wt.accepted_auto_allow(), {})                     # a fresh box accepts nothing
         p = os.path.join(self.tmp, "settings.json")
         json.dump({"autoReviewInstructions": {"allowInstructions": [HOOK_ALLOW_A, HOOK_ALLOW_B]}}, open(p, "w"))
-        os.environ["WATCHTOWER_SETTINGS"] = p
+        os.environ["ISR_BOT_SETTINGS"] = p
         try:
             ids = ",".join(wt.auto_allow_fingerprint(f"Allow automatically: {a}") for a in (HOOK_ALLOW_A, HOOK_ALLOW_B))
             code, o, _ = self.run_cmd("auto-allow", "keep", ids, "--owner-said-yes")
         finally:
-            os.environ.pop("WATCHTOWER_SETTINGS", None)
+            os.environ.pop("ISR_BOT_SETTINGS", None)
         self.assertEqual(code, 0, o)
         acc = wt.accepted_auto_allow()
         self.assertEqual(len(acc), 2)
@@ -64,11 +64,11 @@ class AcceptedExactAutoAllow(Box):
     def test_accepted_line_in_settings_file_is_accepted_risk_in_audit(self):
         p = os.path.join(self.tmp, "settings.json")
         json.dump({"autoReviewInstructions": {"allowInstructions": [HOOK_ALLOW_A, "Send email to anyone"]}}, open(p, "w"))
-        os.environ["WATCHTOWER_SETTINGS"] = p
+        os.environ["ISR_BOT_SETTINGS"] = p
         try:
             self.skills(1); self.scanners(); self.audit()
         finally:
-            os.environ.pop("WATCHTOWER_SETTINGS", None)
+            os.environ.pop("ISR_BOT_SETTINGS", None)
         s = self.snap()
         live = [f for f in s["findings"] if f["rule"] == "ISR-A002"]
         sup = [f for f in s["suppressed"] if f["rule"] == "ISR-A002"]

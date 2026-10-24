@@ -209,7 +209,7 @@ class CountedPlatformSecret(_SignIn):
 # ---------------------------------------------------------------- 6: the installed copy is the one that runs
 class InstalledCopyIdentity(Box):
     def install(self):
-        self.wth = os.environ["WATCHTOWER_HOME"]
+        self.wth = os.environ["ISR_BOT_HOME"]
         self.app = os.path.join(self.wth, "app")
         for d in ("watchtower", "rules", ".git"):
             os.makedirs(os.path.join(self.app, d), exist_ok=True)
@@ -247,7 +247,7 @@ class InstalledCopyIdentity(Box):
         self.plant()
         other = os.path.join(self.tmp, "elsewhere")
         os.makedirs(other)
-        with mock.patch.dict(os.environ, {"WATCHTOWER_HOME": other}):
+        with mock.patch.dict(os.environ, {"ISR_BOT_HOME": other}):
             self.forget()
             self.assertIn("MANIFEST.sha256", wt.platform_reviewed_problem())
             self.assertIn("MANIFEST.sha256", wt.platform_normalize_problem())
@@ -261,7 +261,7 @@ class InstalledCopyIdentity(Box):
         self.assertEqual(wt.self_check(), [])
         other = os.path.join(self.tmp, "elsewhere")
         os.makedirs(other)
-        with mock.patch.dict(os.environ, {"WATCHTOWER_HOME": other}):
+        with mock.patch.dict(os.environ, {"ISR_BOT_HOME": other}):
             self.forget()
             self.assertEqual((wt.platform_reviewed_problem(), wt.platform_normalize_problem()), ("", ""))
             self.assertEqual(wt.self_check(), [])   # the commit record is the installation's own

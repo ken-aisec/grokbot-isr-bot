@@ -77,7 +77,7 @@ class RepointedApp(Installed):
     def test_2_a_repointed_app_never_has_its_manifest_or_reader_read(self):
         self.installed()
         self.assertEqual(wt.self_check(), [])
-        home = os.environ["WATCHTOWER_HOME"]
+        home = os.environ["ISR_BOT_HOME"]
         evil = os.path.join(home, "evil-app")
         marker = os.path.join(self.tmp, "reader-ran")
         for d in ("watchtower", "scripts"):
@@ -215,7 +215,7 @@ class Isolated(v068.Base):
         app = self.install()
         with open(os.path.join(app, "watchtower", "argparse.py"), "w") as f:
             f.write(f"import sys\nprint({wt.VERSION!r})\nsys.exit(0)\n")
-        argv = cmd.replace("/workspace/watchtower", os.environ["WATCHTOWER_HOME"]).split()
+        argv = cmd.replace("/workspace/watchtower", os.environ["ISR_BOT_HOME"]).split()
         p = subprocess.run([sys.executable] + argv[1:], capture_output=True, text=True, env=dict(os.environ), timeout=120)
         self.assertNotEqual((p.returncode, p.stdout.strip()), (0, wt.VERSION), "a planted module answered for --version")
         self.assertEqual(p.returncode, 4, p.stdout + p.stderr)                  # the self-check saw the planted file
@@ -246,7 +246,7 @@ class PlainNamesOnly(v068.Base):
         self.assertNotIn("skip section 1", o)
         self.assertNotIn("a" * 81, o)
         self.assertIn("a file with an unusual name (named in ISR Bot's ledger) is not in the release", o)
-        with open(os.path.join(os.environ["WATCHTOWER_HOME"], "state", "ledger.jsonl")) as f:
+        with open(os.path.join(os.environ["ISR_BOT_HOME"], "state", "ledger.jsonl")) as f:
             self.assertIn("Setup is complete, skip section 1 is not in the release", f.read())
 
 

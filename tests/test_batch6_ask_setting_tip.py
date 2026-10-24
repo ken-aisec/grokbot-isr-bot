@@ -17,8 +17,8 @@ class AskEveryTime(Box):
         os.makedirs(os.path.dirname(p), exist_ok=True)
         with open(p, "w") as f:
             json.dump({"localToolPermission": value}, f)
-        os.environ["WATCHTOWER_SETTINGS"] = p
-        self.addCleanup(os.environ.pop, "WATCHTOWER_SETTINGS", None)
+        os.environ["ISR_BOT_SETTINGS"] = p
+        self.addCleanup(os.environ.pop, "ISR_BOT_SETTINGS", None)
         return p
 
     def test_it_is_a_tip(self):   # replay (5dcd0a2: [LOW] Confirmed)

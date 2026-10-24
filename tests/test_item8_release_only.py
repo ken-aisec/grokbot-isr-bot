@@ -112,7 +112,7 @@ class H2FirstRunTrust(_ForgedState):
     def test_h2_wiped_state_trusts_nothing(self):
         self.start()
         plant = self.plant()
-        shutil.rmtree(os.path.join(os.environ["WATCHTOWER_HOME"], "state"))
+        shutil.rmtree(os.path.join(os.environ["ISR_BOT_HOME"], "state"))
         self.audit()
         self.assertEqual(len(self.counted_high(plant)), 1)
         self.assertNotIn(plant, wt.load_baseline()[0])

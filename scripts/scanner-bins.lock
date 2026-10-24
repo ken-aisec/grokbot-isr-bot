@@ -1,6 +1,6 @@
 # Watchtower's scanner program checksums (hardening batch 3, R7).
 #
-# Watchtower runs a scanner only from its own folder ($WATCHTOWER_HOME/scanners/bin/<name>, where `install.sh --scanners`
+# Watchtower runs a scanner only from its own folder ($ISR_BOT_HOME/scanners/bin/<name>, where `install.sh --scanners`
 # puts it) and only when the sha256 of that program file is listed here for this computer's architecture. Anything else
 # is not run, and its last results are kept: a program whose name has lines here but none that match is a high ISR-X005
 # ("Watchtower's copy of <scanner> isn't the one it installed"); a name with no line for this architecture is "not listed"
@@ -17,7 +17,7 @@
 #
 # How to fill it (before a release; scripts/publish.sh refuses to publish until every name has a line):
 #   1. On the main box, run a fresh `bash /workspace/watchtower/app/scripts/install.sh --scanners`.
-#   2. From the dev checkout: `WATCHTOWER_HOME=/workspace/watchtower python3 watchtower/wt.py doctor`.
+#   2. From the dev checkout: `ISR_BOT_HOME=/workspace/watchtower python3 watchtower/wt.py doctor`.
 #   3. Its scanner_check gives each program's full sha256 ("not listed (sha256 ...)"). Check each against the release
 #      it was installed from, then add one line per program here and commit.
 #

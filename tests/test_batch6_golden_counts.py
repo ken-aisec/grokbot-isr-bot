@@ -40,7 +40,7 @@ def harness(entries, items, items_on=("b9",)):
     h.place = lambda tree: None
     h.run_sandboxed = lambda sid, plan, tag: {"items": dict(items[sid][1] if tag == "post" else items[sid][0])}
     h.timing = lambda: None
-    with mock.patch.dict(os.environ, {"WT_GOLDEN_ONLY": "^(" + "|".join(items) + ")$"}):
+    with mock.patch.dict(os.environ, {"ISR_GOLDEN_ONLY": "^(" + "|".join(items) + ")$"}):
         try:
             h.test_1_tiers()
         except AssertionError as e:

@@ -188,7 +188,7 @@ class DailyScannersMissing(_Middle):
 
     def swap(self, *names):
         for n in names:
-            add(os.path.join(os.environ["WATCHTOWER_HOME"], "scanners", "bin", n), "# changed after Watchtower installed it\n")
+            add(os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin", n), "# changed after Watchtower installed it\n")
         wt._SCANNER_OK.clear()
 
     def x005(self):

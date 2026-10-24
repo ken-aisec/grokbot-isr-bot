@@ -363,7 +363,7 @@ class RealKeysAreReportedAnywhere(_Keys):
         self.scan()
         self.run_cmd("report")
         body = blocks["rsa"].split("\n")[2]
-        for dp, _, fns in os.walk(os.environ["WATCHTOWER_HOME"]):
+        for dp, _, fns in os.walk(os.environ["ISR_BOT_HOME"]):
             if os.path.join("scanners", "bin") in dp:
                 continue
             for fn in fns:

@@ -40,7 +40,7 @@ class R01RollCallConsent(Box):
         self.run_cmd("rollcall", "--owner-said-yes")
         self.assertEqual(os.listdir(d), [])
         # the roll-call folder's parent swapped for a link to somewhere else: nothing there is touched
-        exp = os.path.join(os.environ["WATCHTOWER_HOME"], "private"); real = os.path.join(self.ws, "victim")
+        exp = os.path.join(os.environ["ISR_BOT_HOME"], "private"); real = os.path.join(self.ws, "victim")
         shutil.rmtree(exp); os.makedirs(os.path.join(real, "rollcall")); os.symlink(real, exp)
         open(os.path.join(real, "rollcall", "precious.txt"), "w").write("x")
         self.run_cmd("rollcall", "--owner-said-yes")
@@ -303,7 +303,7 @@ class R10R11InstallActivation(unittest.TestCase):
         open(os.path.join(self.src, "MANIFEST.sha256"), "w").write(f"{h}  watchtower/wt.py\n")
 
     def install(self, sha):
-        e = dict(os.environ, PATH=self.bin + ":" + os.environ["PATH"], WATCHTOWER_HOME=self.wt, SRC=self.src, FAKE_SHA=sha)
+        e = dict(os.environ, PATH=self.bin + ":" + os.environ["PATH"], ISR_BOT_HOME=self.wt, SRC=self.src, FAKE_SHA=sha)
         return subprocess.run(["bash", os.path.join(ROOT, "scripts", "install.sh"), "v0.6.9"], env=e, capture_output=True, text=True, timeout=60)
 
     def test_a_failed_activation_keeps_the_working_copy(self):
@@ -318,7 +318,7 @@ class R10R11InstallActivation(unittest.TestCase):
         self.assertEqual(open(os.path.join(self.wt, "state", "installed_commit")).read().strip(), "a" * 40)
 
     def test_staging_is_private_and_a_planted_link_is_ignored(self):
-        """R11: staging was the predictable $WT_HOME/app.new; a link planted there could redirect the copy."""
+        """R11: staging was the predictable $ISR_HOME/app.new; a link planted there could redirect the copy."""
         os.makedirs(self.wt); victim = os.path.join(self.tmp, "victim"); os.makedirs(victim)
         open(os.path.join(victim, "keep.txt"), "w").write("x")
         os.symlink(victim, os.path.join(self.wt, "app.new"))
@@ -327,4 +327,4 @@ class R10R11InstallActivation(unittest.TestCase):
         self.assertEqual(os.listdir(victim), ["keep.txt"])
         self.assertFalse([x for x in os.listdir(self.wt) if x.startswith(".stage.")])   # cleaned up
         src = open(os.path.join(ROOT, "scripts", "install.sh")).read()
-        self.assertIn('mktemp -d "$WT_HOME/.stage.', src); self.assertIn('mktemp -d "${TMPDIR:-/tmp}/wt-dl.', src)
+        self.assertIn('mktemp -d "$ISR_HOME/.stage.', src); self.assertIn('mktemp -d "${TMPDIR:-/tmp}/wt-dl.', src)

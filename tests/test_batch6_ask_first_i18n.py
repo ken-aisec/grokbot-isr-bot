@@ -50,11 +50,11 @@ class _Settings(Box):
         with open(p, "w") as f:
             json.dump({"localToolPermission": "never", "autoReviewInstructions": {"askInstructions": list(ask), "allowInstructions": list(allow)}},
                       f, ensure_ascii=False)
-        os.environ["WATCHTOWER_SETTINGS"] = p
-        self.addCleanup(os.environ.pop, "WATCHTOWER_SETTINGS", None)
+        os.environ["ISR_BOT_SETTINGS"] = p
+        self.addCleanup(os.environ.pop, "ISR_BOT_SETTINGS", None)
 
     def export(self, text):
-        d = os.path.join(os.environ["WATCHTOWER_HOME"], "exports")
+        d = os.path.join(os.environ["ISR_BOT_HOME"], "exports")
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, "auto-review.txt"), "w") as f:
             f.write(text)

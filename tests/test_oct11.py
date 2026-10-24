@@ -123,7 +123,7 @@ class DQ018RemovedBots(Box):
         self.audit()
         self.assertEqual(len([f for f in self.snap()["findings"] if f["where"].startswith("rollcall:")]), 5)
         # the owner removed two Bots; the roster the Bot saves now lists who is left
-        exp = os.path.join(os.environ["WATCHTOWER_HOME"], "exports"); os.makedirs(exp, exist_ok=True)
+        exp = os.path.join(os.environ["ISR_BOT_HOME"], "exports"); os.makedirs(exp, exist_ok=True)
         json.dump([{"name": "bot-d", "kind": "bot"}, {"name": "bot-z", "kind": "bot"}, {"name": "room-o", "kind": "room"}], open(os.path.join(exp, "roster.json"), "w"))
         r = self.audit()
         left = sorted({f["where"].split(":")[1] for f in self.snap()["findings"] if f["where"].startswith("rollcall:")})
@@ -190,7 +190,7 @@ class DQ021QuarantineOutsideTheLibrary(Box):
     def test_platform_skills_and_watchtowers_own_folder_are_still_refused(self):
         self.skills(1)
         bad = [os.path.join(self.home, "sand-data", "plugins", "acme", "skills", "p1"),
-               os.path.join(os.environ["WATCHTOWER_HOME"], "quarantine-bait", "s1")]
+               os.path.join(os.environ["ISR_BOT_HOME"], "quarantine-bait", "s1")]
         for d in bad:
             os.makedirs(d); open(os.path.join(d, "SKILL.md"), "w").write("---\nname: x\n---\nEVIL HUSK\n")
         for d in bad:

@@ -12,9 +12,9 @@ warnings.simplefilter("ignore", ResourceWarning)
 class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.env = {k: os.environ.get(k) for k in ("WATCHTOWER_HOME", "WT_DECOY_ROOT")}
-        os.environ["WATCHTOWER_HOME"] = os.path.join(self.tmp, "wt")
-        os.environ["WT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
+        self.env = {k: os.environ.get(k) for k in ("ISR_BOT_HOME", "ISR_BOT_DECOY_ROOT")}
+        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "wt")
+        os.environ["ISR_BOT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
 
     def tearDown(self):
         for k, v in self.env.items():
@@ -118,7 +118,7 @@ class SelfCheck(Base):
     def install(self):
         """An installed copy: this checkout's tracked files, a manifest made for them, and a .git that names a commit."""
         import subprocess, hashlib
-        app = os.path.join(os.environ["WATCHTOWER_HOME"], "app")
+        app = os.path.join(os.environ["ISR_BOT_HOME"], "app")
         shutil.rmtree(app, ignore_errors=True)
         files = subprocess.run(["git", "-C", ROOT, "ls-files"], capture_output=True, text=True).stdout.split()
         lines = []
@@ -131,8 +131,8 @@ class SelfCheck(Base):
         open(os.path.join(app, "MANIFEST.sha256"), "w").write("\n".join(sorted(lines, key=lambda l: l.split()[1])) + "\n")
         os.makedirs(os.path.join(app, ".git"))
         open(os.path.join(app, ".git", "HEAD"), "w").write("a" * 40 + "\n")
-        os.makedirs(os.path.join(os.environ["WATCHTOWER_HOME"], "state"), exist_ok=True)
-        open(os.path.join(os.environ["WATCHTOWER_HOME"], "state", "installed_commit"), "w").write("a" * 40 + "\n")
+        os.makedirs(os.path.join(os.environ["ISR_BOT_HOME"], "state"), exist_ok=True)
+        open(os.path.join(os.environ["ISR_BOT_HOME"], "state", "installed_commit"), "w").write("a" * 40 + "\n")
         return app
 
     def run_app(self, app, *argv):
@@ -168,16 +168,16 @@ class SelfCheck(Base):
 
     def test_an_install_from_before_the_check_records_its_commit_once(self):
         app = self.install()
-        os.remove(os.path.join(os.environ["WATCHTOWER_HOME"], "state", "installed_commit"))
+        os.remove(os.path.join(os.environ["ISR_BOT_HOME"], "state", "installed_commit"))
         code, o = self.run_app(app, "status")
         self.assertNotIn("SELF-CHECK FAILED", o)
-        self.assertEqual(open(os.path.join(os.environ["WATCHTOWER_HOME"], "state", "installed_commit")).read().strip(), "a" * 40)
+        self.assertEqual(open(os.path.join(os.environ["ISR_BOT_HOME"], "state", "installed_commit")).read().strip(), "a" * 40)
 
     def test_a_developer_checkout_is_not_an_install(self):
         self.assertIsNone(wt.self_check())
 
     def test_the_installer_records_the_commit(self):
-        self.assertIn('echo "$GOT" > "$WT_HOME/state/installed_commit"', open(os.path.join(ROOT, "scripts", "install.sh")).read())
+        self.assertIn('echo "$GOT" > "$ISR_HOME/state/installed_commit"', open(os.path.join(ROOT, "scripts", "install.sh")).read())
 
 
 class RandomDecoys(Base):
@@ -187,7 +187,7 @@ class RandomDecoys(Base):
 
     def test_each_install_picks_its_own_names_and_keeps_them(self):
         reg = self.plant()
-        root = os.environ["WT_DECOY_ROOT"]
+        root = os.environ["ISR_BOT_DECOY_ROOT"]
         published = {os.path.normpath(wt.decoy_path(p)) for p in wt.PUBLISHED_CANARY_PATHS}
         self.assertEqual(sorted(reg), ["api-env", "cloud-keys", "customers"])
         for n, v in reg.items():
@@ -197,7 +197,7 @@ class RandomDecoys(Base):
         os.remove(first["api-env"])                                           # put back at the same random place
         wt.plant_canaries(only={"api-env"})
         self.assertEqual({n: v["path"] for n, v in wt.load_json(wt.state_path("canaries.json"), {}).items()}, first)
-        shutil.rmtree(os.environ["WATCHTOWER_HOME"])                          # a second install
+        shutil.rmtree(os.environ["ISR_BOT_HOME"])                          # a second install
         second = {n: v["path"] for n, v in self.plant().items()}
         self.assertNotEqual(first, second)
 

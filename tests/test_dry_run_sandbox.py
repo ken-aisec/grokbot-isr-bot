@@ -13,7 +13,7 @@ GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid", "GIT
 
 STUB = r'''
 import json, os, sys
-home = os.environ["WATCHTOWER_HOME"]; ws = os.environ["STUB_WS"]
+home = os.environ["ISR_BOT_HOME"]; ws = os.environ["STUB_WS"]
 res = {}
 def attempt(name, path, body="x"):
     try:
@@ -76,8 +76,8 @@ class DryRunLeavesWorkspaceAlone(unittest.TestCase):
         return sorted(n for n in os.listdir("/workspace") if n.startswith("wt-dry")) if os.path.isdir("/workspace") else None
 
     def run_dry(self, **extra):
-        env = {**os.environ, "WT_DRY_WORKSPACE": self.ws, "WT_DRY_INSTALL": self.install, "WT_DRY_TMPROOT": self.tmproot,
-               "WT_DRY_RO": "", "STUB_WS": self.ws, **extra}
+        env = {**os.environ, "ISR_DRY_WORKSPACE": self.ws, "ISR_DRY_INSTALL": self.install, "ISR_DRY_TMPROOT": self.tmproot,
+               "ISR_DRY_RO": "", "STUB_WS": self.ws, **extra}
         return subprocess.run(["bash", os.path.join(self.dev, "scripts", "dry-run.sh"), "HEAD", "--", "audit"],
                               env=env, capture_output=True, text=True, timeout=120)
 
@@ -104,7 +104,7 @@ class DryRunLeavesWorkspaceAlone(unittest.TestCase):
 
     def test_keep_leaves_the_sandbox_under_tmp_never_the_workspace(self):
         before = snapshot(self.ws)
-        r = self.run_dry(WT_DRY_KEEP="1")
+        r = self.run_dry(ISR_DRY_KEEP="1")
         self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
         self.assertEqual(snapshot(self.ws), before)
         kept = [n for n in os.listdir(self.tmproot) if n.startswith("wt-dry.")]
@@ -115,9 +115,9 @@ class DryRunLeavesWorkspaceAlone(unittest.TestCase):
 
     def test_refuses_a_sandbox_or_report_inside_the_workspace(self):
         before = snapshot(self.ws)
-        r = self.run_dry(WT_DRY_TMPROOT=os.path.join(self.ws, "scratch"))
+        r = self.run_dry(ISR_DRY_TMPROOT=os.path.join(self.ws, "scratch"))
         self.assertEqual(r.returncode, 2); self.assertIn("inside", r.stderr)
-        r = self.run_dry(WT_DRY_OUT=os.path.join(self.ws, "wt-dry-report"))
+        r = self.run_dry(ISR_DRY_OUT=os.path.join(self.ws, "wt-dry-report"))
         self.assertEqual(r.returncode, 2); self.assertIn("inside", r.stderr)
         self.assertEqual(snapshot(self.ws), before)
         self.assertEqual(os.listdir(self.tmproot), [])

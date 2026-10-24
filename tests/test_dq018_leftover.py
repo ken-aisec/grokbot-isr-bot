@@ -39,7 +39,7 @@ class DQ018Leftover(Box):
         self.audit()   # the full notes go to the report's coverage notes; the audit JSON keeps only the first few
         self.assertTrue(any("roster.json" in n and "removed" in n for n in self.snap()["notes"]), self.snap()["notes"])
         self.assertIn("No roster saved", wt.render_md(self.snap(), [], "2026-W42"))   # the weekly report's coverage notes say it
-        exp = os.path.join(os.environ["WATCHTOWER_HOME"], "exports"); os.makedirs(exp, exist_ok=True)
+        exp = os.path.join(os.environ["ISR_BOT_HOME"], "exports"); os.makedirs(exp, exist_ok=True)
         json.dump([{"name": "bot-d", "kind": "bot"}], open(os.path.join(exp, "roster.json"), "w"))
         r = self.audit()
         self.assertFalse(any("roster.json" in n and ("No roster" in n or "older than" in n) for n in self.snap()["notes"]), self.snap()["notes"])
@@ -47,7 +47,7 @@ class DQ018Leftover(Box):
 
     def test_a_roster_older_than_the_roll_call_also_gets_the_hint(self):
         self.skills(1); self.scanners()
-        exp = os.path.join(os.environ["WATCHTOWER_HOME"], "exports"); os.makedirs(exp, exist_ok=True)
+        exp = os.path.join(os.environ["ISR_BOT_HOME"], "exports"); os.makedirs(exp, exist_ok=True)
         rp = os.path.join(exp, "roster.json")
         json.dump([{"name": "bot-d", "kind": "bot"}], open(rp, "w"))
         os.utime(rp, (1, 1))                         # saved long before this roll-call

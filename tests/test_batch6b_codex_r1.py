@@ -523,7 +523,7 @@ def golden(items, entries=None):
     h.place = lambda tree: None
     h.run_sandboxed = lambda sid, plan, tag: {"items": dict(items[sid][1] if tag == "post" else items[sid][0])}
     h.timing = lambda: None
-    with mock.patch.dict(os.environ, {"WT_GOLDEN_ONLY": "^(" + "|".join(GSIDS) + ")$"}):
+    with mock.patch.dict(os.environ, {"ISR_GOLDEN_ONLY": "^(" + "|".join(GSIDS) + ")$"}):
         try:
             h.test_1_tiers()
         except AssertionError as e:

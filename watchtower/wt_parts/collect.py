@@ -116,8 +116,8 @@ SKILL_FILE_CAP = 2000
 INCOMPLETE_SKILLS = {}   # skill folder -> (files fingerprinted, files there)
 
 
-RUN_LIMIT = int(os.environ.get("WT_RUN_LIMIT", "540"))     # seconds a full audit may take, whatever is installed or broken
-DAILY_LIMIT = int(os.environ.get("WT_DAILY_LIMIT", "150"))
+RUN_LIMIT = int(os.environ.get("ISR_BOT_RUN_LIMIT", "540"))     # seconds a full audit may take, whatever is installed or broken
+DAILY_LIMIT = int(os.environ.get("ISR_BOT_DAILY_LIMIT", "150"))
 MAX_BUDGET = 3600   # `audit --budget` tops out at an hour of scanner time
 DEADLINE = None                                             # set for the length of one audit
 

@@ -96,7 +96,7 @@ SCRATCH_ROOTS = ("/home", "/workspace", "/var/tmp")
 if SEALED and not all(os.path.isfile(d + "/.golden-sentinel") for d in SCRATCH_ROOTS + ("/tmp",)):
     sys.exit("not inside the golden sandbox; nothing was done")
 HOME_DIR = "/home/box" if SEALED else X + "/home"
-WT_HOME = "/workspace/watchtower" if SEALED else X + "/wt"
+ISR_HOME = "/workspace/watchtower" if SEALED else X + "/wt"
 items = {}
 
 DRIVER = """
@@ -104,7 +104,7 @@ import os, random, sys
 tree, argv = sys.argv[1], sys.argv[2:]
 sys.path.insert(0, os.path.join(tree, "watchtower"))
 import wt
-b = os.path.join(os.environ["WATCHTOWER_HOME"], "scanners", "bin")
+b = os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin")
 for n in sorted(os.listdir(b)) if os.path.isdir(b) else []:
     if n in wt.SCANNER_NAMES:
         wt.SCANNER_LOCK_EXTRA[n] = wt.scanner_digest(os.path.join(b, n))      # as test_boxes.Box.scanners registers them
@@ -166,8 +166,8 @@ elif phase == "refresh":
 
 
 def env(extra=None, driver=False):
-    e = {"HOME": HOME_DIR, "WATCHTOWER_HOME": WT_HOME, "WT_DECOY_ROOT": X + "/decoys",
-         "WATCHTOWER_SETTINGS": HOME_DIR + "/agent-data/settings.json", "TMPDIR": X + "/tmpdir", "XDG_CACHE_HOME": X + "/cache",
+    e = {"HOME": HOME_DIR, "ISR_BOT_HOME": ISR_HOME, "ISR_BOT_DECOY_ROOT": X + "/decoys",
+         "ISR_BOT_SETTINGS": HOME_DIR + "/agent-data/settings.json", "TMPDIR": X + "/tmpdir", "XDG_CACHE_HOME": X + "/cache",
          "PATH": "/usr/bin:/bin", "TZ": "UTC", "LC_ALL": "C.UTF-8"}
     if driver:
         e["GOLDEN_PLATFORM_LOCK"] = X + "/box/platform-release.lock"
@@ -265,7 +265,7 @@ def snapshot_all(skip=()):
 
 def findings():
     try:
-        return json.load(open(WT_HOME + "/state/last_findings.json")).get("findings", [])
+        return json.load(open(ISR_HOME + "/state/last_findings.json")).get("findings", [])
     except (OSError, ValueError, AttributeError):
         return []
 
@@ -321,7 +321,7 @@ def tier_a():
         for a in (["show", "ISR-X004"], ["status"], ["report"], ["breakdown"], ["doctor"], ["doctor", "--save"], ["dismiss", "--list"],
                   ["accept", "--list"], ["exception", "list"], ["events", "list"], ["canary", "status"], ["rollcall", "--question"]):
             run(a, cwd=cwd, label=lab(a))
-        run(["auto-allow", "list"], cwd=cwd, extra={"WATCHTOWER_SETTINGS": fx + "/exports/settings.json"}, label=lab(["auto-allow", "list"]) + " [settings fixture]")
+        run(["auto-allow", "list"], cwd=cwd, extra={"ISR_BOT_SETTINGS": fx + "/exports/settings.json"}, label=lab(["auto-allow", "list"]) + " [settings fixture]")
         for a in (["brief", "--offline", brief], ["diff", "nosuch"]):
             run(a, cwd=cwd, label=lab(a))
         for t in targets:
@@ -336,7 +336,7 @@ def tier_a():
 
 
 def layout_app():
-    app = WT_HOME + "/app"
+    app = ISR_HOME + "/app"
     if os.path.isdir(app):
         shutil.rmtree(app)
     lines = []
@@ -355,8 +355,8 @@ def layout_app():
     os.makedirs(app + "/.git")
     with open(app + "/.git/HEAD", "w") as f:
         f.write("a" * 40 + "\n")
-    os.makedirs(WT_HOME + "/state", exist_ok=True)
-    with open(WT_HOME + "/state/installed_commit", "w") as f:
+    os.makedirs(ISR_HOME + "/state", exist_ok=True)
+    with open(ISR_HOME + "/state/installed_commit", "w") as f:
         f.write("a" * 40 + "\n")
     return app
 
@@ -1074,10 +1074,10 @@ def git(*args, **kw):
 
 
 class GoldenSplit(unittest.TestCase):
-    PRE = os.environ.get("WT_GOLDEN_PRE", "")
-    MODE = os.environ.get("WT_GOLDEN_TIERS", "full")
-    EXPECT = os.environ.get("WT_GOLDEN_EXPECT", "")
-    ITEMS = [x for x in os.environ.get("WT_GOLDEN_ITEMS", "").split(",") if x]
+    PRE = os.environ.get("ISR_GOLDEN_PRE", "")
+    MODE = os.environ.get("ISR_GOLDEN_TIERS", "full")
+    EXPECT = os.environ.get("ISR_GOLDEN_EXPECT", "")
+    ITEMS = [x for x in os.environ.get("ISR_GOLDEN_ITEMS", "").split(",") if x]
     expect = None   # expect mode: the enabled entries (parse_expect); None: post must equal pre
 
     @classmethod
@@ -1170,7 +1170,7 @@ class GoldenSplit(unittest.TestCase):
                 out.append((f"box-{prof}-{mode}", {"kind": "box", "profile": prof, "mode": mode}))
         if not quick:
             out += [("crash", {"kind": "crash"}), ("extended", {"kind": "extended"}), ("tierC", {"kind": "tierC"})]
-        only = os.environ.get("WT_GOLDEN_ONLY", "")
+        only = os.environ.get("ISR_GOLDEN_ONLY", "")
         if only:
             out = [s for s in out if re.search(only, s[0])]
             if not out:

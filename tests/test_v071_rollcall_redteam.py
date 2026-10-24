@@ -38,9 +38,9 @@ def question_template():
 class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.env = {k: os.environ.get(k) for k in ("WATCHTOWER_HOME", "WT_DECOY_ROOT")}
-        os.environ["WATCHTOWER_HOME"] = os.path.join(self.tmp, "wt")
-        os.environ["WT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
+        self.env = {k: os.environ.get(k) for k in ("ISR_BOT_HOME", "ISR_BOT_DECOY_ROOT")}
+        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "wt")
+        os.environ["ISR_BOT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
 
     def tearDown(self):
         for k, v in self.env.items():
@@ -56,7 +56,7 @@ class Base(unittest.TestCase):
     def everything_watchtower_kept(self):
         """Every byte under Watchtower's home after the run (state, ledger, reports, exports)."""
         blob = []
-        for root, _, files in os.walk(os.environ["WATCHTOWER_HOME"]):
+        for root, _, files in os.walk(os.environ["ISR_BOT_HOME"]):
             for fn in files:
                 try:
                     blob.append(open(os.path.join(root, fn), encoding="utf-8", errors="replace").read())
@@ -112,7 +112,7 @@ class RepliesArePrivateAndShortLived(Base):
         code, o, _ = self.run_wt("rollcall", "--save", "Ledger", stdin=json.dumps(honest_answer(BOT)))
         self.assertEqual(code, 0)
         rdir = wt.default_rollcall_dir()
-        self.assertEqual(rdir, os.path.join(os.environ["WATCHTOWER_HOME"], "private", "rollcall"))
+        self.assertEqual(rdir, os.path.join(os.environ["ISR_BOT_HOME"], "private", "rollcall"))
         self.assertNotIn(os.sep + "exports" + os.sep, rdir + os.sep)
         for d in (rdir, os.path.dirname(rdir)):
             self.assertEqual(stat.S_IMODE(os.stat(d).st_mode), 0o700, d)
@@ -155,13 +155,13 @@ class RepliesArePrivateAndShortLived(Base):
         self.assertEqual(os.listdir(rdir), [])
 
     def test_replies_an_older_version_left_in_exports_are_removed(self):
-        old = os.path.join(os.environ["WATCHTOWER_HOME"], "exports", "rollcall"); os.makedirs(old)
+        old = os.path.join(os.environ["ISR_BOT_HOME"], "exports", "rollcall"); os.makedirs(old)
         open(os.path.join(old, "harbor.json"), "w").write(json.dumps({"memories": list(SECRETS)}))
         self.run_wt("rollcall", "--owner-said-yes")
         self.assertFalse(os.path.exists(old))
 
     def test_the_save_refuses_a_linked_folder(self):
-        home = os.environ["WATCHTOWER_HOME"]; os.makedirs(home)
+        home = os.environ["ISR_BOT_HOME"]; os.makedirs(home)
         elsewhere = os.path.join(self.tmp, "shared"); os.makedirs(elsewhere)
         os.symlink(elsewhere, os.path.join(home, "private"))
         code, o, _ = self.run_wt("rollcall", "--save", "Ledger", stdin="{}")

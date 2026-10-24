@@ -5,7 +5,7 @@ and a copy in Watchtower's own folder was run whatever its contents. A missing s
 marked failed, its old findings showed as "fixed" and the score rose; revet and the built-in roll approved on Watchtower's
 rules alone; and daily returned early on SCANNERS_MISSING, hiding new findings, decoy alarms included.
 
-Now only Watchtower's own folder ($WATCHTOWER_HOME/scanners/bin) is used, and only a program whose sha256 is in
+Now only Watchtower's own folder ($ISR_BOT_HOME/scanners/bin) is used, and only a program whose sha256 is in
 scripts/scanner-bins.lock (tests register theirs in SCANNER_LOCK_EXTRA, in this process only).
 Against 7cf8996 (the PR's base; Claude review 1, finding 8) all 11 error, the marked contrast too: the helpers need the new code.
 """
@@ -41,7 +41,7 @@ class _Scanners(Box):
         super().setUp()
         for n in ("SCANNER_LOCK_EXTRA", "SCANNER_PROBLEMS", "_SCANNER_OK"):
             getattr(wt, n, {}).clear()
-        self.bin = os.path.join(os.environ["WATCHTOWER_HOME"], "scanners", "bin")
+        self.bin = os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin")
         self.lock = os.path.join(self.tmp, "scanner-bins.lock")
         with open(self.lock, "w") as f:
             f.write("# test lock: no lines\n")
@@ -92,7 +92,7 @@ class OnlyWatchtowersOwnCopy(_Scanners):
 
     def test_2_the_old_scanner_folder_is_not_used(self):
         log = os.path.join(self.tmp, "gitleaks.log")
-        self.put("gitleaks", logged(SCANNERS["gitleaks"], log), where=os.path.join(os.environ["WATCHTOWER_HOME"], "bin"))
+        self.put("gitleaks", logged(SCANNERS["gitleaks"], log), where=os.path.join(os.environ["ISR_BOT_HOME"], "bin"))
         self.skills(1)
         r = self.audit()
         self.assertFalse(os.path.exists(log))
@@ -236,7 +236,7 @@ class OnlyWatchtowersOwnCopy(_Scanners):
         self.assertTrue(out["scanners"]["SkillSpector"])
         self.assertFalse(out["scanners"]["husk"])
         os.remove(os.path.join(self.bin, "gitleaks"))
-        self.put("gitleaks", SCANNERS["gitleaks"], where=os.path.join(os.environ["WATCHTOWER_HOME"], "bin"))
+        self.put("gitleaks", SCANNERS["gitleaks"], where=os.path.join(os.environ["ISR_BOT_HOME"], "bin"))
         self.put("trufflehog", "#!/bin/sh\necho other\n", register=False)
         check = json.loads(self.run_cmd("doctor")[1]).get("scanner_check", {})
         self.assertEqual(check.get("gitleaks"), "in the old folder")

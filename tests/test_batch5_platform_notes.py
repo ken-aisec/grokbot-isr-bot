@@ -46,12 +46,12 @@ class _SignIn(Box):
 
     def dashboard(self):
         self.run_cmd("report")
-        with open(os.path.join(os.environ["WATCHTOWER_HOME"], "reports", "dashboard.html")) as f:
+        with open(os.path.join(os.environ["ISR_BOT_HOME"], "reports", "dashboard.html")) as f:
             return f.read()
 
     def report_md(self):
         self.run_cmd("report")
-        d = os.path.join(os.environ["WATCHTOWER_HOME"], "reports")
+        d = os.path.join(os.environ["ISR_BOT_HOME"], "reports")
         with open(os.path.join(d, next(n for n in sorted(os.listdir(d)) if n.endswith(".md")))) as f:
             return f.read()
 
@@ -248,7 +248,7 @@ class CheckedPlatformFiles(_SignIn):
             with open(wt.state_path(name), "w") as f:
                 json.dump({"entries": [self.entry(self.sha(SIGNIN))]}, f)
         p = self.put(REL, SIGNIN)
-        with mock.patch.dict(os.environ, {"WATCHTOWER_PLATFORM_REVIEWED": wt.state_path("platform-reviewed.json")}):
+        with mock.patch.dict(os.environ, {"ISR_BOT_PLATFORM_REVIEWED": wt.state_path("platform-reviewed.json")}):
             self.audit()
         self.assertEqual([f["label"] for f in self.mine(p) if f["rule"] == "ISR-T008"], [wt.CONFIRMED])
 

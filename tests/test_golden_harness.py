@@ -51,7 +51,7 @@ class _Harness(unittest.TestCase):
 class H1NoSandbox(_Harness):
     def test_without_unshare_the_check_fails_and_compares_nothing(self):
         h, calls = self.harness(sandbox=False)
-        with mock.patch.dict(os.environ, {"WT_GOLDEN_ONLY": ""}):
+        with mock.patch.dict(os.environ, {"ISR_GOLDEN_ONLY": ""}):
             out = self.outcome(h)
         self.assertFailedLoudly(h, out, "sealed sandbox")
         self.assertEqual(calls, [], "no tree runs unsealed")
@@ -60,7 +60,7 @@ class H1NoSandbox(_Harness):
 class H2EmptySelection(_Harness):
     def test_an_only_that_matches_no_scenario_fails(self):
         h, calls = self.harness()
-        with mock.patch.dict(os.environ, {"WT_GOLDEN_ONLY": "no-such-scenario"}):
+        with mock.patch.dict(os.environ, {"ISR_GOLDEN_ONLY": "no-such-scenario"}):
             out = self.outcome(h)
         self.assertFailedLoudly(h, out, "matches no quick scenario")
         self.assertEqual(calls, [])
@@ -73,7 +73,7 @@ class H2EmptySelection(_Harness):
 
     def test_one_matching_scenario_is_compared_and_counted(self):
         h, calls = self.harness()
-        with mock.patch.dict(os.environ, {"WT_GOLDEN_ONLY": "^tierA$"}):
+        with mock.patch.dict(os.environ, {"ISR_GOLDEN_ONLY": "^tierA$"}):
             out = self.outcome(h)
         self.assertEqual(out, "passed")
         self.assertEqual(calls, [("tierA", "pre1"), ("tierA", "pre2"), ("tierA", "post")])
@@ -81,7 +81,7 @@ class H2EmptySelection(_Harness):
 
     def test_a_post_that_differs_is_still_caught(self):
         h, _ = self.harness(post_items=dict(ITEMS, **{"001 --version :stdout": "wt 1.1\n"}))
-        with mock.patch.dict(os.environ, {"WT_GOLDEN_ONLY": "^tierA$"}):
+        with mock.patch.dict(os.environ, {"ISR_GOLDEN_ONLY": "^tierA$"}):
             out = self.outcome(h)
         self.assertFailedLoudly(h, out, "1 problems")
 
@@ -95,7 +95,7 @@ class H3BaselineRequired(unittest.TestCase):
             os.makedirs(os.path.join(self.tmp, d))
         self.script = os.path.join(self.tmp, "scripts", "golden-check.sh")
         shutil.copy2(os.path.join(ROOT, "scripts", "golden-check.sh"), self.script)
-        for name, body in (("git", "exit 0\n"), ("python3", 'echo "STUB python3 pre=$WT_GOLDEN_PRE tiers=$WT_GOLDEN_TIERS"\n')):
+        for name, body in (("git", "exit 0\n"), ("python3", 'echo "STUB python3 pre=$ISR_GOLDEN_PRE tiers=$ISR_GOLDEN_TIERS"\n')):
             p = os.path.join(self.tmp, "bin", name)
             with open(p, "w") as f:
                 f.write("#!/bin/sh\n" + body)

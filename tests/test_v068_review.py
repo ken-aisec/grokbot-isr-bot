@@ -21,9 +21,9 @@ PRE_068 = {"at": "2026-10-08T14:02:11+00:00", "bots": ["Harbor", "Echo"], "findi
 class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.env = {k: os.environ.get(k) for k in ("WATCHTOWER_HOME", "WT_DECOY_ROOT")}
-        os.environ["WATCHTOWER_HOME"] = os.path.join(self.tmp, "wt")
-        os.environ["WT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
+        self.env = {k: os.environ.get(k) for k in ("ISR_BOT_HOME", "ISR_BOT_DECOY_ROOT")}
+        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "wt")
+        os.environ["ISR_BOT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
         os.makedirs(wt.state_path(""), exist_ok=True)
         self.rdir = os.path.join(self.tmp, "wt", "private", "rollcall"); os.makedirs(self.rdir)
 

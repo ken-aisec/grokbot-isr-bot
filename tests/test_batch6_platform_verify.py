@@ -462,7 +462,7 @@ class GitleaksOnVerifiedFiles(_Units):
         self.assertEqual(json.loads(self.run_cmd("doctor")[1])["last_run"]["open_by_severity"], r["open_by_severity"])
         self.assertGreaterEqual(r["open_by_severity"]["medium"], 2)   # the hit and ISR-A003
         self.run_cmd("report")
-        reports = os.path.join(os.environ["WATCHTOWER_HOME"], "reports")
+        reports = os.path.join(os.environ["ISR_BOT_HOME"], "reports")
         md = open(os.path.join(reports, next(n for n in os.listdir(reports) if n.endswith(".md")))).read()
         self.assertIn("| medium | ISR-S002 |", md)
         self.assertNotIn("gitleaks would call this medium", md)

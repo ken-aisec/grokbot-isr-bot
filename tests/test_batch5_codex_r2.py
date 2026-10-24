@@ -234,7 +234,7 @@ class CanonicalInstall(Box):
 
     def run_probe(self, where, home):
         import json, subprocess
-        env = dict(os.environ, WATCHTOWER_HOME=home)
+        env = dict(os.environ, ISR_BOT_HOME=home)
         p = subprocess.run([sys.executable, "-I", "-B", "-c", self.PROBE, where], capture_output=True, text=True, timeout=120, env=env)
         self.assertEqual(p.returncode, 0, p.stderr[-2000:])
         return json.loads(p.stdout.strip().splitlines()[-1])
@@ -273,7 +273,7 @@ class CanonicalInstall(Box):
         os.symlink(self.app, os.path.join(other, "app"))
         with open(os.path.join(other, "state", "installed_commit"), "w") as f:
             f.write("c" * 40 + "\n")   # what someone wants it to say
-        with mock.patch.dict(os.environ, {"WATCHTOWER_HOME": other}):
+        with mock.patch.dict(os.environ, {"ISR_BOT_HOME": other}):
             self.forget()
             self.assertIn(want, wt.self_check())
         with open(os.path.join(other, "state", "installed_commit")) as f:
@@ -290,7 +290,7 @@ class CanonicalInstall(Box):
             self.assertEqual(wt.self_check(), [])
 
     def test_the_checkout_runs_as_a_checkout(self):   # guard
-        got = self.run_probe(os.path.join(ROOT, "watchtower"), os.environ["WATCHTOWER_HOME"])
+        got = self.run_probe(os.path.join(ROOT, "watchtower"), os.environ["ISR_BOT_HOME"])
         self.assertEqual((got["root"], got["problems"], got["reviewed"]), (None, None, ""))
         self.assertEqual(got["here"], os.path.realpath(os.path.join(ROOT, "watchtower")))
 

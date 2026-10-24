@@ -1,11 +1,11 @@
 # Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
-ENGINE_BUDGET = int(os.environ.get("WT_ENGINE_BUDGET", "420"))   # seconds of engine time per run; the rest resumes next run
+ENGINE_BUDGET = int(os.environ.get("ISR_BOT_ENGINE_BUDGET", "420"))   # seconds of engine time per run; the rest resumes next run
 ENGINE_CHUNK = 20                                                # skills per launch: small enough that a slow computer still saves progress every batch
 ENGINE_MAX_FILES, ENGINE_MAX_BYTES = 400, 2_000_000
-ENGINE_LAUNCH_BASE = int(os.environ.get("WT_ENGINE_LAUNCH_BASE", "30"))   # seconds one engine launch may take, plus time per skill.
+ENGINE_LAUNCH_BASE = int(os.environ.get("ISR_BOT_ENGINE_LAUNCH_BASE", "30"))   # seconds one engine launch may take, plus time per skill.
 ENGINE_LAUNCH_PER_SKILL = 4                                               # measured on a real box: 3s to launch on one small skill, up to 3.3s per skill when busy.
 #                                                                           v0.6.3 allowed 300s per batch, so one skill that hung a scanner used the whole run.
-ENGINE_SOLO_LIMIT = int(os.environ.get("WT_ENGINE_SOLO_LIMIT", "120"))    # seconds for one skill scanned on its own. v0.6.4 to v0.6.6 gave 34, and on
+ENGINE_SOLO_LIMIT = int(os.environ.get("ISR_BOT_ENGINE_SOLO_LIMIT", "120"))    # seconds for one skill scanned on its own. v0.6.4 to v0.6.6 gave 34, and on
 #                                                                           a real box healthy skills with Office files took 37 to 61 and were marked stuck.
 ENGINE_MAX_TARGETS = 5000
 ENGINE_CURRENT = set()                                                    # skills whose scanner answer is up to date after this run

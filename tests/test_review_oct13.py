@@ -80,7 +80,7 @@ class P2HookUsesAProject(Box):
     def test_vulnerable_package_in_a_project_a_routine_runs_keeps_its_severity(self):
         self.skills(1)
         proj = self.project()
-        ex = os.path.join(os.environ["WATCHTOWER_HOME"], "exports"); os.makedirs(ex, exist_ok=True)
+        ex = os.path.join(os.environ["ISR_BOT_HOME"], "exports"); os.makedirs(ex, exist_ok=True)
         open(os.path.join(ex, "routine-relay.txt"), "w").write(f"Relay digest\nEvery weekday at 8:47, run `node {proj}/hook.js` and summarize.\n")
         self.audit()
         self.assertEqual(self.d002(), [(wt.CONFIRMED, "high")])

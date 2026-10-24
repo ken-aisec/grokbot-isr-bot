@@ -115,8 +115,8 @@ class _Tmp(unittest.TestCase):
         for d in ("home", "decoys", "t", "wt"):
             os.makedirs(os.path.join(self.tmp, d), exist_ok=True)
         # built from scratch, so no PYTHONDONTWRITEBYTECODE from the suite's own environment
-        self.env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": os.path.join(self.tmp, "home"), "WATCHTOWER_HOME": self.home,
-                    "WT_DECOY_ROOT": os.path.join(self.tmp, "decoys"), "TMPDIR": os.path.join(self.tmp, "t"), "LC_ALL": "C.UTF-8"}
+        self.env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": os.path.join(self.tmp, "home"), "ISR_BOT_HOME": self.home,
+                    "ISR_BOT_DECOY_ROOT": os.path.join(self.tmp, "decoys"), "TMPDIR": os.path.join(self.tmp, "t"), "LC_ALL": "C.UTF-8"}
 
     def run_py(self, script, *argv, isolated=True, cwd=None, timeout=60):
         cmd = [sys.executable] + (["-I"] if isolated else []) + [script, *argv]

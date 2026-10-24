@@ -50,7 +50,7 @@ def cookie_jar(home, rows):
 
 class _Access(Box):
     def wt_home(self, *p):
-        return os.path.join(os.environ["WATCHTOWER_HOME"], *p)
+        return os.path.join(os.environ["ISR_BOT_HOME"], *p)
 
     def rollcall(self, *replies):
         rc = self.wt_home("private", "rollcall")

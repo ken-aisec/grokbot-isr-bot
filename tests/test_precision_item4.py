@@ -49,7 +49,7 @@ class BuiltInsNeverScore(Box):
         self.assertIn("ISR-X003", {f["rule"] for f in conf})
         self.assertTrue([l for l in r["platform_notes"]["lines"] if "/skills/helper" in l])   # still announced when it appears (batch 5 d1: as a platform note)
         self.run_cmd("report")
-        md = open(os.path.join(os.environ["WATCHTOWER_HOME"], "reports", sorted(os.listdir(os.path.join(os.environ["WATCHTOWER_HOME"], "reports")))[0])).read()
+        md = open(os.path.join(os.environ["ISR_BOT_HOME"], "reports", sorted(os.listdir(os.path.join(os.environ["ISR_BOT_HOME"], "reports")))[0])).read()
         self.assertIn("## Platform", md)
 
     def test_a_plugin_the_owner_installed_still_counts(self):

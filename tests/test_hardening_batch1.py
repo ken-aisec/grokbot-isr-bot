@@ -20,8 +20,8 @@ class Batch(Box):
     def settings(self, *allow):
         p = os.path.join(self.tmp, "settings.json")
         json.dump({"autoReviewInstructions": {"allowInstructions": list(allow)}}, open(p, "w"))
-        os.environ["WATCHTOWER_SETTINGS"] = p
-        self.addCleanup(os.environ.pop, "WATCHTOWER_SETTINGS", None)
+        os.environ["ISR_BOT_SETTINGS"] = p
+        self.addCleanup(os.environ.pop, "ISR_BOT_SETTINGS", None)
         return p
 
     def rule(self, rule, part="findings"):
@@ -275,7 +275,7 @@ class BaselineReset(Batch):
     def test_each_kind_of_reset_is_a_high_confirmed_alert(self):   # replay
         for kind in ("empty", "deleted", "garbage", "list", "fifo"):
             with self.subTest(kind=kind):
-                os.environ["WATCHTOWER_HOME"] = os.path.join(self.tmp, f"wt-{kind}", "watchtower")
+                os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, f"wt-{kind}", "watchtower")
                 ds = self.changed_after_first_run()
                 copy = wt.load_approved(ds[0])["hash"]
                 bp = wt.state_path("baseline.json")
@@ -519,7 +519,7 @@ class RoundTwo(Batch):
 
     def test_a_file_name_cannot_redraw_another_line(self):   # replay (P1: the source is shown escaped too)
         self.settings(OTHER); self.skills(1)
-        ex = os.path.join(os.environ["WATCHTOWER_HOME"], "exports"); os.makedirs(ex, exist_ok=True)
+        ex = os.path.join(os.environ["ISR_BOT_HOME"], "exports"); os.makedirs(ex, exist_ok=True)
         open(os.path.join(ex, "auto-review-1.txt"), "w").write(f"Allow automatically: {CREDS}\n")
         cover = f"auto-review-2\x1b[1A\x1b[2K\r\x1b[1A\x1b[2K    Allow automatically: {WEEKLY}\n\x1b[2K.txt"
         open(os.path.join(ex, cover), "w").write(f"Allow automatically: {WEEKLY}\n")
@@ -563,7 +563,7 @@ class RoundThree(Batch):
 
     def test_an_export_still_reads_line_by_line(self):   # guard
         self.settings(OTHER); self.skills(1)
-        ex = os.path.join(os.environ["WATCHTOWER_HOME"], "exports"); os.makedirs(ex, exist_ok=True)
+        ex = os.path.join(os.environ["ISR_BOT_HOME"], "exports"); os.makedirs(ex, exist_ok=True)
         open(os.path.join(ex, "auto-review.txt"), "w").write(f"Allow automatically: {CREDS}\nAllow automatically: {WEEKLY}\n")
         code, o, _ = self.run_cmd("auto-allow")
         self.assertEqual(code, 0, o)

@@ -46,11 +46,11 @@ def clear_scanner_checks():
 class Box(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.env = {k: os.environ.get(k) for k in ("HOME", "WATCHTOWER_HOME", "WT_DECOY_ROOT")}
+        self.env = {k: os.environ.get(k) for k in ("HOME", "ISR_BOT_HOME", "ISR_BOT_DECOY_ROOT")}
         self.home = os.path.join(self.tmp, "home", "box"); os.makedirs(self.home)
         os.environ["HOME"] = self.home
-        os.environ["WATCHTOWER_HOME"] = os.path.join(self.tmp, "workspace", "watchtower")
-        os.environ["WT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
+        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "workspace", "watchtower")
+        os.environ["ISR_BOT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
         self.ws = os.path.join(self.tmp, "workspace"); os.makedirs(self.ws, exist_ok=True)
         self.roots = [self.home, self.ws]
         # batch 5 PR B, Codex round 2 (3): the access map's "folders an audit scans" are this box's, never this computer's /workspace
@@ -102,7 +102,7 @@ class Box(unittest.TestCase):
     def scanners(self, **override):
         # Batch 3: Watchtower runs only its own checked copies (scanners/bin, listed in the lock); the fakes are registered
         # in this process only.
-        b = os.path.join(os.environ["WATCHTOWER_HOME"], "scanners", "bin"); os.makedirs(b, exist_ok=True)
+        b = os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin"); os.makedirs(b, exist_ok=True)
         for name, body in SCANNERS.items():
             body = override.get(name.replace("-", "_"), override.get("all", body))
             p = os.path.join(b, name)
@@ -279,7 +279,7 @@ class ScannersMisbehave(Box):
 
     def test_scanners_vanish_then_come_back(self):
         score, keys = self.baseline_run()
-        shutil.rmtree(os.path.join(os.environ["WATCHTOWER_HOME"], "scanners", "bin"))
+        shutil.rmtree(os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin"))
         r = self.audit()
         self.assertTrue(r["scanners_missing"])
         self.scanners()
@@ -500,7 +500,7 @@ class FreshAccountLessons(Box):
         r = self.audit()
         self.assertEqual(r["open_by_severity"]["critical"], 0)                                  # and the quarantine folder is not scanned as live skills
         self.assertGreaterEqual(r["score"], 90)
-        q = os.path.join(os.environ["WATCHTOWER_HOME"], "quarantine")
+        q = os.path.join(os.environ["ISR_BOT_HOME"], "quarantine")
         self.assertTrue(all(os.path.isfile(os.path.join(q, d, "SKILL.md.quarantined")) for d in os.listdir(q)))
         code, o, _ = self.run_cmd("quarantine", "--restore", "silent-sender")
         self.assertTrue(os.path.isfile(os.path.join(wf, "silent-sender", "SKILL.md")), o)
@@ -563,7 +563,7 @@ class FreshAccountLessons(Box):
         self.assertIn("3 times", ev[0]["evidence"])
         open(paths[0]).read()                                                    # one decoy on its own is still an alarm
         self.assertEqual([f["rule"] for f in wt.canary_findings()], ["ISR-K001"])
-        log = open(os.path.join(os.environ["WATCHTOWER_HOME"], "ledger.jsonl")).read() if os.path.exists(os.path.join(os.environ["WATCHTOWER_HOME"], "ledger.jsonl")) else ""
+        log = open(os.path.join(os.environ["ISR_BOT_HOME"], "ledger.jsonl")).read() if os.path.exists(os.path.join(os.environ["ISR_BOT_HOME"], "ledger.jsonl")) else ""
         self.assertIn("canary-read", log or open(wt.state_path("ledger.jsonl")).read())
 
     def test_words_that_say_what_a_bot_will_not_do_are_not_actions(self):
@@ -638,7 +638,7 @@ class FreshAccountLessons(Box):
         self.assertFalse(any(os.path.exists(p) for p in paths))
         self.assertFalse(os.path.exists(os.path.dirname(paths[0])))              # an empty decoy folder goes
         self.assertTrue(os.path.exists(other))                                   # a folder with someone else's file stays
-        self.assertFalse(os.path.exists(os.environ["WATCHTOWER_HOME"]))
+        self.assertFalse(os.path.exists(os.environ["ISR_BOT_HOME"]))
         self.assertTrue(os.path.isdir(os.path.join(self.home, "sand-data", "workflows", "skill000")))   # the user's own skills are never touched
 
     def test_uninstall_removes_only_the_installers_files_from_tmp(self):
@@ -740,7 +740,7 @@ class MainBoxLessons(Box):
             ds.append(d)
         self.assertEqual(len({wt.skill_dir_hash(d) for d in ds}), 1)
         self.assertTrue(wt.has_binary(ds[0]))
-        log = os.path.join(os.environ["WATCHTOWER_HOME"], "launches.log")
+        log = os.path.join(os.environ["ISR_BOT_HOME"], "launches.log")
         slow = SCANNERS["skillspector"].replace("skills = []\n", f"import time\nopen({log!r}, 'a').write('x\\n'); time.sleep(1.5)\nskills = []\n")
         self.scanners(skillspector=slow)
         wt.ENGINE_BUDGET, wt.ENGINE_LAUNCH_BASE, wt.ENGINE_LAUNCH_PER_SKILL, wt.ENGINE_SOLO_LIMIT = 5, 3, 0, 10
@@ -936,7 +936,7 @@ class MainBoxLessons(Box):
             self.assertTrue(high(t), t)                                         # a send outside the negated list is still judged on its own
 
     def own_rooms(self, *names):
-        d = os.path.join(os.environ["WATCHTOWER_HOME"], "exports"); os.makedirs(d, exist_ok=True)
+        d = os.path.join(os.environ["ISR_BOT_HOME"], "exports"); os.makedirs(d, exist_ok=True)
         open(os.path.join(d, "rooms.txt"), "w").write("".join(f"{n} room\n" for n in names))
 
     def test_an_order_to_get_past_a_gate_is_not_an_approval_line(self):
@@ -1071,10 +1071,10 @@ class MainBoxLessons(Box):
         saved, saved_old = list(wt.CANARY_SPECS), wt.OLD_CANARY_PATHS
         self.addCleanup(lambda: (wt.CANARY_SPECS.__setitem__(slice(None), saved), setattr(wt, "OLD_CANARY_PATHS", saved_old)))
         wt.CANARY_SPECS[:] = [(n, "~" + o[len(self.home):] if o.startswith(self.home) else o, b) for (n, _, b), o in zip(saved, old)]
-        os.environ.pop("WT_DECOY_ROOT")
+        os.environ.pop("ISR_BOT_DECOY_ROOT")
         wt.save_json(wt.state_path("decoy_layout.json"), {n: p for n, p, _ in wt.CANARY_SPECS})   # v0.6.5 used the same names everywhere
         self.run_cmd("canary", "plant")                                           # what v0.6.5 left: decoys in /workspace and home
-        os.environ["WT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
+        os.environ["ISR_BOT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
         before = wt.load_json(wt.state_path("canaries.json"), {})
         keep = os.path.join(self.home, ".config", "backup", "someone-elses.txt"); open(keep, "w").write("keep")
         wt.CANARY_SPECS[:] = saved; wt.OLD_CANARY_PATHS = tuple(old)
@@ -1087,7 +1087,7 @@ class MainBoxLessons(Box):
         self.assertFalse(any(os.path.exists(p) for p in old))
         self.assertFalse(os.path.exists(os.path.join(self.ws, ".archive")))        # an emptied decoy folder goes
         self.assertTrue(os.path.exists(keep))                                      # a folder with someone else's file stays
-        self.assertTrue(all(os.path.exists(v["path"]) and v["path"].startswith(os.environ["WT_DECOY_ROOT"]) for v in after.values()))
+        self.assertTrue(all(os.path.exists(v["path"]) and v["path"].startswith(os.environ["ISR_BOT_DECOY_ROOT"]) for v in after.values()))
         self.assertEqual({n: v["token"] for n, v in after.items()}, {n: v["token"] for n, v in before.items()})
         self.assertEqual([f for f in self.snap()["findings"] if f["rule"].startswith("ISR-K")], [])
         self.assertFalse(any("Moved" in n for n in self.audit()["notes"]))         # once
@@ -1111,7 +1111,7 @@ class MainBoxLessons(Box):
         """The decoys live in /tmp and /var/tmp, where every Bot can write. v0.6.6 opened the decoy path and wrote to it, so a link
         planted there in advance made Watchtower overwrite whatever it pointed to."""
         self.skills(1)
-        root = os.environ["WT_DECOY_ROOT"]
+        root = os.environ["ISR_BOT_DECOY_ROOT"]
         victim = os.path.join(self.home, ".bashrc"); open(victim, "w").write("export KEEP=1\n")
         os.makedirs(os.path.join(root, "tmp", ".archive"))
         os.symlink(victim, os.path.join(root, "tmp", ".archive", "payments.env"))                 # a link to a file
@@ -1258,12 +1258,12 @@ class MainBoxLessons(Box):
         code, o, _ = self.run_cmd("rollcall", "--owner-said-yes")
         self.assertIn("left as it was", json.loads(o)["rooms_file"])
         self.assertEqual(self.snap_rollcall(), [])                                # asks first on its one post: nothing to flag
-        rooms = os.path.join(os.environ["WATCHTOWER_HOME"], "exports", "rooms.txt"); os.makedirs(os.path.dirname(rooms), exist_ok=True)
+        rooms = os.path.join(os.environ["ISR_BOT_HOME"], "exports", "rooms.txt"); os.makedirs(os.path.dirname(rooms), exist_ok=True)
         open(rooms, "w").write("Board room  # manual\nOld room\n")
         json.dump([{"name": "Harbor", "kind": "bot"}, {"name": "Kestrel", "kind": "agent"}, {"name": "Growth", "kind": "room"},
                    {"name": "Crew room", "kind": "group chat"}, {"name": "Partners", "members": ["Harbor", "Kestrel"]},
                    {"name": "Sam", "kind": "person"}, {"name": "Unclear"}, "Customers room"],
-                  open(os.path.join(os.environ["WATCHTOWER_HOME"], "exports", "roster.json"), "w"))
+                  open(os.path.join(os.environ["ISR_BOT_HOME"], "exports", "roster.json"), "w"))
         open(os.path.join(rdir, "kestrel.json"), "w").write(reply)
         code, o, _ = self.run_cmd("rollcall", "--owner-said-yes")
         self.assertEqual(json.loads(o)["rooms_file"], {"rooms": 3, "kept_manual": 1})
@@ -1303,7 +1303,7 @@ class MainBoxLessons(Box):
         self.skills(1); self.audit()
         outside = os.path.join(self.tmp, "outside"); victim = os.path.join(outside, "victim"); os.makedirs(victim)
         open(os.path.join(victim, "notes.md"), "w").write("not Watchtower's")
-        q = os.path.join(os.environ["WATCHTOWER_HOME"], "quarantine", "held-20261008-120000"); os.makedirs(q)
+        q = os.path.join(os.environ["ISR_BOT_HOME"], "quarantine", "held-20261008-120000"); os.makedirs(q)
         open(os.path.join(q, "SKILL.md.quarantined"), "w").write("held")
         wt.save_json(wt.state_path("quarantine.json"), [
             {"name": "takes-from-outside", "from": os.path.join(self.home, "sand-data", "workflows", "landed"), "to": victim, "at": wt.now()},
@@ -1335,9 +1335,9 @@ class MainBoxLessons(Box):
 
     def test_a_tampered_project_list_never_runs_npm_outside(self):
         inside = os.path.join(self.ws, "app"); outside = os.path.join(self.tmp, "outside", "proj")
-        for d in (inside, outside, os.path.join(os.environ["WATCHTOWER_HOME"], "app")):
+        for d in (inside, outside, os.path.join(os.environ["ISR_BOT_HOME"], "app")):
             os.makedirs(d, exist_ok=True); open(os.path.join(d, "package-lock.json"), "w").write("{}")
-        wt.save_json(wt.state_path("osv_projects.json"), {"at": wt.now(), "projects": [inside, outside, os.path.join(os.environ["WATCHTOWER_HOME"], "app")]})
+        wt.save_json(wt.state_path("osv_projects.json"), {"at": wt.now(), "projects": [inside, outside, os.path.join(os.environ["ISR_BOT_HOME"], "app")]})
         seen, real = [], (wt.upgrade_npm, wt.python_upgrades)
         wt.upgrade_npm = lambda projs: seen.extend(projs) or []
         wt.python_upgrades = lambda: []

@@ -18,9 +18,9 @@ _MODULE_ENV = {}
 
 def setUpModule():
     tmp = tempfile.mkdtemp(prefix="wt-tests-")
-    _MODULE_ENV.update({k: os.environ.get(k) for k in ("WATCHTOWER_HOME", "WT_DECOY_ROOT")}, _tmp=tmp)
-    os.environ["WATCHTOWER_HOME"] = os.path.join(tmp, "watchtower")
-    os.environ["WT_DECOY_ROOT"] = os.path.join(tmp, "decoys")
+    _MODULE_ENV.update({k: os.environ.get(k) for k in ("ISR_BOT_HOME", "ISR_BOT_DECOY_ROOT")}, _tmp=tmp)
+    os.environ["ISR_BOT_HOME"] = os.path.join(tmp, "watchtower")
+    os.environ["ISR_BOT_DECOY_ROOT"] = os.path.join(tmp, "decoys")
 
 
 def tearDownModule():
@@ -36,7 +36,7 @@ def tearDownModule():
 
 def fake_scanner(name, body):
     """Batch 3: a stand-in scanner in Watchtower's checked folder, registered for this process (SCANNER_LOCK_EXTRA)."""
-    b = os.path.join(os.environ["WATCHTOWER_HOME"], "scanners", "bin"); os.makedirs(b, exist_ok=True)
+    b = os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin"); os.makedirs(b, exist_ok=True)
     p = os.path.join(b, name)
     with open(p, "w") as f:
         f.write(body)
@@ -296,11 +296,11 @@ class NativeSettings(unittest.TestCase):
             "Create Notion databases under the Team Wiki tree",
             "Create Notion pages under the Team Wiki tree",
             "Use sand_automation_write to create automations"]}}, open(p, "w"))
-        os.environ["WATCHTOWER_SETTINGS"] = p
+        os.environ["ISR_BOT_SETTINGS"] = p
         try:
             text, settings, path = wt.native_settings()
         finally:
-            del os.environ["WATCHTOWER_SETTINGS"]
+            del os.environ["ISR_BOT_SETTINGS"]
             shutil.rmtree(d)
         fs = wt.lint_auto_review(text, path) + wt.lint_settings(settings, path)
         rules = [f["rule"] for f in fs]
@@ -313,12 +313,12 @@ class NativeSettings(unittest.TestCase):
 class Flow(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.old_env = {k: os.environ.get(k) for k in ("WATCHTOWER_HOME", "WT_DECOY_ROOT")}
+        self.old_env = {k: os.environ.get(k) for k in ("ISR_BOT_HOME", "ISR_BOT_DECOY_ROOT")}
         self.old_home = os.environ.get("HOME")
         os.environ["HOME"] = os.path.join(self.tmp, "home")
         os.makedirs(os.environ["HOME"])
-        os.environ["WATCHTOWER_HOME"] = os.path.join(self.tmp, "wt")
-        os.environ["WT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
+        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "wt")
+        os.environ["ISR_BOT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
         self.root = os.path.join(self.tmp, "computer")
         shutil.copytree(os.path.join(FIX, "clean"), os.path.join(self.root, "skills"))
         self.exports = os.path.join(FIX, "exports")
@@ -359,14 +359,14 @@ class Flow(unittest.TestCase):
         self.assertNotIn(self.key, json.dumps(delta))
         rep = self.call("report")
         self.assertIn("ISR Bot report", rep)
-        rdir = os.path.join(os.environ["WATCHTOWER_HOME"], "reports")
+        rdir = os.path.join(os.environ["ISR_BOT_HOME"], "reports")
         self.assertTrue(os.path.exists(os.path.join(rdir, "dashboard.html")))
-        ledger = open(os.path.join(os.environ["WATCHTOWER_HOME"], "state", "ledger.jsonl")).read().splitlines()
+        ledger = open(os.path.join(os.environ["ISR_BOT_HOME"], "state", "ledger.jsonl")).read().splitlines()
         self.assertGreaterEqual(len(ledger), 5)
 
     def test_daily_keeps_slow_engine_findings(self):
         self.call("audit", "--roots", self.root, "--exports", self.exports)
-        sp = os.path.join(os.environ["WATCHTOWER_HOME"], "state", "last_findings.json")
+        sp = os.path.join(os.environ["ISR_BOT_HOME"], "state", "last_findings.json")
         snap = json.load(open(sp))
         fake = wt.finding("ISR-D001", "Vulnerable package demo 1.0", "high", ["ASI04"], "python package demo", "1 known", "Upgrade.")
         snap["findings"].append(fake)
@@ -379,17 +379,17 @@ class Flow(unittest.TestCase):
         out = json.loads(self.call("audit", "--roots", self.root, "--exports", self.exports))
         self.assertIn("ISR-H001", {f["rule"] for f in out["new"]})
         self.assertEqual(self.call("daily", "--roots", self.root, "--exports", self.exports).strip(), "NO_CHANGES")
-        snap = json.load(open(os.path.join(os.environ["WATCHTOWER_HOME"], "state", "last_findings.json")))
+        snap = json.load(open(os.path.join(os.environ["ISR_BOT_HOME"], "state", "last_findings.json")))
         self.assertIn("ISR-H001", {f["rule"] for f in snap["findings"]})
 
     def test_suppression(self):
         json.loads(self.call("audit", "--roots", self.root, "--exports", self.exports))
-        snap = json.load(open(os.path.join(os.environ["WATCHTOWER_HOME"], "state", "last_findings.json")))
+        snap = json.load(open(os.path.join(os.environ["ISR_BOT_HOME"], "state", "last_findings.json")))
         target = snap["findings"][0]
         json.dump([{"key": target["key"], "reason": "accepted for test", "expires": "2999-01-01"}],
-                  open(os.path.join(os.environ["WATCHTOWER_HOME"], "state", "suppressions.json"), "w"))
+                  open(os.path.join(os.environ["ISR_BOT_HOME"], "state", "suppressions.json"), "w"))
         self.call("audit", "--roots", self.root, "--exports", self.exports)
-        snap = json.load(open(os.path.join(os.environ["WATCHTOWER_HOME"], "state", "last_findings.json")))
+        snap = json.load(open(os.path.join(os.environ["ISR_BOT_HOME"], "state", "last_findings.json")))
         self.assertNotIn(target["key"], {f["key"] for f in snap["findings"]})
         self.assertIn(target["key"], {f["key"] for f in snap["suppressed"]})
 
@@ -397,11 +397,11 @@ class Flow(unittest.TestCase):
 class Features(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.old_env = {k: os.environ.get(k) for k in ("WATCHTOWER_HOME", "WT_DECOY_ROOT")}
+        self.old_env = {k: os.environ.get(k) for k in ("ISR_BOT_HOME", "ISR_BOT_DECOY_ROOT")}
         self.old_home = os.environ.get("HOME")
         os.environ["HOME"] = self.tmp
-        os.environ["WATCHTOWER_HOME"] = os.path.join(self.tmp, "wt")
-        os.environ["WT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
+        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "wt")
+        os.environ["ISR_BOT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
         self.rules = wt.load_rules()
 
     def tearDown(self):
@@ -438,7 +438,7 @@ class Features(unittest.TestCase):
     def test_canaries_read_and_copy(self):
         code, o = self.out("canary", "plant")
         self.assertIn("Planted 3", o)
-        reg = json.load(open(os.path.join(os.environ["WATCHTOWER_HOME"], "state", "canaries.json")))
+        reg = json.load(open(os.path.join(os.environ["ISR_BOT_HOME"], "state", "canaries.json")))
         self.assertEqual(wt.canary_findings(), [])
         target = os.path.expanduser(reg["customers"]["path"])
         content = open(target).read()
@@ -746,7 +746,7 @@ class Features(unittest.TestCase):
         self.assertIn("Left open: Two scanners agree a skill is dangerous (/w/evil)", done[0])   # named, not just counted
 
     def test_ask_first_rules_saved_to_exports_count(self):
-        ex = os.path.join(os.environ["WATCHTOWER_HOME"], "exports"); os.makedirs(ex)
+        ex = os.path.join(os.environ["ISR_BOT_HOME"], "exports"); os.makedirs(ex)
         open(os.path.join(ex, "auto-review.txt"), "w").write(
             "Ask first: before sending any external email or message\nAsk first: before publishing, posting, buying or paying for anything\n"
             "Ask first: before deleting anything\nAsk first: before changing settings, routines or connectors\n")
@@ -813,7 +813,7 @@ class Features(unittest.TestCase):
     def test_budget_is_checked_inside_a_batch(self):
         import time
         dirs = self._fake_engines(6)
-        ss = os.path.join(os.environ["WATCHTOWER_HOME"], "scanners", "bin", "skillspector")
+        ss = os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin", "skillspector")
         fast = open(ss).read()
         fake_scanner("skillspector", "#!/bin/sh\nsleep 30\n")              # an engine that hangs
         notes, t0 = [], time.monotonic()
@@ -832,7 +832,7 @@ class Features(unittest.TestCase):
         dirs = self._fake_engines(3)
         for d in dirs:
             open(os.path.join(d, "SKILL.md"), "a").write("HUSK loader\n")
-        hk = os.path.join(os.environ["WATCHTOWER_HOME"], "scanners", "bin", "husk")
+        hk = os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin", "husk")
         body = open(hk).read()
         fake_scanner("husk", body.replace('if a[0] == "package":', 'if a[0] == "package":\n    import time; time.sleep(1.2)'))
         stage = os.path.join(self.tmp, "stage"); os.makedirs(stage)
@@ -950,7 +950,7 @@ class Features(unittest.TestCase):
         import time
         dirs = self._fake_engines(6)
         open(os.path.join(dirs[4], "SKILL.md"), "a").write("JAM\n")
-        ss = os.path.join(os.environ["WATCHTOWER_HOME"], "scanners", "bin", "skillspector")
+        ss = os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin", "skillspector")
         body = open(ss).read()
         fake_scanner("skillspector", body.replace("skills = []", 'import time\nif any("JAM" in open(os.path.join(stage, n, "SKILL.md")).read() for n in os.listdir(stage)): time.sleep(30)\nskills = []'))
         old = (wt.ENGINE_LAUNCH_BASE, wt.ENGINE_LAUNCH_PER_SKILL, wt.ENGINE_SOLO_LIMIT); wt.ENGINE_LAUNCH_BASE, wt.ENGINE_LAUNCH_PER_SKILL, wt.ENGINE_SOLO_LIMIT = 1, 0, 1
@@ -1034,7 +1034,7 @@ class Features(unittest.TestCase):
 
     def test_skills_are_never_remembered_as_scanned_when_no_scanner_ran(self):
         dirs = self._fake_engines(5)
-        bindir = os.path.join(os.environ["WATCHTOWER_HOME"], "scanners", "bin")
+        bindir = os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin")
         os.rename(bindir, bindir + ".gone")                                  # the scanners disappear (lost venv)
         notes = []
         self.assertEqual(wt.engine_findings(dirs, [], notes), [])
@@ -1057,7 +1057,7 @@ class Features(unittest.TestCase):
         self._fake_engines(2)
         code, o = self.out("audit", "--roots", self.tmp)
         self.assertNotIn("scanners_missing", json.loads(o))
-        shutil.rmtree(os.path.join(os.environ["WATCHTOWER_HOME"], "scanners", "bin"))
+        shutil.rmtree(os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin"))
         for _ in range(2):                                                   # keeps saying so until they are back
             code, o = self.out("audit", "--roots", self.tmp)
             r = json.loads(o)
@@ -1079,7 +1079,7 @@ class Features(unittest.TestCase):
     def test_daily_says_when_scanners_are_gone(self):
         self._fake_engines(2)
         self.out("audit", "--roots", self.tmp)
-        shutil.rmtree(os.path.join(os.environ["WATCHTOWER_HOME"], "scanners", "bin"))
+        shutil.rmtree(os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin"))
         code, o = self.out("daily", "--roots", self.tmp)
         self.assertTrue(o.startswith("SCANNERS_MISSING SkillSpector, husk"), o)
 

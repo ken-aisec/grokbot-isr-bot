@@ -234,7 +234,7 @@ class DailyScannerAlerts(_Middle):
     """Codex 5: an open ISR-X005 vanished from daily once no platform hold kept daily from its quiet answer."""
 
     def swap_gitleaks(self):
-        p = os.path.join(os.environ["WATCHTOWER_HOME"], "scanners", "bin", "gitleaks")
+        p = os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin", "gitleaks")
         add(p, "# changed after Watchtower installed it\n")                     # no longer the digest Watchtower registered
         wt._SCANNER_OK.clear()
 

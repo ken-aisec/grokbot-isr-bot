@@ -59,9 +59,9 @@ def iso(days_ago):
 class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.env = {k: os.environ.get(k) for k in ("WATCHTOWER_HOME", "WT_DECOY_ROOT")}
-        os.environ["WATCHTOWER_HOME"] = os.path.join(self.tmp, "wt")
-        os.environ["WT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
+        self.env = {k: os.environ.get(k) for k in ("ISR_BOT_HOME", "ISR_BOT_DECOY_ROOT")}
+        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "wt")
+        os.environ["ISR_BOT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
 
     def tearDown(self):
         for k, v in self.env.items():
@@ -70,7 +70,7 @@ class Base(unittest.TestCase):
 
     def fresh_home(self):
         """A new, empty Watchtower home for the next subtest (inside setUp's folder, so tearDown removes it)."""
-        os.environ["WATCHTOWER_HOME"] = tempfile.mkdtemp(dir=self.tmp)
+        os.environ["ISR_BOT_HOME"] = tempfile.mkdtemp(dir=self.tmp)
 
     def run_wt(self, *argv, stdin=None):
         out, err = io.StringIO(), io.StringIO()
@@ -109,7 +109,7 @@ class Base(unittest.TestCase):
 
     def everything_watchtower_kept(self):
         blob = []
-        for root, _, files in os.walk(os.environ["WATCHTOWER_HOME"]):
+        for root, _, files in os.walk(os.environ["ISR_BOT_HOME"]):
             for fn in files:
                 try:
                     blob.append(raw(os.path.join(root, fn)).decode("utf-8", "replace"))
@@ -221,7 +221,7 @@ class RoundBoundaries(Base):
         for b in ("bot-a", "bot-b", "bot-f"):
             self.save(b, first_answer(b))
         self.run_rollcall()
-        exp = os.path.join(os.environ["WATCHTOWER_HOME"], "exports"); os.makedirs(exp, exist_ok=True)
+        exp = os.path.join(os.environ["ISR_BOT_HOME"], "exports"); os.makedirs(exp, exist_ok=True)
         rp = os.path.join(exp, "roster.json")
         dump([{"name": "bot-b", "kind": "bot"}, {"name": "bot-f", "kind": "bot"}], rp)
         os.utime(rp, (time.time() + 5, time.time() + 5))                       # saved after the roll-call: bot-a was removed
@@ -363,7 +363,7 @@ class BotNamesThatLookLikeFindings(Base):
         self.alpha_first()
         self.save("bot-a:memories", answer("bot-a:memories", sends_without_asking=True))
         self.run_rollcall()
-        exp = os.path.join(os.environ["WATCHTOWER_HOME"], "exports"); os.makedirs(exp, exist_ok=True)
+        exp = os.path.join(os.environ["ISR_BOT_HOME"], "exports"); os.makedirs(exp, exist_ok=True)
         rp = os.path.join(exp, "roster.json")
         dump([{"name": "bot-a:memories", "kind": "bot"}], rp)                  # bot-a was removed, "bot-a:memories" stays
         os.utime(rp, (time.time() + 5, time.time() + 5))

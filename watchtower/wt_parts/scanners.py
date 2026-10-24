@@ -259,12 +259,12 @@ def remember_manifest(root, text):
 
 def installed_root():
     """The real folder of the installed copy this wt.py runs from, or None in a developer checkout. PR A, Codex round 1 (6): it
-    was an installed copy only while WATCHTOWER_HOME/app led to it, so changing that variable made one a developer checkout, whose
+    was an installed copy only while ISR_BOT_HOME/app led to it, so changing that variable made one a developer checkout, whose
     rules files (the reviewed list, the normalization spec, the locks) are never held to MANIFEST.sha256. An installed copy is the
-    `app` folder install.sh makes, whatever WATCHTOWER_HOME says now.
+    `app` folder install.sh makes, whatever ISR_BOT_HOME says now.
     PR A, Codex round 2 (5): SELF_ROOT is the real folder of the wt.py that runs (wt.py follows links to itself), so a folder
     holding only a `watchtower` link to the installed copy runs it as the installed copy; and only that real folder's name
-    counts, never a WATCHTOWER_HOME whose app leads somewhere.
+    counts, never a ISR_BOT_HOME whose app leads somewhere.
     PR A, Codex round 3 (3): the name alone made `mv app app.real` (with or without `ln -s app.real app`) a developer checkout:
     no self-check, and planted rules files accepted. It is also an installed copy when it has what install.sh leaves: its
     MANIFEST.sha256 and the commit record in the folder holding it (state/installed_commit), or when it is anywhere under
@@ -277,12 +277,12 @@ def installed_root():
     return None
 
 
-DEFAULT_INSTALL_HOME = "/workspace/watchtower"   # install.sh's WT_HOME when WATCHTOWER_HOME isn't set
+DEFAULT_INSTALL_HOME = "/workspace/watchtower"   # install.sh's ISR_HOME when ISR_BOT_HOME isn't set
 
 
 def install_home(root):
-    """The Watchtower folder the installed copy at `root` (its real folder) was installed into: install.sh's WT_HOME, the real
-    folder holding `app`. PR A, Codex round 2 (5): never WATCHTOWER_HOME, whose `app` may be a link to the installed copy while
+    """The Watchtower folder the installed copy at `root` (its real folder) was installed into: install.sh's ISR_HOME, the real
+    folder holding `app`. PR A, Codex round 2 (5): never ISR_BOT_HOME, whose `app` may be a link to the installed copy while
     its state/installed_commit says what someone wants."""
     return os.path.dirname(root)
 

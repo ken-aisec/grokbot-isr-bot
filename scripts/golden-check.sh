@@ -41,5 +41,5 @@ MODE="${2:-full}"
 [[ -z "$EXPECT" || -f "$EXPECT" ]] || { echo "golden-check: no expect file $EXPECT" >&2; exit 2; }
 [[ -n "$EXPECT" || "$HAVE_ITEMS" == 0 ]] || { echo "golden-check: --items needs --expect FILE" >&2; exit 2; }
 git rev-parse --verify --quiet "$PRE^{commit}" >/dev/null || { echo "golden-check: unknown ref $PRE" >&2; exit 2; }
-WT_GOLDEN_PRE="$PRE" WT_GOLDEN_TIERS="$MODE" WT_GOLDEN_ONLY="${3:-}" WT_GOLDEN_EXPECT="$EXPECT" WT_GOLDEN_ITEMS="$ITEMS" \
+ISR_GOLDEN_PRE="$PRE" ISR_GOLDEN_TIERS="$MODE" ISR_GOLDEN_ONLY="${3:-}" ISR_GOLDEN_EXPECT="$EXPECT" ISR_GOLDEN_ITEMS="$ITEMS" \
   exec python3 -I -B -m unittest discover -s tests -p golden_split.py -v

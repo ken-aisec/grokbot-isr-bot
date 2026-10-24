@@ -74,7 +74,7 @@ class InstallScanners(unittest.TestCase):
         return sorted(f for f in ("gitleaks", "trufflehog", "osv-scanner") if os.access(os.path.join(self.wt, "scanners", "bin", f), os.X_OK))
 
     def run_install(self, **env):
-        e = dict(os.environ, PATH=self.bin + ":" + os.environ["PATH"], WATCHTOWER_HOME=self.wt, CALLS=self.log, SERVE=self.serve, TMPDIR=os.path.join(self.tmp, "t"), **env)
+        e = dict(os.environ, PATH=self.bin + ":" + os.environ["PATH"], ISR_BOT_HOME=self.wt, CALLS=self.log, SERVE=self.serve, TMPDIR=os.path.join(self.tmp, "t"), **env)
         r = subprocess.run(["bash", os.path.join(ROOT, "scripts", "install.sh"), "--scanners"], env=e, capture_output=True, text=True, timeout=60)
         calls = open(self.log).read().splitlines() if os.path.exists(self.log) else []
         return r, calls
@@ -151,7 +151,7 @@ class InstallScanners(unittest.TestCase):
                                   f'exit 0; fi\nexec {REAL_PY} "$@"\n')
         sb = os.path.join(self.wt, "scanners", "bin"); os.makedirs(sb)
         pwned = os.path.join(self.tmp, "planted-pip-ran")
-        stub(sb, "pip", f'touch "{pwned}"; touch "$WATCHTOWER_HOME/scanners/LOCKED"; exit 0\n')
+        stub(sb, "pip", f'touch "{pwned}"; touch "$ISR_BOT_HOME/scanners/LOCKED"; exit 0\n')
         stub(sb, "skillspector", "echo SWAPPED\n")
         r, _ = self.run_install()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)

@@ -65,7 +65,7 @@ def native_settings(entries=False, read=None):
     With entries=True the first item is the list of rule entries instead, each whole: an entry can span several lines, and
     read line by line its continuation would be linted, shown, hashed and kept unseen (Codex, round 3). `read(path)` reads a
     candidate instead of load_json (the access map's reader follows no link)."""
-    cands = [os.environ["WATCHTOWER_SETTINGS"]] if os.environ.get("WATCHTOWER_SETTINGS") else NATIVE_SETTINGS
+    cands = [os.environ["ISR_BOT_SETTINGS"]] if os.environ.get("ISR_BOT_SETTINGS") else NATIVE_SETTINGS
     for cand in cands:
         p = os.path.expanduser(cand)
         data = read(p) if read else load_json(p, None)

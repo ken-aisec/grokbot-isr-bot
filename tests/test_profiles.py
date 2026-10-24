@@ -85,7 +85,7 @@ class Profiles(Box):
         self.assertEqual(code, 0); self.assertIn("Ïris 🤖", json.loads(o)["bots"])
         r = self.everyday()
         self.assertGreaterEqual(r["inventory"]["skills"], len(ds))
-        md = open(os.path.join(os.environ["WATCHTOWER_HOME"], "reports", sorted(os.listdir(os.path.join(os.environ["WATCHTOWER_HOME"], "reports")))[0]), encoding="utf-8").read()
+        md = open(os.path.join(os.environ["ISR_BOT_HOME"], "reports", sorted(os.listdir(os.path.join(os.environ["ISR_BOT_HOME"], "reports")))[0]), encoding="utf-8").read()
         self.assertTrue(md)
         stage = os.path.join(self.tmp, "stage", "Bot"); os.makedirs(stage)
         open(os.path.join(stage, "routine-a.md"), "w").write("Never send without my approval. José reads it; Танго drafts.\n")

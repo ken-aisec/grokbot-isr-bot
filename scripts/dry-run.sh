@@ -9,16 +9,16 @@
 #
 #   scripts/dry-run.sh [REF] [-- wt.py args]      default REF=HEAD, args "audit"
 #
-# Env: WT_DRY_KEEP=1 keeps the whole sandbox; WT_DRY_OUT=<dir under /tmp> sets the report folder.
-# WT_DRY_WORKSPACE / WT_DRY_INSTALL / WT_DRY_TMPROOT / WT_DRY_RO exist for the tests. WT_DRY_RO lists
+# Env: ISR_DRY_KEEP=1 keeps the whole sandbox; ISR_DRY_OUT=<dir under /tmp> sets the report folder.
+# ISR_DRY_WORKSPACE / ISR_DRY_INSTALL / ISR_DRY_TMPROOT / ISR_DRY_RO exist for the tests. ISR_DRY_RO lists
 # extra folders made read-only (default: the home folder and /var/tmp, where the live decoys sit).
 set -euo pipefail
 
 DEV="$(cd "$(dirname "$0")/.." && pwd)"
-WS="$(realpath -m "${WT_DRY_WORKSPACE:-/workspace}")"
-INSTALL="$(realpath -m "${WT_DRY_INSTALL:-$WS/watchtower}")"
-TMPROOT="$(realpath -m "${WT_DRY_TMPROOT:-/tmp}")"
-RO="${WT_DRY_RO-$HOME /var/tmp}"
+WS="$(realpath -m "${ISR_DRY_WORKSPACE:-/workspace}")"
+INSTALL="$(realpath -m "${ISR_DRY_INSTALL:-$WS/watchtower}")"
+TMPROOT="$(realpath -m "${ISR_DRY_TMPROOT:-/tmp}")"
+RO="${ISR_DRY_RO-$HOME /var/tmp}"
 REF="HEAD"
 if [[ $# -gt 0 && "$1" != "--" ]]; then REF="$1"; shift; fi
 [[ "${1:-}" == "--" ]] && shift
@@ -30,12 +30,12 @@ die() { echo "dry-run: $*" >&2; exit 2; }
 inside "$TMPROOT" "$WS" && die "sandbox root $TMPROOT is inside $WS; a dry run must leave $WS untouched"
 [[ -d "$INSTALL/state" ]] || die "no install state at $INSTALL/state"
 SHA="$(git -C "$DEV" rev-parse --short "$REF^{commit}")" || die "unknown ref $REF"
-OUT="$(realpath -m "${WT_DRY_OUT:-$TMPROOT/wt-dry-report-$SHA-$(date +%Y%m%dT%H%M%S)}")"
+OUT="$(realpath -m "${ISR_DRY_OUT:-$TMPROOT/wt-dry-report-$SHA-$(date +%Y%m%dT%H%M%S)}")"
 inside "$OUT" "$WS" && die "report folder $OUT is inside $WS"
 command -v unshare >/dev/null || die "unshare is missing"
 
 B="$(mktemp -d "$TMPROOT/wt-dry.XXXXXX")"
-cleanup() { [[ "${WT_DRY_KEEP:-}" == 1 ]] || rm -rf "$B"; }
+cleanup() { [[ "${ISR_DRY_KEEP:-}" == 1 ]] || rm -rf "$B"; }
 trap cleanup EXIT
 mkdir -p "$B/code" "$B/state" "$B/cache" "$B/out"
 git -C "$DEV" archive "$SHA" | tar -x -C "$B/code"
@@ -50,7 +50,7 @@ mount -o remount,bind,ro "$WS"
 for d in $RO; do [ -d "$d" ] || continue; mount --rbind "$d" "$d"; mount -o remount,bind,ro "$d"; done
 mount --bind "$B/state" "$INSTALL/state"
 mount --bind "$B" /tmp
-export PYTHONDONTWRITEBYTECODE=1 XDG_CACHE_HOME=/tmp/cache TMPDIR=/tmp WATCHTOWER_HOME="$INSTALL"
+export PYTHONDONTWRITEBYTECODE=1 XDG_CACHE_HOME=/tmp/cache TMPDIR=/tmp ISR_BOT_HOME="$INSTALL"
 cd /tmp
 set +e
 python3 -W ignore /tmp/code/watchtower/wt.py "$@" > /tmp/out/audit.json 2> /tmp/out/audit.err
@@ -63,5 +63,5 @@ set -e
 
 mkdir -p "$OUT"
 cp -a "$B/out/." "$OUT/"
-echo "dry-run $SHA exit=$rc report=$OUT/audit.json$([[ "${WT_DRY_KEEP:-}" == 1 ]] && echo " sandbox=$B")"
+echo "dry-run $SHA exit=$rc report=$OUT/audit.json$([[ "${ISR_DRY_KEEP:-}" == 1 ]] && echo " sandbox=$B")"
 exit $rc

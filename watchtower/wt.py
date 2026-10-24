@@ -17,7 +17,7 @@ Commands
   exception add SKILL   owner-confirmed 30-day exception for one security-tool skill
   doctor [--save]       a support snapshot of this computer that is safe to share
 
-State lives in $WATCHTOWER_HOME (default /workspace/watchtower).
+State lives in $ISR_BOT_HOME (default /workspace/watchtower).
 """
 import sys
 if sys.version_info < (3, 8):   # degrade with one plain line, not a traceback (v0.6.9 old-Python profile)
@@ -1051,7 +1051,7 @@ def self_check():
     """Before every run, the installed copy checks itself: every file against MANIFEST.sha256, and the commit against the one
     install.sh recorded. Returns the problems found ([] when all is well, None when this is not an installed copy, such as a
     developer's checkout). An install from before v0.6.8 has no recorded commit: the current one is recorded once, and said."""
-    root = installed_root()   # PR A, Codex round 1 (6): the copy this runs from, whatever WATCHTOWER_HOME says
+    root = installed_root()   # PR A, Codex round 1 (6): the copy this runs from, whatever ISR_BOT_HOME says
     if root is None:
         return None
     problems = []

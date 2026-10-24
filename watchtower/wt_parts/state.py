@@ -4,7 +4,7 @@ def now():
 
 
 def home():
-    return os.environ.get("WATCHTOWER_HOME", "/workspace/watchtower")
+    return os.environ.get("ISR_BOT_HOME", "/workspace/watchtower")
 
 
 def state_path(*p):
