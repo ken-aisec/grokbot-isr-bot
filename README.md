@@ -62,7 +62,7 @@ installer itself and everything it installs are pinned:
 COMMIT=<full commit ID from the release page>
 mkdir -p /workspace/isr-bot && cd /workspace/isr-bot
 curl -fsSLO "https://raw.githubusercontent.com/ken-aisec/grokbot-isr-bot/$COMMIT/scripts/install.sh"
-head -40 install.sh && bash install.sh v0.7.4 "$COMMIT"
+head -40 install.sh && bash install.sh v0.8.0 "$COMMIT"
 bash /workspace/isr-bot/app/scripts/install.sh --scanners
 python3 /workspace/isr-bot/app/isr_bot/isr.py audit
 ```
