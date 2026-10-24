@@ -6,8 +6,8 @@ SECURITY_TOOL = re.compile(r"(?i)\b(secur\w*|scann?\w*|audit\w*|vet(s|ting|ted)?
 
 
 def own_release_file(p, h):
-    """True when a file in an installed copy of one of Watchtower's own skills is byte-for-byte the file in the verified
-    release under app/skills. Updating Watchtower then doesn't raise 'a skill you approved has changed' about itself."""
+    """True when a file in an installed copy of one of ISR Bot's own skills is byte-for-byte the file in the verified
+    release under app/skills. Updating ISR Bot then doesn't raise 'a skill you approved has changed' about itself."""
     parts = p.split("/")
     for i in range(len(parts) - 2, 0, -1):
         src = os.path.join(SELF_ROOT, "skills", *parts[i:])
@@ -62,7 +62,7 @@ def read_snapshot(p):
 
 
 def save_approved(d, snapshot=None, dir_hash=None, keep=None):
-    """Keep a copy of a skill as approved (text files only, compressed, inside Watchtower's own state) so a later
+    """Keep a copy of a skill as approved (text files only, compressed, inside ISR Bot's own state) so a later
     change can be shown as a diff. Other files are remembered by fingerprint. With `snapshot` ({path: (sha256, bytes)}, from
     read_snapshot), the copy is made from exactly those bytes and covers only those files: Codex, item 8 review 2 (medium 2),
     revet saved the digest it checked but read the files again for the copy, so a version swapped in after the check became the
@@ -192,7 +192,7 @@ def load_approved(d):
 
 
 def approved_dirs():
-    """The skill folders Watchtower kept an approved copy of, read from each copy. A copy counts only when it is stored under its
+    """The skill folders ISR Bot kept an approved copy of, read from each copy. A copy counts only when it is stored under its
     own folder's name, so a copy that names a different folder never stands in for it."""
     out = set()
     try:

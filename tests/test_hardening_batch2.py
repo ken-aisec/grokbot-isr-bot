@@ -54,7 +54,7 @@ class StatusOnABox(Box):
         self.skills(1); self.run_cmd("canary", "plant"); self.audit()
         reg = isr.load_json(isr.state_path("canaries.json"), {})
         p = os.path.expanduser(next(iter(reg.values()))["path"])
-        os.utime(p, (time.time() - 3600, os.stat(p).st_mtime))                   # one read, an hour ago: no Watchtower run then
+        os.utime(p, (time.time() - 3600, os.stat(p).st_mtime))                   # one read, an hour ago: no ISR Bot run then
         r = self.audit()
         self.assertEqual(r["status"], "Act now")
         self.assertEqual(list(r)[0], "status")                                  # the first thing a Bot reads
@@ -133,7 +133,7 @@ class Decoys(Box):
         self.run_cmd("canary", "plant")
         self.reg = isr.load_json(isr.state_path("canaries.json"), {})
         self.paths = [os.path.expanduser(v["path"]) for v in self.reg.values()]
-        isr.save_json(isr.state_path("run_windows.json"), [])                     # no Watchtower run going when the decoys are read
+        isr.save_json(isr.state_path("run_windows.json"), [])                     # no ISR Bot run going when the decoys are read
 
     def witness(self, p):
         return os.path.join(os.path.dirname(p), isr.WITNESS)

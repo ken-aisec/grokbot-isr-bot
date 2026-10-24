@@ -1,7 +1,7 @@
 """Item 8, Codex review 2 (on b8617aa): three highs and three mediums left in platform provenance.
 
 1. high: the platform files were only what the scanner's inventory kept, so a baselined SKILL.md turned into a link into
-   Watchtower's quarantine (a "not live" skill), a folder link, a loose script and a file under node_modules escaped the gate.
+   ISR Bot's quarantine (a "not live" skill), a folder link, a loose script and a file under node_modules escaped the gate.
 2. high: a plant whose finding was copied into last_findings.json in advance was never "new", and daily said NO_CHANGES.
 3. high: a matching line in Bot-writable baseline.json skipped provenance, and `baseline --owner-said-yes` wrote such lines.
 4. medium: approved files kept their slots in `fix`'s 200-file list, and refused ones starved the files after them.

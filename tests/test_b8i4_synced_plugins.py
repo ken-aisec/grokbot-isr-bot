@@ -3,7 +3,7 @@ installs from marketplaces included; the release list names only cowork-plugin-m
 update of a path the release list names (a `<bucket>` line or an exact line): a new plugin, a new file in one, or a path only the
 baseline has stays the counted high it was in v0.7.3. Other platform folders are unchanged.
 
-Each test marked R in its docstring fails on 4872a9b (watchtower/ stashed) at an assertion; G is a guard that passes there and
+Each test marked R in its docstring fails on 4872a9b (the engine sources stashed) at an assertion; G is a guard that passes there and
 here.
 """
 import os, sys, unittest

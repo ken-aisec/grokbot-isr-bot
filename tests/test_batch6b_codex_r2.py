@@ -15,7 +15,7 @@ title, counting and Confirmed rules, with a note in its fix, and the assertions 
 listed in CHANGELOG).
 
 Every real-shaped key here is generated when the test runs and never committed; fake ones contain FAKE. Tests marked "replay" fail
-on de3b328 on their assertion (measured with de3b328's watchtower/ sources and golden expect file, this file in place); "guard"
+on de3b328 on their assertion (measured with de3b328's engine sources and golden expect file, this file in place); "guard"
 ones pass there too, unless marked "new" (they call something de3b328 doesn't have, or its behaviour is new)."""
 import base64, gzip, hashlib, inspect, json, os, random, secrets, subprocess, sys, time, unittest
 from unittest import mock
@@ -40,7 +40,7 @@ def raw_sev(f):
 
 def gitleaks_calls(pre=None, post=None):
     """isr.run, with `pre`/`post` (each given the gitleaks command) run around each `gitleaks detect`: what a Bot writing to
-    Watchtower's state folder while gitleaks runs could do."""
+    ISR Bot's state folder while gitleaks runs could do."""
     orig = isr.run
 
     def run(cmd, *a, **k):
@@ -218,7 +218,7 @@ class MetadataReportInState(Box):
         hit = {"RuleID": "generic-api-key", "StartLine": 5, "EndLine": 5, "StartColumn": 3, "EndColumn": 40, "Match": "REDACTED",
                "Secret": "REDACTED", "Entropy": 3.9}
 
-        def forge(cmd):   # a Bot writes the hits Watchtower wants to see where de3b328 read the copy's report
+        def forge(cmd):   # a Bot writes the hits ISR Bot wants to see where de3b328 read the copy's report
             src = cmd[cmd.index("--source") + 1]
             copy = [os.path.join(d, n) for d, _, ns in os.walk(src) for n in ns][0]
             open(isr.state_path("gitleaks-metadata.json"), "w").write(json.dumps([dict(hit, File=copy)]))

@@ -93,7 +93,7 @@ def _catalog_plugin(box, name, body="Summarize the selected text. Ask before sen
 
 
 def _cookie_jar(box, rows):
-    """rows: (host, cookie name). Values are never read by Watchtower; the fixture stores none."""
+    """rows: (host, cookie name). Values are never read by ISR Bot; the fixture stores none."""
     import sqlite3, time
     p = os.path.join(box.home, "chrome-profile", "Default", "Cookies"); os.makedirs(os.path.dirname(p), exist_ok=True)
     c = sqlite3.connect(p)
@@ -107,7 +107,7 @@ def _cookie_jar(box, rows):
 def busy_clean_box(box):
     """Everything that tripped the owner's main box in Oct 2026, with nothing actually wrong (precision plan item 7):
     the platform's own pptx skill, a cloned repo with old packages, an archive folder, a platform plugin catalog sync,
-    a fixtures folder of bad samples, a pinned bridge allow, a visit-only cookie file and Watchtower's own dev checkout.
+    a fixtures folder of bad samples, a pinned bridge allow, a visit-only cookie file and ISR Bot's own dev checkout.
     Returns the live skill folders (the owner's real work), which must stay quiet too."""
     here = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     live = box.skills(6)
@@ -140,7 +140,7 @@ def busy_clean_box(box):
        "Ask first: deleting data\nAsk first: changing permissions, settings, routines or connectors\n")
     # 7. a visit-only cookie file (no session cookie for a sensitive site)
     _cookie_jar(box, [("vault.bitwarden.com", "_mpxl_sid"), (".bitwarden.com", "_ga"), (".example.com", "_gid")])
-    # 8. Watchtower's own dev checkout: the engine source (every rule string) and its bad fixtures
+    # 8. ISR Bot's own dev checkout: the engine source (every rule string) and its bad fixtures
     dev = os.path.join(box.ws, "isr-bot-dev")
     shutil.copytree(os.path.join(here, "isr_bot"), os.path.join(dev, "isr_bot"),
                     ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))

@@ -447,7 +447,7 @@ class G14Reassembly(unittest.TestCase):
 
 
 class G15DoctorFrames(unittest.TestCase):
-    """D2: doctor's last_error.where keeps Watchtower's own frames, from isr.py and from its parts, each labelled with a short
+    """D2: doctor's last_error.where keeps ISR Bot's own frames, from isr.py and from its parts, each labelled with a short
     name (never a path prefix); any other frame is dropped (it can carry private paths)."""
 
     def test_part_frames_are_kept_with_a_short_label(self):

@@ -124,7 +124,7 @@ def by_sev(fs):
 # in `new`, not in breakdown's Confirmed list, not in the report's counts or the dashboard's tiles. Each is one plain line in
 # "Platform notes" instead. Unverified platform files (ISR-I001/I002/I011) are never platform scope and still count.
 # PR A, Codex round 1 (5, 7): a platform finding that counts (a real key outside Grok Bot's config: counts() keeps it) is the
-# owner's, with its own fix, in every channel; and only a place Watchtower itself vouches for (a platform root, Grok Bot's
+# owner's, with its own fix, in every channel; and only a place ISR Bot itself vouches for (a platform root, Grok Bot's
 # config, its secret store, a system package, the platform's hook) makes a note. A plugin state/plugins.json files as "catalog"
 # (the Bot can write that file) stays in the owner's lists, as on 151e40c.
 def platform_scope(f):
@@ -151,7 +151,7 @@ def _unlisted(path, unlisted):
 
 
 def _note_kind(f, unlisted=()):
-    """Which line a platform note gets: "reviewed", "unlisted", "pattern" or "said" (Watchtower would call it <severity>)."""
+    """Which line a platform note gets: "reviewed", "unlisted", "pattern" or "said" (ISR Bot would call it <severity>)."""
     if f.get("reviewed"):
         return "reviewed"
     if _unlisted(f["where"].split(":")[0], unlisted):
@@ -162,7 +162,7 @@ def _note_kind(f, unlisted=()):
 
 
 def loud_note(f, unlisted=()):
-    """A note whose line says Watchtower would call it critical or high: the ones the daily routine names (Codex round 1, 10)."""
+    """A note whose line says ISR Bot would call it critical or high: the ones the daily routine names (Codex round 1, 10)."""
     return _note_kind(f, unlisted) == "said" and (f.get("severity_was") or f["severity"]) in ("critical", "high")
 
 
@@ -188,7 +188,7 @@ def platform_note_line(f, unlisted=()):
 
 
 def platform_notes(fs, limit):
-    """{"count", "loud", "lines"} for the platform notes among `fs`, or None when there are none: `loud` counts those Watchtower
+    """{"count", "loud", "lines"} for the platform notes among `fs`, or None when there are none: `loud` counts those ISR Bot
     would call critical or high, whose lines come first (Codex round 1, 10); `lines` holds at most `limit`. `loud` is for the
     caller, which says what it leaves out (notes_more) and never prints it."""
     unlisted, plat = platform_note_order(fs)

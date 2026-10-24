@@ -2,10 +2,10 @@
 
 d1: findings in Grok Bot's own files (scope "platform") are Platform notes: not in open_by_severity, `new`, breakdown's Confirmed
 list or the dashboard's tiles (decision 2, Oct 18: they keep their severity, label and key inside, so a vendor rug pull still
-alerts). d2: rules/platform-reviewed.json, findings Watchtower's team read in exact platform file versions (decision 1): a
+alerts). d2: rules/platform-reviewed.json, findings ISR Bot's team read in exact platform file versions (decision 1): a
 checked note, only for those bytes, that rule and that line.
 
-Tests marked "replay" fail on 151e40c on their assertion (measured with 151e40c's watchtower/ sources and rules, this file in place);
+Tests marked "replay" fail on 151e40c on their assertion (measured with 151e40c's engine sources and rules, this file in place);
 "guard" ones keep what must not change. The sign-in skill here is a synthetic copy: its line 12 is the exact line the owner read on the
 maintainer's box (Oct 18), the rest is made up, so its sha256 is not the shipped one; the platform folders of this computer are never opened."""
 import json, os, re, sys, unittest

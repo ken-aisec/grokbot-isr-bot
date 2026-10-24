@@ -9,7 +9,7 @@
 5 the system cron folder's jobs are scheduled jobs too;
 6 the unreadable-profile line is shown without a recent roll-call too.
 
-Tests marked "replay" fail on 2e84aa8 on their assertion (measured with 2e84aa8's watchtower/ sources and tests/golden_split.py,
+Tests marked "replay" fail on 2e84aa8 on their assertion (measured with 2e84aa8's engine sources and tests/golden_split.py,
 this file in place). Every planted value is FAKE…; the box is a temp folder, never this computer's own."""
 import datetime as dt, json, os, re, sys, unittest
 from unittest import mock

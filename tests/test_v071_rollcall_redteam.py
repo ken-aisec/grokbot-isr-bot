@@ -1,7 +1,7 @@
 """v0.7.1 red-team (the owner's second account on v0.7.0, Oct 14, relayed by Claude Oct 15): the roll-call made people less safe.
-Any agent could send it, Bots can't check who is asking (one answered twice, once to a deleted Watchtower), it asked for every
+Any agent could send it, Bots can't check who is asking (one answered twice, once to a deleted ISR Bot), it asked for every
 memory word for word, and the replies sat as plain files every Bot could read. The roll-call stays (opt-in, off by default), but
-the question now asks only for a shape, replies live as 0600 files in a 0700 folder inside Watchtower's home, and each reply is
+the question now asks only for a shape, replies live as 0600 files in a 0700 folder inside ISR Bot's home, and each reply is
 deleted as soon as it is read. Bot names and memory text below are made up."""
 import io, json, os, re, stat, sys, tempfile, shutil, unittest, warnings
 from contextlib import redirect_stdout, redirect_stderr
@@ -54,7 +54,7 @@ class Base(unittest.TestCase):
         return code, out.getvalue(), err.getvalue()
 
     def everything_isr_bot_kept(self):
-        """Every byte under Watchtower's home after the run (state, ledger, reports, exports)."""
+        """Every byte under ISR Bot's home after the run (state, ledger, reports, exports)."""
         blob = []
         for root, _, files in os.walk(os.environ["ISR_BOT_HOME"]):
             for fn in files:
@@ -80,7 +80,7 @@ class TheQuestionRevealsNothing(Base):
         self.assertEqual(self.run_isr("rollcall", "--question")[1].strip(), q)      # the skill sends exactly this
 
     def test_a_fake_isr_bot_gets_no_memory_text_from_an_honest_bot(self):
-        """Red-team: someone else (not this owner's Watchtower) sends the fixed question. The answer it gets has no memory text,
+        """Red-team: someone else (not this owner's ISR Bot) sends the fixed question. The answer it gets has no memory text,
         no routine instructions and no addresses, so there is nothing to steal."""
         reply = json.dumps(honest_answer(BOT))
         for s in SECRETS:

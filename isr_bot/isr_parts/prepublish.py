@@ -106,7 +106,7 @@ def cmd_prepublish(args):
                     continue
                 if rid == "ISR-PP05" and "/workspace/isr-bot" in ev:
                     continue
-                if rid == "ISR-PP06":   # Watchtower's own script is installed by its setup skill from a pinned release, so it does travel
+                if rid == "ISR-PP06":   # ISR Bot's own script is installed by its setup skill from a pinned release, so it does travel
                     line = t[t.rfind("\n", 0, m.start()) + 1:(t.find("\n", m.end()) if t.find("\n", m.end()) != -1 else len(t))]
                     if re.search(r"(isr\.py|/workspace/isr-bot/|install\.sh)", line):
                         continue

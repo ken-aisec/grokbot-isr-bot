@@ -4,11 +4,11 @@ The Oct 18 rule (a platform file is trusted only by its path and sha256 in rules
 Grok Bot, Codex or Claude update a counted high per file, on every box, every day: versions differ per user, so the shipped
 lock can't be the only source of trust. Decision, Oct 22: a clean update at a path that already exists (on the release list
 or in the baseline), or a clean new platform skill folder, gets the quiet "Platform refresh" line and rolls into the baseline
-on the next full audit. Anything risky stays a counted high: a file Watchtower's rules flag, one over 1 MB or unreadable, one
+on the next full audit. Anything risky stays a counted high: a file ISR Bot's rules flag, one over 1 MB or unreadable, one
 two scanners name a dangerous behavior in (or whose scanner answer is out of date), a loose file, a link in or out, a colon
 in its path, an unusable release list, a new file in a skill folder nobody updated this run.
 
-Each test marked R in its docstring fails on f7c28e6 (watchtower/ and the lock stashed) at an assertion; G is a guard that
+Each test marked R in its docstring fails on f7c28e6 (the engine sources and the lock stashed) at an assertion; G is a guard that
 passes there and here.
 """
 import hashlib, json, os, sys, unittest
@@ -187,7 +187,7 @@ class NewSkillFolders(_Middle):
 
 class StillHigh(_Middle):
     def test_flagged_update_is_counted_high(self):
-        """G: an update Watchtower's rules flag."""
+        """G: an update ISR Bot's rules flag."""
         self.start()
         v1 = sha(self.md("alpha"))
         put(self.md("alpha"), FLAGGED.format(n="alpha"))

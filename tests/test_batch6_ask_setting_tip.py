@@ -1,7 +1,7 @@
 """Batch 6 PR1, B3 (decision 8): "Ask every time" for running commands on this computer is a safe setting, so ISR-C002 is a
 Tip (no severity, never scored, never new), not a counted low. "Always allow" stays the critical ISR-C001.
 
-Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's watchtower/ sources, this file in place);
+Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's engine sources, this file in place);
 "guard" ones keep what must not change. The settings file is written into a temp box."""
 import json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

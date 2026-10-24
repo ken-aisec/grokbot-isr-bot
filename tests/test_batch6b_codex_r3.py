@@ -12,7 +12,7 @@ starts found once for all its gitleaks hits.
 
 Every real-shaped key here is generated when the test runs and never committed (P-224 and P-160 SEC1 keys are built as DER from
 random scalars: Python's standard library makes no EC keys); fake ones contain FAKE. Tests marked "replay" fail on b621cf4 on
-their assertion (measured with b621cf4's watchtower/ sources, this file in place); "guard" ones pass there too, unless marked
+their assertion (measured with b621cf4's engine sources, this file in place); "guard" ones pass there too, unless marked
 "new" (they call something b621cf4 doesn't have, or its behaviour is new)."""
 import base64, gzip, json, os, secrets, shutil, subprocess, sys, tempfile, time, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

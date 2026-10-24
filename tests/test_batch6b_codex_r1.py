@@ -13,7 +13,7 @@ cookie test; masking twice is masking once. 10: KL3's golden entries need the mi
 every cache entry's 7 -> 8.
 
 Every real-shaped key here is generated when the test runs and never committed; fake ones contain FAKE. Tests marked "replay"
-fail on a986d54 on their assertion (measured with a986d54's watchtower/ sources, golden expect file and harness, this file in
+fail on a986d54 on their assertion (measured with a986d54's engine sources, golden expect file and harness, this file in
 place); "guard" ones pass there too, except those marked "new", which call a function a986d54 doesn't have and error there."""
 import base64, gzip, inspect, io, json, os, random, secrets, string, sys, unittest
 from unittest import mock

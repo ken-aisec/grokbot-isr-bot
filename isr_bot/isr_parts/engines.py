@@ -451,7 +451,7 @@ def engine_findings(skill_dirs, isr_findings, notes, user_root_dirs=(), budget=N
         ss_k = set(s_["kinds"] if "kinds" in s_ else e_.get("top_kinds", engine_kinds(s_.get("top", [])))) if ss_flag else set()
         hk_k = set(e_.get("hk_kinds", engine_kinds(hk))) if hk_flag else set()
         tier = skill_tier(d + "/")
-        # SkillSpector and husk both saying the folder is bad still agree (neither reports which file); Watchtower's own vote
+        # SkillSpector and husk both saying the folder is bad still agree (neither reports which file); ISR Bot's own vote
         # joins only when it names the same kind of risk as the engine it pairs with.
         if ss_flag and hk_flag:
             agree = [("SkillSpector", ss_k), ("husk", hk_k)]

@@ -21,7 +21,7 @@ def quarantinable(f):
 
 def restorable_to_workspace(p):
     """Restore target for a workspace skill: the folder is gone (it was moved out), its parent is in the workspace, outside
-    Watchtower's own folder and the platform's folders, and not reached through a link."""
+    ISR Bot's own folder and the platform's folders, and not reached through a link."""
     n = os.path.normpath(os.path.abspath(str(p)))
     par = os.path.dirname(n)
     ws, h = os.path.realpath(os.path.dirname(home())), os.path.realpath(home())

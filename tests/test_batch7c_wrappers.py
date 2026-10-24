@@ -7,7 +7,7 @@ xargs, …) are not read, and a launcher, shell or wrapper name among their word
 punctuation; Windows paths (\\ and .exe/.cmd/.bat) name the command wherever it stands. A package's own command is never
 unwrapped, and unwrapping never clears a launch a3e535e couldn't read.
 
-Tests marked "replay" fail on a3e535e on their assertion, in every subtest (measured with a3e535e's watchtower/ sources, this
+Tests marked "replay" fail on a3e535e on their assertion, in every subtest (measured with a3e535e's engine sources, this
 file in place); "guard" ones hold on a3e535e too. Timing guards check time only; what those inputs give is checked by replays.
 The box is a temp folder; every package name is an example."""
 import json, os, sys, unittest

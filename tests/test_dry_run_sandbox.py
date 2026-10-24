@@ -86,7 +86,7 @@ class DryRunLeavesWorkspaceAlone(unittest.TestCase):
         r = self.run_dry()
         self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
         self.assertEqual(snapshot(self.ws), before, "the dry run changed the workspace")
-        self.assertEqual(self.real_workspace(), self.real_ws_before, "a isr-bot-dry-* folder appeared in the real /workspace")
+        self.assertEqual(self.real_workspace(), self.real_ws_before, "an isr-bot-dry-* folder appeared in the real /workspace")
         left = os.listdir(self.tmproot)
         self.assertEqual(len(left), 1, left)                              # the sandbox itself is gone
         self.assertTrue(left[0].startswith("isr-bot-dry-report-"), left)

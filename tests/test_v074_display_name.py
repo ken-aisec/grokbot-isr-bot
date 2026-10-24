@@ -1,10 +1,10 @@
-"""v0.7.4, the display rename (owner decisions, Oct 22 and Oct 23): the product is called ISR Bot in display text only. Paths, the repo,
-WATCHTOWER_*, isr.py, the ISR-* IDs, the isr-bot-* slugs, state and report file names, JSON keys and code identifiers keep the old
-name, and so does every engine string listed in ALLOWED below, each with its reason (docs/KNOWN-LIMITS.md "v0.7.4").
+"""v0.7.4, the display rename (owner decisions, Oct 22 and Oct 23), finished by the full rename in v0.8.0: the product is called
+ISR Bot everywhere. Paths, the repo, the ISR_BOT_* settings, isr.py, the ISR-* IDs, the isr-bot-* slugs, state and report file
+names, JSON keys, code identifiers and every engine string use the new name, so ALLOWED below is empty (docs/KNOWN-LIMITS.md "v0.8.0").
 
-Guards: no other engine string, prose file or script message says Watchtower; the name is always written ISR Bot and the first
+Guards: no engine string, prose file or script message says the old name; the name is always written ISR Bot and the first
 0.7.4 name is gone; the template card and memories are exact. Replays (marked "replay", each failing on accbe5e at its assertion): the places where the new name has to be
-recognised as well as the old one."""
+recognised (since v0.8.0 unit g, the old one no longer is)."""
 import ast, glob, io, json, os, re, shutil, subprocess, sys, tempfile, unittest, warnings
 from contextlib import redirect_stdout, redirect_stderr
 from unittest import mock
@@ -25,14 +25,15 @@ ALLOWED_FRAGMENTS = {}
 # Lowercase forms of the new name that code compares with
 LOWERCASE_OK = {("prepublish.py", "isr bot"): "no ISR-PP08 for the name in an unchanged copy of its own template files",
                 ("plugins.py", "isr bot"): "UPDATE_NAMES: a brief's update named ISR Bot"}
-# The only places prose may still say Watchtower
+# The two phrases that let prose keep the old name before 0.8.0 (the docs' one-liner; the uninstall skill's, removed in unit g).
+# v0.8.0 unit h1: no prose is exempt any more, and the readme test checks that both are gone.
 PROSE_PHRASES = ("(the engine and its files keep the name Watchtower)", "(older installs: the Watchtower names the command lists)")
 CARD_DESCRIPTION = ("A read-only security officer for the shared computer your Grok Bots run on. Vets templates and skills before you "
                     "install them, sets decoy tripwires, audits your Bots weekly, and changes nothing without your yes.")
 MEMORY_9 = ("If any ISR Bot command prints SELF-CHECK FAILED, stop and tell the owner at once: ISR Bot's own files "
             "changed. Don't run it again until they reinstall it from the release.")
-MEMORY_10 = ("You are ISR Bot, the security officer for this Grok Bot roster. Your engine and files keep their original folder "
-             "names: /workspace/isr-bot, isr.py, the isr-bot-* skill files and ISR-* rule IDs. Never rename or move them; updates "
+MEMORY_10 = ("You are ISR Bot, the security officer for this Grok Bot roster. Your engine and files live in /workspace/isr-bot: "
+             "isr.py and the isr-bot-* skill files, with ISR-* rule IDs. Never rename or move them; updates "
              "expect those paths. Keep it cheap: one pass over script output per run, short replies, no narration of tool calls. "
              "Roll-call is off unless the owner asks for it.")
 SKILLS_LINE = ("Every skill's full text is on this page's Skills tab and at "
@@ -124,26 +125,24 @@ class Prose(unittest.TestCase):
 
     def test_prose_says_the_new_name(self):   # guard
         bad = []
-        for rel, text in self.texts().items():
-            for phrase in PROSE_PHRASES:
-                text = text.replace(phrase, "")
+        for rel, text in self.texts().items():   # v0.8.0 unit h1: no phrase is taken out first
             bad += [f"{rel}: {l.strip()[:100]}" for l in text.splitlines() if re.search(r"\b" + OLD + r"\b", l)]
         self.assertEqual(bad, [])
 
     def test_the_threat_model_and_egress_say_the_new_name(self):   # replay (fix round 1, Codex LOW6; cffd4b7: 8 lines)
         bad = []
         for rel in ("THREAT_MODEL.md", "EGRESS.md"):
-            text = read(rel).replace(PROSE_PHRASES[0], "")
-            text = re.sub(r"`[^`\n]*`", "``", text)   # technical names in backticks (`Watchtower/<version>`) keep it
+            text = re.sub(r"`[^`\n]*`", "``", read(rel))   # technical names in backticks (a path, the User-Agent) are not prose
             bad += [f"{rel}: {l.strip()[:100]}" for l in text.splitlines() if re.search(r"\b" + OLD + r"\b", l)]
         self.assertEqual(bad, [])
 
     def test_the_readme_title_and_the_one_liner(self):
         readme = read("README.md")
         self.assertTrue(readme.startswith("# ISR Bot — Security Watch for Grok Bot\n"))
-        self.assertIn(NAME + " " + PROSE_PHRASES[0] + " is a security officer", readme)
-        for rel in ("THREAT_MODEL.md", "EGRESS.md", "SECURITY.md", "docs/KNOWN-LIMITS.md"):
-            self.assertIn(PROSE_PHRASES[0], read(rel), rel)
+        self.assertIn("\n\n" + NAME + " is a security officer for that setup.", readme)   # v0.8.0 unit h1: the one-liner, no phrase
+        for rel in ("README.md", "THREAT_MODEL.md", "EGRESS.md", "SECURITY.md", "docs/KNOWN-LIMITS.md", "skills/isr-bot-uninstall/SKILL.md"):
+            for phrase in PROSE_PHRASES:
+                self.assertNotIn(phrase, read(rel), rel)
 
     def test_routine_names(self):
         names = sorted(d["name"] for d in json.loads(read("routines", "descriptions.json")))
@@ -627,7 +626,7 @@ class SavedGettingStarted(_Box):
         isr.saved_skill_notes(notes)
         return [n for n in notes if "getting-started skill" in n]
 
-    def test_a_stale_copy_with_the_new_name_is_reported(self):   # replay (accbe5e: only "You are Watchtower" was looked for)
+    def test_a_stale_copy_with_the_new_name_is_reported(self):   # replay (accbe5e: only the old name's marker was looked for)
         current = read("bot", "getting-started.md")
         stale = current.replace("about seven minutes", "about five minutes")
         self.assertNotEqual(stale, current)

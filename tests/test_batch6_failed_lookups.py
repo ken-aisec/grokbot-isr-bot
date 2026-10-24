@@ -1,12 +1,12 @@
-"""Batch 6 PR3, KL5 (#16 high 1) and the error/link half of #16 medium 2: a lookup Watchtower couldn't make is never "there is none".
+"""Batch 6 PR3, KL5 (#16 high 1) and the error/link half of #16 medium 2: a lookup ISR Bot couldn't make is never "there is none".
 
-os.path.isdir, isfile and lexists say False both for a name that isn't there and for one Watchtower wasn't allowed to look at (a
+os.path.isdir, isfile and lexists say False both for a name that isn't there and for one ISR Bot wasn't allowed to look at (a
 folder on the way without search permission). The access map then said "none" for what it couldn't see: no cookie jar, no
 command-line sign-in, 0 scheduled jobs, "found no Gmail". `_look` tells the two apart; every lookup the map rests on uses it.
 The scheduled-job folders are listed without following a link and without raising (the audit stopped on a cron folder it
 couldn't list).
 
-Tests marked "replay" fail on 1aed58a on their assertion (measured with 1aed58a's watchtower/ sources, this file in place);
+Tests marked "replay" fail on 1aed58a on their assertion (measured with 1aed58a's engine sources, this file in place);
 "guard" ones keep what must not change. Denied lookups are made in memory (os.stat/os.lstat refuse the paths, as a locked
 folder on the way does), except where a real chmod or link is named. Every planted value is FAKE…; the box is a temp folder."""
 import errno, json, os, sys, unittest
@@ -107,7 +107,7 @@ class DeniedIsNotAbsent(_Lookups):
 
     def test_a_scan_root_it_couldnt_look_at_is_not_none_found(self):   # replay (1aed58a: "Tool connections (MCP): none found.")
         self.small()
-        isr.ACCESS_WORKSPACE = os.path.join(self.tmp, "projects")   # a scanned folder apart from Watchtower's own (tearDown restores it)
+        isr.ACCESS_WORKSPACE = os.path.join(self.tmp, "projects")   # a scanned folder apart from ISR Bot's own (tearDown restores it)
         w(os.path.join(isr.ACCESS_WORKSPACE, "mcp.json"), {"mcpServers": {"slack": {"command": "npx"}}})
         self.audit_json()
         with Denied(isr.ACCESS_WORKSPACE):

@@ -5,7 +5,7 @@ rollcall_findings.json (writable by the Bot) went through _ax_said as an empty, 
 Gmail". Now one reader (connector_answer) serves both: a string is a name (a supported scalar keeps its label), anything else in the
 list makes the answer partial, and no list at all is "didn't say".
 
-Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's watchtower/ sources, this file in place). Every
+Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's engine sources, this file in place). Every
 planted value is FAKE…; the box is a temp folder, never this computer's own."""
 import json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

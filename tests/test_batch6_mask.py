@@ -7,7 +7,7 @@
   and masking the masked text again changes nothing (it used to eat the quote, and a second pass hid the rest of the line).
 - MASK_VERSION 8: copies masked by version 7 (approved skills, the engine cache) are masked again.
 
-Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's watchtower/ sources, this file in place).
+Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's engine sources, this file in place).
 Every secret is FAKE."""
 import gzip, json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

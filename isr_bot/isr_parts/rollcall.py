@@ -9,7 +9,7 @@ EXTERNAL_OUT = re.compile(r"(?i)\b(send|reply|post|publish|tweet|email|message|s
 
 
 # A memory that gives a Bot more room: skip the ask, trust a sender, hold admin rights. "Never send without asking" is the
-# opposite and is never flagged; Watchtower never suggests removing a rule that holds a Bot back.
+# opposite and is never flagged; ISR Bot never suggests removing a rule that holds a Bot back.
 LOOSENING = re.compile(r"(?i)\b(without (asking|approval|confirmation|checking)|don'?t (need to )?(ask|confirm|check)|no need to (ask|confirm|check)|"
                        r"skip(ping)? (the )?(approval|ask|confirmation|gate)|bypass|auto[- ]?approv\w*|allow(ed)? automatically|"
                        r"treat .{0,30} as (trusted|authori[sz]ed)|(has|have|with) (admin|full|unrestricted) (access|permission|rights))")
@@ -256,7 +256,7 @@ def rollcall_access(sh):
 
 
 def rollcall_findings(rdir, removed=None, kept=None):
-    """Each reply is read once, reduced to its shape, and deleted right away (in Watchtower's own folder). Findings name what
+    """Each reply is read once, reduced to its shape, and deleted right away (in ISR Bot's own folder). Findings name what
     the Bot said about itself in counts and yes/no answers; no reply text is kept anywhere. Returns this run's findings and
     Bots; the saved file also keeps earlier Bots from the same roll-call round (merge_rollcall), named in `kept`."""
     out, bots, answered, access = [], [], set(), {}
@@ -546,7 +546,7 @@ def delete_raw_replies(rdir):
 
 
 def default_rollcall_dir():
-    """v0.7.1 red-team: replies live in a 0700 folder inside Watchtower's home (never exports/ or another shared path)."""
+    """v0.7.1 red-team: replies live in a 0700 folder inside ISR Bot's home (never exports/ or another shared path)."""
     return os.path.join(home(), "private", "rollcall")
 
 
@@ -619,7 +619,7 @@ def save_reply(bot, text):
 
 
 def owned_rollcall_dir(rdir):
-    """R01: replies are only ever deleted from Watchtower's own roll-call folder, reached without a link anywhere on the way.
+    """R01: replies are only ever deleted from ISR Bot's own roll-call folder, reached without a link anywhere on the way.
     A folder named with --dir is the owner's; nothing in it is deleted."""
     try:
         n = os.path.normpath(os.path.abspath(rdir))

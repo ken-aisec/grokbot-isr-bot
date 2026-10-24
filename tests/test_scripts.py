@@ -118,7 +118,7 @@ class InstallScanners(unittest.TestCase):
         self.assertEqual(self.binaries(), ["gitleaks", "osv-scanner", "trufflehog"], r.stdout)
 
     def test_batch3_go_tools_move_to_the_checked_folder(self):
-        """Batch 3 (R7): Watchtower runs scanners only from scanners/bin, so the Go tools install there and the old copies go."""
+        """Batch 3 (R7): ISR Bot runs scanners only from scanners/bin, so the Go tools install there and the old copies go."""
         old = os.path.join(self.isr_home, "bin"); os.makedirs(old)
         for f in ("gitleaks", "trufflehog", "osv-scanner"):
             stub(old, f, "echo old copy\n")
@@ -357,7 +357,7 @@ class Publish(unittest.TestCase):
 
     def test_batch3_round1_lock_lines_isr_bot_would_skip_stop(self):
         """Codex, batch 3 round 1 (7): six `<sha256>  <name>  ` lines with no architecture passed publish.sh's grep, while
-        Watchtower's reader skipped every one: an empty lock, and no scanner would run on any computer."""
+        ISR Bot's reader skipped every one: an empty lock, and no scanner would run on any computer."""
         self.commit_file("scripts/scanner-bins.lock", "".join(f"{hashlib.sha256(n.encode()).hexdigest()}  {n}  \n" for n in SCANNER_NAMES))
         main = self.remote_ref("refs/heads/main")
         r, gh = self.publish()

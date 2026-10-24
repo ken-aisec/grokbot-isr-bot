@@ -1,11 +1,11 @@
 """Hardening batch 3, roadmap row 5 (Oct 16 review R7: scanners).
 
-tool() looked on PATH first, so any program named skillspector that a Bot put on PATH was run as Watchtower's second engine,
-and a copy in Watchtower's own folder was run whatever its contents. A missing scanner counted as clean: its stage wasn't
-marked failed, its old findings showed as "fixed" and the score rose; revet and the built-in roll approved on Watchtower's
+tool() looked on PATH first, so any program named skillspector that a Bot put on PATH was run as ISR Bot's second engine,
+and a copy in ISR Bot's own folder was run whatever its contents. A missing scanner counted as clean: its stage wasn't
+marked failed, its old findings showed as "fixed" and the score rose; revet and the built-in roll approved on ISR Bot's
 rules alone; and daily returned early on SCANNERS_MISSING, hiding new findings, decoy alarms included.
 
-Now only Watchtower's own folder ($ISR_BOT_HOME/scanners/bin) is used, and only a program whose sha256 is in
+Now only ISR Bot's own folder ($ISR_BOT_HOME/scanners/bin) is used, and only a program whose sha256 is in
 scripts/scanner-bins.lock (tests register theirs in SCANNER_LOCK_EXTRA, in this process only).
 Against 7cf8996 (the PR's base; Claude review 1, finding 8) all 11 error, the marked contrast too: the helpers need the new code.
 """
@@ -156,7 +156,7 @@ class OnlyIsrBotsOwnCopy(_Scanners):
         self.audit()
         d2 = self.rules("ISR-D002")
         self.assertTrue(d2)
-        self.put("osv-scanner", NO_RESULTS, register=False)                  # "nothing found", from a program Watchtower didn't install
+        self.put("osv-scanner", NO_RESULTS, register=False)                  # "nothing found", from a program ISR Bot didn't install
         r = self.audit()
         self.assertEqual(self.rules("ISR-D002"), d2)
         self.assertFalse([f for f in r["fixed"] if f["rule"] == "ISR-D002"])

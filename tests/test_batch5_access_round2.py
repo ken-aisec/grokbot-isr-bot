@@ -2,7 +2,7 @@
 
 1 the browser's cookie seed is looked at now, never taken from the last audit's findings (the Bot can write that file);
 2 plugins are the folders the scan finds; state/plugins.json (writable by the Bot) sets neither their count nor whose they are;
-3 a scan that misses a folder the audit scans, an MCP file Watchtower couldn't read, or a failed `crontab -l` is incomplete, and
+3 a scan that misses a folder the audit scans, an MCP file ISR Bot couldn't read, or a failed `crontab -l` is incomplete, and
   an incomplete field never says there is none;
 4 every count is whole before a list is cut: Bots past the 40 listed, a Bot's connectors, routines past the 60 kept;
 5 one connector name keeps every product it names;
@@ -10,7 +10,7 @@
 and (Codex's notes) a line from the last audit's findings says it is the last audit's, with the date.
 (6, the golden expectations, is in test_golden_expect.)
 
-Tests marked "replay" fail on 3170952 on their assertion (measured with 3170952's watchtower/ sources, this file in place). Every
+Tests marked "replay" fail on 3170952 on their assertion (measured with 3170952's engine sources, this file in place). Every
 planted value is FAKE…; the box is a temp folder, never this computer's own."""
 import datetime as dt, json, os, re, shutil, sys, unittest
 from unittest import mock
@@ -117,7 +117,7 @@ class PluginsAreWhatTheScanFinds(_Small):
         pl = json.loads(self.map_file())["shared"]["plugins"]
         self.assertEqual((pl["grok"], pl["added"]), (0, 2))
 
-    def test_a_plugin_in_a_platform_folder_is_grok_bots(self):   # guard: Watchtower's own platform roots vouch for it
+    def test_a_plugin_in_a_platform_folder_is_grok_bots(self):   # guard: ISR Bot's own platform roots vouch for it
         self.small()
         self.plugin(".grok/bundled/plugins/p", "p")
         self.audit_json()

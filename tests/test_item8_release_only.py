@@ -1,10 +1,10 @@
-"""Item 8, decision (Oct 18): a file in a platform folder is trusted only when Watchtower's release list
+"""Item 8, decision (Oct 18): a file in a platform folder is trusted only when ISR Bot's release list
 (rules/platform-release.lock) has its path and exact sha256. Nothing on the computer approves one.
 
 Two highs were open on 7ab522f:
 H1. state/platform_approved.json plus a matching ledger line ("platform-approved" or "platform-first-baseline" with its bind), both
-    in Watchtower's state, which the Bot can write, was provenance; and the owner's yes (`fix --approve-platform`) wrote them.
-H2. a brand-new box, or one whose Watchtower state was wiped, took a first baseline that vouched for every unlisted platform file.
+    in ISR Bot's state, which the Bot can write, was provenance; and the owner's yes (`fix --approve-platform`) wrote them.
+H2. a brand-new box, or one whose ISR Bot state was wiped, took a first baseline that vouched for every unlisted platform file.
 Also pinned here: the refused yes writes nothing (#9 medium a), an old install's vouched state turns back into alerts, and a held
 platform file replaced by a link keeps its approved copy (#9 medium b).
 

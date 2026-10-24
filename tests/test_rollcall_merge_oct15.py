@@ -69,7 +69,7 @@ class Base(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def fresh_home(self):
-        """A new, empty Watchtower home for the next subtest (inside setUp's folder, so tearDown removes it)."""
+        """A new, empty ISR Bot home for the next subtest (inside setUp's folder, so tearDown removes it)."""
         os.environ["ISR_BOT_HOME"] = tempfile.mkdtemp(dir=self.tmp)
 
     def run_isr(self, *argv, stdin=None):

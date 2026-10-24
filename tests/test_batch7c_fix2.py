@@ -5,7 +5,7 @@ A command-position word with whitespace or shell syntax (_SCRIPT_SYNTAX: whitesp
 shell: "couldn't read the launch", at the top, after wrappers (a wrapper's own name too), after a launcher's -- and in a pinned
 outer launch, in front of whatever 83fd9bf read there, so no finding is lost.
 
-Tests marked "replay" fail on 83fd9bf on their assertion, in every subtest (measured with 83fd9bf's watchtower/ sources and
+Tests marked "replay" fail on 83fd9bf on their assertion, in every subtest (measured with 83fd9bf's engine sources and
 MANIFEST.sha256 stashed, this file in place); "guard" ones hold on 83fd9bf too. Every package name is an example."""
 import os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

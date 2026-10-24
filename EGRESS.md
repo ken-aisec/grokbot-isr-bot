@@ -1,6 +1,6 @@
 # Every host ISR Bot contacts
 
-ISR Bot is the product's display name (the engine and its files keep the name Watchtower). Its web requests still identify as `Watchtower/<version>` (the User-Agent).
+ISR Bot's web requests identify as `ISR-Bot/<version>` (the User-Agent).
 
 | Host | When | Why |
 | --- | --- | --- |

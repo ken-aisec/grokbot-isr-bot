@@ -4,7 +4,7 @@ npx, uvx, bunx, `pnpm dlx` and `npm exec` (also behind /usr/bin/env) are read al
 a range and a dist-tag are unpinned (decision 7). The old test ("an @ within 200 characters of the command") let
 `npx -y @scope/pkg`, `pkg@latest` and an email in the args pass as pinned, and never looked at bunx behind env, pnpm or npm.
 
-Tests marked "replay" fail on 1aed58a on their assertion (measured with 1aed58a's watchtower/ sources, this file in place);
+Tests marked "replay" fail on 1aed58a on their assertion (measured with 1aed58a's engine sources, this file in place);
 "guard" ones keep what must not change. The box is a temp folder; every package name is an example."""
 import json, os, sys, time, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

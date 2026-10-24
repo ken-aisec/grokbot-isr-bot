@@ -11,7 +11,7 @@ FIX = os.path.join(ROOT, "tests", "fixtures")
 warnings.simplefilter("ignore", ResourceWarning)
 
 
-# No test may fall back to the real Watchtower folder (/workspace/isr-bot) or plant decoys in the real /tmp and /var/tmp:
+# No test may fall back to the real ISR Bot folder (/workspace/isr-bot) or plant decoys in the real /tmp and /var/tmp:
 # every test that doesn't set its own gets a throwaway folder for the whole module, put back when the module ends.
 _MODULE_ENV = {}
 
@@ -35,7 +35,7 @@ def tearDownModule():
 
 
 def fake_scanner(name, body):
-    """Batch 3: a stand-in scanner in Watchtower's checked folder, registered for this process (SCANNER_LOCK_EXTRA)."""
+    """Batch 3: a stand-in scanner in ISR Bot's checked folder, registered for this process (SCANNER_LOCK_EXTRA)."""
     b = os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin"); os.makedirs(b, exist_ok=True)
     p = os.path.join(b, name)
     with open(p, "w") as f:
@@ -450,10 +450,10 @@ class Features(unittest.TestCase):
         import time
         for v in list(reg.values())[:2]:                                            # two of three, e.g. a scan of /workspace only
             open(os.path.expanduser(v["path"])).read()
-        isr.save_json(isr.state_path("run_windows.json"), [[time.time() - 30, time.time()]])   # ...while Watchtower itself was scanning
+        isr.save_json(isr.state_path("run_windows.json"), [[time.time() - 30, time.time()]])   # ...while ISR Bot itself was scanning
         self.assertEqual([(f["rule"], f["severity"]) for f in isr.canary_findings()], [("ISR-K005", "high")])   # batch 2 (R2): any Bot can write the run record
         open(target).read()
-        isr.save_json(isr.state_path("run_windows.json"), [[time.time() - 900, time.time() - 600]])   # no Watchtower run at that time
+        isr.save_json(isr.state_path("run_windows.json"), [[time.time() - 900, time.time() - 600]])   # no ISR Bot run at that time
         self.assertEqual([f["rule"] for f in isr.canary_findings()], ["ISR-K001"])
         self.assertIsNotNone(isr.canary_copies("dump:\n" + content, "/tmp/elsewhere.txt"))
         os.remove(target)
@@ -1004,8 +1004,8 @@ class Features(unittest.TestCase):
                                   "into chat unless the owner asks for it, and never paste secrets; findings show masked values only.")
         self.assertEqual(mems[8], "If any ISR Bot command prints SELF-CHECK FAILED, stop and tell the owner at once: "
                                   "ISR Bot's own files changed. Don't run it again until they reinstall it from the release.")
-        self.assertEqual(mems[9], "You are ISR Bot, the security officer for this Grok Bot roster. Your engine and files keep their "
-                                  "original folder names: /workspace/isr-bot, isr.py, the isr-bot-* skill files and ISR-* rule IDs. "
+        self.assertEqual(mems[9], "You are ISR Bot, the security officer for this Grok Bot roster. Your engine and files live in "
+                                  "/workspace/isr-bot: isr.py and the isr-bot-* skill files, with ISR-* rule IDs. "
                                   "Never rename or move them; updates expect those paths. Keep it cheap: one pass over script output per "
                                   "run, short replies, no narration of tool calls. Roll-call is off unless the owner asks for it.")
 
@@ -1147,7 +1147,7 @@ class Features(unittest.TestCase):
         self.assertIn("Containment checklist", open(r["evidence_pack"]).read())
 
     def test_the_newer_version_notice_reads_tags_and_never_updates(self):
-        """v0.6.6 skipped its own repo (`if "ken-aisec" in r["repo"]: continue`), so "A newer Watchtower is out" never showed;
+        """v0.6.6 skipped its own repo (`if "ken-aisec" in r["repo"]: continue`), so "A newer ISR Bot is out" never showed;
         and the repo publishes tags, not GitHub releases, so releases/latest would have had nothing to say."""
         import subprocess as sp
         cfg = json.load(open(isr.FEEDS_PATH))
@@ -1219,7 +1219,7 @@ class Features(unittest.TestCase):
 
 
 def gitleaks_allowlists():
-    """The [[allowlists]] blocks of Watchtower's gitleaks config, read the way gitleaks reads them."""
+    """The [[allowlists]] blocks of ISR Bot's gitleaks config, read the way gitleaks reads them."""
     out = []
     for block in isr.GITLEAKS_CONFIG.split("[[allowlists]]")[1:]:
         target = re.search(r'regexTarget = "(\w+)"', block)

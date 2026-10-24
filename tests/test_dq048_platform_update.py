@@ -1,4 +1,4 @@
-"""DQ-048 (2026-10-23, Watchtower daily watch): a vendor platform update dropped the installed v0.7.3's daily score 85 -> 21.
+"""DQ-048 (2026-10-23, ISR Bot daily watch): a vendor platform update dropped the installed v0.7.3's daily score 85 -> 21.
 
 The real run (`isr.py daily`, v0.7.3, 6:02 AM ET): 62 high ISR-I001/ISR-I002 `platform_unverified` files, all routine vendor
 updates: Grok Bot's managed skills under sand-data/ and agent-data/managed-skills/skills/* (e.g. sign-in/SKILL.md sha256

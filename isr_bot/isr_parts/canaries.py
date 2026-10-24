@@ -11,7 +11,7 @@ CANARY_SPECS = [
     ("api-env", "/tmp/.archive/payments.env", "STRIPE_SECRET_KEY=rk_live_{tok}{tok}\nPAYOUT_ACCOUNT=acct_{tok}\n"),
 ]
 OLD_CANARY_PATHS = ("/workspace/.archive/customers-export-2025.csv", "~/.config/backup/aws-credentials.bak", "/workspace/.archive/payments.env")
-# v0.6.8: the spec paths above were the same on every install and printed in Watchtower's own docs, so anything that read the
+# v0.6.8: the spec paths above were the same on every install and printed in ISR Bot's own docs, so anything that read the
 # docs knew which files not to touch. Each install now picks its own folder and file names (kept in state/decoy_layout.json);
 # the spec gives only the place (/var/tmp or /tmp) and the kind of file. Decoys found at a published name are moved once.
 PUBLISHED_CANARY_PATHS = tuple(x for _, x, _ in CANARY_SPECS)
@@ -28,8 +28,8 @@ def _spec_base(path):
 
 def valid_layout_path(name, logical):
     """A layout entry is used, and its file may ever be removed, only if it is one of this install's random names in the spec's own
-    place (or a published or older name, which Watchtower once used). Anything else in the layout file is ignored, so a Bot that
-    edits it can't point Watchtower at another file."""
+    place (or a published or older name, which ISR Bot once used). Anything else in the layout file is ignored, so a Bot that
+    edits it can't point ISR Bot at another file."""
     spec = {n: x for n, x, _ in CANARY_SPECS}.get(name)
     if not spec or not isinstance(logical, str):
         return False
@@ -91,7 +91,7 @@ class DecoyLink(Exception):
 
 def write_decoy(p, content):
     """Write a decoy without ever following a link. The decoys live in /tmp and /var/tmp, where every Bot can write, so a link
-    planted at the decoy's folder or file would make Watchtower overwrite whatever it points to. The decoy's own folder and file
+    planted at the decoy's folder or file would make ISR Bot overwrite whatever it points to. The decoy's own folder and file
     are opened with O_NOFOLLOW from an open handle on the folder above, and every check is made on the opened handle, never on
     the name, so nothing can be swapped in between the check and the write. Returns (atime, mtime, {ino, ctime_ns}) after
     re-arming: the last two say later whether the file's times were set by hand (fix round 1)."""
@@ -130,7 +130,7 @@ def write_decoy(p, content):
 
 
 # Hardening batch 2 (R2): the backup's fingerprint. Next to each decoy sits a witness file with mode 000. Every Bot runs as the
-# same user as Watchtower: it can't read the witness without chmod, or move its read time without utime, and both stamp a new
+# same user as ISR Bot: it can't read the witness without chmod, or move its read time without utime, and both stamp a new
 # ctime no unprivileged process can set back; recreating it changes its inode. Only a privileged reader (the platform's backup)
 # moves its atime and nothing else. A learned pattern (time of day, file count) could be copied: every Bot can read this state.
 WITNESS = ".lock"
@@ -386,7 +386,7 @@ def cmd_canary(args):
         for f in refused:
             print(f"REFUSED {f['evidence']}. Not written: a link sits where the decoy goes. It is recorded as a high finding.")
         reg = load_json(state_path("canaries.json"), {})
-        # batch 2 (R2): read tracking is checked where the decoys are (/tmp and /var/tmp), not in Watchtower's own folder
+        # batch 2 (R2): read tracking is checked where the decoys are (/tmp and /var/tmp), not in ISR Bot's own folder
         tracked = {d: reads_recorded(d) is True for d in sorted({os.path.dirname(os.path.expanduser(v["path"])) for v in reg.values()})}
         print(f"Planted {len(reg)} canaries: " + ", ".join(v["path"] for v in reg.values()))
         blind = [d for d, ok in tracked.items() if not ok]
@@ -430,7 +430,7 @@ def decoy_ident(st):
 
 
 def decoy_untouched(v, st):
-    """Fix round 1 (R2): the decoy's times were moved only by a read since Watchtower armed it. A Bot that sets a decoy's atime
+    """Fix round 1 (R2): the decoy's times were moved only by a read since ISR Bot armed it. A Bot that sets a decoy's atime
     to match a witness the backup read stamps a new ctime. A registry from before this (no ctime) proves nothing."""
     return decoy_ident(st) == {"ino": v.get("ino"), "ctime_ns": v.get("ctime_ns")}
 
@@ -446,7 +446,7 @@ def decoy_rewritten(v, st):
 
 def canary_findings(record=True):
     """A decoy opened on its own means something went looking: critical. Batch 2 (R2): two or more decoys read, every read proven
-    by its witness, is the platform's backup: one calm line. Without that proof, reads during a recorded Watchtower run are high
+    by its witness, is the platform's backup: one calm line. Without that proof, reads during a recorded ISR Bot run are high
     (any Bot can write that record), and two or more within a few minutes are high (a Bot grepping every file reads them
     together too). A single read is never downgraded. record=False only looks: nothing is reset, saved or logged."""
     reg = load_json(state_path("canaries.json"), {})
@@ -534,7 +534,7 @@ def canary_findings(record=True):
 
 
 def run_windows():
-    """The recorded Watchtower runs as (start, end). Any Bot can write this file, so an entry that isn't two numbers in order is
+    """The recorded ISR Bot runs as (start, end). Any Bot can write this file, so an entry that isn't two numbers in order is
     dropped (fix round 1, R2): never an error that loses a read, and never a window."""
     raw = load_json(state_path("run_windows.json"), [])
     num = lambda x: isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)

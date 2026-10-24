@@ -1,6 +1,6 @@
 # ISR Bot threat model
 
-ISR Bot (the engine and its files keep the name Watchtower) runs on the same shared Grok Bot computer it audits, so it is held to the rules it enforces.
+ISR Bot runs on the same shared Grok Bot computer it audits, so it is held to the rules it enforces.
 
 ## What it defends
 | Risk | OWASP | Check |

@@ -79,7 +79,7 @@ def audit(roots, exports, quick=False):
 
     # 2. integrity drift (AST07)
     base, base_status, base_why = load_baseline()
-    # item 8 (R3): no vendor provenance, a counted high. Checked before any exemption (Codex, item 8 review 1: Watchtower's own
+    # item 8 (R3): no vendor provenance, a counted high. Checked before any exemption (Codex, item 8 review 1: ISR Bot's own
     # isr-bot-fix/SKILL.md copied into .grok/bundled/skills passed as its own release, with no line for that path). Review 2
     # (high 3): a matching baseline.json line is not provenance. Decision, Oct 18: only the release list is, on every run; a
     # first run (a new box, or one whose state was wiped) vouches for nothing. Decision, Oct 22 (b8i4): the middle path. A
@@ -102,8 +102,8 @@ def audit(roots, exports, quick=False):
         for p, h in manifest.items():
             if p in unproven and p not in cands:
                 continue
-            if p not in cands and own_release_file(p, h):   # b8i4: a platform file is never exempted as Watchtower's own
-                continue   # Watchtower's own skill, identical to the checksummed release it was installed from
+            if p not in cands and own_release_file(p, h):   # b8i4: a platform file is never exempted as ISR Bot's own
+                continue   # ISR Bot's own skill, identical to the checksummed release it was installed from
             if p in moved_to:
                 continue   # the same file under a new folder name (plugins are reinstalled under new folders after a restart)
             if p in base and base[p] != h and is_vendor(p):
@@ -194,10 +194,10 @@ def audit(roots, exports, quick=False):
     save_json(state_path("persistence.json"), persistence_stored(snap))
 
     # 4. secrets in files (known CLI credential files reported separately)
-    cli_unknown = []   # batch 6 (KL5): a credential file Watchtower couldn't look at leaves the access map's sign-ins incomplete
+    cli_unknown = []   # batch 6 (KL5): a credential file ISR Bot couldn't look at leaves the access map's sign-ins incomplete
     fs += cli_credentials(cli_unknown)
     # batch 6 PR3, Codex round 1 (11): the platform's sign-in and secret-store places under the roots are looked up too, as
-    # access_map_now does (a stat, never opened or read): one Watchtower couldn't look at (a folder it may not search) leaves
+    # access_map_now does (a stat, never opened or read): one ISR Bot couldn't look at (a folder it may not search) leaves
     # the sign-ins unknown, never "none found"
     cli_unknown += [p for p in sorted(secret_store_places()) if any(_under(p, {os.path.normpath(os.path.expanduser(r))}, strict=True)
                                                                     for r in roots) and _look(p) is None]
@@ -265,7 +265,7 @@ def audit(roots, exports, quick=False):
         notes.append("Grok Bot settings.json not found: Auto Review rules and local execution checked from exports only.")
 
     # batch 6 (B4): read in every language rules/ask_first_vocab.json has. Fix round 1 (Codex 5): coverage nobody can show is the
-    # counted medium whatever the rules say ("." and "every shell command" too); rules none of whose words Watchtower reads also
+    # counted medium whatever the rules say ("." and "every shell command" too); rules none of whose words ISR Bot reads also
     # get a Tip about the language, beside the medium, never instead of it
     seen, gaps = ask_first_state(entries, export_rules)
     if gaps:
@@ -323,7 +323,7 @@ def audit(roots, exports, quick=False):
         fs += soft("SkillSpector and husk", ("ISR-X001", "ISR-X002", "ISR-X003", "ISR-X004"), notes, [], engine_findings,
                    user_dirs + sorted(changed) + other_dirs, fs, notes, user_roots, budget=max(0, min(ENGINE_BUDGET, time_left() - 20)))
         set_progress("finishing", 0, 0)
-        rearm_canaries(within=roots)  # Watchtower's own scanners just read the files under roots; reset only those (batch 2, R2)
+        rearm_canaries(within=roots)  # ISR Bot's own scanners just read the files under roots; reset only those (batch 2, R2)
     else:
         # The daily check re-scans what changed and then works through anything still waiting, two minutes at most.
         rest = [d for d in user_dirs + sorted(os.path.dirname(x) for x in inv["skills"] if skill_tier(x) != "user") if d not in changed]

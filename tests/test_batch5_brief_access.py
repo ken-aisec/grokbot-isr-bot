@@ -4,7 +4,7 @@ The "here" line is built only from fixed templates, the release's rules/access_v
 never from feed text. Only a story's title and CVE IDs are matched, exactly the text the brief already ranks. Without an access
 map (an older box) every line is what it was.
 
-Tests marked "replay" fail on 77dedd1 on their assertion (measured with 77dedd1's watchtower/ sources and rules, this file in place);
+Tests marked "replay" fail on 77dedd1 on their assertion (measured with 77dedd1's engine sources and rules, this file in place);
 "guard" ones keep what must not change."""
 import datetime as dt, html, json, os, re, shutil, sys, unittest
 from unittest import mock
@@ -77,7 +77,7 @@ class WhatAStoryTouchesHere(_Brief):
 
     def test_a_product_this_computer_doesnt_reach(self):   # replay
         self.mapped()
-        # PR B, Codex round 2 (3): a tool list Watchtower couldn't read may name Dropbox, so "found no" needs every one readable;
+        # PR B, Codex round 2 (3): a tool list ISR Bot couldn't read may name Dropbox, so "found no" needs every one readable;
         # test_batch5_access_round2 has the sentence with the unreadable one left in
         os.remove(os.path.join(self.home, "projects", "tools", "mcp.json"))
         # round 3 (1): so does a folder the scan never enters (the browser profile, SKIP_PATH_PARTS); test_batch5_access_round3 has

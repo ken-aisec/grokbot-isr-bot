@@ -78,7 +78,7 @@ class SealedCopy(_Scanners):
 
 
 class InterpreterTrust(_Scanners):
-    """Finding 2: a Python outside Watchtower passed when it and its folder were chmod 0555, even though the Bot owned both."""
+    """Finding 2: a Python outside ISR Bot passed when it and its folder were chmod 0555, even though the Bot owned both."""
 
     def entry_point(self, target):
         os.makedirs(self.bin, exist_ok=True)
@@ -97,7 +97,7 @@ class InterpreterTrust(_Scanners):
         self.assertIn("Python it runs with", isr.SCANNER_PROBLEMS["pip-audit"][1])
 
     def test_2_only_the_python_isr_bot_runs_under(self):
-        other = os.path.realpath("/bin/sh")                                    # root-owned, but not Watchtower's Python
+        other = os.path.realpath("/bin/sh")                                    # root-owned, but not ISR Bot's Python
         self.entry_point(other)
         self.assertIsNone(isr.tool("pip-audit"))
         self.assertIsNone(isr.scanners_python())
@@ -179,7 +179,7 @@ class BoundedHashing(_Scanners):
 
 class LockReader(_Scanners):
     def test_7_runtime_and_publish_read_the_lock_the_same_way(self):
-        """Finding 7, the runtime half: publish.sh and Watchtower now share one reader. On the build commit scripts/scanner_lock.py
+        """Finding 7, the runtime half: publish.sh and ISR Bot now share one reader. On the build commit scripts/scanner_lock.py
         doesn't exist, so this errors there; its runtime reader already skipped these lines (contrast for that half). The replay
         that fails on the build commit is test_scripts.Publish.test_batch3_round1_lock_lines_isr_bot_would_skip_stop."""
         spec = importlib.util.spec_from_file_location("scanner_lock_t", os.path.join(ROOT, "scripts", "scanner_lock.py"))

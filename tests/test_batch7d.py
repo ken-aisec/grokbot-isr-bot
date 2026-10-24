@@ -9,7 +9,7 @@
    where npx or npm exec hand the word to a shell; any other `$` form stays "couldn't read the launch".
 
 Tests marked "replay" fail on the staged batch 7c fix-round state at their assertion, in every subtest (measured with that
-state's watchtower/ and MANIFEST.sha256 in place, this file in place); "guard" ones hold there too. Every package name is an
+state's engine sources and MANIFEST.sha256 in place, this file in place); "guard" ones hold there too. Every package name is an
 example."""
 import json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

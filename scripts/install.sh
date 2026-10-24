@@ -74,7 +74,7 @@ else
   echo "Nothing is installed without checksums. gitleaks, TruffleHog and OSV-Scanner still install from their own checksums."
   rm -rf "$ISR_HOME/app.new"   # a staging folder left by a version before v0.6.9
 fi
-# Batch 3: every scanner lives in $ISR_HOME/scanners/bin, the only folder Watchtower runs scanners from, and only when the
+# Batch 3: every scanner lives in $ISR_HOME/scanners/bin, the only folder ISR Bot runs scanners from, and only when the
 # program matches scripts/scanner-bins.lock. The old $ISR_HOME/bin copy of each tool is removed once the new one is in.
 SB="$ISR_HOME/scanners/bin"; mkdir -p "$SB"
 arch="$(uname -m)"; case "$arch" in x86_64) ga=x64;; aarch64|arm64) ga=arm64;; *) echo "skip gitleaks: $arch"; ga="";; esac

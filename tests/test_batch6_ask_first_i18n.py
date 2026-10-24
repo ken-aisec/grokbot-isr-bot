@@ -1,12 +1,12 @@
 """Batch 6 PR1, B4: Ask-first rules written in another language (decision 2).
 
 rules/ask_first_vocab.json (shipped, held to MANIFEST.sha256 like the access vocabulary) gives, for 13 languages, the words that
-open an Ask-first rule and the stems of the five areas. A rule set Watchtower reads is linted over every language at once; one
+open an Ask-first rule and the stems of the five areas. A rule set ISR Bot reads is linted over every language at once; one
 it can't read (none of its words in any language) stays the counted medium, with every area missing, and gets a language Tip
 beside it (fix round 1, Codex 5: 6cd1ab4 made it a Tip instead, so `["."]` hid the medium); no rule set at all stays the medium
 "Ask-first rules not found". The English entry is today's regular expressions exactly.
 
-Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's watchtower/ sources and rules, this file in
+Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's engine sources and rules, this file in
 place); "guard" ones keep what must not change. Settings files are written into temp boxes."""
 import json, os, re, sys, unittest
 from unittest import mock

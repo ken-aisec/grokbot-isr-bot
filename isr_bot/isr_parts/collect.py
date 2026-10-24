@@ -2,9 +2,9 @@
 # ---------------------------------------------------------------- collection
 def _look(path, follow=False):
     """What a lookup of `path` says (batch 6, KL5): its stat result (lstat, or stat with follow=True), False when it is
-    certainly not there (no such name, or a name on the way is not a folder), None when Watchtower couldn't look (no
+    certainly not there (no such name, or a name on the way is not a folder), None when ISR Bot couldn't look (no
     permission on a folder on the way, a link loop, any other error). os.path.isdir, isfile and lexists say False for
-    both, so a folder Watchtower wasn't allowed to look into read as "there is none"."""
+    both, so a folder ISR Bot wasn't allowed to look into read as "there is none"."""
     try:
         return os.stat(path) if follow else os.lstat(path)
     except (FileNotFoundError, NotADirectoryError):
@@ -17,8 +17,8 @@ def walk(roots, max_depth=8, errors=None, skipped=None):
     """Every plain file under roots. `errors` (a list) gets each folder the walk couldn't list (batch 5 PR B, Codex round 2, 3:
     the access map then never says there is none). Round 3 (1): `errors` also gets each file it couldn't look at (not one that
     vanished), and `skipped` (a list) each folder it left out: a link to a folder, one past max_depth, one of the folders it never
-    scans (SKIP_DIRS, SKIP_PATH_PARTS). Watchtower's own folder is left out too, but not counted: it is Watchtower's, not the Bots'.
-    Batch 6 (KL5): a root Watchtower couldn't look at is an error too, never a root that isn't there."""
+    scans (SKIP_DIRS, SKIP_PATH_PARTS). ISR Bot's own folder is left out too, but not counted: it is ISR Bot's, not the Bots'.
+    Batch 6 (KL5): a root ISR Bot couldn't look at is an error too, never a root that isn't there."""
     for root in roots:
         root = os.path.expanduser(root)
         st = _look(root, follow=True)
@@ -135,7 +135,7 @@ def run(cmd, timeout=120, cwd=None):
     deadline = time.monotonic() + timeout
     timed_out = (124, "", f"timed out after {int(timeout)}s")
     try:
-        launch = scanner_launch(cmd, deadline)   # batch 3: a program in Watchtower's scanner folder runs only from its checked, sealed copy
+        launch = scanner_launch(cmd, deadline)   # batch 3: a program in ISR Bot's scanner folder runs only from its checked, sealed copy
     except LaunchTimedOut:
         return timed_out
     except ScannerUnusable as e:
@@ -180,7 +180,7 @@ PERSIST_UNKNOWN = set()   # batch 6 (KL5): what the last persistence_snapshot co
 
 
 def _list_folder(d):
-    """The names in folder d, opened without following a link at d itself (O_NOFOLLOW): None when Watchtower couldn't list it (no
+    """The names in folder d, opened without following a link at d itself (O_NOFOLLOW): None when ISR Bot couldn't list it (no
     permission, a link, not a folder). Batch 6 (KL5, #16 medium 2): os.listdir followed a link and raised on no permission."""
     try:
         fd = os.open(d, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
@@ -250,7 +250,7 @@ KNOWN_CRED_FILES = {
 
 
 def cli_credentials(unknown=None):
-    """ISR-S003 for each known CLI credential file there. `unknown` (a list) gets each one Watchtower couldn't look at (batch 6,
+    """ISR-S003 for each known CLI credential file there. `unknown` (a list) gets each one ISR Bot couldn't look at (batch 6,
     KL5): the access map then never says there is no sign-in."""
     out = []
     for rel, what in KNOWN_CRED_FILES.items():

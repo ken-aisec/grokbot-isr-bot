@@ -1,7 +1,7 @@
 """v0.7.1 precision pass, item 2: Confirmed means dangerous and reachable.
 
 Two votes count only when they are about the same file and the same kind of risk (credential read, sending data out, secrecy,
-install-by-pipe...). A wording hit alone is never Confirmed: it needs a behavior signal in the same file. Watchtower's own wording
+install-by-pipe...). A wording hit alone is never Confirmed: it needs a behavior signal in the same file. ISR Bot's own wording
 match no longer votes for ISR-X003 (Oct 12 data dump: one word in the platform's pptx skill gave one critical plus one high).
 """
 import os, sys, unittest
@@ -66,8 +66,8 @@ class EnginesOnABox(Box):
                          [(f["rule"], f["severity"], f["label"]) for f in fs])
 
     def test_isr_bot_joins_an_engine_only_on_the_same_kind_of_risk(self):
-        a = self.skill("reads-keys", "EVIL", CRED_READ)            # SkillSpector says Exfil; Watchtower says credential read
-        b = self.skill("sends-out", "EVIL", CRED_READ, SEND_OUT)   # SkillSpector says Exfil; Watchtower sees a send out
+        a = self.skill("reads-keys", "EVIL", CRED_READ)            # SkillSpector says Exfil; ISR Bot says credential read
+        b = self.skill("sends-out", "EVIL", CRED_READ, SEND_OUT)   # SkillSpector says Exfil; ISR Bot sees a send out
         self.scanners(); self.audit()
         self.assertNotIn("ISR-X003", [f["rule"] for f in self.at(a)])
         x3 = [f for f in self.at(b) if f["rule"] == "ISR-X003"]

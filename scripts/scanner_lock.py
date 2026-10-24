@@ -2,7 +2,7 @@
 """The one reader of scripts/scanner-bins.lock (hardening batch 3, Codex review round 1).
 
 isr.py loads this file to decide which scanner programs it may run, and publish.sh runs it to refuse a release whose lock
-Watchtower couldn't use. publish.sh used to grep for "<sha256>  <name>  ", so six lines with no architecture passed it while
+ISR Bot couldn't use. publish.sh used to grep for "<sha256>  <name>  ", so six lines with no architecture passed it while
 the runtime reader skipped every one of them: an empty lock, and no scanner ran anywhere. Both now read the lock the same way.
 
 A line is `<sha256>  <name>  <arch>  <note>`, fields separated by exactly two spaces: sha256 is 64 lowercase hex digits,
@@ -10,7 +10,7 @@ name one of NAMES, arch one of ARCHES, note free text (not empty). Blank lines a
 Any other line is a problem: it is never used, and publish.sh stops on it.
 
 Codex review round 2: the file is read here too (read_lock), with one size limit and one failure rule for both, so a lock
-Watchtower would refuse whole (too large, not UTF-8, not a plain file) also stops publish.sh. semgrep may be listed (codescan
+ISR Bot would refuse whole (too large, not UTF-8, not a plain file) also stops publish.sh. semgrep may be listed (codescan
 runs it only from the checked folder), but a release needs only the scanners in REQUIRED.
 isr.py runs this file from its checked source bytes, never from a bytecode cache. Stdlib only.
 """
@@ -29,7 +29,7 @@ LINE = re.compile(r"([0-9a-f]{64})  (" + "|".join(map(re.escape, NAMES)) + r")  
 
 def read_lock(path):
     """(text, None), or (None, why) when the lock can't be used at all: not a plain file (never a link, pipe or device), over
-    MAX_BYTES, or not UTF-8. Watchtower then lists no scanner, and publish.sh stops."""
+    MAX_BYTES, or not UTF-8. ISR Bot then lists no scanner, and publish.sh stops."""
     try:
         fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0))
     except OSError as e:

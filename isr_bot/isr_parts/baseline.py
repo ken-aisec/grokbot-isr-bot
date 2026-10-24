@@ -31,7 +31,7 @@ def ledger_events(kinds):
 
 
 def ran_before():
-    """True once Watchtower has run on this box: the baseline's meta file exists, or the ledger has an audit, daily or baseline.
+    """True once ISR Bot has run on this box: the baseline's meta file exists, or the ledger has an audit, daily or baseline.
     The ledger is read line by line (never through a link or a FIFO), so a long-lived box never looks new because it is big."""
     if os.path.lexists(state_path(BASELINE_META)):
         return True
@@ -42,7 +42,7 @@ def ran_before():
 
 def load_baseline():
     """(baseline, status, why). status "ok": a baseline to compare with. "first": nothing approved yet (the first run ever, or a
-    box whose meta file says the baseline held nothing): take one. "reset" (R4, Oct 16): Watchtower ran here before and its
+    box whose meta file says the baseline held nothing): take one. "reset" (R4, Oct 16): ISR Bot ran here before and its
     baseline is now missing, empty or unreadable: an alarm (ISR-I010), never a quiet fresh start. An empty baseline counts as
     "nothing approved" only on a record a past run wrote, never on what the current scan sees: `daily --roots /nonexistent`
     finds nothing, and once that empty scan is saved as the baseline the next audit approves everything (Codex, round 1)."""
@@ -82,7 +82,7 @@ def save_first_baseline(manifest):
     platform file. Returns the platform files it left out. b8i4 (decision, Oct 22): a clean changed one at a release-list path
     raised nothing on this first run and rolls in on a later full audit (the middle path). Fix round 1 (Codex 1): a new skill
     folder, or a new file in one, is a counted high on a first run and on every run after (platform_held_before), like the rest,
-    until a Watchtower release lists it."""
+    until an ISR Bot release lists it."""
     held = platform_unproven(manifest)
     save_baseline({p: h for p, h in manifest.items() if p not in held})
     return held
@@ -249,7 +249,7 @@ def active(findings):
 
 
 def canonical_rule(s):
-    """A rule id as Watchtower writes it, whatever its case: the prefix and the letters upper, a suffix after the number lower
+    """A rule id as ISR Bot writes it, whatever its case: the prefix and the letters upper, a suffix after the number lower
     (ISR-T006k, ISR-T001r, ISR-WA07s). Uppercasing it all stored ISR-T006K, which matches nothing (Codex, round 1)."""
     s = str(s or "").strip()
     m = re.fullmatch(r"(?i)isr-([a-z]+)(\d*)([a-z]*)", s)
@@ -325,7 +325,7 @@ class Busy(Exception):
 
 
 def take_lock(wait=0):
-    """One Watchtower run at a time: two at once fight over the same files and slow each other's scanners."""
+    """One ISR Bot run at a time: two at once fight over the same files and slow each other's scanners."""
     path, t0 = state_path("run.lock"), time.monotonic()
     while True:
         try:
@@ -471,15 +471,15 @@ def run_audit_locked(args, quick):
 
 
 def score_fingerprint():
-    """What was measuring: formula era, Watchtower version, and which scanners ran. When it changes between two
-    audits, a score change may be Watchtower looking at more (or differently), not your setup changing."""
+    """What was measuring: formula era, ISR Bot version, and which scanners ran. When it changes between two
+    audits, a score change may be ISR Bot looking at more (or differently), not your setup changing."""
     used = (load_json(state_path("engines_used.json"), {}) or {}).get("engines", [])
     return f"{SCORE_ERA}:{VERSION}|" + "+".join(sorted(used))
 
 
 def load_history():
     """Full audits in the current scoring era. Each row: (time, score, findings, changed, fingerprint) where
-    changed means Watchtower itself differed from the previous audit. Older rows used other formulas and are hidden."""
+    changed means ISR Bot itself differed from the previous audit. Older rows used other formulas and are hidden."""
     rows, prev = [], None
     try:
         with open(state_path("score_history.csv")) as f:

@@ -218,7 +218,7 @@ def threat_level(b, snap, stories):
 
 
 def app_commit():
-    """The commit this copy of Watchtower was installed from (install.sh keeps the clone's .git), or None."""
+    """The commit this copy of ISR Bot was installed from (install.sh keeps the clone's .git), or None."""
     g = os.path.join(SELF_ROOT, ".git")
     try:
         head = open(os.path.join(g, "HEAD")).read().strip()
@@ -230,7 +230,7 @@ def app_commit():
 
 
 def isr_bot_update(r, get):
-    """Watchtower is published as tags, not GitHub releases, so releases/latest has nothing to say. Read the tags, take the
+    """ISR Bot is published as tags, not GitHub releases, so releases/latest has nothing to say. Read the tags, take the
     highest version, and check that the tag for the installed version still points at the commit installed here.
     Returns (update or None, tag-moved warning or None). Only reads: it never installs or updates."""
     tags = json.loads(get(f"https://api.github.com/repos/{r['repo']}/tags?per_page=100", accept="application/vnd.github+json"))

@@ -1,6 +1,6 @@
 """Hardening batch 4, Codex review 4 (batch 5, item c): #11's four remaining highs and Codex's two mediums, on 151e40c.
 
-Every test marked "replay" fails on 151e40c on its assertion (measured with 151e40c's watchtower/ sources and this file in place);
+Every test marked "replay" fails on 151e40c on its assertion (measured with 151e40c's engine sources and this file in place);
 the ones marked "guard" keep what already worked (most pass there too). Replays go through public paths only (finding(),
 mask_secrets(), scan_text(), vet, label_findings(), the audit and its state files, approved copies, history collection), so none
 of them errors on an older isr.py. All secrets are fake."""

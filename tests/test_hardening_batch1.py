@@ -105,7 +105,7 @@ class AcceptLockdown(Batch):
         reg = isr.load_json(isr.state_path("canaries.json"), {})
         p = os.path.expanduser(next(iter(reg.values()))["path"])
         st = os.stat(p)
-        os.utime(p, (time.time() - 3600, st.st_mtime))                             # one read, an hour ago: no Watchtower run then
+        os.utime(p, (time.time() - 3600, st.st_mtime))                             # one read, an hour ago: no ISR Bot run then
         return p
 
     def test_accept_refuses_a_decoy_alarm(self):   # replay

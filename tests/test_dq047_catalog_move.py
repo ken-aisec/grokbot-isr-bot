@@ -1,4 +1,4 @@
-"""DQ-047 (2026-10-22, Watchtower daily watch): a platform catalog folder move re-raised unchanged plugin files as new, and a
+"""DQ-047 (2026-10-22, ISR Bot daily watch): a platform catalog folder move re-raised unchanged plugin files as new, and a
 plugin version bump as a new install.
 
 The real run (`isr.py daily`, 6:00 AM ET, score 85, 55 new): the platform moved nine cursor-public plugins (calendly, excalidraw,
@@ -87,7 +87,7 @@ class DQ047CatalogFolderMove(Box):
                     os.utime(os.path.join(dp, x), (mtime, mtime))
 
     def file_plugins(self):
-        """The real state/plugins.json lines for the nine (an older Watchtower filed them; the roots are rewritten each run)."""
+        """The real state/plugins.json lines for the nine (an older ISR Bot filed them; the roots are rewritten each run)."""
         st = isr.load_json(isr.state_path("plugins.json"), {}) or {}
         for name in [n for n, _ in CATALOG] + ["pstack"]:
             st[name] = {"roots": [os.path.join(self.cache, name, OLD)], "since": SINCE, "status": "known" if name in KNOWN else "catalog"}
@@ -249,7 +249,7 @@ class DQ047PluginVersionBump(Box):
         pk = isr.keys_of(prev)
         new_rules = {f["rule"] for f in self.snap()["findings"] if not isr.known(f, pk) and "/sites/1.1.1/skills/sites" in f["where"]}
         self.assertIn("ISR-X001", new_rules)
-        self.assertTrue(new_rules - {"ISR-X001", "ISR-X002", "ISR-X003"}, new_rules)   # Watchtower's own rules too
+        self.assertTrue(new_rules - {"ISR-X001", "ISR-X002", "ISR-X003"}, new_rules)   # ISR Bot's own rules too
         self.assertNotIn("ISR-I004", {f["rule"] for f in self.snap()["findings"] if not isr.known(f, pk)})
 
     def test_a_file_added_inside_a_pending_plugin_is_new(self):

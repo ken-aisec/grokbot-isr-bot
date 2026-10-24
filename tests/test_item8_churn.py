@@ -24,7 +24,7 @@ stashed) by reaching an assertion unless their docstring says otherwise.
 
 b8i4 (decision, Oct 22: the middle path): a clean rewrite of a file at a path that already exists is the quiet Platform refresh
 line now, so the tests that rewrote listed files with clean bytes say so; the lock lists no sync bucket of one account (its 13
-vendor lines are `<bucket>` lines, which match any bucket pair). The tests marked "b8i4" fail on f7c28e6 (watchtower/ and the
+vendor lines are `<bucket>` lines, which match any bucket pair). The tests marked "b8i4" fail on f7c28e6 (the engine sources and the
 lock stashed) by reaching an assertion.
 """
 import hashlib, os, re, shlex, subprocess, sys, unittest, uuid
@@ -524,7 +524,7 @@ class FillClears(Box):
 
 
 class Lock(unittest.TestCase):
-    """(e): the release list Watchtower ships lists no bookkeeping, and its count line is the real count."""
+    """(e): the release list ISR Bot ships lists no bookkeeping, and its count line is the real count."""
 
     def entries(self):
         return [l.split("  ", 1)[1] for l in read_lock().splitlines() if l.strip() and not l.lstrip().startswith("#")]

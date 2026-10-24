@@ -2,46 +2,38 @@
 
 Open findings, limits and false alarms that dev carries knowingly. Only the items under a heading titled **Must-fix before release** are release blockers: each of those must be fixed before any release. Everything else in this file (open limits, open false alarms, follow-ups, and the record of fixed items) is documented and kept knowingly, and is not a release blocker on its own.
 
-ISR Bot is the product's display name (the engine and its files keep the name Watchtower). Older entries below say Watchtower: they were written before the display rename.
+Since 0.8.0 the product, its engine and its files are all called ISR Bot. The entries under "Before 0.8.0" keep the names of their time: they were written before the rename.
 
 ## Must-fix before release
 
 **None are open.** Batch 7d fixed the last ones. Each item that was in this list, or that the owner logged as must-fix, is recorded
 under "Fixed in batch 7d (the last must-fix items)" right below, with its test file.
 
-## v0.7.4: the name kept on purpose (display rename)
+## v0.8.0: the full rename (clean start, no upgrade path)
 
-0.7.4 renames the product to ISR Bot (intelligence, surveillance, reconnaissance) in display text only (owner decisions, Oct 22
-and Oct 23). These keep the old name, each on purpose, and `tests/test_v074_display_name.py` lists every engine string that still says Watchtower:
-- The engine labels `Watchtower rules` and `Watchtower` (the WT-* rule set's name, like the WT-* IDs). They are in
-  `engines_used.json` and the score fingerprint, and the X003 agreement's evidence ("SkillSpector + Watchtower") is part of its
-  finding key: renaming them would print a false SCANNERS MISSING after the upgrade and bring every reported, accepted or
-  dismissed WT-X003 back as new.
-- The evidence of two findings without an ident: WT-K005 ("during a recorded Watchtower run") and the WT-A003 language Tip
-  (`ASK_UNREAD_EVIDENCE`). Their evidence is part of their finding key.
-- WT-X005's evidence, why a scanner is held as changed ("its program file isn't the one Watchtower installed", or the scanner
-  list changing during the run). It is part of the finding key, so renaming it would bring every reported or accepted WT-X005
-  back as new. Doctor's scanner note repeats it, so that one line still says Watchtower.
-- The User-Agent `Watchtower/<version>` (a protocol token can't hold spaces, and nobody sees it) and the gitleaks config's
-  `description` (gitleaks reads it; nobody sees it).
-- Paths, the repo, `WATCHTOWER_*`, `wt.py`, the `watchtower-*` skill and routine slugs, state and report file names and JSON keys.
-- The audit stage `Watchtower's own tools`: its name is the key in `stage_times.json` and `progress.json` (status and doctor
-  show them raw) and in `stages_skipped` and `not_checked_this_run` of the audit and daily JSON. Notes, the report, the brief and
-  daily's NO_CHANGES_BUT_NOT_CHECKED line show it as ISR Bot's own tools (`STAGE_LABELS`).
-- The owner's decision (Oct 23) on prepublish: with ISR Bot on the roll-call roster, prepublish raises WT-PP08 on the name in
+0.8.0 finishes the rename to ISR Bot (intelligence, surveillance, reconnaissance) that 0.7.4 began in display text only. The
+install folder (`/workspace/isr-bot`), the repo, the engine (`isr_bot/isr.py` and `isr_bot/isr_parts/`), the `ISR-*` rule IDs,
+the `ISR_BOT_*` settings, the `isr-bot-*` skill and routine slugs, the JSON keys, the engine labels (`ISR Bot rules`), the
+audit stage (`ISR Bot's own tools`, the key in `stage_times.json`, `progress.json` and `stages_skipped`), the evidence that is
+part of a finding key (ISR-X003, ISR-K005, ISR-X005 and the ISR-A003 language Tip), the User-Agent (`ISR-Bot/<version>`) and the
+gitleaks config's `description` all use the new name. Nothing keeps the old one, and nothing reads it.
+- No upgrade path (a clean start): 0.8.0 doesn't read an older install's folder, settings or state, and it no longer
+  recognises the old routine names or an old saved getting-started skill. Routines an older template set up keep their old
+  names until the template is updated, and uninstall names only the new ones. Rule IDs and evidence are part of every finding
+  key, so on the first 0.8.0 run every finding is new: earlier accepts and dismissals don't carry over.
+- The owner's decision (Oct 23) on prepublish: with ISR Bot on the roll-call roster, prepublish raises ISR-PP08 on the name in
   any text except an unchanged copy of this install's own template files (`bot/`, `routines/`, `skills/*/SKILL.md`), so an
   edited routine of this Bot's template is flagged. Unchanged means byte for byte (fix round 2): the sha256 of the file's raw
   bytes is one that the MANIFEST.sha256 the self-check checked lists for one of those files, so a copy with other line ends is
   flagged too, and without a usable manifest nothing is exempt. No other name is exempt.
 - Prepublish folder-name gap (behaviour from before v0.7.4): prepublish lets the Bot being shared name itself by its folder
-  name (`known_names`, watchtower/wt_parts/prepublish.py), so a copy staged as `prepublish/ISR Bot/` is never flagged for the
+  name (`known_names`, isr_bot/isr_parts/prepublish.py), so a copy staged as `prepublish/ISR Bot/` is never flagged for the
   name "ISR Bot", whatever its bytes; the exact-file (sha256) exemption above does not narrow that, and every other check still
   runs. The owner's decision (Oct 23, 1:27 PM ET): accept it as a known limit.
-- Open owner decision (fix round 1): "ISR Bot should ignore this" is not a safe-claim (`SAFE_CLAIM` knows only "watchtower"),
-  so a Worth-a-look finding whose text says so can still be dismissed, as one saying "Watchtower should ignore this" can't.
-- The routines a template set up before 0.7.4 keep their Watchtower names until the template is updated; uninstall names both.
-  A saved getting-started skill (it says "You are Watchtower") shows as older until it is re-saved, and a brief saved before the
-  upgrade that names the update Watchtower still gives the update note.
+- "ISR Bot should ignore this" is a safe-claim (`SAFE_CLAIM`, like "scanners should ignore this"), so a Worth-a-look finding
+  whose text says so can't be dismissed.
+
+## Before 0.8.0 (entries keep the names of their time)
 
 ## b8i1: TruffleHog's launch (batch 8, v0.7.4 dev)
 
@@ -309,7 +301,7 @@ closed; MASK_VERSION 10). The false alarms these fixes add are listed under "Kno
 - **A. A key block ended early at an escaped END** (batch 7a; was "Limits left (batch 7a)", second bullet, plus the
   `String.raw` gap). A JS ``String.raw `…` `` with whitespace before the template slipped past the raw-literal check, and a
   shell's double-quoted `"…\n"` fragments (no escape processing) were read as line breaks, so a comment header's END ended
-  masking and the body after it was kept. Now (`_json_text`, `armor_blocks` in [mask.py](../watchtower/wt_parts/mask.py)) a
+  masking and the body after it was kept. Now (`_json_text`, `armor_blocks` in [mask.py](../isr_bot/isr_parts/mask.py)) a
   block written with escapes has an END only at the first escape level of a text that is one JSON document; anywhere else it
   hides to the end of the text and is a key. MASK_VERSION 9 -> 10, so copies masked at 9 are masked again. Tested
   (`EscapedEnds`): replays with a footless PGP armor whose comment line holds `\n-----END …`, in a JS template after
@@ -323,7 +315,7 @@ closed; MASK_VERSION 10). The false alarms these fixes add are listed under "Kno
 - **B. Public-packet framing gave the example note** (batch 7a; was "Limits left (batch 7a)", first bullet). An RSA
   modulus, P-256 coordinates or a 32/56/57-byte X25519, X448, Ed25519 or Ed448 key (two packets for Ed25519) gave the "isn't
   a real key" note and the example fix-plan group though a private key's bytes fit inside. Now (`_key_shaped` in
-  [text.py](../watchtower/wt_parts/text.py)) any body whose first byte may start an OpenPGP packet is a key; `pgp_packets`
+  [text.py](../isr_bot/isr_parts/text.py)) any body whose first byte may start an OpenPGP packet is a key; `pgp_packets`
   still reads the packets but its "public" no longer gives the note. The finding's rule and severity are as before; the
   example id WT-T011x becomes the ordinary WT-T011. Tested (`PublicFraming`): replays with an RSA key whose modulus holds a
   48-byte Ed25519 PKCS#8 key, a P-256 key whose coordinates hold it, an Ed25519 key with an Ed25519 subkey, an Ed25519 key
@@ -385,7 +377,7 @@ key or exfiltration.
 
 ## Open false alarms (batch 7b)
 
-Batch 7b part 1 (`chat_webhook` in [text.py](../watchtower/wt_parts/text.py)) stopped proving destinations. A Slack services or
+Batch 7b part 1 (`chat_webhook` in [text.py](../isr_bot/isr_parts/text.py)) stopped proving destinations. A Slack services or
 Discord webhooks URL (the hosts WT-T005's own pattern covers) is the medium WT-T018 only when the whole document passes an
 allowlist; everything else is the critical WT-T005 (Do not install, 80), even when the code really does send only to the
 webhook. **Status: open by design (the owner's chosen direction); each is a false alarm, never a missed exfiltration.**
@@ -484,7 +476,7 @@ The owner approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Cod
 
 ### From #15 (batch 5 PR A: platform notes, reviewed list, #11 follow-ups)
 
-1. **high — [text.py:779](../watchtower/wt_parts/text.py): “Maybe” still permits realistic destination downgrades.**
+1. **high — [text.py:779](../isr_bot/isr_parts/text.py): “Maybe” still permits realistic destination downgrades.**
 
    `requests.post(os.environ.get('HOOK', '<webhook>'), json=payload)` remains T018/**Install with changes** when `HOOK` actually selects `https://collector.example`. A sibling JSON configuration produces the same result; scanning that JSON separately raises no finding. Unknown-object `getattr`, `setdefault`, `pop`, environment-backed collections and reassigned destination variables also retain T018.
 
@@ -494,7 +486,7 @@ The owner approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Cod
 
    **Fixed in batch 6 PR3 (`fix/batch6c`, decision 6):** a lookup's default is the destination only when the map is proven empty (bound once in the code region to `{}` or `dict()`, used nowhere else); the environment, a file-backed or unknown map, `getattr`, `setdefault`, `pop`, `fallback=`, one side of an `or`/`||`, and a destination name bound twice or passed to a lookup are WT-T005 (vet "Do not install"; in the audit a lone pattern, "Worth a look", unless backed). The assertions that codified the gap now expect T005. Replays in `tests/test_batch6_destinations.py`. PR3 Codex round 1 (9, 10): `dict()` proves an empty map only when the name `dict` appears nowhere else in the document and nothing in it rewrites names or builtins (`dict = lambda: json.load(…)` is T005); a URL passed to a helper never proves the destination (defined in another block, imported, undefined, or defined in the same block: it may read the environment), only the builtin `str()` of it does; the URLs of every code block in the file count against a "maybe" destination. Replays in `tests/test_batch6_codex_r1.py`.
 
-2. **high — [text.py:748](../watchtower/wt_parts/text.py): Receiver naming introduces a new lookup bypass.**
+2. **high — [text.py:748](../isr_bot/isr_parts/text.py): Receiver naming introduces a new lookup bypass.**
 
    This complete example selects the collector:
 
@@ -510,7 +502,7 @@ The owner approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Cod
 
    **Fixed in batch 6 PR3 (`fix/batch6c`):** `get` is an HTTP GET only on a module (requests, httpx, https, axios, …) or on a name the code region binds exactly once to a client (`requests.Session()`, `httpx.Client()`, `aiohttp.ClientSession()`, `urllib3.PoolManager()`, `with … as x`, `self.x = …`); never from a name's suffix. With #15 medium 5: only another URL in the code (the send's own region and, since PR3 Codex round 1 (9), every code block of the file) makes the destination doubtful, not a docs link in the prose around it. Replays in `tests/test_batch6_destinations.py`.
 
-3. **Fixed in batch 6 PR2 (fix/batch6b, "Fake keys and dismissals"), together with #15 medium 6 (masking idempotence; MASK_VERSION 8).** Replays: `tests/test_batch6_mask.py`. **high — [mask.py:689](../watchtower/wt_parts/mask.py): Additional credential flags still leak.**
+3. **Fixed in batch 6 PR2 (fix/batch6b, "Fake keys and dismissals"), together with #15 medium 6 (masking idempotence; MASK_VERSION 8).** Replays: `tests/test_batch6_mask.py`. **high — [mask.py:689](../isr_bot/isr_parts/mask.py): Additional credential flags still leak.**
 
    With `\<newline>` representing a continued shell word, these retain `FAKEz` through **`mask_secrets`, finding evidence and `save_approved()`**:
 
@@ -522,7 +514,7 @@ The owner approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Cod
 
    **Fix:** recognize normalized curl cookie and OAuth bearer options, including their short/attached forms, and mask their credential values.
 
-4. **high — [scanners.py:272](../watchtower/wt_parts/scanners.py): Missing mutable installation metadata still disables release checks.**
+4. **high — [scanners.py:272](../isr_bot/isr_parts/scanners.py): Missing mutable installation metadata still disables release checks.**
 
    A copy moved outside the default home, under a name other than `app`, without the adjacent commit record returns `installed_root() == None`, skips self-check and accepts planted reviewed-list bytes. A custom-home rename plus removal of its commit record does likewise. Changing `WATCHTOWER_HOME` does not restore protection.
 
@@ -534,7 +526,7 @@ The owner approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Cod
 
 ### From #16 (batch 5 PR B: access map, threat brief)
 
-5. **High — [collect.py:10](../watchtower/wt_parts/collect.py), [access.py:344](../watchtower/wt_parts/access.py), [access.py:460](../watchtower/wt_parts/access.py): Permission failures can still mean “absent.”**
+5. **High — [collect.py:10](../isr_bot/isr_parts/collect.py), [access.py:344](../isr_bot/isr_parts/access.py), [access.py:460](../isr_bot/isr_parts/access.py): Permission failures can still mean “absent.”**
 
    `isdir()`, `isfile()` and `lexists()` suppress permission errors into false results. These checks occur before the new error tracking or hardened opens. An unstatable scan root produces neither an error nor a skip; an inaccessible browser ancestor produces `(None, True)`; an inaccessible directory lookup produces `([], True)`.
 
@@ -544,7 +536,7 @@ The owner approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Cod
 
    **Fixed in batch 6 PR3 (`fix/batch6c`):** `_look` tells "no such name" from "couldn't look", and the scan roots, the scheduled-job folders and rc files (`PERSIST_UNKNOWN`), the CLI credential files and the platform secret store, the cookie jar and seed, the settings file, hooks files and Bot profiles all use it: what Watchtower couldn't look at makes its field incomplete, never "none". The scheduled-job folders are listed without following a link and without stopping the audit (the error/link half of #16 medium 2). Replays in `tests/test_batch6_failed_lookups.py`. PR3 Codex round 1 (11): the audit itself also looks up the platform's sign-in and secret-store places under its roots (a stat, never opened), so a Grok CLI sign-in folder it couldn't search makes the audit's map's command-line sign-ins unreadable, not "none found" (replay in `tests/test_batch6_codex_r1.py`).
 
-6. **Fixed in batch 6 PR2 (fix/batch6b, "Fake keys and dismissals").** Replays: `tests/test_batch6_connectors.py`. **High — [access.py:136](../watchtower/wt_parts/access.py): Saved connector lists bypass malformed-answer validation.**
+6. **Fixed in batch 6 PR2 (fix/batch6b, "Fake keys and dismissals").** Replays: `tests/test_batch6_connectors.py`. **High — [access.py:136](../isr_bot/isr_parts/access.py): Saved connector lists bypass malformed-answer validation.**
 
    A fresh reply with `connectors: [{"name":"Gmail"}]` becomes incomplete. The same value in saved `rollcall_findings.json` passes through `_ax_said()` as an empty, complete connector list.
 
@@ -571,10 +563,10 @@ The owner approved merging #15 and #16 into dev on Oct 19, 2026 with these 7 Cod
 
 KL3 and KL6 above are fixed in this PR; KL4 and KL7 in PR1; KL1, KL2 and KL5 are PR3's. B5 removed the name-based secret skips the owner named (gitleaks' `tests/`, `fixtures/`, `testdata/`, `*.test.*` path skips, the whole-line `$VAR`/placeholder rule, and `fixplan.py`'s FIXTURE_PATH). It does **not** make secret handling content-only everywhere: these name- or line-based rules are still in place and are logged here to be replaced by content checks in a later batch (**status: open follow-ups, not release blockers on their own**):
 
-- **gitleaks path allowlist** ([secrets_pkgs.py](../watchtower/wt_parts/secrets_pkgs.py), `GITLEAKS_CONFIG`): package stores and caches (`node_modules`, `.cache`, `site-packages`, `go/pkg`, …), browser profiles, the named credential files, Watchtower's own folders, lockfiles and `marketplace.json`, and every `.h` file are never read by gitleaks.
+- **gitleaks path allowlist** ([secrets_pkgs.py](../isr_bot/isr_parts/secrets_pkgs.py), `GITLEAKS_CONFIG`): package stores and caches (`node_modules`, `.cache`, `site-packages`, `go/pkg`, …), browser profiles, the named credential files, Watchtower's own folders, lockfiles and `marketplace.json`, and every `.h` file are never read by gitleaks.
 - **gitleaks whole-line rules**: a line with `x-amz-credential=` / `X-Amz-Signature=` or `?AWSAccessKeyId=` / `Signature=` / `Expires=` hides every other hit on that line.
-- **`in_toolchain_tree`** ([secrets_pkgs.py](../watchtower/wt_parts/secrets_pkgs.py)): gitleaks hits under Go, pnpm, rustup and cargo trees are counted, not listed.
-- **`SAMPLE_SKILL_PATH`** ([collect.py](../watchtower/wt_parts/collect.py), used by [scope.py](../watchtower/wt_parts/scope.py)): a skill under a `tests/`, `fixtures/`, `examples/`, `docs/` or `references/` segment outside the loadable locations isn't scored as installed (keys there are still reported: SECRET_RULES count wherever they sit).
+- **`in_toolchain_tree`** ([secrets_pkgs.py](../isr_bot/isr_parts/secrets_pkgs.py)): gitleaks hits under Go, pnpm, rustup and cargo trees are counted, not listed.
+- **`SAMPLE_SKILL_PATH`** ([collect.py](../isr_bot/isr_parts/collect.py), used by [scope.py](../isr_bot/isr_parts/scope.py)): a skill under a `tests/`, `fixtures/`, `examples/`, `docs/` or `references/` segment outside the loadable locations isn't scored as installed (keys there are still reported: SECRET_RULES count wherever they sit).
 
 Limits of the new behavior, kept knowingly:
 
@@ -699,7 +691,7 @@ reported as unread. **Fixed in batch 7c fix round** (see "Batch 7c fix round" be
 - Timing guards (time only): four many-word and six one-long-word inputs at about 100 KB and 1 MB.
 
 Batch 7c fix round (Codex round 1 high, fixed; `_script_text`, `_unwrap`, `mcp_package` and `mcp_launches` in
-[plugins.py](../watchtower/wt_parts/plugins.py)): a command-position word is script text when it holds whitespace, a quote or
+[plugins.py](../isr_bot/isr_parts/plugins.py)): a command-position word is script text when it holds whitespace, a quote or
 other shell syntax (`_SCRIPT_SYNTAX`: whitespace, `'`, `"`, backtick, `;`, `&`, `|`, `$`, `<`, `>`, `(`, `)`, `{`, `}`, `[`,
 `]`, `*`, `?`, `!`, `#`, `%`, `^`), or a backslash whose escape names a launcher, shell or wrapper (`n\px`; `C:\tools\npx.cmd`
 stays a Windows path). Every command position is checked: the top-level command, each wrapper's name and the command after
@@ -715,7 +707,7 @@ through `mcp_unpinned`, cover only these:
 - Guards (clear): `npx -y pkg@1.2.3`; `npx -y safe@1.2.3` and `npx -y @scope/pkg@1.2.3` in a pinned `npm exec`; the example with `npx -y safe@1.2.3` in place of the string, behind `timeout 30` and behind `nice -n 5`; `C:\tools\npx.cmd -y pkg@1.2.3` at the top and in a pinned `npm exec`; `\npx -y pkg@1.2.3`; `/home/u/.local/bin/uvx pkg==1.2.3`; `uvx pkg[cli]==1.2.3`; `uvx --from tool[cli]==1.0.0 tool-cmd`; `node server.js --port 3000`; `node server.js` in a pinned `npm exec`.
 
 Batch 7d (review of the fix round: three items, all fixed; `_script_text`, `mcp_package`, `mcp_launches` and `_mcp_servers`
-in [plugins.py](../watchtower/wt_parts/plugins.py); tests in `tests/test_batch7d.py`, all through `mcp_unpinned`). The batch 7c
+in [plugins.py](../isr_bot/isr_parts/plugins.py); tests in `tests/test_batch7d.py`, all through `mcp_unpinned`). The batch 7c
 script-text item above stays fixed by the fix round.
 
 1. **Empty command word (fixed in batch 7d).** An empty word in command position stopped the reading, and npm runs its shell in place of an empty command with the rest as its arguments: `timeout 30 npx -y npm@10.9.2 exec --package=npm@10.9.2 -- "" -c "npx -y mutable"` gave no WT-M001. A blank word (empty or whitespace only) is now script text wherever a command is selected, and the reading goes on past an empty word after a launcher's options or `--`. A launch whose program name is blank is labelled with the launch that runs it (or `(command)`), not with an empty label. Tested: that example behind `timeout 30`, `nice`, `nice -n 5` and in a pinned `npm exec` (the unread line at `''` and `npm exec` at `'npx -y mutable'`); `timeout 30 "" -c x`, `env A=1 "" x`, `nice -n 5 "" x`, `uvx --from tool==1.0.0 ""`, `"command": ""` with `node server.js` as args, and `"command": " \t"`.

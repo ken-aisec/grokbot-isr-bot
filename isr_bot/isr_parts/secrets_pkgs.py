@@ -43,7 +43,7 @@ regexes = ['''(?i)^["']?(next|prev|previous|page|pagination|continuation)_?(page
 
 # Batch 6 (B5, DQ-043/044): no name-based skips. The tests/, fixtures/ and *.test.* path skips and the line rule that hid a whole
 # line next to "token" and a $VAR, <...> or xxxx (so token=$X api_key=<a real key> was hidden) are gone; each hit's own secret is
-# judged by its content instead (gitleaks_example), the same check as Watchtower's own rule (secret_kind). Fix round 3: an
+# judged by its content instead (gitleaks_example), the same check as ISR Bot's own rule (secret_kind). Fix round 3: an
 # example-looking hit is scored as any other and only noted (annotate_example), never lowered or left out.
 GITLEAKS_READ_LIMIT = 5_000_000   # gitleaks reads files up to --max-target-megabytes 5
 GITLEAKS_FRAGMENT = 100_000       # gitleaks reads a file 100,000 bytes at a time (sources/file.go); a later piece's columns start over
@@ -121,7 +121,7 @@ class PrivateDir:
 
 
 def gitleaks_private(exe, source, priv, timeout=180):
-    """gitleaks run on `source` with Watchtower's config written into `priv` (a PrivateDir) and its report written there and read
+    """gitleaks run on `source` with ISR Bot's config written into `priv` (a PrivateDir) and its report written there and read
     from there (PrivateDir.read): (the report's list of hits or None, gitleaks' error text)."""
     cfg = priv.write("gitleaks.toml", GITLEAKS_CONFIG.encode())
     code, _, err = run([exe, "detect", "--source", source, "--no-git", "--redact", "--config", cfg, "--report-format", "json",
@@ -238,7 +238,7 @@ def gitleaks_secret(leak, data):
 
 def gitleaks_hit(leak, data):
     """Fix round 1 (Codex 1): (secret, its whole source line, where it starts in that line, (its line from 0, where it starts
-    there)) for one gitleaks hit, read from `data` (the file's bytes as Watchtower read them once, as bytes or a FileBytes) at
+    there)) for one gitleaks hit, read from `data` (the file's bytes as ISR Bot read them once, as bytes or a FileBytes) at
     exactly the place gitleaks reported: StartLine/StartColumn to
     EndLine/EndColumn, in bytes. gitleaks counts a column from 1 on the first line of what it read at once and from 2 on the
     lines after (it counts the line break before), and trims line breaks from the ends of its Match. The bytes there must be
@@ -246,7 +246,7 @@ def gitleaks_hit(leak, data):
     and the secret must have gitleaks' Entropy. None, and the hit is kept as it is, unless exactly one place fits: no field, no
     Entropy, another text there, bytes that aren't UTF-8. No other text on the line is ever picked.
     Fix round 2 (Codex 1): gitleaks reads a file GITLEAKS_FRAGMENT bytes at a time (and on to a blank line, up to 25,000 more),
-    and a later piece counts columns from where it starts, which can be the middle of a long line, at a place Watchtower can't
+    and a later piece counts columns from where it starts, which can be the middle of a long line, at a place ISR Bot can't
     know. Its first piece starts at byte 0 and holds at least the first GITLEAKS_FRAGMENT bytes, so a hit is read only when the
     whole file fits in that, or its first line ends there (a hit from a later piece is on that piece's first line or after);
     any other hit keeps the severity gitleaks' rule gives it.
@@ -406,7 +406,7 @@ def gitleaks_findings(roots, notes):
                 continue                                  # Decision, Oct 13: the platform's masked-secret store is one Platform note (ISR-I009)
             if in_toolchain_tree(str(leak.get("File") or "")):
                 skipped_tool += 1
-                continue                                  # item 8 dry run: test vectors in a language toolchain or package store                                  # Watchtower's own decoys (their names are this install's, not in this config)
+                continue                                  # item 8 dry run: test vectors in a language toolchain or package store                                  # ISR Bot's own decoys (their names are this install's, not in this config)
             per_file.setdefault(leak.get("File"), []).append(leak)
             # batch 6 (B5); fix round 3 (Codex 1, 2): an example-looking hit is grouped, counted and scored as any other; its why
             # only adds a note to a finding all of whose hits look like that (_note_examples)
@@ -537,7 +537,7 @@ def in_toolchain_tree(p):
 
 
 def installed_python_packages():
-    """Packages in the computer's own Python, not Watchtower's venv."""
+    """Packages in the computer's own Python, not ISR Bot's venv."""
     py = "/usr/bin/python3" if os.path.exists("/usr/bin/python3") else (shutil.which("python3") or "python3")
     code, out_s, _ = run([py, "-m", "pip", "list", "--format", "json", "--disable-pip-version-check"], 60)
     try:
@@ -598,14 +598,14 @@ def package_findings(notes):
 
 
 def scanners_python():
-    """Watchtower's scanner venv Python (scanners/bin/python), only when it leads to the pinned, root-owned interpreter
+    """ISR Bot's scanner venv Python (scanners/bin/python), only when it leads to the pinned, root-owned interpreter
     (trusted_interpreter). run() starts it as that interpreter, never through the link."""
     py = os.path.join(scanner_bin(), "python")
     return py if os.path.lexists(py) and trusted_interpreter(py) else None
 
 
 def self_findings(notes):
-    """Watchtower holds its own tools to the same standard: known holes in the scanners' packages, and whether they were
+    """ISR Bot holds its own tools to the same standard: known holes in the scanners' packages, and whether they were
     installed from the checksum lock."""
     py, exe, out = scanners_python(), tool("pip-audit"), []
     update_notes(notes)

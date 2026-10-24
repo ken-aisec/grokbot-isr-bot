@@ -1,11 +1,11 @@
-"""Batch 6 PR1, KL4 (#15 high 4): Watchtower's release files are held to MANIFEST.sha256 whatever the folder's layout.
+"""Batch 6 PR1, KL4 (#15 high 4): ISR Bot's release files are held to MANIFEST.sha256 whatever the folder's layout.
 
 A copy moved out of `app` without its commit record, or a renamed custom home with the record deleted, is a developer checkout to
 installed_root and self_check (that classification is unchanged), and on 5dcd0a2 such a copy read a planted rules file as it was.
 Every shipped rules file (the platform lock, the reviewed list, the normalization spec, the access vocabulary, the scanner lock
 and its reader) is now refused unless it is the folder's MANIFEST.sha256 line, with a coverage note when the manifest is missing.
 
-Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's watchtower/ sources, this file in place);
+Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's engine sources, this file in place);
 "guard" ones keep what must not change. Every folder is a temp folder; the planted files are JSON with no secret."""
 import json, os, shutil, sys, unittest
 from unittest import mock

@@ -348,7 +348,7 @@ def _key_shaped(raw, at):
     of every structure der_key_structure names, whole or not, so a cut or odd key still counts) or a PGP secret-key or
     secret-subkey packet. Reads raw at `at`, never a copy of the rest. Batch 7a (round 4, high 3): at 0, any byte that may
     start an OpenPGP packet (0x80 set) counts unless the body reads as public packets only (pgp_packets), so a secret key behind
-    a marker or another ignored packet, or a structure Watchtower can't read, is a key. Batch 7d (B): public packets prove
+    a marker or another ignored packet, or a structure ISR Bot can't read, is a key. Batch 7d (B): public packets prove
     nothing either: a public key's fields (an RSA modulus, a curve point's coordinates, a 32/56/57-byte X25519, X448, Ed25519 or
     Ed448 key) are opaque bytes a private key may be written into, so any byte that may start an OpenPGP packet is a key's
     start, whatever pgp_packets reads."""

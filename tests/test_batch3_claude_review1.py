@@ -30,7 +30,7 @@ def sha(path):
 
 class ForgedEntryPoint(_Scanners):
     """Finding 1 (high): a pip entry point's first line is hashed as "#!python", so a file whose first line really is
-    "#!python" matched the lock, had no interpreter check, and the kernel ran "python" from the folder Watchtower was
+    "#!python" matched the lock, had no interpreter check, and the kernel ran "python" from the folder ISR Bot was
     started in."""
 
     def forged(self, name):
@@ -127,7 +127,7 @@ class LockHeldToTheManifest(_Scanners):
 
 class UnreadableIsNotChanged(_Scanners):
     """Finding 4: plain I/O failures (a slow read, no memory or file descriptors, sealing refused, no /proc) were recorded as
-    "changed", a Confirmed high ISR-X005 saying something is changing Watchtower's files."""
+    "changed", a Confirmed high ISR-X005 saying something is changing ISR Bot's files."""
 
     def assert_unreadable(self, name):
         self.assertEqual(isr.SCANNER_PROBLEMS[name][0], "unreadable", isr.SCANNER_PROBLEMS)

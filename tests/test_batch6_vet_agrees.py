@@ -12,7 +12,7 @@
 3 vet shows each finding with the audit's label and severity (`severity` labelled, `severity_was` the rule's own); the verdict
   rules are unchanged.
 
-Tests marked "replay" fail on 1aed58a on their assertion (measured with 1aed58a's watchtower/ sources, this file in place);
+Tests marked "replay" fail on 1aed58a on their assertion (measured with 1aed58a's engine sources, this file in place);
 "guard" ones keep what must not change: the real attacks stay caught. Every key is FAKE; every file is written by the test into
 a temp folder (never under tests/fixtures)."""
 import hashlib, json, os, sys, tempfile, unittest

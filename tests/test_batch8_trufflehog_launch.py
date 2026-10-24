@@ -10,7 +10,7 @@ Now TruffleHog runs from the sealed copy like every other scanner, with `--local
 runs after the check. Its stage counts as finished only on exit 0 (or 183) with its "finished scanning" log line; a silent exit 0
 (its signal handler exits 0) or a non-zero exit with partial output is a failed stage, and a scanner whose stage failed is not
 used. The stand-ins for TruffleHog are /bin/sh scripts, registered in this process only; OVERSEER fails as overseer does unless
-it is given --local-dev. Expected values are literals, so an older Watchtower fails at an assertion instead of erroring.
+it is given --local-dev. Expected values are literals, so an older ISR Bot fails at an assertion instead of erroring.
 Measured: T1-T3 and T4 (a)-(c) fail on 4c89284 or 1a4805c at their assertions (see CHANGELOG); T5 and T6 contrasts are marked.
 Fix round 2: TruffleHog also gets --fail-on-scan-errors, and a stage that logged "encountered errors during scan" failed whatever
 its exit; run() kills a timed-out program's whole process group. On 23476f2 T3 (the new flag assertion), T4 (h), T9 and T10
@@ -60,7 +60,7 @@ class _T(b3._Scanners):
 
     def popen(self, *a, **k):
         """Records each launch's argv[0], program file and what its passed descriptor links to; on TruffleHog's launch (after
-        Watchtower's checks) it can rename a different program over bin/trufflehog."""
+        ISR Bot's checks) it can rename a different program over bin/trufflehog."""
         argv, fds = list(a[0] if a else k["args"]), k.get("pass_fds") or ()
         link = os.readlink(f"/proc/self/fd/{fds[0]}") if fds else None
         self.seen.append((argv[0], k.get("executable"), link))

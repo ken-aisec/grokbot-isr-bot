@@ -171,7 +171,7 @@ def ask_first_gaps(text):
 def ask_first_state(native, exported):
     """("absent" | "read" | "unread", gaps) for the account's Ask-first rules: `native` the settings file's entries (an Ask-first
     key's are labelled ASK_LABEL), `exported` the exports' text. "unread": there are rules, but none of the owner's own words is
-    an opener or an area stem in any language, so Watchtower can't tell what they cover (fix round 1, Codex 5: still the counted
+    an opener or an area stem in any language, so ISR Bot can't tell what they cover (fix round 1, Codex 5: still the counted
     medium, with every area missing; a language Tip is added beside it)."""
     langs = ask_first_vocab()
     gaps = ask_first_gaps("\n".join(native) + "\n" + exported)

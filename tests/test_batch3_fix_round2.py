@@ -57,11 +57,11 @@ class CachedReader(_Scanners):
 class RunningInterpreter(_Scanners):
     @unittest.skipUnless(chain_root_owned(os.path.realpath("/bin/sh")), "needs a root-owned /bin/sh")
     def test_2_trust_follows_the_running_interpreter_not_its_launcher_name(self):
-        """Finding 2: realpath(sys.executable) followed the link Watchtower was started through. With that link and the scanner
+        """Finding 2: realpath(sys.executable) followed the link ISR Bot was started through. With that link and the scanner
         Python link retargeted at another root-owned program, that program was the "pinned" Python."""
         other = os.path.realpath("/bin/sh")
         launcher = os.path.join(self.tmp, "venv-python")
-        os.symlink(other, launcher)                                            # the launcher Watchtower started through, retargeted
+        os.symlink(other, launcher)                                            # the launcher ISR Bot started through, retargeted
         os.makedirs(self.bin, exist_ok=True)
         for n in ("python3", "python"):
             os.symlink(other, os.path.join(self.bin, n))
@@ -110,7 +110,7 @@ class BoundedTime(_Scanners):
 class SharedLockRules(_Scanners):
     def test_12_publication_refuses_a_lock_the_runtime_refuses(self):
         """Finding 12: publication read the lock without the runtime's 1,000,000-byte limit, so a complete lock padded with
-        comments passed publish.sh while Watchtower listed no scanner at all."""
+        comments passed publish.sh while ISR Bot listed no scanner at all."""
         with open(self.lock, "w") as f:
             f.write(six_lines() + ("#" + "x" * 999 + "\n") * 1001)
         isr._SCANNER_LOCK_CACHE.clear()

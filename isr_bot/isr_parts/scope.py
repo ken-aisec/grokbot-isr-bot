@@ -6,7 +6,7 @@ def is_sample_skill_path(path):
 
 
 def workspace_quarantine_roots():
-    """The one workspace holding folder Watchtower uses for hand-quarantine (sibling of Watchtower-home),
+    """The one workspace holding folder ISR Bot uses for hand-quarantine (a sibling of ISR Bot's home folder),
     plus the production /workspace/quarantine tree. Matched as real path prefixes, never by segment name."""
     roots = set()
     try:
@@ -22,8 +22,8 @@ def workspace_quarantine_roots():
 
 
 def is_quarantined_path(path):
-    """True only for Watchtower-home quarantine, the workspace holding folder (realpath prefix), or a
-    quarantine.json `to` that is under Watchtower-home quarantine / owned as quarantine. Never `from`,
+    """True only for quarantine under ISR Bot's home folder, the workspace holding folder (realpath prefix), or a
+    quarantine.json `to` that is under the quarantine in ISR Bot's home folder / owned as quarantine. Never `from`,
     never a path segment named quarantine anywhere (DQ-028/030)."""
     p = os.path.normpath(os.path.abspath(str(path).split(":")[0]))
     try:
@@ -49,7 +49,7 @@ def is_quarantined_path(path):
             tr = os.path.realpath(tn)
         except OSError:
             tr = tn
-        # Only real quarantine destinations: owned quarantine entry, or under Watchtower-home quarantine.
+        # Only real quarantine destinations: owned quarantine entry, or quarantine under ISR Bot's home folder.
         if not (owned_path(tn, "quarantine", log=False) or tr == qhome_r or _under(tr, {qhome_r})
                 or tn == qhome or _under(tn, {qhome})):
             continue
@@ -161,11 +161,11 @@ def not_scanned_places(paths, roots):
 
 
 def owned_path(p, kind, log=True):
-    """Every path Watchtower moves or deletes comes from one of its own state files, and anything that can write there
+    """Every path ISR Bot moves or deletes comes from one of its own state files, and anything that can write there
     could aim it anywhere. Before acting, the path is resolved (links followed) and must be inside the place that kind of
-    thing belongs: quarantine (a folder directly inside Watchtower's quarantine folder), skill (inside the owner's own skill
+    thing belongs: quarantine (a folder directly inside ISR Bot's quarantine folder), skill (inside the owner's own skill
     folders), decoy (exactly one of the decoy files, not reached through a link), project (a project in the owner's home or
-    workspace, never inside Watchtower's own folder), home (Watchtower's own folder itself, not a link). Anything else is
+    workspace, never inside ISR Bot's own folder), home (ISR Bot's own folder itself, not a link). Anything else is
     refused and written to the ledger."""
     ok = False
     try:
@@ -182,7 +182,7 @@ def owned_path(p, kind, log=True):
                 allowed = {os.path.join(os.path.dirname(x), WITNESS) for x in allowed}
             d = os.path.dirname(n)
             ok = n in allowed and not os.path.islink(d) and os.path.realpath(d) == os.path.join(os.path.realpath(os.path.dirname(d)), os.path.basename(d))
-        elif kind == "workspace-skill":   # DQ-021: a skill copy in the workspace that two engines flag; never platform or Watchtower folders
+        elif kind == "workspace-skill":   # DQ-021: a skill copy in the workspace that two engines flag; never platform or ISR Bot folders
             ws, h = os.path.realpath(os.path.dirname(home())), os.path.realpath(home())
             ok = rp == n and _under(rp, {ws}, strict=True) and not _under(rp, {h}) and not _under(rp, {os.path.realpath(x) for x in PLATFORM_SKILL_DIRS()}) \
                 and os.path.isfile(os.path.join(rp, "SKILL.md"))
@@ -389,6 +389,6 @@ def match_moves(base, manifest):
 
 
 def is_vendor(path):
-    """Shipped by the platform or a plugin: reduced (malicious-indicator) rules. R15: a skill in a place Watchtower doesn't
+    """Shipped by the platform or a plugin: reduced (malicious-indicator) rules. R15: a skill in a place ISR Bot doesn't
     recognize is not trusted vendor content; it gets the full rules (and still no wider permission to be changed)."""
     return skill_tier(path) == "vendor" and vendor_root_path(path)   # item 8 (R3): a vendor folder's prefix, never a name in the path

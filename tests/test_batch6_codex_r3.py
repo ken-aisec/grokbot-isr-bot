@@ -6,7 +6,7 @@ pnpm dlx, bunx, uvx, env) is read like the outer one; yarn, pipx, a shell, npm o
 launcher word among a command's arguments, is "couldn't read the launch"; a chain of nested launchers is read 16 deep.
 H9, H10: the malformed-JSON key scan and the code tokenizer never rescan a failed string: the same keys and tokens, in one pass.
 
-Tests marked "replay" fail on 2e84db6 on their assertion (measured with 2e84db6's watchtower/ sources, this file in place);
+Tests marked "replay" fail on 2e84db6 on their assertion (measured with 2e84db6's engine sources, this file in place);
 "guard" ones keep what must not change. Every URL is an example; every webhook is FAKE."""
 import json, os, subprocess, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

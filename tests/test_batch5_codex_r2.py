@@ -1,6 +1,6 @@
 """Batch 5 PR A, Codex review 2 (6 highs, 3 mediums on 13cbfa4).
 
-Every test marked "replay" fails on 13cbfa4 on its assertion (measured with 13cbfa4's watchtower/, rules, skills, routines and
+Every test marked "replay" fails on 13cbfa4 on its assertion (measured with 13cbfa4's engine sources, rules, skills, routines and
 golden harness sources and this file in place); "guard" ones keep what must not change. All secrets are fake, and no platform
 folder of this computer is opened."""
 import os, sys, unittest

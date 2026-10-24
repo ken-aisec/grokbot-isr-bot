@@ -130,7 +130,7 @@ def vet_counts(f, released):
 
 
 def vet_label(f):
-    """The label vet prints: a finding shown without its severity also says what Watchtower would call it ("Worth a look (might
+    """The label vet prints: a finding shown without its severity also says what ISR Bot would call it ("Worth a look (might
     be fine), would call high", "Platform (Grok Bot's own file), would call high")."""
     was, label = f.get("severity_was"), f["label"]
     if label == CONFIRMED or f["severity"] != "info" or was not in ("critical", "high", "medium", "low"):
@@ -199,7 +199,7 @@ def cmd_vet(args):
         notes, staged = [], None
         if not os.path.isfile(os.path.join(d, "SKILL.md")):
             # SkillSpector and husk only read folders with a SKILL.md. Page text or a loose file is staged as one,
-            # so "deep" never quietly means "Watchtower's own rules only".
+            # so "deep" never quietly means "ISR Bot's own rules only".
             staged = tempfile.mkdtemp(prefix="isr-bot-vet-")
             d = os.path.join(staged, re.sub(r"[^A-Za-z0-9_.-]+", "_", os.path.splitext(name)[0])[:40] or "vetted")
             os.makedirs(d)

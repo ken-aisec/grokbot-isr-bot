@@ -10,11 +10,11 @@
 4. gitleaks's grouped ISR-S002 (four or more files in one folder) names the folder, and only exact file paths held a candidate,
    so the files' updates were quiet and rolled in. A grouped finding keeps its files (`affected_files`), and settlement, daily's
    carried lines and the roll use them.
-5. Daily said NO_CHANGES over an open ISR-X005 (a scanner that isn't the copy Watchtower installed) once nothing else was open.
+5. Daily said NO_CHANGES over an open ISR-X005 (a scanner that isn't the copy ISR Bot installed) once nothing else was open.
    Fix round 3 undid this change (the owner's decision, Oct 23): daily on a box with a missing scanner prints what f7c28e6 printed,
    and DailyScannerAlerts asserts that now.
 
-Each test marked R in its docstring fails on 47d3aba's sources (the changed files under watchtower/ stashed) at an assertion; G is
+Each test marked R in its docstring fails on 47d3aba's sources (the changed engine files stashed) at an assertion; G is
 a guard (a contrast) that passes there and here.
 """
 import json, os, sys, unittest
@@ -236,7 +236,7 @@ class DailyScannerAlerts(_Middle):
 
     def swap_gitleaks(self):
         p = os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin", "gitleaks")
-        add(p, "# changed after Watchtower installed it\n")                     # no longer the digest Watchtower registered
+        add(p, "# changed after ISR Bot installed it\n")                     # no longer the digest ISR Bot registered
         isr._SCANNER_OK.clear()
 
     def alerts(self, out):
@@ -259,7 +259,7 @@ class DailyScannerAlerts(_Middle):
         self.assertEqual(self.unverified(), [])
 
     def test_without_an_alert_the_quiet_update_is_no_changes(self):
-        """G: the contrast, the same quiet update with every scanner the one Watchtower installed."""
+        """G: the contrast, the same quiet update with every scanner the one ISR Bot installed."""
         self.start()
         add(self.md("alpha"), "One more line.\n")
         self.assertEqual(self.daily(), "NO_CHANGES")

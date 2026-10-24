@@ -13,7 +13,7 @@ B8 (H7, H8): a launcher option not in the known table (npm's abbreviations such 
 read the launch"; a JSONC file is read as JSON once its comments and trailing commas are blanked, so command and args come from
 the same object; a file that still isn't JSON is "couldn't read the launch" for each command.
 
-Tests marked "replay" fail on c4ed118 on their assertion (measured with c4ed118's watchtower/ sources, this file in place);
+Tests marked "replay" fail on c4ed118 on their assertion (measured with c4ed118's engine sources, this file in place);
 "guard" ones keep what must not change. Every URL is an example; every key and webhook is FAKE; boxes are temp folders."""
 import json, os, sys, time, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

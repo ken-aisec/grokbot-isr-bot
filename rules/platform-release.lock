@@ -1,15 +1,15 @@
-# Watchtower platform release list (item 8, roadmap row 8 / R3).
+# ISR Bot platform release list (item 8, roadmap row 8 / R3).
 #
 # The sha256 of every file a vendor ships in the platform's own skill folders, by its path under the home folder.
 # A file whose path and exact bytes are listed here is the vendor's (the owner's decision, Oct 18: nothing on the computer
 # approves a platform file: no owner's yes, no record).
 # The middle path (the owner's decision, Oct 22): versions differ per user, so this list can't be the only trust. A new
 # or changed file at a path that already exists (a line here with any hash, or a baseline line), or in a new platform skill
-# folder, that Watchtower's rules find nothing in and no two scanners name a dangerous behavior in, is the quiet "Platform
+# folder, that ISR Bot's rules find nothing in and no two scanners name a dangerous behavior in, is the quiet "Platform
 # refresh" line and rolls into the baseline on the next full audit. Anything else is a counted high alert until a release
 # lists it: a loose file, a link in or out, a colon in its path, a file over 1 MB, binary or flagged.
 #
-# This file ships with Watchtower's release: it is listed in MANIFEST.sha256 and an installed copy is held to that line,
+# This file ships with ISR Bot's release: it is listed in MANIFEST.sha256 and an installed copy is held to that line,
 # so it is exactly as trustworthy as isr.py itself. None of the vendors publishes these hashes, and anything inside the
 # home folder is the Bot's to write, so they should come from a freshly created computer no Bot has run on yet. The one
 # accepted exception is the Oct 18 fill below; a clean computer is preferred for every later fill.
@@ -22,7 +22,7 @@
 # folder (no link in a folder above it). Anything else in those folders is listed: managed-skills/cache.json too (the host
 # builds its skill list and the Run-now prompt from it), the plugin buckets' *.meta.json, manifest.json and
 # .marketplaces.json (Claude's plugin loader reads them to decide what loads), and .grok/bundled/manifest.json.
-# Watchtower checks two home folders, the home folder and /home/box; when they differ, run the command from each (the
+# ISR Bot checks two home folders, the home folder and /home/box; when they differ, run the command from each (the
 # second with HOME=/home/box). A file is bookkeeping when the fill from one of them skips it, so a home folder inside
 # /home/box gets the same answer from isr.py as from the fill run in it.
 #
@@ -30,7 +30,7 @@
 #   <sha256>  <path under the home folder>
 # A metadata file rules/platform-normalize.json names may instead be listed by its canonical form (batch 6), on a line that
 # says so: `canonical <sha256>  <path>` (scripts/platform-json-shape.py --canonical prints it). That line vouches for the file
-# only after Watchtower normalized it and checked every unit; a file whose own bytes hash to it is not listed by it.
+# only after ISR Bot normalized it and checked every unit; a file whose own bytes hash to it is not listed by it.
 # Paths must sit inside one of these folders: .grok/bundled, sand-data/managed-skills, agent-data/managed-skills,
 # .codex/skills/.system, .claude/plugins/synced. One malformed line (a bad hash, a path from /, "..", a colon, or a
 # path outside those folders) makes the whole list unusable, and the audit says so; so does an unusable list turn the

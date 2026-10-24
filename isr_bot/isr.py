@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Watchtower: read-only security watch for a Grok Bot cloud computer.
+"""ISR Bot: read-only security watch for a Grok Bot cloud computer.
 
 Scripts find, the model judges, the human approves. Stdlib only; optional
 external scanners (skillspector, husk, gitleaks, trufflehog, osv-scanner, pip-audit)
-run only from Watchtower's own scanners/bin folder, and only when each program's
+run only from ISR Bot's own scanners/bin folder, and only when each program's
 sha256 is in scripts/scanner-bins.lock. A scanner on PATH is never run.
 
 Commands
@@ -69,7 +69,7 @@ def _isr_part(name):
               " or not a plain file. Tell the owner now. Don't run ISR Bot again until they reinstall it from the release"
               " (setup skill, section 1).")
         sys.exit(4)
-    exec(code, globals())   # noqa: S102 - Watchtower's own file, from its bytes; held to MANIFEST.sha256 by self_check
+    exec(code, globals())   # noqa: S102 - ISR Bot's own file, from its bytes; held to MANIFEST.sha256 by self_check
 # <<< isr_parts loader
 
 
@@ -239,7 +239,7 @@ def fit_owner_first(obj, notes, limit=4096, keep=(), alias=False, before=None, b
     `limit`, exactly as fit() does without notes; then platform_notes ({count, lines[, more]}, placed before the key `before`)
     takes the room the owner's part left plus its own `budget` bytes, a line at a time (the loud ones first: platform_notes), and
     the `platform` alias (alias=True, audit) gets its copies of those lines last, so its lines go first. What doesn't fit is said:
-    `more` (how many, how many of them Watchtower would call critical or high, and `isr.py breakdown`, which lists every one) and
+    `more` (how many, how many of them ISR Bot would call critical or high, and `isr.py breakdown`, which lists every one) and
     `truncated` `platform`."""
     obj = json.loads(fit(obj, limit=limit, keep=keep))
     if not notes:
@@ -378,7 +378,7 @@ PENDING_SHOWN = 10   # PR A, Codex round 2 (6): earlier critical or high finding
 
 
 def is_alert(f, snap):
-    """A finding the daily routine must name: an owner's critical or high one, or a platform note Watchtower would call critical or
+    """A finding the daily routine must name: an owner's critical or high one, or a platform note ISR Bot would call critical or
     high. Decoys and scanner alerts are always shown whole, and an unlisted platform file is said every day while it is open."""
     if f["rule"].startswith("ISR-K") or f["rule"] == "ISR-X005" or f.get("unverified_platform") or f.get("guarded"):
         return False
@@ -389,7 +389,7 @@ def is_alert(f, snap):
 
 
 def alert_line(f):
-    """A short line naming a finding: severity (what Watchtower would call a platform note), title, where."""
+    """A short line naming a finding: severity (what ISR Bot would call a platform note), title, where."""
     out = {"severity": f.get("severity_was") or f["severity"], "title": f["title"], "where": f["where"]}
     if platform_scope(f):
         out["platform"] = "Grok Bot's own file, not counted: report it to Grok Bot support"
@@ -445,7 +445,7 @@ def cmd_baseline(args):
     else:
         # Codex, item 8 review 2 (high 3): the owner's yes to a new baseline covers their own skills and plugins, never a platform
         # file the release list doesn't include. Such a file keeps the line it had (so it still shows as changed) or stays out, and
-        # only a Watchtower release that lists it clears it (decision, Oct 18).
+        # only an ISR Bot release that lists it clears it (decision, Oct 18).
         old = load_baseline()[0]
         held = platform_unproven(meta["manifest"])
         base = {p: h for p, h in meta["manifest"].items() if p not in held}
@@ -863,14 +863,14 @@ _isr_part("quarantine")
 
 
 # ---------------------------------------------------------------- uninstall: leave nothing behind
-# Only what install.sh itself leaves in /tmp. A name like wt-audit-066.json is not Watchtower's: the owner's Bot saved its
+# Only what install.sh itself leaves in /tmp. Any other file there (a saved audit-066.json, say) is not ISR Bot's: the owner's Bot saved its
 # own copy of a run there (`audit --json > /tmp/...`), and v0.6.3 to v0.6.6 deleted those along with the installer's files.
 TMP_LEFTOVERS = re.compile(r"^(gitleaks_.*\.tar\.gz|gitleaks_checksums\.txt|trufflehog_.*\.tar\.gz|trufflehog_checksums\.txt|osv_sums\.txt|isr-bot-lock\.err)$")
 ROUTINE_NAMES = ("ISR Bot daily watch", "ISR Bot weekly audit", "ISR Bot weekly tidy", "ISR Bot monthly roll-call")
 
 
 def cmd_uninstall(args):
-    """Preview by default. --apply removes everything Watchtower put outside its folder; --remove-folder then deletes the folder."""
+    """Preview by default. --apply removes everything ISR Bot put outside its folder; --remove-folder then deletes the folder."""
     reg = load_json(state_path("canaries.json"), {}) or {}
     listed = [os.path.expanduser(v["path"]) for v in reg.values() if isinstance(v, dict) and v.get("path")]
     decoys = [p for p in listed if owned_path(p, "decoy", log=args.apply)]
@@ -949,7 +949,7 @@ STATE_FILES = ("baseline.json", "last_findings.json", "engine_cache.json", "supp
 
 
 def shareable_error(text):
-    """R12: what doctor may share about the last crash: when, which command, Watchtower's own code lines and the error's type.
+    """R12: what doctor may share about the last crash: when, which command, ISR Bot's own code lines and the error's type.
     Never the error's message or any other frame: those can carry private paths, file names or content."""
     if not text.strip():
         return None
@@ -1068,7 +1068,7 @@ def self_check():
             problems.append(f"{rel} changed since install")
     listed = {l.split(None, 1)[1].lstrip("*").strip() for l in man.splitlines() if len(l.split(None, 1)) == 2} | {"MANIFEST.sha256"}
     for dp, dns, fns in os.walk(root):                  # a file added to the release folder (red-team, v0.6.9): a skill there passes
-        dns[:] = [d for d in dns if not (dp == root and d == ".git") and d != "__pycache__"]   # as Watchtower's own
+        dns[:] = [d for d in dns if not (dp == root and d == ".git") and d != "__pycache__"]   # as ISR Bot's own
         for fn in fns:
             rel = os.path.relpath(os.path.join(dp, fn), root)
             if rel not in listed:

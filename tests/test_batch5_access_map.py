@@ -1,9 +1,9 @@
-"""Batch 5, item a: the access map, a plain answer to "what can my Bots reach?", built only from what Watchtower already collects.
+"""Batch 5, item a: the access map, a plain answer to "what can my Bots reach?", built only from what ISR Bot already collects.
 
 Decisions (Oct 18): MCP configs give server names, transport and URL host only, never env, args, headers or a URL's path (4);
 each Bot's part is what it said in the roll-call, kept per Bot and labelled "what the Bot said; not checked" (5).
 
-Tests marked "replay" fail on 77dedd1 on their assertion (measured with 77dedd1's watchtower/ sources and rules, this file in place);
+Tests marked "replay" fail on 77dedd1 on their assertion (measured with 77dedd1's engine sources and rules, this file in place);
 "guard" ones keep what must not change. Every planted value is FAKE…; the box is a temp folder, never this computer's own."""
 import datetime as dt, json, os, re, sqlite3, stat, sys, time, unittest
 from unittest import mock

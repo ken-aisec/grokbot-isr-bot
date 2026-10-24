@@ -70,8 +70,8 @@ print(bad[0] + (f" (and {len(bad) - 1} more)" if len(bad) > 1 else "") if bad el
 PYEOF
 )"
 [[ "$DOCS_PROBLEM" == "OK" ]] || stop "${DOCS_PROBLEM:-the versions in the release files could not be checked}: the setup skill, README and install.sh must name VERSION ${TAG#v}; update them, commit, and get that commit reviewed"
-# Watchtower runs a scanner only when its program matches this lock, so a release without every checksum would leave that
-# scanner unrun on every computer. scripts/scanner_lock.py is the same reader isr.py uses, so a line Watchtower would skip
+# ISR Bot runs a scanner only when its program matches this lock, so a release without every checksum would leave that
+# scanner unrun on every computer. scripts/scanner_lock.py is the same reader isr.py uses, so a line ISR Bot would skip
 # stops the release too. Fill the lock from `isr.py doctor` (scanner_check) after a fresh `install.sh --scanners`.
 LOCK_PROBLEM="$(python3 -I scripts/scanner_lock.py scripts/scanner-bins.lock 2>&1)" \
   || stop "${LOCK_PROBLEM:-scripts/scanner-bins.lock could not be checked}. Run a fresh install.sh --scanners, then isr.py doctor, and copy each scanner_check sha256 into the lock"

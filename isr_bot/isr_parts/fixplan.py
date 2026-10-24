@@ -186,7 +186,7 @@ def fix_plan(roots):
                 continue
             if is_transcript(ap + "/") and filenames:
                 # Grok Bot no longer writes transcripts here, so they are old copies. Rewriting another Bot's conversation
-                # files to take keys out is not Watchtower's to do: they are listed for the owner to delete in the app.
+                # files to take keys out is not ISR Bot's to do: they are listed for the owner to delete in the app.
                 top = re.match(r"(.*/agent-transcripts/[^/]+)", ap + "/")
                 key = top.group(1) if top else ap
                 t = transcripts.setdefault(key, {"path": key, "files": 0, "with_keys": 0, "owner": path_owner(key + "/"), "newest": 0})
@@ -354,7 +354,7 @@ def _trufflehog_logged(err):
 
 
 def trufflehog_status(paths, notes):
-    """Ask each key's own provider whether it still works (TruffleHog verification). Scoped to files Watchtower
+    """Ask each key's own provider whether it still works (TruffleHog verification). Scoped to files ISR Bot
     already flagged. Raw key values are dropped the moment they're read; only detector, file and status are kept."""
     exe = tool("trufflehog")
     if not exe:
@@ -413,7 +413,7 @@ def builtin_site_playbook(path):
 def cap_playbook_keys(findings, status):
     """A key-shaped string in a built-in site playbook is a site's public client key in the platform's own instructions;
     every new account has them. gitleaks alone keeps it at low. If a second engine agrees (TruffleHog found a key in that
-    file, or Watchtower's own key rule flagged it), it keeps the severity it was given."""
+    file, or ISR Bot's own key rule flagged it), it keeps the severity it was given."""
     own = {f["where"].split(":")[0] for f in findings if f["rule"] == "ISR-S001"}
     out = []
     for f in findings:
@@ -546,7 +546,7 @@ CHAT_EXT = {".json", ".jsonl", ".md", ".txt", ".log", ".html", ".ndjson"}
 
 
 def scrub_targets_from_findings():
-    """Files Watchtower flagged for keys that are conversation or log data, never code or config."""
+    """Files ISR Bot flagged for keys that are conversation or log data, never code or config."""
     snap = load_json(state_path("last_findings.json"), {"findings": []})
     files = set()
     for f in snap.get("findings", []):
@@ -617,7 +617,7 @@ def acceptable(f):
 
 
 # Hardening batch 1 (R2/R10, Oct 16): the one-at-a-time `accept` follows the same line as the fix. A decoy alarm, or something
-# Watchtower saw happen or two checks agree on, can't be marked as fine. An unused connector stays acceptable (decision D2): the
+# ISR Bot saw happen or two checks agree on, can't be marked as fine. An unused connector stays acceptable (decision D2): the
 # owner keeps one on purpose, and nobody gains anything from it being accepted.
 ACCEPT_ONE_ALSO = frozenset(("ISR-C004",))
 

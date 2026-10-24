@@ -7,7 +7,7 @@
    in as a built-in update.
 3. high: revet hashed a file for the release-list check and again for the baseline, so bytes swapped in between were saved.
 4. high: a suppressions.json entry with the finding's key accepted an unverified platform file before accept_refused ran.
-5. medium: Watchtower's own released isr-bot-fix/SKILL.md copied into .grok/bundled passed as its own release.
+5. medium: ISR Bot's own released isr-bot-fix/SKILL.md copied into .grok/bundled passed as its own release.
 6. medium: the 200-file limit on `fix`'s platform list came after each candidate was read, hashed and scanned.
 
 Each test fails on 6e5ecb2 by reaching an assertion unless its docstring says it is a contrast.
@@ -149,7 +149,7 @@ class KeySuppressions(_Platform):
 class OwnReleaseAfterProvenance(_Platform):
     def test_5_isr_bots_own_skill_copied_into_a_platform_folder_needs_a_line(self):
         """b8i4: a clean new platform skill folder is the middle path's quiet line, so the copy is no counted high now; it is
-        still never exempted as Watchtower's own file: it goes through the drift check, so the audit rolls it into the baseline
+        still never exempted as ISR Bot's own file: it goes through the drift check, so the audit rolls it into the baseline
         (an exempted file has no finding, so nothing would roll it in)."""
         self.start()
         src = os.path.join(isr.SELF_ROOT, "skills", "isr-bot-fix", "SKILL.md")

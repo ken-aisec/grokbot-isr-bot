@@ -1,14 +1,14 @@
 """Batch 5, item d3: the platform's own metadata JSON (.grok/bundled/manifest.json and the like) that its sync rewrites.
 
 d3a: an unverified metadata JSON is still a counted high, with honest wording: the platform rewrites it, don't delete it, it clears
-when a Watchtower release lists the version. d3b (decision 3, Oct 18): rules/platform-normalize.json names fields the sync
+when an ISR Bot release lists the version. d3b (decision 3, Oct 18): rules/platform-normalize.json names fields the sync
 rewrites; the release list holds the digest of the file without them. The shipped spec is EMPTY, so nothing changes until a spike
 proves which fields are unused; these tests use a spec of their own. A file read strictly (no duplicate keys, NaN, BOM, link or
 oversize) with only those fields changed is a Platform refresh Tip; any other change stays a counted ISR-I001.
 
 "replay" tests fail on 151e40c on their assertion; "guard" tests keep real changes counted.
 
-b8i4 (decision D2, Oct 22): metadata JSON follows the middle path, so a change Watchtower's rules find nothing in, at a path
+b8i4 (decision D2, Oct 22): metadata JSON follows the middle path, so a change ISR Bot's rules find nothing in, at a path
 that already exists, is the quiet Platform refresh line now, though it isn't verified against the released version (it is
 not in VERIFIED_METADATA, so the line never says it was compared). Only a change the middle path holds (over 1 MB here) stays
 counted; the held wording is checked on the finding a held version gets. Fix round 1 (Codex 1): a new skill folder on a

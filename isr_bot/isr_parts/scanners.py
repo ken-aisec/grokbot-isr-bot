@@ -1,6 +1,6 @@
 # Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
-# Hardening batch 3 (R7, Oct 16): tool() looked on PATH first, so any program a Bot named skillspector there was Watchtower's
-# second engine, and a copy in Watchtower's folder ran whatever it contained. Now the only candidate is Watchtower's own
+# Hardening batch 3 (R7, Oct 16): tool() looked on PATH first, so any program a Bot named skillspector there was ISR Bot's
+# second engine, and a copy in ISR Bot's folder ran whatever it contained. Now the only candidate is ISR Bot's own
 # scanners/bin/<name>, and only when its sha256 is in scripts/scanner-bins.lock for this computer's architecture.
 SCANNER_LOCK = os.path.join(HERE, "..", "scripts", "scanner-bins.lock")
 SCANNER_NAMES = {"skillspector": "SkillSpector", "husk": "husk", "gitleaks": "gitleaks", "trufflehog": "TruffleHog",
@@ -20,7 +20,7 @@ SCANNER_STAGES = {"trufflehog": "TruffleHog (which keys still work)", "gitleaks"
 
 
 class ScannerUnusable(OSError):
-    """A scanner program Watchtower may not run; the message says why in plain words."""
+    """A scanner program ISR Bot may not run; the message says why in plain words."""
 
 
 class ScannerUnreadable(ScannerUnusable):
@@ -35,7 +35,7 @@ class SealUnavailable(ScannerUnreadable):
 
 # Claude review 2 (1): every OSError was "unreadable", so a swapped copy chmod 0111 (or a link swapped in after the lstat) gave
 # EACCES or ELOOP at open, no ISR-X005, every run. Only these say the computer is short of something; any other failure to open
-# or read the program file comes from the file itself, so it isn't the copy Watchtower installed.
+# or read the program file comes from the file itself, so it isn't the copy ISR Bot installed.
 _PRESSURE_ERRNOS = {errno.ENOMEM, errno.EMFILE, errno.ENFILE, errno.EAGAIN, errno.EINTR}
 
 
@@ -87,7 +87,7 @@ def _venv_shebang(line):
 def _read_program(fd, sink=None):
     """(sha256, venv Python or None) of the open program file fd, read in chunks; sink(chunk) gets every byte as it is read.
     A pip entry point's first line names the venv's Python by its full path, so it is hashed as "#!python": the lock's
-    checksum then doesn't depend on where Watchtower is installed. Raises ScannerUnusable for anything that isn't a plain
+    checksum then doesn't depend on where ISR Bot is installed. Raises ScannerUnusable for anything that isn't a plain
     file, is over SCANNER_MAX_BYTES (checked before reading, so a sparse file costs nothing) or takes too long to read."""
     st = os.fstat(fd)
     if not stat.S_ISREG(st.st_mode):
@@ -104,7 +104,7 @@ def _read_program(fd, sink=None):
     first, nl, rest = head.partition(b"\n")
     shebang = first[2:].decode("utf-8", "replace").strip() if first.startswith(b"#!") else ""
     # Claude review 1 (1): a file whose first line really is "#!python" hashed the same as a pip entry point, wasn't a venv
-    # entry point (so no interpreter check), and the kernel then ran "python" from the folder Watchtower was started in. A
+    # entry point (so no interpreter check), and the kernel then ran "python" from the folder ISR Bot was started in. A
     # first line that names its program without a full path is never run, so the "#!python" form can't be met by a real file.
     if first.startswith(b"#!") and not shebang.startswith("/"):
         raise ScannerUnusable("its first line names the program it runs with without a full path")
@@ -281,7 +281,7 @@ DEFAULT_INSTALL_HOME = "/workspace/isr-bot"   # install.sh's ISR_HOME when ISR_B
 
 
 def install_home(root):
-    """The Watchtower folder the installed copy at `root` (its real folder) was installed into: install.sh's ISR_HOME, the real
+    """The ISR Bot folder the installed copy at `root` (its real folder) was installed into: install.sh's ISR_HOME, the real
     folder holding `app`. PR A, Codex round 2 (5): never ISR_BOT_HOME, whose `app` may be a link to the installed copy while
     its state/installed_commit says what someone wants."""
     return os.path.dirname(root)
@@ -293,12 +293,12 @@ def release_manifest():
     whatever it listed. It is now the one self_check checked, read once per process.
 
     Claude review 2 (2): it was read again whenever the real folder behind `app` changed, so `mv app app.real; ln -s evil app`
-    after the self-check had the Bot's manifest vouch for its own lock reader, which then ran inside Watchtower. Once one is
+    after the self-check had the Bot's manifest vouch for its own lock reader, which then ran inside ISR Bot. Once one is
     remembered it is never read again, and a different folder behind the same name lists nothing (the lock then reads as
     changed: scanner_lock).
 
     Batch 6 (KL4, #15 high 4): it was None in a developer checkout, so a copy that only looked like one (moved out of `app`
-    without its commit record, a renamed custom home) read planted rules files as they were. Whatever the layout, Watchtower's
+    without its commit record, a renamed custom home) read planted rules files as they were. Whatever the layout, ISR Bot's
     release files are now held to this folder's manifest; installed_root and self_check still say what is an installed copy."""
     root = os.path.realpath(SELF_ROOT)
     if _RELEASE.get("at") == SELF_ROOT:
@@ -314,7 +314,7 @@ def release_digest(rel):
 
 
 def release_files_unchecked():
-    """True when this folder's MANIFEST.sha256 is missing, unreadable or lists nothing: none of Watchtower's release files can
+    """True when this folder's MANIFEST.sha256 is missing, unreadable or lists nothing: none of ISR Bot's release files can
     be checked, so each is refused (KL4)."""
     return not release_manifest()
 
@@ -332,7 +332,7 @@ def shipped_path(path, rel):
 def release_want(path, rel):
     """The sha256 a rules file read from `path` must have (release_digest; "" refuses it), or None when it is used as it is.
     Only one file is used as it is: in a developer checkout, a file a test pointed the module constant at (never the shipped
-    path, never from the environment or state/; nothing but an edit to Watchtower's own code can change it), unless the test
+    path, never from the environment or state/; nothing but an edit to ISR Bot's own code can change it), unless the test
     stands in for another manifest by replacing release_digest. An installed copy holds every path to its manifest, as before."""
     want = release_digest(rel)
     if installed_root() is None and not shipped_path(path, rel) and want == release_manifest().get(rel, ""):
@@ -382,7 +382,7 @@ def _reader_path():
 def _reader_namespace(src):
     path = _reader_path()
     ns = {"__name__": "isr_bot_scanner_lock", "__file__": path, "__builtins__": builtins}
-    exec(compile(src, path, "exec", dont_inherit=True), ns)   # noqa: S102 - Watchtower's own checked file, from its bytes
+    exec(compile(src, path, "exec", dont_inherit=True), ns)   # noqa: S102 - ISR Bot's own checked file, from its bytes
     return ns
 
 
@@ -485,7 +485,7 @@ def _digest_problem(name, digest):
 
 def running_interpreter():
     """(path, (dev, inode)) of the program this process is running, from /proc/self/exe; None when that can't be read or no
-    longer names the same file. Codex, batch 3 round 2: realpath(sys.executable) follows the launcher name Watchtower was
+    longer names the same file. Codex, batch 3 round 2: realpath(sys.executable) follows the launcher name ISR Bot was
     started through, and a writable venv link retargeted after start made another program (perl) the "pinned" Python."""
     try:
         st = os.stat("/proc/self/exe")
@@ -522,7 +522,7 @@ def trusted_interpreter(path):
 
 
 def scanner_verdict(name):
-    """(path, None) for Watchtower's own checked copy, else (None, (kind, why)); kind None means simply not there."""
+    """(path, None) for ISR Bot's own checked copy, else (None, (kind, why)); kind None means simply not there."""
     path = os.path.join(scanner_bin(), name)
     try:
         st = os.lstat(path)
@@ -532,7 +532,7 @@ def scanner_verdict(name):
         return None, (None, "")
     if not stat.S_ISREG(st.st_mode) or not os.access(path, os.X_OK):
         return None, ("changed", "it isn't a plain program file")
-    if not st.st_mode & stat.S_IRUSR:   # Claude review 2 (1): Watchtower's own copy is always readable by its owner
+    if not st.st_mode & stat.S_IRUSR:   # Claude review 2 (1): ISR Bot's own copy is always readable by its owner
         return None, ("changed", "its program file can't be read (no read permission)")
     if not _scanner_extra(name) and not _scanner_listed(name):   # nothing it could match: not read at all (Codex, round 1)
         return None, _digest_problem(name, "")
@@ -553,7 +553,7 @@ def scanner_verdict(name):
 
 def _interpreter_problem():
     """(kind, why) for a venv Python trusted_interpreter refused: "unreadable" when this computer can't say which Python
-    Watchtower runs (no /proc; Claude review 1, finding 4), else "changed"."""
+    ISR Bot runs (no /proc; Claude review 1, finding 4), else "changed"."""
     if running_interpreter() is None:
         return "unreadable", "this computer doesn't say which Python ISR Bot runs with (/proc/self/exe)"
     return "changed", "the Python it runs with isn't the computer's own"
@@ -569,7 +569,7 @@ def _refuse(name, kind, why):
 
 
 def scanner_launch(cmd, deadline=None):
-    """How run() starts cmd when cmd[0] is in Watchtower's scanner folder: (argv, executable, fds), else None for any other
+    """How run() starts cmd when cmd[0] is in ISR Bot's scanner folder: (argv, executable, fds), else None for any other
     program. The program is checked again at launch from a sealed copy of its bytes and run from that copy; a venv Python
     (an entry point's first line, or scanners/bin/python itself) is run as the pinned trusted_interpreter, never through the
     link, which keeps only its name as argv[0] so the venv is found. Raises ScannerUnusable when it may not run, and
@@ -627,7 +627,7 @@ def scanner_launch(cmd, deadline=None):
 
 
 def tool(name):
-    """Watchtower's own copy of a scanner (scanners/bin/<name>, where install.sh --scanners puts it), only when it is the
+    """ISR Bot's own copy of a scanner (scanners/bin/<name>, where install.sh --scanners puts it), only when it is the
     program the lock lists. Never PATH, .venv or the old bin folder. Why one isn't used is kept in SCANNER_PROBLEMS. One that
     was refused at launch this run stays refused for the rest of it, whatever its file holds now. What runs is decided again
     at launch (run(), scanner_launch).
@@ -651,7 +651,7 @@ SCANNERS_HELD = set()   # scanners that had a problem at some point this run (fo
 
 
 def scanner_used(name):
-    """Whether `name` counts as a scanner this run used: Watchtower's checked copy now, with no problem at any point this run.
+    """Whether `name` counts as a scanner this run used: ISR Bot's checked copy now, with no problem at any point this run.
     b8i1: and its stage didn't fail (TruffleHog that exits before scanning anything didn't run)."""
     return bool(tool(name)) and name not in SCANNERS_HELD and SCANNER_STAGES.get(name) not in STAGE_FAILED
 
@@ -714,7 +714,7 @@ X005_OPTIONAL = {"semgrep": "semgrep"}
 
 
 def scanner_x005():
-    """ISR-X005, once per scanner whose copy isn't the one Watchtower installed."""
+    """ISR-X005, once per scanner whose copy isn't the one ISR Bot installed."""
     out = []
     for name, problem in sorted(SCANNER_PROBLEMS.items()):
         kind, why = problem[:2]
@@ -733,7 +733,7 @@ def scanner_x005():
 
 
 def scanner_check():
-    """For `isr.py doctor`: what Watchtower makes of each scanner's copy, with the full sha256 to fill the lock from."""
+    """For `isr.py doctor`: what ISR Bot makes of each scanner's copy, with the full sha256 to fill the lock from."""
     out = {}
     for name in SCANNER_NAMES:
         path, problem = scanner_verdict(name)

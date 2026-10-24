@@ -955,7 +955,7 @@ def _subst_text(a, b, pairs):
 
 def subst_change(pre, post, subst, key=None):
     """True when pre and post both exist and differ, pre holds none of the pairs' `to` strings, post with each `to` replaced by
-    its `from` is pre exactly, and the rename took no kept string along (v0.7.4: the display name, Watchtower -> ISR Bot,
+    its `from` is pre exactly, and the rename took no kept string along (v0.7.4: the display name, from the old name to ISR Bot,
     in display text only, and nothing else). A report or the dashboard (SUBST_PLAIN_KEY) is plain text: every SUBST_KEEP string
     is seen as often in post as in pre. Anything else is read part by part (fix round 2, Codex MED2): a JSON document only as
     _subst_json allows (display fields only), the text around it as _subst_text does."""

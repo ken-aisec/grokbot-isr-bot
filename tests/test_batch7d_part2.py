@@ -12,7 +12,7 @@ accepted curl command shifted which word an option read; (3) JavaScript's `with`
 is now doubt, so a Slack or Discord webhook there is the critical ISR-T005.
 D (7b ISR-T018): the Office-webhook branch was unanchored, quadratic on a long word; it is anchored with (?<![\\w-]).
 
-Tests marked "replay" fail on 006c719 at their assertion (its watchtower/, rules/ and MANIFEST.sha256, this file in place);
+Tests marked "replay" fail on 006c719 at their assertion (its engine sources, rules/ and MANIFEST.sha256, this file in place);
 "guard" ones pass there too. Every real-shaped key is generated when the test runs and never committed; fake ones say FAKE.
 No key value is printed: masked text is checked by counts. Every webhook is FAKE; `relay` is a placeholder never run."""
 import base64, json, os, secrets, sys, time, unittest

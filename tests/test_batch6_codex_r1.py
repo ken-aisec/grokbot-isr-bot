@@ -18,7 +18,7 @@ B8 (12-14): launcher options are read with their arity before and after the subc
 package is checked; an option it can't read is a finding; every server in the file is read (no cap); env's assignments are read
 with an index (linear).
 
-Tests marked "replay" fail on 68974e3 on their assertion (measured with 68974e3's watchtower/ sources, this file in place);
+Tests marked "replay" fail on 68974e3 on their assertion (measured with 68974e3's engine sources, this file in place);
 "guard" ones keep what must not change. Every URL is an example; every key and webhook is FAKE; boxes are temp folders."""
 import json, os, subprocess, sys, time, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

@@ -5,7 +5,7 @@ refresh" Tip and rolled into the baseline at the next full audit. The first atte
 grouping, file counts and state the Bot can write; Codex left four highs open (ctime, cross-root moves, engine bytes, the plan).
 
 Now a new or changed file in a platform folder is a platform update only when its path and exact bytes are on the vendor
-release list Watchtower ships (rules/platform-release.lock, held to MANIFEST.sha256). Anything else is a counted high, daily
+release list ISR Bot ships (rules/platform-release.lock, held to MANIFEST.sha256). Anything else is a counted high, daily
 included, until the owner says yes to the exact bytes `isr.py fix` shows (`--approve-platform <code> --owner-said-yes`).
 A decision (Oct 18) removed that yes: only the release list clears one, and the tests that used the yes now check it is
 refused (tests/test_item8_release_only.py has the replays).
@@ -394,7 +394,7 @@ class Dq042WithoutProvenance(Box):
     """The fail-loud counterpart of the DQ-042 replay: the same learn update, not on Grok Bot's release list."""
 
     def test_dq042_learn_update_without_provenance_is_the_quiet_line(self):
-        """b8i4 (the middle path): the same learn update at its listed path, not on the release list. Watchtower's rules find
+        """b8i4 (the middle path): the same learn update at its listed path, not on the release list. ISR Bot's rules find
         nothing in it and the engines agree only on wording (a Platform line), so it is no counted high and no new alert, and
         the full audit rolls it in (the quiet line, tests/test_b8i4_middle_path.py's wording-only test, shows in daily)."""
         d = os.path.join(self.home, ".grok", "bundled", "skills", "learn")

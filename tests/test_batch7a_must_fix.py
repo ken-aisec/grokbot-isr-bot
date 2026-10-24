@@ -8,7 +8,7 @@ sharing one whitespace tail trimmed it once per block (quadratic). 3: an OpenPGP
 secret key gave it the "isn't a real key" note. 4: a long saved connector answer was read in quadratic time.
 
 Every real-shaped key is generated when the test runs and never committed; fake ones say FAKE. No key value is printed. Tests
-marked "replay" fail on a3e535e at their assertion (measured with a3e535e's watchtower/ and MANIFEST.sha256, this file in
+marked "replay" fail on a3e535e at their assertion (measured with a3e535e's engine sources and MANIFEST.sha256, this file in
 place); "guard" ones pass there too, unless marked "new" (they call something a3e535e doesn't have, or its behaviour is new).
 Timing runs in a child process with a 60-second limit. A failure reports how many pieces of a key it found, never the text."""
 import base64, bisect, json, os, random, secrets, shutil, subprocess, sys, tempfile, time, unittest

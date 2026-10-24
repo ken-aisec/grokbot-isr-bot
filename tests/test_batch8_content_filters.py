@@ -1,7 +1,7 @@
 """Batch 8 item 3 (b8i3): ISR-T004 content filters.
 
 ISR-T004 ("Reads credential stores", high) raised three false alarms in a vendor's docs and, through them, a ISR-X003 "SkillSpector
-+ Watchtower" agreement:
++ ISR Bot" agreement:
 1 `cat .env.custom.bak >> .env.local`: `\\bcat\\s+\\S*\\.env\\b` matched `cat .env` in front of `.custom`. `cat` now counts only a
   file named exactly `.env`, read or redirected into;
 2 "Do not inspect the environment with broad commands such as `env`, bare `set`, or `printenv`": the walk back from `printenv`

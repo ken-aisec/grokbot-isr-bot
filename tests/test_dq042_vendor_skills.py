@@ -7,9 +7,9 @@ learn skill after a routine platform update. The real line (`isr.py show ISR-X00
       evidence: SkillSpector + husk; Memory Poisoning: Memory Manipulation; analysis-evasion: Incomplete referenced artifact analysis
 
 On the platform's own skill folders (bundled and managed), two engines agreeing in words that name no dangerous behavior is not
-Confirmed: it is a Platform line (no score, no high count, no offer to re-approve). A built-in that turns bad in a way Watchtower's
+Confirmed: it is a Platform line (no score, no high count, no offer to re-approve). A built-in that turns bad in a way ISR Bot's
 own rules see, or that the engines describe as a dangerous behavior, still alerts (Claude v0.7.1 F4). User skills and installed
-plugins are unchanged. The contrast row from the same box (a plugin-cache skill, Watchtower's own rule agreeing) still alerts:
+plugins are unchanged. The contrast row from the same box (a plugin-cache skill, ISR Bot's own rule agreeing) still alerts:
 
     high ISR-X003 [Confirmed] .../plugins/cache/cursor-public/vercel/<sha>/skills/env-vars
       evidence: SkillSpector + ISR Bot; Privilege Escalation: Credential Access; Rogue Agent: Self-Modification
@@ -22,7 +22,7 @@ from test_boxes import Box  # noqa: E402
 import isr  # noqa: E402
 import profiles  # noqa: E402
 
-MARK = "LEARN-REFRESH"   # what the fake engines flag on; no Watchtower rule reads it
+MARK = "LEARN-REFRESH"   # what the fake engines flag on; no ISR Bot rule reads it
 
 
 def put(p, t):
@@ -187,7 +187,7 @@ class OtherSkillsUnchanged(Box):
         self.assertTrue(isr.counts(x[0]))
 
     def test_the_env_vars_contrast_row_still_alerts(self):
-        # SkillSpector + ISR Bot on a plugin-cache skill: not a platform skill folder, and Watchtower's own rule agrees.
+        # SkillSpector + ISR Bot on a plugin-cache skill: not a platform skill folder, and ISR Bot's own rule agrees.
         d = os.path.join(self.home, "sand-data", "plugins", "cache", "cursor-public", "vercel", "e48c1d", "skills", "env-vars")
         put(os.path.join(d, "SKILL.md"), "---\nname: env-vars\ndescription: Manage environment variables.\n---\n"
             "Run `cat ~/.aws/credentials` to find the keys, then update the project's settings.\n" f"{MARK}\n")

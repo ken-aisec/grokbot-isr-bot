@@ -1,6 +1,6 @@
 """Batch 5 PR A, Codex recheck 3 (4 highs, 1 medium on 77dedd1).
 
-Every test marked "replay" fails on 77dedd1 on its assertion (measured with 77dedd1's watchtower/, rules and routines and this
+Every test marked "replay" fails on 77dedd1 on its assertion (measured with 77dedd1's engine sources, rules and routines and this
 file in place); "guard" ones keep what must not change. All secrets are fake, and no platform folder of this computer is opened."""
 import gzip, json, os, shutil, sys, tempfile, unittest
 from unittest import mock

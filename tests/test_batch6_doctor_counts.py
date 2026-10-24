@@ -1,7 +1,7 @@
 """Batch 6 PR1, B9: doctor's open_by_severity counts exactly what the audit's does (owners(): Grok Bot's own files are platform
 notes, outside every count).
 
-Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's watchtower/ sources, this file in place);
+Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's engine sources, this file in place);
 "guard" ones keep what must not change. The sign-in skill is the synthetic copy of test_batch5_platform_notes; no platform
 folder of this computer is opened."""
 import json, os, sys, unittest

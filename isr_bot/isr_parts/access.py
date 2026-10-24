@@ -1,6 +1,6 @@
 # Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 # ---------------------------------------------------------------- access map: what the Bots on this computer can reach
-# Batch 5 (a): a plain answer to "what can my Bots reach?", built only from what Watchtower already collects. Nothing new is read
+# Batch 5 (a): a plain answer to "what can my Bots reach?", built only from what ISR Bot already collects. Nothing new is read
 # from memories, messages, transcripts or credential files, and no value is taken from them. Decisions, Oct 18: MCP configs
 # give server names, transport and URL host only, never env, args, headers or a URL's path (4); each Bot's part is what it said in
 # the roll-call, labelled "what the Bot said; not checked" (5). Every map passes through access_record() before it is kept or
@@ -155,14 +155,14 @@ def _connector_read(names, other=0):
     return [e_["label"] for e_ in vocab if e_["label"] in found], n, False
 
 
-ACCESS_CONNECTORS_UNKNOWN = ("unsaid", "partial")   # round 3 (2): the Bot didn't say; it said something Watchtower couldn't read
+ACCESS_CONNECTORS_UNKNOWN = ("unsaid", "partial")   # round 3 (2): the Bot didn't say; it said something ISR Bot couldn't read
 
 
 def connector_answer(raw, other=0):
     """Batch 6 (KL6, #16 high 2): one reading of a Bot's connector answer, for a fresh reply (shape_reply) and a kept one (_ax_said,
     from rollcall_findings.json, which the Bot can write) alike: (labels, other connectors, unknown). A string is a name, a list's
     strings are names; a list member that isn't a string ({"name": "Gmail"}, 123), or an answer that is neither, makes it "partial";
-    no answer (none, an empty string) is "unsaid". Never an empty, complete list from something Watchtower couldn't read.
+    no answer (none, an empty string) is "unsaid". Never an empty, complete list from something ISR Bot couldn't read.
     Batch 7a (PR2 Codex round 4, high 4): an answer too long to read whole (_connector_read's budget) is "partial" too."""
     items = raw if isinstance(raw, list) else [] if raw is None or (isinstance(raw, str) and not raw.strip()) else [raw]
     labels, n, cut = _connector_read([c for c in items if isinstance(c, str)], other)
@@ -272,7 +272,7 @@ def access_record(m):
             ok.discard(k)
     inc = {k: v for k, v in d(sh.get("incomplete")).items() if k in ACCESS_SHARED and v in ACCESS_WHY}
     if max(_ax_count(mcp.get("unreadable")), _ax_len(mcp.get("unreadable_files"))):
-        inc.setdefault("mcp", "unreadable")   # PR B, Codex round 2 (3): a tool list Watchtower couldn't read may name anything
+        inc.setdefault("mcp", "unreadable")   # PR B, Codex round 2 (3): a tool list ISR Bot couldn't read may name anything
     out["shared"] = {
         "browser": browser,
         "cli_logins": cli, "cli_count": max(_ax_count(sh.get("cli_count")), _ax_len(sh.get("cli_logins")), len(every_cli)),
@@ -338,7 +338,7 @@ def _ax_jobs(sh):
 
 # ---------------------------------------------------------------- reading what the map is built from
 def _ax_bases(roots=()):
-    """The scan roots, the home folder(s) and Watchtower's own folder. PR B, Codex round 2 (7): no longer a boundary (every folder
+    """The scan roots, the home folder(s) and ISR Bot's own folder. PR B, Codex round 2 (7): no longer a boundary (every folder
     from / down is checked, _ax_open); kept for the callers that pass it."""
     return list(dict.fromkeys([os.path.expanduser("~"), BOX_HOME, home()] + [os.path.expanduser(r) for r in roots if isinstance(r, str)]))
 
@@ -386,7 +386,7 @@ def _ax_open(p, bases=()):
 
 def _ax_listdir(d):
     """(the names in folder d, read through _ax_open_at; whether it could be read). ([], True) when there is no such folder;
-    ([], False) when Watchtower couldn't look (batch 6, KL5: os.path.lexists said "no such folder" for that too)."""
+    ([], False) when ISR Bot couldn't look (batch 6, KL5: os.path.lexists said "no such folder" for that too)."""
     st = _look(d)
     if st is None:
         return [], False
@@ -460,7 +460,7 @@ def _ax_seed_now(roots):
     cands = [os.path.expanduser("~/sand-data"), os.path.expanduser("~/agent-data")] + [os.path.expanduser(x) for x in roots]
     for r in [r for r in cands if not os.path.islink(r)] + [r for r in cands if os.path.islink(r)]:   # a folder's own name before a link to it
         try:
-            st = _look(r, follow=True)   # batch 6 (KL5): a folder Watchtower couldn't look at is not one without a seed
+            st = _look(r, follow=True)   # batch 6 (KL5): a folder ISR Bot couldn't look at is not one without a seed
             if st is None:
                 ok = False
                 continue
@@ -507,9 +507,9 @@ def _ax_browser(seed, vocab, jar):
 
 
 def _ax_jar_now():
-    """(the hosts with a login-style cookie in the shared browser's cookie jar, whether Watchtower could look), read now the way the
+    """(the hosts with a login-style cookie in the shared browser's cookie jar, whether ISR Bot could look), read now the way the
     sign-in check reads it (host and cookie name, never a value), but through _ax_open: a jar reached through a link is not read.
-    (None, True) when there is no jar; (None, False) when Watchtower couldn't look where one would be (batch 6, KL5)."""
+    (None, True) when there is no jar; (None, False) when ISR Bot couldn't look where one would be (batch 6, KL5)."""
     import sqlite3
     for j in BROWSER_JARS:
         p = os.path.expanduser(j)
@@ -617,7 +617,7 @@ def _ax_auto_allow(bases):
 
 def _ax_plugins(plugin_files):
     """Plugins: each plugin folder the scan found (a plugin.json under plugins/ or plugin-cache/, as note_plugins finds them),
-    once. PR B, Codex round 2 (2): one is Grok Bot's only when Watchtower itself vouches for where it is (inside a platform root as
+    once. PR B, Codex round 2 (2): one is Grok Bot's only when ISR Bot itself vouches for where it is (inside a platform root as
     written and where it leads, platform_skill_path, as the owner's report scopes platform files); state/plugins.json (the Bot can
     write it) sets neither the count nor whose a plugin is. So a catalog plugin counts as added, as in the owner's lists."""
     grok, added, names, known = 0, 0, [], set()
@@ -701,7 +701,7 @@ def _ax_hooks(roots, plugin_files, bases):
     for p in files:
         p = os.path.normpath(p)
         st = None if p in seen else _look(p)
-        if st is None and p not in seen:   # batch 6 (KL5): a hooks file Watchtower couldn't look for may hold anything
+        if st is None and p not in seen:   # batch 6 (KL5): a hooks file ISR Bot couldn't look for may hold anything
             ok = False
         if not st:
             continue
@@ -752,7 +752,7 @@ def _ax_known_bots(bases):
                 continue
             p = os.path.join(d, i, "profile.json")
             st = _look(p)
-            bad += st is None   # batch 6 (KL5): a profile Watchtower couldn't look for is unreadable, never no profile
+            bad += st is None   # batch 6 (KL5): a profile ISR Bot couldn't look for is unreadable, never no profile
             if not st:
                 continue
             prof = _ax_json_file(p, bases)
@@ -837,12 +837,12 @@ def audit_default_roots():
 
 def _ax_scope(roots, walk_errors=0, walk_skipped=0):
     """Why a scan of `roots` misses part of what an audit scans, or None: "scope" when a folder an audit scans by default is there
-    but under none of them (PR B, Codex round 2, 3: Watchtower installed in /opt left /workspace out), "unreadable" when the scan
+    but under none of them (PR B, Codex round 2, 3: ISR Bot installed in /opt left /workspace out), "unreadable" when the scan
     met a folder (or file) it couldn't look at, "skipped" when it left a folder out (round 3, 1: a link, too deep, a cache)."""
     rs = [os.path.normpath(os.path.abspath(os.path.expanduser(r))) for r in roots if isinstance(r, str)]
     for want in audit_default_roots():
         w = os.path.normpath(os.path.abspath(want))
-        st = _look(w)   # batch 6 (KL5): one Watchtower couldn't look at may be there
+        st = _look(w)   # batch 6 (KL5): one ISR Bot couldn't look at may be there
         if st is not False and not any(w == r or w.startswith(r.rstrip("/") + "/") for r in rs):
             return "scope" if st else "unreadable"
     return "unreadable" if walk_errors else "skipped" if walk_skipped else None
@@ -878,7 +878,7 @@ def build_access_map(snapshot, meta):
     elif any(d in (src.get("persist_unknown") or []) or (d not in persist and _look(d) is not False) for d in folders):
         inc["scheduled"] = "unreadable"   # round 3 (5): there, but the audit didn't list it; batch 6 (KL5): or couldn't look
     if src.get("cli_unknown"):
-        inc["cli_logins"] = "unreadable"   # batch 6 (KL5): a sign-in file Watchtower couldn't look at
+        inc["cli_logins"] = "unreadable"   # batch 6 (KL5): a sign-in file ISR Bot couldn't look at
     inc["key_files"] = "depth"   # the key scans read files to a depth and leave some out: never "no file has a key"
     m = _ax_map(fs, roots, src.get("mcp") or [], src.get("plugin_files") or [], jar, seed,
                 dict(_ax_scheduled(persist), system=_ax_system_cron(persist.get(SYSTEM_CRON))), ACCESS_SHARED, inc, "audit")
@@ -887,7 +887,7 @@ def build_access_map(snapshot, meta):
 
 def access_roots():
     """Where a map built outside an audit looks: the folders an audit scans by default (PR B, Codex round 2, 3: never guessed from
-    where Watchtower is installed)."""
+    where ISR Bot is installed)."""
     return list(dict.fromkeys(audit_default_roots()))
 
 
@@ -904,7 +904,7 @@ def access_map_now():
     errors, skipped = [], []
     inv = collect_inventory(roots, errors=errors, skipped=skipped)
     places = [p for p in sorted(secret_store_places()) if any(_under(p, {os.path.normpath(os.path.expanduser(r))}, strict=True) for r in roots)]
-    looks = {p: _look(p) for p in places}   # batch 6 (KL5): a store or sign-in file Watchtower couldn't look at is unknown
+    looks = {p: _look(p) for p in places}   # batch 6 (KL5): a store or sign-in file ISR Bot couldn't look at is unknown
     stores = [p for p in places if looks[p]]
     cli_unknown = [p for p in places if looks[p] is None]
     fs = ([f for f in last if f.get("rule") in ("ISR-T018", "ISR-T005", "ISR-S001", "ISR-S002")] + cli_credentials(cli_unknown)
@@ -1002,7 +1002,7 @@ def access_cached_note(m):
 
 
 def access_shared_lines(m):
-    """The shared part in words. A field this command didn't check never says there is none: it says Watchtower couldn't check
+    """The shared part in words. A field this command didn't check never says there is none: it says ISR Bot couldn't check
     it, and what the last audit's map shows of it is marked as that (PR B, Codex round 1, 2). PR B, Codex round 2: nor does a
     field it checked but couldn't see whole (it says why), and a line from the last audit's findings says so, with its date."""
     sh = m["shared"]
@@ -1121,7 +1121,7 @@ def _ax_bot_line(b):
     c, other = b["connectors"], b["connectors_other"]
     named = c[:3] + ([f"{len(c) - 3} more"] if len(c) > 3 else []) + ([f"{other} other"] if other else [])
     n, unknown = len(c) + other, b["connectors_unknown"]
-    # PR B, Codex round 3 (2): "no connectors" only when the Bot said so; an answer without them, or one Watchtower couldn't read whole
+    # PR B, Codex round 3 (2): "no connectors" only when the Bot said so; an answer without them, or one ISR Bot couldn't read whole
     bits = [f"{_ax_and(named, 6)} connector{'s' if n != 1 else ''}" + (", and maybe others (ISR Bot couldn't read its whole answer)" if unknown else "")
             if n else "didn't say which connectors it uses" if unknown == "unsaid" else
             "ISR Bot couldn't read which connectors it uses" if unknown else "no connectors"]
@@ -1176,7 +1176,7 @@ def access_unknown_lines(m):
 
 
 def access_sections(m):
-    """[(heading, lines)] of the access map in plain words: shared, each Bot, and what Watchtower can't see."""
+    """[(heading, lines)] of the access map in plain words: shared, each Bot, and what ISR Bot can't see."""
     day = access_said_on(m)
     return [("Shared by all Bots", access_shared_lines(m)),
             (f"Each Bot (what each Bot said in the roll-call{' on ' + day if day else ''}; ISR Bot can't check it)", access_bot_lines(m)),
@@ -1401,7 +1401,7 @@ def access_touch(e_, m):
 def access_connectors_complete(m):
     """True when the map has every connector the Bots named in a roll-call within ROLLCALL_MAX_DAYS: there was one, and no Bot
     answered it without its connectors being kept (PR B, Codex round 2, 4). Bots past the 40 listed are counted per product.
-    Round 3 (2): nor without saying them, or with an answer Watchtower couldn't read whole (connectors_unknown)."""
+    Round 3 (2): nor without saying them, or with an answer ISR Bot couldn't read whole (connectors_unknown)."""
     rc = m["rollcall"]
     return ((rc["fresh"] or bool(m["bots"])) and not m["bots_no_detail"] and not rc["no_detail_more"]
             and not rc["connectors_unknown_more"] and not any(b["connectors_unknown"] for b in m["bots"]))
@@ -1444,7 +1444,7 @@ def here_sentence(e_, t):
 
 def no_access_sentence(e_, m):
     """A product the map shows nothing for. PR B, Codex round 1 (2): "found no" only from what this command checked; with the
-    sign-ins or tool connections not checked, it says Watchtower couldn't check. Round 2: and only from what it saw whole (every
+    sign-ins or tool connections not checked, it says ISR Bot couldn't check. Round 2: and only from what it saw whole (every
     field the product could show up in complete, _ax_complete, and the roll-call's connectors complete)."""
     sh = m["shared"]
     need = {f for f, there in (("browser", e_.get("domains")), ("cli_logins", e_.get("cli_tool")), ("mcp", e_.get("mcp_rx"))) if there}

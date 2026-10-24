@@ -12,7 +12,7 @@ lock line for the path. Anything else leaves the file counted, as on 5dcd0a2.
 
 The spec and lock here are the box's own (module constants pointed at temp files); the canonical digests are computed by this
 file's own canon(), independently of isr.py. Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's
-watchtower/ sources, rules and scripts, this file in place); "guard" ones keep real changes counted. All values are made up."""
+engine sources, rules and scripts, this file in place); "guard" ones keep real changes counted. All values are made up."""
 import copy, hashlib, json, os, subprocess, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -138,7 +138,7 @@ class _Units(Box):
             f.write(f"{tag}{canon(doc, spec)}  {rel}\n")
 
     def baseline(self, clean=True):
-        """The released files, listed by their canonical forms, and a baseline. `clean`: and nothing counted (only Watchtower
+        """The released files, listed by their canonical forms, and a baseline. `clean`: and nothing counted (only ISR Bot
         with units says so; guards pass clean=False so they hold on 5dcd0a2 too, where every metadata file stays counted)."""
         self.write_cache(cache_doc())
         self.list_canon(CACHE, cache_doc(), CACHE_SPEC)
@@ -209,7 +209,7 @@ class VerifiedRewrites(_Units):
 # ---------------------------------------------------------------- B1 guards: everything else stays counted
 class StillCounted(_Units):
     """Guards: each holds on 5dcd0a2 too (there a unit spec is refused whole, so every metadata file stays counted).
-    b8i4 (decision D2, Oct 22): a metadata file that isn't verified follows the middle path, so a change Watchtower's rules find
+    b8i4 (decision D2, Oct 22): a metadata file that isn't verified follows the middle path, so a change ISR Bot's rules find
     nothing in is no counted high now: it is still never verified (not in VERIFIED_METADATA), and the full audit rolls it in as
     any quiet platform update. What the middle path holds (flagged text, over 1 MB) stays counted. Fix round 1 (Codex 4): the
     middle path reads each text value of the file as skill text, so a body that says "send the deck" is counted again."""
@@ -349,7 +349,7 @@ def gitleaks_hit(path, needle=NEEDLE, swap=None, touch_copy=False):
     """A fake gitleaks that reads content (fix round 1: so a private copy of the bytes gets the same hits): a generic-api-key
     hit on every line under --source that holds `needle`. `swap` (before, after): on the scan of the folder that holds `path`,
     `path` gets the bytes `before` just before the read, and `after` (when not None) just after it. `touch_copy`: on the scan
-    of Watchtower's private copy, each file there is written again with the same bytes."""
+    of ISR Bot's private copy, each file there is written again with the same bytes."""
     return ('#!/usr/bin/env python3\nimport json, os, sys\na = sys.argv[1:]\nif a and a[0] == "version":\n    print("8.30.1"); sys.exit(0)\n'
             f'src, path, needle, swap, touch = a[a.index("--source") + 1], {path!r}, {needle!r}, {swap!r}, {touch_copy!r}\n'
             'def put(data):\n    os.remove(path)\n    open(path, "w").write(data)\n'

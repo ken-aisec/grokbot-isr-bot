@@ -5,7 +5,7 @@ def mask(s):
     return s[:6] + "…" + s[-4:]
 
 
-# Hardening batch 4 (R11): every Bot can read Watchtower's state files, so stored evidence never holds a secret. Key shapes keep
+# Hardening batch 4 (R11): every Bot can read ISR Bot's state files, so stored evidence never holds a secret. Key shapes keep
 # their first 6 characters (mask); a password, token or cookie value next to a name that says so becomes [hidden]. A bare $VAR
 # or ${VAR} reference is never touched, nor is anything already masked. Lengths are loose so a key cut at 160 is still caught.
 # Codex, batch 4 round 2: each reader below (private keys, key shapes, URLs, JSON/YAML fields, shell words) only marks spans of
@@ -164,7 +164,7 @@ _RAW_REACH = 32   # how far before a BEGIN marker its own literal's opening may 
 
 
 def _json_text(s):
-    """Batch 7d (A): True when s as a whole is one JSON document: the only text whose escapes Watchtower can establish from the
+    """Batch 7d (A): True when s as a whole is one JSON document: the only text whose escapes ISR Bot can establish from the
     text alone (a JSON string holds no raw line break, raw prefix or template, and each \\n in it is a line break in its value).
     Code in any language, YAML, JSON lines, a cut window: False."""
     try:

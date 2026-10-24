@@ -13,7 +13,7 @@
 9. An engine that rewrote a new skill folder's file while it scanned never lets it through (tests/test_item8_provenance.py's
    swap test is on a skill again).
 
-Each test marked R in its docstring fails on f9c3d72's sources (watchtower/ stashed) at an assertion; G is a guard (a
+Each test marked R in its docstring fails on f9c3d72's sources (the engine sources stashed) at an assertion; G is a guard (a
 contrast) that passes there and here.
 """
 import hashlib, json, os, shutil, sys, unittest

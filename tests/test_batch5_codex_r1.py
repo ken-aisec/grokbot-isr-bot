@@ -1,6 +1,6 @@
 """Batch 5 PR A, Codex review 1 (10 highs, 2 mediums on aa771f5).
 
-Every test marked "replay" fails on aa771f5 on its assertion (measured with aa771f5's watchtower/, rules, skills, routines and
+Every test marked "replay" fails on aa771f5 on its assertion (measured with aa771f5's engine sources, rules, skills, routines and
 golden harness sources and this file in place); "guard" ones keep what must not change. All secrets are fake; the sign-in skill
 is the synthetic copy of test_batch5_platform_notes, and no platform folder of this computer is opened."""
 import gzip, hashlib, io, json, os, shutil, sys, unittest

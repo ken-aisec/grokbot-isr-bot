@@ -1,11 +1,11 @@
 # Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 # Item 8 (R3, roadmap row 8): vendor provenance for the platform's own folders. None of them ships a manifest, signature or hash
-# list Watchtower can use, and anything inside the home folder is the Bot's to write. The only vendor hash list the Bot can't
-# silently change is one in Watchtower's own release: rules/platform-release.lock, listed in MANIFEST.sha256 and held to it here
+# list ISR Bot can use, and anything inside the home folder is the Bot's to write. The only vendor hash list the Bot can't
+# silently change is one in ISR Bot's own release: rules/platform-release.lock, listed in MANIFEST.sha256 and held to it here
 # like the scanner lock. Lines are `sha256sum` output run from the home folder: "<sha256>  <path under the home folder>". A file
 # whose path and exact bytes are listed is the vendor's. Decision, Oct 22 (b8i4, the middle path): versions differ per user, so
 # the shipped list can't be the only trust. A new or changed file at a path that already exists (on the list, any hash, or in the
-# baseline), or in a new platform skill folder, that Watchtower's rules find nothing in and no two scanners name a dangerous
+# baseline), or in a new platform skill folder, that ISR Bot's rules find nothing in and no two scanners name a dangerous
 # behavior in, is the quiet Platform refresh line and rolls into the baseline on the next full audit (platform_update_candidates,
 # settle_platform_updates). Anything else stays a counted high. Nothing on the computer approves a platform file (no owner's yes,
 # no record). Filled Oct 18 from the maintainer's box (see its header); a `<bucket>` line lists a file in every account's sync
@@ -212,7 +212,7 @@ PLATFORM_METADATA = re.compile(r"(?:manifest|cache|\.marketplaces|.+\.meta)\.jso
 def unverified_platform_finding(p, h, was=None, why=""):
     """A new or changed file in a platform folder that the vendor release list doesn't include, with these bytes at this path:
     a counted high. No `refresh` key, so it never goes into the Platform refresh Tip and an audit never rolls it into the
-    baseline; `unverified_platform` keeps it out of the platform scope, `fix --revet`, `accept` and `dismiss`. Only a Watchtower
+    baseline; `unverified_platform` keeps it out of the platform scope, `fix --revet`, `accept` and `dismiss`. Only an ISR Bot
     release that lists it clears it (decision, Oct 18), or (b8i4) a later version that passes the middle path's checks. `why`:
     the one sentence that says why a middle-path candidate was held (settle_platform_updates); it starts the fix, and rule,
     title, evidence and key stay as they are. Fix round 1 (Codex 1): such a finding is marked `platform_candidate`; one without
@@ -255,11 +255,11 @@ def _unverified_platform_finding(p, h, was=None):
 
 # Codex, item 8 review 2 (high 3): a matching line in baseline.json skipped the release-list check. Reviews 2 and 3 then added an
 # owner's yes (`fix --approve-platform`), a record of it in state/platform_approved.json bound to a ledger line, and a first baseline
-# that vouched for every platform file on a new box. All of that lived in Watchtower's state, which the Bot can write, so a Bot
+# that vouched for every platform file on a new box. All of that lived in ISR Bot's state, which the Bot can write, so a Bot
 # that wrote the record and its ledger line, or wiped the state for a new first run, made its own plant a platform file.
 # Decision, Oct 18: release list only; the old record and the ledger are never read, and `--approve-platform` is refused
 # (approve_platform). Decision, Oct 22 (b8i4): the middle path. A path that already exists (a release-list line with any hash, or
-# a baseline line) or a new platform skill folder makes a file a candidate, and only Watchtower's own checks of its bytes this run
+# a baseline line) or a new platform skill folder makes a file a candidate, and only ISR Bot's own checks of its bytes this run
 # let it through. The baseline is Bot-writable, so a Bot that writes a line makes a path "already existing" (accepted, Oct 22);
 # a loose file, a link in or out, a colon, an unusable release list, and a first run's loose files stay counted highs. Fix round 1
 # (Codex 1): a new skill folder, or a new file in one, is a candidate only in an update run (an established baseline), and never
@@ -419,7 +419,7 @@ def platform_still_bound(p):
 
 
 PLATFORM_MOVED = "It moved out of the platform's own folders while ISR Bot was checking it."   # platform_still_bound failed
-PLATFORM_UPDATE_MAX = 1_000_000   # bytes of a candidate Watchtower reads whole (read_scanned's limit)
+PLATFORM_UPDATE_MAX = 1_000_000   # bytes of a candidate ISR Bot reads whole (read_scanned's limit)
 
 
 def platform_scan_verdict(batch, t):
@@ -588,7 +588,7 @@ def _vote_why(p, d, fs):
 
 def settle_platform_updates(fs, cands, manifest, base, rules):
     """b8i4: decide each candidate (platform_update_candidates) at the end of audit(), after the engines. One is held when
-    Watchtower's whole rule set hits at medium or above in exactly the bytes it fingerprinted, read again here, or another finding
+    ISR Bot's whole rule set hits at medium or above in exactly the bytes it fingerprinted, read again here, or another finding
     of this run at medium or above is on it (_candidate_why, fix round 1), when it is over 1 MB, not plain text or unreadable,
     or when a ISR-X003 covers it that isn't a wording-only platform vote. A new skill folder is all or nothing; a new file in a
     known skill folder is quiet only beside an update of a file the baseline has in that folder that is quiet this run, with
@@ -724,7 +724,7 @@ def merge_managed_mirrors(fs, manifest):
 
 
 def _release_file(path, rel, max_bytes):
-    """(bytes, why it can't be used or "") of one of Watchtower's own rules files: a plain file (never a link), at most max_bytes,
+    """(bytes, why it can't be used or "") of one of ISR Bot's own rules files: a plain file (never a link), at most max_bytes,
     and in an installed copy exactly the bytes MANIFEST.sha256 lists for it."""
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
@@ -775,9 +775,9 @@ def _plain_rel(rel):
             and rel.startswith(tuple(sub + "/" for sub in PLATFORM_ROOT_SUBS)))
 
 
-# Batch 5 (d2, decision 1, Oct 18): findings Watchtower's team read in exact versions of the platform's own files. One entry
+# Batch 5 (d2, decision 1, Oct 18): findings ISR Bot's team read in exact versions of the platform's own files. One entry
 # names the paths (under the home folder), the file's sha256, the rule and the line; it applies only to those bytes there, so any
-# change to the file (another sha256) ends it. The list ships in Watchtower's release and is held to MANIFEST.sha256 like the
+# change to the file (another sha256) ends it. The list ships in ISR Bot's release and is held to MANIFEST.sha256 like the
 # release lock; its path is a constant tests point at their own file, never read from the environment or from state/. Nothing on
 # the computer can add an entry.
 PLATFORM_REVIEWED_REL = "rules/platform-reviewed.json"
@@ -860,7 +860,7 @@ NORMALIZE_TYPES = {"iso8601": re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?
 _PLATFORM_NORMALIZE_CACHE = {}
 
 # Batch 6 (B1, decision: option D): an entry may also name `units`, where the per-skill or per-file units of the file are and
-# the file in the same platform root each must equal. Watchtower then checks, by content, that the file says nothing beyond what it
+# the file in the same platform root each must equal. ISR Bot then checks, by content, that the file says nothing beyond what it
 # fingerprinted itself in this run (platform_verified): a skill_text unit (each element of the list at `at`, named by its `id`
 # field) has text fields equal to its `file` (the whole SKILL.md, what follows its frontmatter, or one frontmatter field); a
 # file_digest unit (each entry of the {relpath: sha256} map at `at`) has the sha256 of its file. Those text fields and digests are
@@ -969,7 +969,7 @@ def _drop_field(node, key, typ):
 
 def canonical_platform_json(data, fields, units=(), check=None):
     """The sha256 of `data` (a platform metadata file's bytes) with the spec's `fields` dropped and each of its `units` (batch 6,
-    B1) replaced by {"$unit": <id>} once check(unit, id, how, value) says it equals what Watchtower fingerprinted, or None when it
+    B1) replaced by {"$unit": <id>} once check(unit, id, how, value) says it equals what ISR Bot fingerprinted, or None when it
     can't be read strictly, a named value hasn't exactly its type, or a unit isn't verified (check(unit, id, None, None): its
     file is there and fine; how is a text kind, or "digest")."""
     if len(data) > NORMALIZE_FILE_MAX or data[:3] == b"\xef\xbb\xbf":
@@ -1241,7 +1241,7 @@ def platform_churn_file(p):
 
 
 # Codex, item 8 review 2 (high 1): the platform files were only what the scanner's inventory kept, so a baselined SKILL.md turned
-# into a link into Watchtower's quarantine (a "not live" skill), a folder link, a loose script outside any skill folder, or a file
+# into a link into ISR Bot's quarantine (a "not live" skill), a folder link, a loose script outside any skill folder, or a file
 # under node_modules (which the walk skips) never reached the provenance check. Provenance has its own walk of each platform folder
 # inside the roots: no skip list, no live or quarantine test, every literal name kept (a file reached by two names is two entries),
 # folder links followed with a cycle check and limits. A folder it can't finish is a counted high (ISR-I011), never a quiet gap.

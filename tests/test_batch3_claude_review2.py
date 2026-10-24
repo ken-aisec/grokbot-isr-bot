@@ -72,7 +72,7 @@ class Installed(_Scanners):
 
 class RepointedApp(Installed):
     """Finding 2: release_manifest() read MANIFEST.sha256 again whenever the real folder behind `app` changed, so after the
-    self-check `mv app app.real; ln -s evil app` had the Bot's manifest vouch for its own lock reader, run inside Watchtower,
+    self-check `mv app app.real; ln -s evil app` had the Bot's manifest vouch for its own lock reader, run inside ISR Bot,
     and its lock made its own gitleaks "verified"."""
 
     def test_2_a_repointed_app_never_has_its_manifest_or_reader_read(self):

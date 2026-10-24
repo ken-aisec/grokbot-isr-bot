@@ -9,7 +9,7 @@ this before; it is back because the file changed (see ISR-I001)". DQ-045 itself 
 needs a dismissal authority a Bot can't write: not done (docs/KNOWN-LIMITS.md). These tests show it back; the guards that a
 planted record hides nothing stay.
 
-Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's watchtower/ sources, this file in place); the
+Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's engine sources, this file in place); the
 ones marked "guard" pass there too. Every planted value is FAKE; the box is a temp folder."""
 import json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -118,7 +118,7 @@ class DismissalHolds(Box):
 
     def test_a_legacy_record_holds_only_when_the_key_covers_the_evidence(self):   # guard. Fix round 1 (Codex 5): a record with
         # no ev256 (what 5dcd0a2 wrote, or a Bot's key-only plant) never holds over a change: every medium or lower finding
-        # Watchtower's rules read from a file has an ev256 during the audit (its whole source line, never stored), so the key
+        # ISR Bot's rules read from a file has an ev256 during the audit (its whole source line, never stored), so the key
         # alone never stands in for it
         self.write(HEAD + BUN)
         self.audit()

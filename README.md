@@ -2,7 +2,7 @@
 
 Every Grok Bot on your account shares one cloud computer: the same browser logins, files and command-line credentials. xAI's own docs say not to treat separate Bots as a security boundary. When you add a template, its skills and routines run with everything your other Bots are signed into, and audit logs, network allowlists and the MCP allowlist are Enterprise-only.
 
-ISR Bot (the engine and its files keep the name Watchtower) is a security officer for that setup. It is read-only until you say yes: it looks, reports and recommends, and changes something only after you approve it in the conversation. It vets templates before you install them, audits your computer and every Bot on it, sets tripwires, sends a weekly threat brief, and tells you the few fixes that matter.
+ISR Bot is a security officer for that setup. It is read-only until you say yes: it looks, reports and recommends, and changes something only after you approve it in the conversation. It vets templates before you install them, audits your computer and every Bot on it, sets tripwires, sends a weekly threat brief, and tells you the few fixes that matter.
 
 ## What it does
 

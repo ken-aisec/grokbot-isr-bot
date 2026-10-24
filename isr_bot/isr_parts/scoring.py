@@ -4,7 +4,7 @@ SCORE_BASE = {"critical": 12, "high": 5, "medium": 1.5, "low": 0.3}   # per kind
 SCORE_CAP = {"critical": 50, "high": 25, "medium": 12, "low": 3}      # per severity tier
 
 
-# v0.6.8: a false alarm is never scary. "Evidence" rules report a fact Watchtower saw (a decoy was read, an approved skill
+# v0.6.8: a false alarm is never scary. "Evidence" rules report a fact ISR Bot saw (a decoy was read, an approved skill
 # changed, a provider said a key works, two engines agree, a setting is on). "Pattern" rules match wording or a key-shaped
 # string, or are one engine alone: often right, sometimes fine. A pattern finding is at most medium unless something backs it up.
 EVIDENCE_RULES = frozenset((
@@ -14,7 +14,7 @@ EVIDENCE_RULES = frozenset((
     "ISR-H001", "ISR-H002", "ISR-H003", "ISR-H004", "ISR-H005", "ISR-H006", "ISR-H007", "ISR-H008", "ISR-H009",
     "ISR-K001", "ISR-K002", "ISR-K003", "ISR-K004", "ISR-K005", "ISR-K006", "ISR-M001", "ISR-P001", "ISR-R010",
     "ISR-S003", "ISR-S004", "ISR-S005", "ISR-W001", "ISR-W002", "ISR-X003", "ISR-X004",
-    "ISR-X005"))   # batch 3 (R7): Watchtower's copy of a scanner isn't the one it installed
+    "ISR-X005"))   # batch 3 (R7): ISR Bot's copy of a scanner isn't the one it installed
 HISTORY_SHRANK = "Shell history shrank since last check"
 NEW_SIGN_IN = "New sign-in in the shared browser"
 CONFIRMED, MAYBE_FINE = "Confirmed", "Worth a look (might be fine)"
@@ -105,7 +105,7 @@ def husk_messages_that_count(d, msgs):
     """DQ-011 (4): husk flags any f-string with a SQL keyword that a function returns, so a chat message such as
     `return f"topic-digest update: {topic}..."` came back as SQL injection. Such a message counts only when the line it names
     (or the two after it, for a query split over lines) has the shape of a SQL statement. A query passed to execute(), a
-    message of any other kind, a message without a file and line, or a line Watchtower can't read are kept
+    message of any other kind, a message without a file and line, or a line ISR Bot can't read are kept
     as before."""
     keep = []
     for m in msgs or ():
@@ -201,7 +201,7 @@ def corroborated(f, findings, index=None):
     - a wording hit (override, weaken approvals, secrecy, quiet action) has a behavior signal in the same file: a credential read,
       a send to an outside address, a pipe-to-shell, hidden Unicode, an encoded blob, dynamic code. Wording alone never is;
     - a behavior hit has, in the same file, an evidence finding or another engine's finding about the same kind of risk, or a
-      second, different loud Watchtower rule (credential read plus a send out is the classic chain);
+      second, different loud ISR Bot rule (credential read plus a send out is the classic chain);
     - a behavior hit has a scanner's verdict on its skill folder that names the same kind of risk ("husk found something
       somewhere in the folder" is not a vote; SkillSpector's "Exfil" backs up a send to an outside address);
     - a rule with no kind of risk keeps the v0.6.8 test: evidence or another engine at the same place;

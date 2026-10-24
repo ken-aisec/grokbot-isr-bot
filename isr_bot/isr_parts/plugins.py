@@ -34,7 +34,7 @@ def saved_skill_notes(notes):
 
 
 def update_notes(notes):
-    """Tell the owner a newer Watchtower is out. Only tells: nothing here installs or updates anything."""
+    """Tell the owner a newer ISR Bot is out. Only tells: nothing here installs or updates anything."""
     b = load_json(state_path("last_brief.json"), {}) or {}
     upd = [u for u in b.get("updates", []) if any(n in u.get("name", "").lower() for n in UPDATE_NAMES)]
     if upd:
@@ -716,7 +716,7 @@ def note_plugins(inv):
             PLUGIN_MOVES[name] = (was, sorted(set(roots)))
         if name not in st:
             st[name] = {"since": now(), "status": "known" if first and in_baseline(name) else "new"}
-            # Already there on Watchtower's first run, inside the platform's catalog cache, and runs no code: the catalog's, as a
+            # Already there on ISR Bot's first run, inside the platform's catalog cache, and runs no code: the catalog's, as a
             # catalog sync would have filed it. One that runs code stays "known" and counts like any installed plugin (F1).
             if first and st[name]["status"] == "known" and all(any(x in r + "/" for x in CATALOG_CACHE) and not runs_code(r) for r in roots):
                 st[name].update(status="catalog", filed="first-run")
@@ -854,9 +854,9 @@ def unconfirmed_platform_vote(f, fs):
     """DQ-042 (decision, Oct 16): vendor skill updates shouldn't be flagged. A routine update to the bundled learn skill came back
     "SkillSpector + husk; Memory Poisoning: Memory Manipulation; analysis-evasion: …" and daily raised a high alert. On the
     platform's own skill folders (platform_skill_path), two engines agreeing is Confirmed only when their words name a dangerous
-    behavior (the kinds of BEHAVIOR_RULES), or a Confirmed critical/high Watchtower finding in the same skill backs it. Engines
+    behavior (the kinds of BEHAVIOR_RULES), or a Confirmed critical/high ISR Bot finding in the same skill backs it. Engines
     that agree only on wording (override, secrecy) or name no kind at all are a Platform line, the same line v0.7.1 item 2
-    draws: wording alone is never Confirmed. A built-in that turns bad in a way Watchtower sees still alerts (Claude v0.7.1 F4)."""
+    draws: wording alone is never Confirmed. A built-in that turns bad in a way ISR Bot sees still alerts (Claude v0.7.1 F4)."""
     if (f["rule"] != "ISR-X003" or f.get("kinds_incomplete") or not platform_skill_path(f.get("where") or "", line=False)
             or kinds_of(f) & PLATFORM_DANGER_KINDS):
         return False
@@ -1028,7 +1028,7 @@ def in_catalog_plugin(where):
 
 # Decision, Oct 13 (item 8 dry run): Codex's and Claude's own built-in skills and plugins are the platform's, shown not scored.
 # (Folded into PLATFORM_ROOT_SUBS / under_platform_root — Claude v0.7.1 F3.)
-# Decision, Oct 13: the platform's masked-secret store (values saved through the secure secret request). Never read by Watchtower.
+# Decision, Oct 13: the platform's masked-secret store (values saved through the secure secret request). Never read by ISR Bot.
 PLATFORM_SECRET_STORE = ("sand-data/box-secrets.json", "agent-data/box-secrets.json",
                          ".grok/auth.json")   # Decision, Oct 14: the Grok CLI sign-in file is expected; that exact path only
 GROK_CLI_SIGN_IN = ".grok/auth.json"
@@ -1110,7 +1110,7 @@ def mark_platform(fs):
                 f["severity_was"], f["severity"] = f["severity"], "info"
         elif f["rule"] not in SECRET_RULES:
             if f["rule"] == "ISR-X003" and f["severity"] == "info" and f.get("severity_was"):   # daily re-adds last run's Platform line;
-                f["severity"] = f.pop("severity_was")                                        # Watchtower now backs it (DQ-042)
+                f["severity"] = f.pop("severity_was")                                        # ISR Bot now backs it (DQ-042)
             f["fix"] = PLATFORM_CONFIRMED_FIX
     return fs
 

@@ -5,7 +5,7 @@ evidence followed gitleaks' report, which follows the listing. The hits are now 
 (_leak_order) before they are named; which hits are found and counted is unchanged.
 
 The listing the scan uses is the gitleaks stand-in's os.walk, in its own process, so it is reordered in the stand-in's text;
-the report is reordered where Watchtower reads it (gitleaks_private). Tests marked "replay" fail on ab8c7e7 on their
+the report is reordered where ISR Bot reads it (gitleaks_private). Tests marked "replay" fail on ab8c7e7 on their
 assertion; "guard" ones pass there too, unless marked "new" (they call something ab8c7e7 doesn't have)."""
 import json, os, random, sys, unittest
 from unittest import mock
@@ -50,7 +50,7 @@ class ListingOrder(_Keys):
         return [f for f in self.keys(self.snap()["findings"], self.skill) if f["rule"] == "ISR-S002"]
 
     def reported(self, order):
-        """Scan with gitleaks' report given to Watchtower in `order`; (the ISR-S002 findings, each report as given)."""
+        """Scan with gitleaks' report given to ISR Bot in `order`; (the ISR-S002 findings, each report as given)."""
         orig, seen = isr.gitleaks_private, []
 
         def given(exe, source, priv, *a, **k):

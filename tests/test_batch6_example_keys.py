@@ -1,6 +1,6 @@
 """Batch 6 PR2, B5 (DQ-043/044): example-looking keys are listed low, and a real key is critical wherever it sits.
 
-One content check (secret_kind) for Watchtower's own rule (ISR-T011, ISR-S001) and every gitleaks hit, on the secret value only:
+One content check (secret_kind) for ISR Bot's own rule (ISR-T011, ISR-S001) and every gitleaks hit, on the secret value only:
 FAKE or placeholder text, an environment-variable reference, a key block whose structure isn't a key, and (gitleaks
 generic-api-key) a file's checksum by its line's format look like examples. gitleaks runs with --redact; its secret is found
 again in the file from its Match, judged in memory and never stored. Fix round 2 (Codex 3, 4; the owner's rule): anyone can write a
@@ -13,11 +13,11 @@ counting, grouping and Confirmed rules, and only its fix gets "This looks like a
 rotate it."; a key block that can't be read, is short or starts like a key is a key. The assertions changed here are listed in
 CHANGELOG.
 
-The gitleaks used here is a stand-in that reports the hits each test names, applying Watchtower's gitleaks config (its path and
+The gitleaks used here is a stand-in that reports the hits each test names, applying ISR Bot's gitleaks config (its path and
 line allowlists) the way gitleaks does, with Match redacted and gitleaks' Entropy. Fake keys contain FAKE or are documentation
 placeholders; every real-shaped key (tokens, DER, OpenSSH) is generated when the test runs and never committed.
 
-Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's watchtower/ sources, this file in place); the
+Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's engine sources, this file in place); the
 ones marked "guard" pass there too."""
 import base64, gzip, json, os, re, secrets, string, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

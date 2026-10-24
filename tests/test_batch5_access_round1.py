@@ -10,7 +10,7 @@
 7 the cookie seed's "sensitive: none" is no signed-in site.
 (4, the golden expectations, is in test_golden_expect.)
 
-Tests marked "replay" fail on 0a72c20 on their assertion (measured with 0a72c20's watchtower/ sources, this file in place). Every
+Tests marked "replay" fail on 0a72c20 on their assertion (measured with 0a72c20's engine sources, this file in place). Every
 planted value is FAKE…; the box is a temp folder, never this computer's own."""
 import html, json, os, re, sys, unittest
 from unittest import mock

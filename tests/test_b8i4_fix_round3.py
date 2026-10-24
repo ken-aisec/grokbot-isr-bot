@@ -9,7 +9,7 @@
    folder until a scan that finishes gives the files again (coverage_gaps).
 3. Daily on a box with a missing scanner prints what f7c28e6 printed again (fix round 2's scanner-alert change undone).
 
-Each test marked R in its docstring fails on d2d24e5's sources (the changed files under watchtower/ stashed) at an assertion; G
+Each test marked R in its docstring fails on d2d24e5's sources (the changed engine files stashed) at an assertion; G
 is a guard (a contrast) that passes there and here.
 """
 import json, os, sys, unittest
@@ -189,7 +189,7 @@ class DailyScannersMissing(_Middle):
 
     def swap(self, *names):
         for n in names:
-            add(os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin", n), "# changed after Watchtower installed it\n")
+            add(os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin", n), "# changed after ISR Bot installed it\n")
         isr._SCANNER_OK.clear()
 
     def x005(self):
@@ -206,7 +206,7 @@ class DailyScannersMissing(_Middle):
         self.assertEqual(self.x005(), ["gitleaks"])
 
     def test_scanners_never_installed_right_with_open_alerts_is_not_checked(self):
-        """R: a box whose SkillSpector, husk, gitleaks and TruffleHog were never the copies Watchtower installed (four ISR-X005 from
+        """R: a box whose SkillSpector, husk, gitleaks and TruffleHog were never the copies ISR Bot installed (four ISR-X005 from
         the first audit): daily with nothing changed is f7c28e6's NO_CHANGES_BUT_NOT_CHECKED line, exactly (d2d24e5: full JSON
         with four scanner_alerts)."""
         self.scanners()

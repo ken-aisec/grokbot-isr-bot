@@ -1,4 +1,4 @@
-{"about": "Findings Watchtower's team read in exact platform file versions (by sha256). One entry applies only to that file, those bytes, that rule and line. Paths are under the home folder; each (path, sha256) pair is a line of rules/platform-release.lock. Batch 5 (d2, Ken's decision 1, Oct 18).",
+{"about": "Findings ISR Bot's team read in exact platform file versions (by sha256). One entry applies only to that file, those bytes, that rule and line. Paths are under the home folder; each (path, sha256) pair is a line of rules/platform-release.lock. Batch 5 (d2, Ken's decision 1, Oct 18).",
  "entries": [
   {"paths": ["sand-data/managed-skills/skills/sign-in/SKILL.md", "agent-data/managed-skills/skills/sign-in/SKILL.md"],
    "sha256": "329d4f59c94da1e42737230253bbb671183546d2ce82e04af9c304a46e759071", "rule": "ISR-T008", "line": 12,

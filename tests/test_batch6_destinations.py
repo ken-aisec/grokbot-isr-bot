@@ -9,7 +9,7 @@ with httpx.Client() as c), never because a name ends in client or session (cfg_c
 Medium 5: the other URLs that make a destination doubtful are those in the code region of the send, not a docs link in the
 prose around it.
 
-Tests marked "replay" fail on 1aed58a on their assertion (measured with 1aed58a's watchtower/ sources, this file in place);
+Tests marked "replay" fail on 1aed58a on their assertion (measured with 1aed58a's engine sources, this file in place);
 "guard" ones keep what must not change. Every URL is an example; the webhook is FAKE."""
 import os, subprocess, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
