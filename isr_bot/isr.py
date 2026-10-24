@@ -789,7 +789,7 @@ ol.small-todo{{margin-top:8px}}ol.small-todo li{{padding:10px 12px}}ol.small-tod
 <div class='cmd'><code id='c1' tabindex='0'>{e(fix_prompt)}</code><button type='button' data-copy='c1' hidden>Copy</button></div><p class='hint'>Click the text to select it, then copy.</p></div></div>
 <section class='sec'><h2>What needs you</h2><ol class='todo'>{todo_html}</ol>{rest_html}{acc_html}</section>
 <section class='sec'><h2>Threats this week</h2><ul class='threats'>{threats}</ul>{later_html}<p class='quiet' style='margin-top:10px'>{kev_line}</p></section>
-<p class='foot'>Read-only: ISR Bot changes nothing unless you run the fix. {len(b['sources']) - len(down)} of {len(b['sources'])} news sources responded{(' (' + e(', '.join(down)) + ' did not)') if 0 < len(down) <= 2 else ''}. Full details: /watchtower-report. ISR Bot {e(VERSION)}.</p>
+<p class='foot'>Read-only: ISR Bot changes nothing unless you run the fix. {len(b['sources']) - len(down)} of {len(b['sources'])} news sources responded{(' (' + e(', '.join(down)) + ' did not)') if 0 < len(down) <= 2 else ''}. Full details: /isr-bot-report. ISR Bot {e(VERSION)}.</p>
 </div><script>
 (function(){{
   function sel(el){{var r=document.createRange();r.selectNodeContents(el);var s=window.getSelection();s.removeAllRanges();s.addRange(r);}}
@@ -846,9 +846,9 @@ def cmd_brief(args):
                "updates": b["updates"], "doc_changes": [p["name"] for p in b["pages"]],
                "sources_down": [s["name"] for s in b["sources"] if s["status"] != "ok"],
                "next_step": ("Analysis added." if notes else
-                             "Required: write notes.json with 'means' and 'do' for each top_stories id (see the watchtower-brief skill, step 2), "
+                             "Required: write notes.json with 'means' and 'do' for each top_stories id (see the isr-bot-brief skill, step 2), "
                              "then run isr.py brief --notes <file>. Until then the stories show generic text." if amap is None else
-                             "Optional: add notes.json with 'means' and 'do' for any top_stories id (see the watchtower-brief skill, step 2), "
+                             "Optional: add notes.json with 'means' and 'do' for any top_stories id (see the isr-bot-brief skill, step 2), "
                              "then run isr.py brief --notes <file>. Each story already says what it touches here.")}, limit=6000))
     return 0
 

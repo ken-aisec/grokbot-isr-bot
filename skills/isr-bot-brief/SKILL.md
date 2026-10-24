@@ -1,5 +1,5 @@
 ---
-name: watchtower-brief
+name: isr-bot-brief
 description: Build this week's ISR Bot report, one HTML page a non-expert can read in a minute - status, score and threat level, trend charts, a one-click fix, what needs the user, and the three threats that matter to this account. Use weekly or when the user asks how their setup is doing.
 ---
 

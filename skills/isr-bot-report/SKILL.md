@@ -1,5 +1,5 @@
 ---
-name: watchtower-report
+name: isr-bot-report
 description: Write the weekly ISR Bot security report and dashboard from the latest audit, and post a short summary. Use after an audit or in the weekly routine.
 ---
 

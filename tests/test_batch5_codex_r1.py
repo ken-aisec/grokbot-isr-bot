@@ -421,7 +421,7 @@ class OwnerFirst(_SignIn):
         self.assertIn("2 more platform notes not shown here:", pn["more"])   # the two left out aren't loud
 
     def test_the_skill_and_the_routine_read_what_was_left_out(self):   # replay (aa771f5: only in the scanners_missing branch)
-        with open(os.path.join(ROOT, "skills", "watchtower-audit", "SKILL.md")) as f:
+        with open(os.path.join(ROOT, "skills", "isr-bot-audit", "SKILL.md")) as f:
             skill = f.read()
         step2 = next(l for l in skill.splitlines() if l.startswith("2. Run "))
         self.assertIn("Whenever `truncated` has `new`", step2)

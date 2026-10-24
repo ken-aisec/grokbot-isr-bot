@@ -266,7 +266,7 @@ class R17PinnedBootstrap(unittest.TestCase):
         """R17: the tag-delivered installer ran before anything checked the expected commit."""
         mem = open(os.path.join(ROOT, "bot", "memories.md")).read()
         self.assertIn("grokbot-watchtower/{COMMIT}/scripts/install.sh", mem)
-        setup = open(os.path.join(ROOT, "skills", "watchtower-setup", "SKILL.md")).read()
+        setup = open(os.path.join(ROOT, "skills", "isr-bot-setup", "SKILL.md")).read()
         self.assertIn("grokbot-watchtower/<COMMIT>/scripts/install.sh", setup)
         readme = open(os.path.join(ROOT, "README.md")).read()
         self.assertIn('grokbot-watchtower/$COMMIT/scripts/install.sh', readme)

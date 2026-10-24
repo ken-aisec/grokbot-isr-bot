@@ -393,7 +393,7 @@ class CompleteDelta(Box):
         path = out.get("delta_file") or ""
         self.assertTrue(os.path.isfile(path), path)
         self.assertEqual({f["key"] for f in json.load(open(path))["new"]}, {f["key"] for f in new})
-        step = next(l for l in open(os.path.join(ROOT, "skills", "watchtower-audit", "SKILL.md")).read().splitlines()
+        step = next(l for l in open(os.path.join(ROOT, "skills", "isr-bot-audit", "SKILL.md")).read().splitlines()
                     if l.startswith("3. If the JSON has `scanners_missing`"))
         self.assertIn("delta_file", step)
         self.assertIn("new_total", step)

@@ -282,7 +282,7 @@ class NoUnattendedDismiss(unittest.TestCase):
         self.assertNotIn("If it prints NO_CHANGES, send nothing and stop", line)
 
     def test_a_scheduled_audit_never_dismisses(self):   # replay
-        t = doc("skills", "watchtower-audit", "SKILL.md")
+        t = doc("skills", "isr-bot-audit", "SKILL.md")
         self.assertIn("In a scheduled run (nobody asked you just now), never dismiss: show it as Worth a look.", t)
 
 

@@ -254,7 +254,7 @@ class NoMapBriefAsBefore(_Brief):
                       "kev_relevant": [f"{k['cve']} {k['vendor']} {k['product']}" for k in b["kev"] if k["relevant"]][:6],
                       "updates": b["updates"], "doc_changes": [p["name"] for p in b["pages"]],
                       "sources_down": [s["name"] for s in b["sources"] if s["status"] != "ok"],
-                      "next_step": "Required: write notes.json with 'means' and 'do' for each top_stories id (see the watchtower-brief skill, step 2), "
+                      "next_step": "Required: write notes.json with 'means' and 'do' for each top_stories id (see the isr-bot-brief skill, step 2), "
                                    "then run isr.py brief --notes <file>. Until then the stories show generic text."}, limit=6000)
         self.assertEqual(len(json.loads(old)["top_stories"]), 5)
         self.assertEqual(out, old + "\n")

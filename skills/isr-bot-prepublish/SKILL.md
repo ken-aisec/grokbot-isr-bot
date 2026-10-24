@@ -1,5 +1,5 @@
 ---
-name: watchtower-prepublish
+name: isr-bot-prepublish
 description: Check a Bot before you share it as a template. Finds secrets, email addresses, phone numbers, private doc links, internal hosts, paths that only exist on your computer, dependencies templates don't carry, and a missing approval boundary. PASS or FAIL. Use before Share → Create template.
 ---
 

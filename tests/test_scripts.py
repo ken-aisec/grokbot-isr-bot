@@ -8,7 +8,7 @@ GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid", "GIT
 
 
 SCANNER_NAMES = ("skillspector", "husk", "gitleaks", "trufflehog", "osv-scanner", "pip-audit")
-VERSIONED_DOCS = ("skills/watchtower-setup/SKILL.md", "README.md", "scripts/install.sh")
+VERSIONED_DOCS = ("skills/isr-bot-setup/SKILL.md", "README.md", "scripts/install.sh")
 
 
 def real_version():

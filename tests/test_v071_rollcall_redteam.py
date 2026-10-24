@@ -171,7 +171,7 @@ class RepliesArePrivateAndShortLived(Base):
 
 class OwnersAreTold(unittest.TestCase):
     def test_the_skill_and_the_template_description_say_bots_cant_verify_the_sender(self):
-        skill = open(os.path.join(ROOT, "skills", "watchtower-rollcall", "SKILL.md")).read()
+        skill = open(os.path.join(ROOT, "skills", "isr-bot-rollcall", "SKILL.md")).read()
         desc = open(os.path.join(ROOT, "bot", "description.md")).read()
         front = skill.split("---")[1]
         self.assertIn("Bots can't verify who sends a roll-call", front)            # the description line every owner sees

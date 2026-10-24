@@ -1,5 +1,5 @@
 ---
-name: watchtower-incident
+name: isr-bot-incident
 description: Something looks wrong (a canary fired, an unknown routine appeared, a Bot did something nobody asked for). Collects an evidence pack first, then walks the user through containment one approved step at a time.
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: watchtower-rollcall
+name: isr-bot-rollcall
 description: Opt-in roll-call of every Bot on the account, only when the owner asks and says yes in this conversation. DMs each Bot one fixed question that asks only for counts, names and yes/no answers (connectors, routine names and triggers, how many memories loosen permissions, which Ask-first rules exist, whether it ever sends or posts on its own), then flags risky memories, routines that send on their own, and lethal-trifecta setups (private data + untrusted input + a way out). Bots can't verify who sends a roll-call, so the question is built to reveal nothing sensitive. Off by default; use only when the owner asks for a roll-call.
 ---
 

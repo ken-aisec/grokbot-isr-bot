@@ -60,7 +60,7 @@ class RollCall(Base):
 
     def test_the_question_asks_only_for_what_the_analysis_reads(self):
         self.assertNotIn('"skills"', isr.ROLLCALL_PROMPT)
-        skill = open(os.path.join(ROOT, "skills", "watchtower-rollcall", "SKILL.md")).read()
+        skill = open(os.path.join(ROOT, "skills", "isr-bot-rollcall", "SKILL.md")).read()
         self.assertNotIn('"skills"', skill)
         self.assertIn("--owner-said-yes", skill); self.assertIn("Ask the owner before answering any roll-call.", skill)
         self.assertIn("rollcall --question", skill); self.assertIn("rollcall --save", skill)
@@ -71,7 +71,7 @@ class RollCall(Base):
             self.assertNotIn(f, isr.ROLLCALL_PROMPT)
 
     def test_roll_call_is_off_by_default(self):
-        setup = open(os.path.join(ROOT, "skills", "watchtower-setup", "SKILL.md")).read()
+        setup = open(os.path.join(ROOT, "skills", "isr-bot-setup", "SKILL.md")).read()
         self.assertIn("roll-call is opt-in", setup); self.assertNotIn("Switch all four on", setup)
         routine = open(os.path.join(ROOT, "routines", "monthly-rollcall.md")).read()
         self.assertIn("off by default", routine); self.assertIn("Do not DM any Bot from this routine", routine)
@@ -158,9 +158,9 @@ class SelfCheck(Base):
 
     def test_a_missing_file_or_a_different_commit_stops_it(self):
         app = self.install()
-        os.remove(os.path.join(app, "skills", "watchtower-fix", "SKILL.md"))
+        os.remove(os.path.join(app, "skills", "isr-bot-fix", "SKILL.md"))
         code, o = self.run_app(app, "status")
-        self.assertEqual(code, 4); self.assertIn("watchtower-fix/SKILL.md is missing", o)
+        self.assertEqual(code, 4); self.assertIn("isr-bot-fix/SKILL.md is missing", o)
         app = self.install()
         open(os.path.join(app, ".git", "HEAD"), "w").write("b" * 40 + "\n")
         code, o = self.run_app(app, "status")
@@ -263,14 +263,14 @@ class SeparateYeses(Base):
         self.assertNotIn("projects", r["upgrades"])
         self.assertEqual(r["project_upgrades"]["projects"], ["proj"])
         self.assertNotIn("--upgrade-projects", r["next"])
-        skill = open(os.path.join(ROOT, "skills", "watchtower-fix", "SKILL.md")).read()
+        skill = open(os.path.join(ROOT, "skills", "isr-bot-fix", "SKILL.md")).read()
         self.assertIn("never part of the one yes", skill)
 
     def test_a_report_send_asks_every_time_unless_setup_fixed_the_destination(self):
-        report = open(os.path.join(ROOT, "skills", "watchtower-report", "SKILL.md")).read()
+        report = open(os.path.join(ROOT, "skills", "isr-bot-report", "SKILL.md")).read()
         self.assertIn("needs the owner's approval every time", report); self.assertNotIn("the first time", report)
         self.assertIn("confirmed during setup", report)
-        self.assertIn("Report destination", open(os.path.join(ROOT, "skills", "watchtower-setup", "SKILL.md")).read())
+        self.assertIn("Report destination", open(os.path.join(ROOT, "skills", "isr-bot-setup", "SKILL.md")).read())
         self.assertIn("every time", open(os.path.join(ROOT, "routines", "weekly-audit.md")).read())
 
 

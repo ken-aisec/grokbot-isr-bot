@@ -206,7 +206,7 @@ class Docs(unittest.TestCase):
         self.assertIn("never held back for a retry", t)
 
     def test_14_codescan_and_isr_py_describe_the_checked_folder(self):
-        skill = self.read("skills", "watchtower-codescan", "SKILL.md")
+        skill = self.read("skills", "isr-bot-codescan", "SKILL.md")
         self.assertNotIn("if it's installed", skill)
         self.assertIn("checked scanner folder", skill)
         self.assertNotIn("are used when on PATH", isr.__doc__)

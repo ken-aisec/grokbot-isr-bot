@@ -230,7 +230,7 @@ class Docs(unittest.TestCase):
 
     def test_9_setup_requires_exit_0_and_exactly_the_version(self):
         """Finding 9: setup skipped the reinstall when `--version` "prints 0.7.1", which the Bot judged from any output."""
-        t = " ".join(self.read("skills", "watchtower-setup", "SKILL.md").split())
+        t = " ".join(self.read("skills", "isr-bot-setup", "SKILL.md").split())
         self.assertIn(f"--version` exits 0 and its whole output is exactly {isr.VERSION}", t)
         self.assertIn("Any other exit code or any other output", t)
 

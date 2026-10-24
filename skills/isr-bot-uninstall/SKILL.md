@@ -1,5 +1,5 @@
 ---
-name: watchtower-uninstall
+name: isr-bot-uninstall
 description: Remove ISR Bot and everything it put on this computer, after one yes. Use when the owner says uninstall, remove ISR Bot, or clean up after a trial.
 ---
 

@@ -9,16 +9,16 @@ ISR Bot (the engine and its files keep the name Watchtower) is a security office
 | Skill | What you get |
 | --- | --- |
 | `vet-template` | Install / Install with changes / Do not install (or Could not finish checking, when part of it couldn't be read) for any template, skill or plugin, with a risk score, evidence, its autonomy level (L0 observe → L3 unattended), and the boundary line to paste into its description |
-| `watchtower-audit` | A 0–100 posture score and the top three fixes across skills, plugins, MCP configs, Auto Review rules, local execution, logged-in browser sessions, CLI credentials, secrets, vulnerable packages, persistence, integrity drift, canaries and shell history |
-| `watchtower-brief` | The weekly report, one page you can read in a minute: status, score, threat level, trend charts, a one-click fix, what needs you, and the three threats that matter to your setup |
-| `watchtower-report` | Weekly Markdown report and a self-contained HTML dashboard |
-| `watchtower-rollcall` | DMs every Bot one fixed question that asks only for counts, names and yes/no answers (never memory text: Bots can't verify who sends a roll-call), then flags risky memories, routines that send without asking and the lethal trifecta (private data + untrusted input + a way out) |
-| `watchtower-prepublish` | PASS/FAIL before you share a Bot as a template: secrets, emails, phone numbers, private doc links, internal hosts, local paths, and a missing approval boundary |
-| `watchtower-incident` | Evidence pack first (findings, canaries, changed files, history, processes, connections, jobs), then containment one approved step at a time |
-| `watchtower-codescan` | OWASP Top 10 (2021) review of code your Bots write, plus semgrep only if it is in ISR Bot's checked scanner folder |
-| `watchtower-fix` | The one-yes fix: cleans up, upgrades outdated Python packages, and npm lockfiles in your own projects only after a separate yes (each upgrade is backed up and undone automatically if it breaks something), moves your own dangerous skills into a quarantine folder (nothing is deleted, and each can be restored), and accepts findings that are fine on purpose, after asking you a single question |
-| `watchtower-setup` | Pinned, checksummed install; scanners; canaries; first audit and report; routines |
-| `watchtower-uninstall` | Removes ISR Bot and everything it created (routines, decoys, scanners, caches, its folder) after one yes |
+| `isr-bot-audit` | A 0–100 posture score and the top three fixes across skills, plugins, MCP configs, Auto Review rules, local execution, logged-in browser sessions, CLI credentials, secrets, vulnerable packages, persistence, integrity drift, canaries and shell history |
+| `isr-bot-brief` | The weekly report, one page you can read in a minute: status, score, threat level, trend charts, a one-click fix, what needs you, and the three threats that matter to your setup |
+| `isr-bot-report` | Weekly Markdown report and a self-contained HTML dashboard |
+| `isr-bot-rollcall` | DMs every Bot one fixed question that asks only for counts, names and yes/no answers (never memory text: Bots can't verify who sends a roll-call), then flags risky memories, routines that send without asking and the lethal trifecta (private data + untrusted input + a way out) |
+| `isr-bot-prepublish` | PASS/FAIL before you share a Bot as a template: secrets, emails, phone numbers, private doc links, internal hosts, local paths, and a missing approval boundary |
+| `isr-bot-incident` | Evidence pack first (findings, canaries, changed files, history, processes, connections, jobs), then containment one approved step at a time |
+| `isr-bot-codescan` | OWASP Top 10 (2021) review of code your Bots write, plus semgrep only if it is in ISR Bot's checked scanner folder |
+| `isr-bot-fix` | The one-yes fix: cleans up, upgrades outdated Python packages, and npm lockfiles in your own projects only after a separate yes (each upgrade is backed up and undone automatically if it breaks something), moves your own dangerous skills into a quarantine folder (nothing is deleted, and each can be restored), and accepts findings that are fine on purpose, after asking you a single question |
+| `isr-bot-setup` | Pinned, checksummed install; scanners; canaries; first audit and report; routines |
+| `isr-bot-uninstall` | Removes ISR Bot and everything it created (routines, decoys, scanners, caches, its folder) after one yes |
 
 On a template install these are files the Bot reads, not slash commands: ask in plain words ("audit", "fix it", "roll-call", "vet this link", "uninstall").
 

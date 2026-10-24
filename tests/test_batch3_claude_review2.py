@@ -212,7 +212,7 @@ class Isolated(v068.Base):
             return f.read()
 
     def test_9_the_setup_version_check_ignores_a_planted_module(self):
-        cmd = re.search(r"`(python3[^`]*isr\.py --version)`", self.read("skills", "watchtower-setup", "SKILL.md")).group(1)
+        cmd = re.search(r"`(python3[^`]*isr\.py --version)`", self.read("skills", "isr-bot-setup", "SKILL.md")).group(1)
         app = self.install()
         with open(os.path.join(app, "isr_bot", "argparse.py"), "w") as f:
             f.write(f"import sys\nprint({isr.VERSION!r})\nsys.exit(0)\n")
@@ -226,7 +226,7 @@ class Isolated(v068.Base):
         self.assertEqual(len(lines), 2)
         for l in lines:
             self.assertIn("python3 -I ", l)
-        for rel in (("routines", "daily-watch.md"), ("routines", "weekly-tidy.md"), ("skills", "watchtower-audit", "SKILL.md")):
+        for rel in (("routines", "daily-watch.md"), ("routines", "weekly-tidy.md"), ("skills", "isr-bot-audit", "SKILL.md")):
             self.assertIn("python3 -I /workspace/watchtower/app/isr_bot/isr.py", self.read(*rel), rel)
 
 

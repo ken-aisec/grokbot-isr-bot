@@ -328,7 +328,7 @@ class ReportFrame(unittest.TestCase):
 # ---------------------------------------------------------------- medium 16: the weekly path keeps the first run's findings
 class WeeklyRetry(unittest.TestCase):
     def test_the_first_runs_new_findings_are_reported(self):   # replay
-        t = open(os.path.join(ROOT, "skills", "watchtower-audit", "SKILL.md")).read()
+        t = open(os.path.join(ROOT, "skills", "isr-bot-audit", "SKILL.md")).read()
         step = next(l for l in t.splitlines() if l.startswith("3. If the JSON has `scanners_missing`"))
         self.assertIn("Keep this first run's `new` list", step)
         self.assertIn("plus only what the second run adds", step)

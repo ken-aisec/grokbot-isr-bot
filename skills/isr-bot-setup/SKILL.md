@@ -1,5 +1,5 @@
 ---
-name: watchtower-setup
+name: isr-bot-setup
 description: First-run setup for ISR Bot. After the owner's one yes it installs the pinned, checksummed scripts and scanners into /workspace/watchtower, takes a baseline, plants three decoy files, runs the first audit, switches on the three routines and builds the first report. Use once after adding the template, when the scripts are missing, or to update ISR Bot.
 ---
 
@@ -35,7 +35,7 @@ Run `bash /workspace/watchtower/app/scripts/install.sh --scanners`. Each tool in
 The routines usually arrive with the template, paused: daily watch (06:00), weekly audit and report (Sunday 05:00), weekly tidy (Sunday 06:00), in the account's time zone. Don't ask about the time zone. Switch those three on, or tell the user to flip the three switches under your Details tab if you can't. The monthly roll-call reminder stays off: roll-call is opt-in, and it is switched on only if the owner asks for it. If a routine is missing, create it from the matching file in `/workspace/watchtower/app/routines/`.
 
 ## 5. Tune it (the second and last question)
-A first audit always includes things the user installed on purpose. Read `/workspace/watchtower/app/skills/watchtower-fix/SKILL.md` and follow it exactly: one message, one yes. After the yes, give the tuned score and say this is the starting line the weekly report compares against.
+A first audit always includes things the user installed on purpose. Read `/workspace/watchtower/app/skills/isr-bot-fix/SKILL.md` and follow it exactly: one message, one yes. After the yes, give the tuned score and say this is the starting line the weekly report compares against.
 
 ## 6. Ask-first rules (only the owner can add these)
 You can't change app settings. Never say or imply that you will add these rules. Tell the owner: "In Grok Bot's settings, open Auto-review (it may be called Custom Rules) and add three Ask-first rules":
@@ -46,7 +46,7 @@ You can't change app settings. Never say or imply that you will add these rules.
 Once they say the rules are in, save the same three lines, each starting with `Ask first:`, to `/workspace/watchtower/exports/auto-review.txt` so ISR Bot can see them, and run `isr.py audit`. Never write that file before the rules exist. These rules will also pause some of your own commands; when that happens the owner sees an approval card. That is the rules working.
 
 ## 7. First report, then finish
-1. Read the watchtower-brief skill and run it once so the user sees it.
+1. Read the isr-bot-brief skill and run it once so the user sees it.
 2. `isr.py report` (builds `/workspace/watchtower/reports/dashboard.html`).
 3. Run the Validate checks below. Setup is not finished until they pass; if one fails, say which.
 

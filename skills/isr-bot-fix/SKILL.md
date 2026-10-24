@@ -1,5 +1,5 @@
 ---
-name: watchtower-fix
+name: isr-bot-fix
 description: The one-yes fix. Cleans up, upgrades outdated software (undoing any upgrade that breaks something), re-scans skills that changed and re-approves the clean ones, moves dangerous skills out of use, and accepts findings that are fine on purpose, after asking the user a single question. Use when the user says fix it, fix everything, clean up, or runs the weekly tidy.
 ---
 

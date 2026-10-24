@@ -53,7 +53,7 @@ TAG="v${VREAD#* }"
 DOCS_PROBLEM="$(python3 -I - "${TAG#v}" <<'PYEOF' 2>&1 || true
 import re, sys
 want, bad = sys.argv[1], []
-for rel, only in (("skills/watchtower-setup/SKILL.md", ""), ("README.md", ""), ("scripts/install.sh", "install.sh")):
+for rel, only in (("skills/isr-bot-setup/SKILL.md", ""), ("README.md", ""), ("scripts/install.sh", "install.sh")):
     try:
         lines = open(rel, encoding="utf-8").read().splitlines()
     except (OSError, ValueError):

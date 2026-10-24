@@ -140,7 +140,7 @@ class Disprove(Base):
 
     def test_a_reason_is_required_and_skills_carry_the_step(self):
         self.assertFalse(isr.dismiss(self.fs[0]["key"], " ")[0])
-        for p in ("skills/watchtower-audit/SKILL.md", "routines/daily-watch.md", "skills/watchtower-rollcall/SKILL.md"):
+        for p in ("skills/isr-bot-audit/SKILL.md", "routines/daily-watch.md", "skills/isr-bot-rollcall/SKILL.md"):
             t = open(os.path.join(ROOT, p)).read()
             if p == "routines/daily-watch.md":   # batch 4 (R6): the unattended routine never dismisses; it still reports the owner's dismissals
                 self.assertNotIn("isr.py dismiss <key>", t, p)

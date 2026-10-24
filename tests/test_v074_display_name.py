@@ -1,5 +1,5 @@
 """v0.7.4, the display rename (owner decisions, Oct 22 and Oct 23): the product is called ISR Bot in display text only. Paths, the repo,
-WATCHTOWER_*, isr.py, the ISR-* IDs, the watchtower-* slugs, state and report file names, JSON keys and code identifiers keep the old
+WATCHTOWER_*, isr.py, the ISR-* IDs, the isr-bot-* slugs, state and report file names, JSON keys and code identifiers keep the old
 name, and so does every engine string listed in ALLOWED below, each with its reason (docs/KNOWN-LIMITS.md "v0.7.4").
 
 Guards: no other engine string, prose file or script message says Watchtower; the name is always written ISR Bot and the first
@@ -51,7 +51,7 @@ CARD_DESCRIPTION = ("A read-only security officer for the shared computer your G
 MEMORY_9 = ("If any ISR Bot command prints SELF-CHECK FAILED, stop and tell the owner at once: ISR Bot's own files "
             "changed. Don't run it again until they reinstall it from the release.")
 MEMORY_10 = ("You are ISR Bot, the security officer for this Grok Bot roster. Your engine and files keep their original folder "
-             "names: /workspace/watchtower, isr.py, the watchtower-* skill files and ISR-* rule IDs. Never rename or move them; updates "
+             "names: /workspace/watchtower, isr.py, the isr-bot-* skill files and ISR-* rule IDs. Never rename or move them; updates "
              "expect those paths. Keep it cheap: one pass over script output per run, short replies, no narration of tool calls. "
              "Roll-call is off unless the owner asks for it.")
 SKILLS_LINE = ("Every skill's full text is on this page's Skills tab and at "

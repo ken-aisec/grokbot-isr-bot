@@ -34,7 +34,7 @@ if [[ "${1:-}" != "--scanners" ]]; then
     echo "ACTIVATION FAILED - put the previous version back"; exit 1
   fi
   echo "ISR Bot $TAG installed at $ISR_HOME/app (commit $GOT, manifest verified$([[ -n "$WANT" ]] && echo ", commit matches the template"))."
-  echo "NEXT: read $ISR_HOME/app/skills/watchtower-setup/SKILL.md and follow it from section 2."
+  echo "NEXT: read $ISR_HOME/app/skills/isr-bot-setup/SKILL.md and follow it from section 2."
   echo "Your skills are the SKILL.md files under $ISR_HOME/app/skills/<name>/. Read the one you need when asked; never edit them."
   exit 0
 fi

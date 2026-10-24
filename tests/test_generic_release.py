@@ -438,7 +438,7 @@ class RoutineDescriptions(unittest.TestCase):
         stems = sorted(f[:-3] for f in os.listdir(ROUTINES) if f.endswith(".md"))
         ds = self.descriptions()
         slugs = [d["slug"] for d in ds]
-        self.assertEqual(sorted(slugs), sorted(f"watchtower-{s}" for s in stems))
+        self.assertEqual(sorted(slugs), sorted(f"isr-bot-{s}" for s in stems))
         self.assertEqual(len(slugs), len(set(slugs)))
         for d in ds:
             self.assertEqual(sorted(d), ["description", "name", "slug"])
@@ -450,14 +450,14 @@ class RoutineDescriptions(unittest.TestCase):
 
     def test_all_four_names_and_descriptions_exact(self):
         same_safely(self, sorted((d["slug"], d["name"], d["description"]) for d in self.descriptions()), sorted([
-            ("watchtower-daily-watch", "ISR Bot daily watch",
+            ("isr-bot-daily-watch", "ISR Bot daily watch",
              "Every morning, check for skill changes, decoy reads and new risks; report what changed and anything that "
              "still needs attention, such as open unverified findings or checks that didn't complete."),
-            ("watchtower-weekly-audit", "ISR Bot weekly audit",
+            ("isr-bot-weekly-audit", "ISR Bot weekly audit",
              "Every Sunday, run the full audit, threat brief and weekly report into this chat."),
-            ("watchtower-weekly-tidy", "ISR Bot weekly tidy",
+            ("isr-bot-weekly-tidy", "ISR Bot weekly tidy",
              "Every Sunday, preview the safe cleanup (changes nothing) and ask before applying anything."),
-            ("watchtower-monthly-rollcall", "ISR Bot monthly roll-call",   # the name uninstall removes (isr.ROUTINE_NAMES)
+            ("isr-bot-monthly-rollcall", "ISR Bot monthly roll-call",   # the name uninstall removes (isr.ROUTINE_NAMES)
              "On the 1st, post a reminder that a roll-call is due; it runs only after the owner says yes."),
         ]))
 
@@ -465,7 +465,7 @@ class RoutineDescriptions(unittest.TestCase):
         self.assertTrue(APPLIES.search("apply the safe cleanup"))   # the old template text
         seen = 0
         for d in self.descriptions():
-            with open(os.path.join(ROUTINES, d["slug"][len("watchtower-"):] + ".md")) as f:
+            with open(os.path.join(ROUTINES, d["slug"][len("isr-bot-"):] + ".md")) as f:
                 body = f.read()
             if any(p in body for p in PREVIEW):
                 seen += 1
@@ -481,7 +481,7 @@ class RoutineDescriptions(unittest.TestCase):
         self.assertNotIn(t.lower(), str(cm.exception).lower())
 
     def test_7_the_daily_description_does_not_promise_silence(self):   # Codex round 1, finding 7 (replay)
-        d = {x["slug"]: x["description"] for x in self.descriptions()}["watchtower-daily-watch"]
+        d = {x["slug"]: x["description"] for x in self.descriptions()}["isr-bot-daily-watch"]
         self.assertIsNone(re.search(r"\b(only|silent|silence|quiet|nothing)\b", d, re.I), "the daily description")
         for part in ("what changed", "still needs attention", "unverified", "checks that didn't complete"):
             self.assertIn(part, d)

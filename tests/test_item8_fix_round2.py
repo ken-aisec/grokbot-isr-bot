@@ -271,7 +271,7 @@ class Docs(unittest.TestCase):
         self.assertEqual(len(line), 1)
         for word in ("platform_approved.json", "--platform-from", "WT-I011", "Known gaps"):
             self.assertIn(word, line[0])
-        self.assertIn("--platform-from", self.read("skills/watchtower-fix/SKILL.md"))
+        self.assertIn("--platform-from", self.read("skills/isr-bot-fix/SKILL.md"))
         self.assertIn("platform_unverified", self.read("routines/daily-watch.md"))
 
     def test_contrasts_are_marked(self):

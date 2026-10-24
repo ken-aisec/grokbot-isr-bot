@@ -80,7 +80,7 @@ def audit(roots, exports, quick=False):
     # 2. integrity drift (AST07)
     base, base_status, base_why = load_baseline()
     # item 8 (R3): no vendor provenance, a counted high. Checked before any exemption (Codex, item 8 review 1: Watchtower's own
-    # watchtower-fix/SKILL.md copied into .grok/bundled/skills passed as its own release, with no line for that path). Review 2
+    # isr-bot-fix/SKILL.md copied into .grok/bundled/skills passed as its own release, with no line for that path). Review 2
     # (high 3): a matching baseline.json line is not provenance. Decision, Oct 18: only the release list is, on every run; a
     # first run (a new box, or one whose state was wiped) vouches for nothing. Decision, Oct 22 (b8i4): the middle path. A
     # candidate (platform_update_candidates) goes through the drift loop like a listed update and is decided after the engines

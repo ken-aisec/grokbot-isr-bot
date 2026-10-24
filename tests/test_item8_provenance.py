@@ -584,7 +584,7 @@ class Docs(unittest.TestCase):
         for word in ("platform-release.lock", "--approve-platform", "Known gaps"):
             self.assertIn(word, unreleased)
         self.assertIn("--approve-platform", self.read("README.md"))
-        self.assertIn("platform_unverified", self.read("skills/watchtower-fix/SKILL.md"))
+        self.assertIn("platform_unverified", self.read("skills/isr-bot-fix/SKILL.md"))
         self.assertIn("release list", self.read("routines/daily-watch.md"))
 
     def test_contrasts_are_marked(self):

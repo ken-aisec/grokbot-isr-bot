@@ -200,7 +200,7 @@ class DQ021QuarantineOutsideTheLibrary(Box):
 
 class DQ018SkillSavesRoster(unittest.TestCase):
     def test_the_audit_skill_saves_the_current_roster_first(self):
-        t = open(os.path.join(ROOT, "skills", "watchtower-audit", "SKILL.md")).read()
+        t = open(os.path.join(ROOT, "skills", "isr-bot-audit", "SKILL.md")).read()
         self.assertLess(t.index("exports/roster.json"), t.index("isr.py audit"))
 
 

@@ -7,7 +7,7 @@
    in as a built-in update.
 3. high: revet hashed a file for the release-list check and again for the baseline, so bytes swapped in between were saved.
 4. high: a suppressions.json entry with the finding's key accepted an unverified platform file before accept_refused ran.
-5. medium: Watchtower's own released watchtower-fix/SKILL.md copied into .grok/bundled passed as its own release.
+5. medium: Watchtower's own released isr-bot-fix/SKILL.md copied into .grok/bundled passed as its own release.
 6. medium: the 200-file limit on `fix`'s platform list came after each candidate was read, hashed and scanned.
 
 Each test fails on 6e5ecb2 by reaching an assertion unless its docstring says it is a contrast.
@@ -152,8 +152,8 @@ class OwnReleaseAfterProvenance(_Platform):
         still never exempted as Watchtower's own file: it goes through the drift check, so the audit rolls it into the baseline
         (an exempted file has no finding, so nothing would roll it in)."""
         self.start()
-        src = os.path.join(isr.SELF_ROOT, "skills", "watchtower-fix", "SKILL.md")
-        plant = self.md("watchtower-fix")
+        src = os.path.join(isr.SELF_ROOT, "skills", "isr-bot-fix", "SKILL.md")
+        plant = self.md("isr-bot-fix")
         os.makedirs(os.path.dirname(plant))
         shutil.copyfile(src, plant)
         self.assertTrue(isr.own_release_file(plant, sha(plant)))                # what used to exempt it
@@ -164,10 +164,10 @@ class OwnReleaseAfterProvenance(_Platform):
 
     def test_5_contrast_an_installed_copy_in_the_owners_folder_is_still_its_own(self):
         """Contrast: passes on base too."""
-        d = os.path.join(self.home, "sand-data", "workflows", "watchtower-fix")
+        d = os.path.join(self.home, "sand-data", "workflows", "isr-bot-fix")
         os.makedirs(d)
         self.start()
-        shutil.copyfile(os.path.join(isr.SELF_ROOT, "skills", "watchtower-fix", "SKILL.md"), os.path.join(d, "SKILL.md"))
+        shutil.copyfile(os.path.join(isr.SELF_ROOT, "skills", "isr-bot-fix", "SKILL.md"), os.path.join(d, "SKILL.md"))
         self.audit()
         self.assertFalse([f for f in self.snap()["findings"] if f["where"] == os.path.join(d, "SKILL.md") and f["rule"].startswith("ISR-I")])
 
