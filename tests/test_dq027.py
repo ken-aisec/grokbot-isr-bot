@@ -2,6 +2,7 @@
 import os, sys, unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "isr_bot"))
 import isr
+from test_boxes import temp_home
 
 
 def a001(t):
@@ -9,6 +10,9 @@ def a001(t):
 
 
 class DQ027(unittest.TestCase):
+    def setUp(self):
+        temp_home(self)   # v0.8.0 unit f fix 2: lint_auto_review reads the owner's accepted lines from the state folder
+
     def test_pinned_url_with_ask_first_clause_not_broad(self):
         for t in ("Allow automatically: HTTP POST to https://example.com/api/hook only (replies to the owner's bridge). Ask first for any other URL.",
                   "Allow automatically: GET https://example.org/status only; ask first for anything else.",

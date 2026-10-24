@@ -6,7 +6,7 @@ ordinary skills give no record and nothing at or above high. Every EvasionCorpus
 import glob, io, json, os, sys, unittest
 from contextlib import redirect_stdout
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import ROOT
+from test_boxes import ROOT, temp_home
 import isr  # noqa: E402
 
 RULES = isr.load_rules()
@@ -47,6 +47,9 @@ PROBES = [
 
 
 class EvasionCorpus(unittest.TestCase):
+    def setUp(self):
+        temp_home(self)   # v0.8.0 unit f fix 2: vet reaches the state folder
+
     def test_each_probe_is_its_rule_at_full_severity(self):   # replay
         for text, rule, sev in PROBES:
             fs = scan(text)
@@ -95,6 +98,9 @@ NORMAL = [
 
 
 class CleanCorpus(unittest.TestCase):
+    def setUp(self):
+        temp_home(self)   # v0.8.0 unit f fix 2: vet reaches the state folder
+
     def check_quiet(self, fs, what):
         self.assertNotIn("critical", [f["severity"] for f in fs], (what, fs))
         self.assertFalse([f for f in isr.label_findings(fs) if f["label"] == isr.CONFIRMED], (what, fs))

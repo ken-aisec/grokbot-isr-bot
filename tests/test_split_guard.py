@@ -452,8 +452,8 @@ class G15DoctorFrames(unittest.TestCase):
 
     def test_part_frames_are_kept_with_a_short_label(self):
         text = ("2026-10-18T10:00:00 isr.py audit (v0.7.1)\nTraceback (most recent call last):\n"
-                '  File "/workspace/watchtower/app/isr_bot/isr.py", line 120, in main\n    x()\n'
-                '  File "/workspace/watchtower/app/isr_bot/isr_parts/engines.py", line 5, in engine_findings\n    y()\n'
+                '  File "/workspace/isr-bot/app/isr_bot/isr.py", line 120, in main\n    x()\n'
+                '  File "/workspace/isr-bot/app/isr_bot/isr_parts/engines.py", line 5, in engine_findings\n    y()\n'
                 '  File "/usr/lib/python3.13/json/__init__.py", line 293, in load\n    z()\n'
                 '  File "/home/box/acme-payroll/helper.py", line 7, in salaries\n    w()\n'
                 "RuntimeError: /home/box/acme-payroll/salaries-2026.csv\n")
@@ -462,6 +462,7 @@ class G15DoctorFrames(unittest.TestCase):
         self.assertEqual(d["error_type"], "RuntimeError")
         self.assertNotIn("acme-payroll", json.dumps(d))
         self.assertNotIn("/isr_bot/", json.dumps(d["where"]))
+        self.assertNotIn("/isr-bot/", json.dumps(d["where"]))
 
     def test_a_real_crash_inside_a_part(self):
         import traceback

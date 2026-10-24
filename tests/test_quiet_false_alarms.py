@@ -5,6 +5,7 @@ import os, sys, tempfile, unittest, warnings
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
 import isr  # noqa: E402
+from test_boxes import temp_home  # noqa: E402
 
 warnings.simplefilter("ignore", ResourceWarning)
 F = lambda rule, sev, where, source="watchtower", title="t": isr.finding(rule, title, sev, ["X"], where, "ev", "fix", source=source)
@@ -16,6 +17,7 @@ class QuietFalseAlarms(unittest.TestCase):
         self.skill = os.path.join(self.tmp, "s"); os.makedirs(self.skill)
         open(os.path.join(self.skill, "SKILL.md"), "w").write("---\nname: s\n---\n")
         self.md = os.path.join(self.skill, "SKILL.md")
+        temp_home(self)   # v0.8.0 unit f fix 2: render_md reads the state folder
 
     def test_every_evidence_finding_keeps_its_severity_and_label(self):
         # ISR-S005 is evidence only with the New-sign-in title (cookie-only notes stay Worth a look).

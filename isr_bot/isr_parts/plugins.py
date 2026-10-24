@@ -29,7 +29,7 @@ def saved_skill_notes(notes):
         old = [x for x in OLD_CANARY_PATHS + PUBLISHED_CANARY_PATHS if x in saved]
         msg = (f"Your saved getting-started skill ({short_path(p)}) is older than this ISR Bot"
                + (f": it still names the old decoy places ({', '.join(old)})" if old else "")
-               + ". A template made from this Bot would ship it. Re-save it from /workspace/watchtower/app/bot/getting-started.md.")
+               + ". A template made from this Bot would ship it. Re-save it from /workspace/isr-bot/app/bot/getting-started.md.")
         if msg not in notes:                   # the check can run twice in one audit; say it once
             notes.append(msg)
 

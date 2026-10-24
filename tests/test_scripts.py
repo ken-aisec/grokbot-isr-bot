@@ -324,7 +324,7 @@ class Publish(unittest.TestCase):
         r, _ = self.publish()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(self.remote_ref(f"refs/tags/v{next_version()}^{{commit}}"), self.git("rev-parse", "HEAD"))
-        self.assertIn(f"Publishing ownerx/grokbot-watchtower v{next_version()} at", r.stdout)
+        self.assertIn(f"Publishing ownerx/grokbot-isr-bot v{next_version()} at", r.stdout)
 
     def test_batch3_no_version_line_stops(self):
         self.commit_file("isr_bot/isr.py", "# no version here\n")

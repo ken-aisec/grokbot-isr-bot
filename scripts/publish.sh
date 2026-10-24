@@ -81,7 +81,7 @@ LOCK_PROBLEM="$(python3 -I scripts/scanner_lock.py scripts/scanner-bins.lock 2>&
 [[ -z "$(git status --porcelain --untracked-files=all)" ]] || stop "the checkout has changed or untracked files; publish only the reviewed commit, as committed"
 if grep -rlq GITHUB_OWNER --exclude-dir=.git --exclude=publish.sh .; then stop "GITHUB_OWNER placeholders are still in the release; set them, commit, and get that commit reviewed"; fi
 OWNER="$(gh api user -q .login)" || stop "the GitHub CLI isn't signed in"
-REPO="$OWNER/grokbot-watchtower"
+REPO="$OWNER/grokbot-isr-bot"
 echo "Publishing $REPO $TAG at $REVIEWED"
 # A published tag is never moved: installed copies and template memories pin its commit.
 if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || \

@@ -7,7 +7,7 @@ import gzip, hashlib, io, json, os, sys, tempfile, time, unittest
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, ROOT, SCANNERS
+from test_boxes import Box, ROOT, SCANNERS, temp_home
 import isr  # noqa: E402
 
 HEAD = "---\nname: digest\ndescription: Posts the daily digest to our team chat.\n---\n"
@@ -38,8 +38,10 @@ def raw_key(rule, where, evidence):
 
 class Folder(unittest.TestCase):
     def setUp(self):
+        super().setUp()
         self.d = tempfile.mkdtemp()
         self.addCleanup(__import__("shutil").rmtree, self.d)
+        temp_home(self)   # v0.8.0 unit f fix 2: vet's state folder in a temp home, never the default one
 
     def write(self, rel, text, base=None):
         p = os.path.join(base or self.d, rel)

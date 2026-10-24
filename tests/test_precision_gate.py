@@ -108,7 +108,7 @@ class GateStillCatches(Box):
     def test_key_in_the_archive(self):             self.key_in("archive/skills-2026-09/old-sync/notes.txt")
     def test_key_in_the_cloned_repo(self):         self.key_in("projects/old-site/.env.example.txt")
     def test_key_in_the_fixtures_folder(self):     self.key_in("projects/skill-lab/tests/fixtures/bad/exfil-sample/env.txt")
-    def test_key_in_the_dev_checkout(self):        self.key_in("watchtower-dev/isr_bot/notes.txt")
+    def test_key_in_the_dev_checkout(self):        self.key_in("isr-bot-dev/isr_bot/notes.txt")
 
     def test_bad_live_skill_on_the_busy_box_is_confirmed(self):
         d = os.path.join(self.home, "sand-data", "workflows", "sync-helper"); os.makedirs(d)

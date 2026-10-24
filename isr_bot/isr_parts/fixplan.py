@@ -478,7 +478,7 @@ def key_status_severity(findings, status, ran=None):
     return out
 
 
-OSV_SKIP = ("/watchtower/backups/", "/watchtower/state/", "/watchtower/app/", "/watchtower/scanners/", "/.cursor/", "/skill-hunt", "/skill-review", "/candidates/", "/spike/", "/node_modules/", "/vendor/")
+OSV_SKIP = ("/isr-bot/backups/", "/isr-bot/state/", "/isr-bot/app/", "/isr-bot/scanners/", "/.cursor/", "/skill-hunt", "/skill-review", "/candidates/", "/spike/", "/node_modules/", "/vendor/")
 
 
 def osv_findings(roots, notes):

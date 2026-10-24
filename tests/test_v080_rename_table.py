@@ -269,6 +269,42 @@ class RenameTable(unittest.TestCase):
         self.assertEqual(len(mapped), len(lines))
         self.assertEqual([i for i, (a, b) in enumerate(zip(lines, mapped)) if a != b], at)
 
+    def test_f_maps_the_own_release_with_the_brief_that_reads_it(self):   # replay (f fix 1: feeds.json "installed" was only in g)
+        order, units = rn.TABLE["source"]["order"], rn.TABLE["source"]["units"]
+        upto_f = order[:order.index("f") + 1]
+        feeds_rel, brief_rel = "rules/feeds.json", "isr_bot/isr_parts/brief.py"
+        old, new = json.dumps(rn.OLD["home_name"]), json.dumps(rn.NEW["home_name"])
+        own_rx = re.compile(r'"installed": ("[^"]*")')
+        brief_rx = re.compile(r'(?:r\.get\("installed"\)|name) == ("[^"]*")')
+
+        def values(feeds, brief):
+            """The own release's "installed" value in feeds.json, and every value brief.py compares a release name with."""
+            own = [r for r in json.loads(feeds)["releases"] if r["repo"] == rn.NEW["repo"]]
+            self.assertEqual(len(own), 1)
+            return own[0]["installed"], {json.loads(m.group(1)) for m in brief_rx.finditer(brief)}
+
+        feeds, brief = map_units(upto_f, feeds_rel, read(feeds_rel)), map_units(upto_f, brief_rel, read(brief_rel))
+        mine, compared = values(feeds, brief)
+        self.assertEqual(len(brief_rx.findall(brief)), 2)   # version_of's check and the releases loop's
+        self.assertEqual(compared, {mine})
+        self.assertEqual(mine, rn.NEW["home_name"])
+        # the same files before f: the own-release line and brief.py's two compares hold the old home name
+        own_line = next(l for l in feeds.split("\n") if own_rx.search(l) and new in l)
+        brief_lines = [l for l in brief.split("\n") if brief_rx.search(l)]
+        old_feeds = feeds.replace(own_line, own_line.replace(new, old))
+        old_brief = brief
+        for l in brief_lines:
+            old_brief = old_brief.replace(l, l.replace(new, old))
+        self.assertEqual(map_units(upto_f, feeds_rel, old_feeds), feeds)
+        self.assertEqual(map_units(upto_f, brief_rel, old_brief), brief)
+        # the f build left the two "installed" entries in g: brief.py's compares moved and the value they read did not
+        moved = [e for e in units["f"] if '"installed"' in e.get("old", "")]
+        self.assertEqual(len(moved), 2)
+        with mock.patch.dict(units, {"f": [e for e in units["f"] if e not in moved], "g": moved + units["g"]}):
+            mine, compared = values(map_units(upto_f, feeds_rel, old_feeds), map_units(upto_f, brief_rel, old_brief))
+        self.assertEqual(mine, rn.OLD["home_name"])
+        self.assertNotIn(mine, compared)
+
 
 if __name__ == "__main__":
     unittest.main()

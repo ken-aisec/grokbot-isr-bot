@@ -56,13 +56,13 @@ class DryRunLeavesWorkspaceAlone(unittest.TestCase):
         self.ws = tempfile.mkdtemp(prefix="isr-bot-test-ws-", dir=base)
         self.tmproot = tempfile.mkdtemp(prefix="isr-bot-test-sbx-")          # under /tmp
         self.addCleanup(shutil.rmtree, self.ws, True); self.addCleanup(shutil.rmtree, self.tmproot, True)
-        self.install = os.path.join(self.ws, "watchtower")
+        self.install = os.path.join(self.ws, "isr-bot")
         os.makedirs(os.path.join(self.install, "state")); os.makedirs(os.path.join(self.install, "reports"))
         open(os.path.join(self.install, "state", "seed.json"), "w").write('{"live": true}')
         open(os.path.join(self.install, "state", "canaries.json"), "w").write('{"api-env": "live registry"}')
         open(os.path.join(self.ws, "notes.md"), "w").write("owner file\n")
         # the dev build: a throwaway git repo holding the real script and a stub isr.py
-        self.dev = os.path.join(self.ws, "watchtower-dev")
+        self.dev = os.path.join(self.ws, "isr-bot-dev")
         os.makedirs(os.path.join(self.dev, "scripts")); os.makedirs(os.path.join(self.dev, "isr_bot"))
         shutil.copy(SCRIPT, os.path.join(self.dev, "scripts", "dry-run.sh"))
         open(os.path.join(self.dev, "isr_bot", "isr.py"), "w").write(STUB)

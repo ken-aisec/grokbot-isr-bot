@@ -7,7 +7,7 @@ import gzip, io, json, os, sys, tempfile, unittest
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, ROOT
+from test_boxes import Box, ROOT, temp_home
 import isr  # noqa: E402
 
 HEAD = "---\nname: digest\ndescription: Posts the daily digest to our team chat.\n---\n"
@@ -34,8 +34,10 @@ def ev(line, rule="ISR-H005", where="/h/.bash_history:+1"):
 
 class Folder(unittest.TestCase):
     def setUp(self):
+        super().setUp()
         self.d = tempfile.mkdtemp()
         self.addCleanup(__import__("shutil").rmtree, self.d)
+        temp_home(self)   # v0.8.0 unit f fix 2: vet's state folder in a temp home, never the default one
 
     def write(self, rel, text, base=None):
         p = os.path.join(base or self.d, rel)
@@ -66,6 +68,22 @@ class History(Box):
         isr.save_approved(d)
         with gzip.open(isr.approved_path(d), "rt") as f:
             return f.read()
+
+
+class FolderHome(Folder):
+    def test_vet_keeps_its_state_folder_under_the_temp_home(self):   # replay (unit f fix 2: Folder set no home, so the default one)
+        with mock.patch.dict(os.environ):
+            os.environ.pop("ISR_BOT_HOME")
+            default = isr.home()                                  # home() only names the folder; state_path makes it
+        self.assertNotEqual(self.isr_home, default)
+        with mock.patch.object(isr, "state_path", wraps=isr.state_path) as sp:
+            code, r = vet_json(self.write("SKILL.md", QUIET + "Summarize my notes.\n"))
+        self.assertEqual(r["verdict"], "Install")
+        self.assertTrue(sp.call_args_list)                        # vet's main() keeps state in the state folder
+        for c in sp.call_args_list:
+            p = isr.state_path(*c.args)
+            self.assertTrue(p.startswith(os.path.join(self.isr_home, "state") + os.sep), p)
+            self.assertFalse(p.startswith(default + os.sep), p)
 
 
 # ---------------------------------------------------------------- high 1: a chat URL inside a bigger string expression

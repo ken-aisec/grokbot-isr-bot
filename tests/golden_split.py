@@ -13,7 +13,7 @@ scores, finding keys, rule ids, severity, key order, help text, file modes and e
 
 Every tier run is sealed: `unshare -rmn` (no network), scratch folders mounted over /home, /workspace and
 /var/tmp and, last, this check's own folder over /tmp, a sentinel checked in each before Python starts, and an environment built
-from scratch (never inherited, never printed). The real home folder, /workspace/watchtower and the decoys are never visible.
+from scratch (never inherited, never printed). The real home folder, /workspace/isr-bot and the decoys are never visible.
 The check fails, and never prints its RESULT line, when the sandbox is unavailable (there is no unsealed fallback), when ONLY
 selects no scenario, and when no scenario was compared. Everything is written under one mkdtemp folder in /tmp, removed when the check passes and kept (path printed) when it fails.
 
@@ -96,7 +96,7 @@ SCRATCH_ROOTS = ("/home", "/workspace", "/var/tmp")
 if SEALED and not all(os.path.isfile(d + "/.golden-sentinel") for d in SCRATCH_ROOTS + ("/tmp",)):
     sys.exit("not inside the golden sandbox; nothing was done")
 HOME_DIR = "/home/box" if SEALED else X + "/home"
-ISR_HOME = "/workspace/watchtower" if SEALED else X + "/isr_home"
+ISR_HOME = "/workspace/isr-bot" if SEALED else X + "/isr_home"
 items = {}
 
 DRIVER = """

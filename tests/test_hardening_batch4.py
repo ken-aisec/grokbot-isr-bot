@@ -8,7 +8,7 @@ Every test marked "replay" fails on 857ab38; the ones marked "guard" pass there 
 import hashlib, io, json, os, re, sys, tempfile, unittest
 from contextlib import redirect_stdout
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, ROOT
+from test_boxes import Box, ROOT, temp_home
 import isr  # noqa: E402
 from test_evasion_corpus import NORMAL
 
@@ -149,8 +149,10 @@ def vet(path):
 
 class Folder(unittest.TestCase):
     def setUp(self):
+        super().setUp()
         self.d = tempfile.mkdtemp()
         self.addCleanup(__import__("shutil").rmtree, self.d)
+        temp_home(self)   # v0.8.0 unit f fix 2: vet's state folder in a temp home, never the default one
 
     def write(self, rel, text):
         p = os.path.join(self.d, rel)

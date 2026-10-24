@@ -252,7 +252,7 @@ class DailyScannerAlerts(_Middle):
         self.assertIn(("ISR-X005", "gitleaks"), self.alerts(self.daily()))
         add(self.md("alpha"), "One more line.\n")
         out = self.daily()
-        self.assertEqual(out, "SCANNERS_MISSING gitleaks: run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, "
+        self.assertEqual(out, "SCANNERS_MISSING gitleaks: run `bash /workspace/isr-bot/app/scripts/install.sh --scanners`, "
                               "then `isr.py daily` again")
         self.assertEqual([os.path.basename(f["where"]) for f in self.snap()["findings"] if f["rule"] == "ISR-X005"], ["gitleaks"])
         self.assertEqual(self.counted_high(self.md("alpha")), [])

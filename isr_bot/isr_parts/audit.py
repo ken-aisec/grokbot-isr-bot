@@ -272,7 +272,7 @@ def audit(roots, exports, quick=False):
         fs.append(finding("ISR-A003", {"absent": "Ask-first rules not found", "unread": "Ask-first rules don't say what they cover"}.get(
                               seen, "Ask-first rules don't cover everything"), "medium", ["ASI09"], "Auto-review rules", ", ".join(gaps),
                           "Rules saved only in the app can't be seen from the computer. Tell the Bot to add them and save a copy to "
-                          "/workspace/watchtower/exports/auto-review.txt."))
+                          "/workspace/isr-bot/exports/auto-review.txt."))
     if seen == "unread":
         fs.append(finding("ISR-A003", "ISR Bot can't check your Ask-first rules if it doesn't read their language", "info",
                           ["ASI09"], "Auto-review rules", ASK_UNREAD_EVIDENCE,
@@ -346,7 +346,7 @@ def audit(roots, exports, quick=False):
     save_json(state_path("engines_used.json"), {"at": now(), "engines": used_now, **({"expected": list(dict.fromkeys(before + used_now))} if gone else {})})
     if gone:
         notes.insert(0, f"SCANNERS MISSING: {', '.join(gone)} ran last time and didn't run now (not installed, or not the copy ISR Bot installed), "
-                        "so this is a partial scan and their last results are kept. Run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, then audit again.")
+                        "so this is a partial scan and their last results are kept. Run `bash /workspace/isr-bot/app/scripts/install.sh --scanners`, then audit again.")
     fs += scanner_x005()   # batch 3 (R7): every scanner was looked at just above, in audit and daily alike
     fs = merge_managed_mirrors(settle_platform_updates(fs, cands, manifest, base, rules), manifest)   # b8i4
     fs = sort_findings(dedupe(fs))

@@ -80,7 +80,7 @@ def prepublish_extra(where, t, names):
         cur = read_text(os.path.join(SELF_ROOT, "bot", "getting-started.md"))
         if cur is not None and _body(t) != _body(cur):
             out.append(finding("ISR-PP09", "Getting-started is older than this ISR Bot", "high", ["AST04"], where, "differs from app/bot/getting-started.md",
-                               "Replace the saved getting-started skill's body with /workspace/watchtower/app/bot/getting-started.md, then run prepublish again."))
+                               "Replace the saved getting-started skill's body with /workspace/isr-bot/app/bot/getting-started.md, then run prepublish again."))
     return out
 
 
@@ -104,11 +104,11 @@ def cmd_prepublish(args):
                 ev = m.group(0)
                 if rid == "ISR-PP01" and re.search(r"(?i)(example\.(com|org)|noreply|no-reply)", ev):
                     continue
-                if rid == "ISR-PP05" and "/workspace/watchtower" in ev:
+                if rid == "ISR-PP05" and "/workspace/isr-bot" in ev:
                     continue
                 if rid == "ISR-PP06":   # Watchtower's own script is installed by its setup skill from a pinned release, so it does travel
                     line = t[t.rfind("\n", 0, m.start()) + 1:(t.find("\n", m.end()) if t.find("\n", m.end()) != -1 else len(t))]
-                    if re.search(r"(isr\.py|/workspace/watchtower/|install\.sh)", line):
+                    if re.search(r"(isr\.py|/workspace/isr-bot/|install\.sh)", line):
                         continue
                 fs.append(finding(rid, title, sev, ["AST04", "LLM02"], f"{where}:{line_of(t, m.start())}", mask(ev) if rid in ("ISR-PP01", "ISR-PP02") else ev[:120],
                                   "Remove or generalize it before you create the template: anything in a description, skill or routine ships to every installer.",
@@ -132,7 +132,7 @@ CONTAINMENT = [
     "In the Grok Bot browser, sign out of sensitive sites; then log out all sessions from each site's security settings.",
     "Disconnect connectors the affected Bot uses (Marketplace → Your plugins) and revoke them in the source service.",
     "Rotate CLI credentials on the computer (GitHub CLI, cloud CLIs) and any key found in the evidence.",
-    "Disable or delete the skill, plugin or template that triggered this; keep a copy in /workspace/watchtower/incidents for review.",
+    "Disable or delete the skill, plugin or template that triggered this; keep a copy in /workspace/isr-bot/incidents for review.",
     "If you can't explain what ran, reset the cloud computer (Settings → Computer) after saving what you need.",
 ]
 

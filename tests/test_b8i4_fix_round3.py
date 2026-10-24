@@ -23,7 +23,7 @@ from test_b8i4_middle_path import _Middle  # noqa: E402
 from test_b8i4_fix_round1 import NEEDLE, leaks_in  # noqa: E402
 import profiles  # noqa: E402
 
-MISSING = "SCANNERS_MISSING {}: run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, then `isr.py daily` again"
+MISSING = "SCANNERS_MISSING {}: run `bash /workspace/isr-bot/app/scripts/install.sh --scanners`, then `isr.py daily` again"
 
 
 class LateRedirect(_Middle):

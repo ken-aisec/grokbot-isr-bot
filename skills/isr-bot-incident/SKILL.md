@@ -5,7 +5,7 @@ description: Something looks wrong (a canary fired, an unknown routine appeared,
 
 # Incident mode
 
-1. Ask the user in one line what they saw, then run `python3 /workspace/watchtower/app/isr_bot/isr.py incident --note "<their words>"`. It writes `/workspace/watchtower/incidents/incident-<time>.md` with open findings, canary status, files changed in the last 24 hours, shell history (masked), processes, network connections and scheduled jobs. It changes nothing.
+1. Ask the user in one line what they saw, then run `python3 /workspace/isr-bot/app/isr_bot/isr.py incident --note "<their words>"`. It writes `/workspace/isr-bot/incidents/incident-<time>.md` with open findings, canary status, files changed in the last 24 hours, shell history (masked), processes, network connections and scheduled jobs. It changes nothing.
 2. Read the evidence pack and tell the user, in at most 6 lines, what most likely happened and which Bot, skill or routine it points to. Say plainly when the evidence doesn't explain it.
 3. Offer the containment checklist from the JSON in order. Do one step only after the user says yes to that step, and confirm it's done before offering the next. You may only advise on steps that happen in the Grok Bot app or another service; never claim you did them.
 4. When contained, run `isr.py audit` and `isr.py canary plant` (re-arms tripwires), and suggest vetting whatever was installed most recently (the vet-template skill).

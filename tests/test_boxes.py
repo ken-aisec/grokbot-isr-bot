@@ -6,6 +6,7 @@ stack trace, and never lets a failure change the score.
 """
 import datetime as dt, io, json, math, os, shutil, stat, subprocess, sys, tempfile, time, unittest, warnings
 from contextlib import redirect_stderr, redirect_stdout
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
@@ -43,13 +44,21 @@ def clear_scanner_checks():
         d.clear()
 
 
+def temp_home(test):
+    """A temp ISR_BOT_HOME for a test class that isn't a Box, put back when the test ends (v0.8.0 unit f fix 2: vet, scored(),
+    counts() and lint_auto_review reach state_path, which makes the home's state folder, so with no home set it was the default)."""
+    d = tempfile.mkdtemp(); test.addCleanup(shutil.rmtree, d, True)
+    test.isr_home = os.path.join(d, "isr_home")
+    p = mock.patch.dict(os.environ, {"ISR_BOT_HOME": test.isr_home}); p.start(); test.addCleanup(p.stop)
+
+
 class Box(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.env = {k: os.environ.get(k) for k in ("HOME", "ISR_BOT_HOME", "ISR_BOT_DECOY_ROOT")}
         self.home = os.path.join(self.tmp, "home", "box"); os.makedirs(self.home)
         os.environ["HOME"] = self.home
-        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "workspace", "watchtower")
+        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "workspace", "isr-bot")
         os.environ["ISR_BOT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
         self.ws = os.path.join(self.tmp, "workspace"); os.makedirs(self.ws, exist_ok=True)
         self.roots = [self.home, self.ws]
@@ -220,7 +229,7 @@ class HostileFiles(Box):
         self.assertFalse(os.path.exists(isr.state_path("run.lock")))
 
     def test_isr_bot_cannot_write_its_own_folder(self):
-        open(os.path.join(self.ws, "watchtower"), "w").write("a file where the folder should be")
+        open(os.path.join(self.ws, "isr-bot"), "w").write("a file where the folder should be")
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err):
             code = isr.main(["audit", "--roots", *self.roots])

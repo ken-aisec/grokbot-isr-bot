@@ -51,11 +51,11 @@ CARD_DESCRIPTION = ("A read-only security officer for the shared computer your G
 MEMORY_9 = ("If any ISR Bot command prints SELF-CHECK FAILED, stop and tell the owner at once: ISR Bot's own files "
             "changed. Don't run it again until they reinstall it from the release.")
 MEMORY_10 = ("You are ISR Bot, the security officer for this Grok Bot roster. Your engine and files keep their original folder "
-             "names: /workspace/watchtower, isr.py, the isr-bot-* skill files and ISR-* rule IDs. Never rename or move them; updates "
+             "names: /workspace/isr-bot, isr.py, the isr-bot-* skill files and ISR-* rule IDs. Never rename or move them; updates "
              "expect those paths. Keep it cheap: one pass over script output per run, short replies, no narration of tool calls. "
              "Roll-call is off unless the owner asks for it.")
 SKILLS_LINE = ("Every skill's full text is on this page's Skills tab and at "
-               "github.com/ken-aisec/grokbot-watchtower/tree/v0.7.4/skills.")
+               "github.com/ken-aisec/grokbot-isr-bot/tree/v0.7.4/skills.")
 NEW_ROUTINES = ("ISR Bot daily watch", "ISR Bot weekly audit", "ISR Bot weekly tidy", "ISR Bot monthly roll-call")
 OLD_ROUTINES = ("Watchtower daily watch", "Watchtower weekly audit", "Watchtower weekly tidy", "Watchtower monthly roll-call")
 

@@ -366,7 +366,9 @@
     {"old": "os.path.join(tmp, \"watchtower\")", "new": "os.path.join(tmp, \"isr-bot\")", "files": ["test_isr_bot.py"]},
     {"old": "-{kind}\", \"watchtower\")", "new": "-{kind}\", \"isr-bot\")", "files": ["test_hardening_batch1.py"]},
     {"old": "(^|/)watchtower/(state|", "new": "(^|/)isr-bot/(state|", "files": ["secrets_pkgs.py"]},
-    {"old": "only a `watchtower` link", "new": "only an `isr-bot` link", "files": ["scanners.py"]}
+    {"old": "only a `watchtower` link", "new": "only an `isr-bot` link", "files": ["scanners.py"]},
+    {"old": "\"installed\": \"watchtower\"", "new": "\"installed\": \"isr-bot\""},
+    {"old": "[\"installed\"] == \"watchtower\"", "new": "[\"installed\"] == \"isr-bot\""}
    ],
    "g": [
     {"old": "Watchtower's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run", "new": "ISR Bot's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run"},
@@ -385,8 +387,6 @@
     {"old": "\"watchtower_home\"", "new": "\"isr_bot_home\""},
     {"old": "\"watchtower\": VERSION", "new": "\"isr_bot\": VERSION"},
     {"old": "\"tool\": \"watchtower\"", "new": "\"tool\": \"isr-bot\""},
-    {"old": "\"installed\": \"watchtower\"", "new": "\"installed\": \"isr-bot\""},
-    {"old": "[\"installed\"] == \"watchtower\"", "new": "[\"installed\"] == \"isr-bot\""},
     {"old": "snap[\"watchtower\"]", "new": "snap[\"isr_bot\"]", "files": ["test_boxes.py"]},
     {"old": "source=\"watchtower\"", "new": "source=\"isr-bot\""},
     {"old": "\"source\", \"watchtower\"", "new": "\"source\", \"isr-bot\""},

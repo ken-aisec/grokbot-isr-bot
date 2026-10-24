@@ -216,7 +216,7 @@ class Isolated(v068.Base):
         app = self.install()
         with open(os.path.join(app, "isr_bot", "argparse.py"), "w") as f:
             f.write(f"import sys\nprint({isr.VERSION!r})\nsys.exit(0)\n")
-        argv = cmd.replace("/workspace/watchtower", os.environ["ISR_BOT_HOME"]).split()
+        argv = cmd.replace("/workspace/isr-bot", os.environ["ISR_BOT_HOME"]).split()
         p = subprocess.run([sys.executable] + argv[1:], capture_output=True, text=True, env=dict(os.environ), timeout=120)
         self.assertNotEqual((p.returncode, p.stdout.strip()), (0, isr.VERSION), "a planted module answered for --version")
         self.assertEqual(p.returncode, 4, p.stdout + p.stderr)                  # the self-check saw the planted file
@@ -227,7 +227,7 @@ class Isolated(v068.Base):
         for l in lines:
             self.assertIn("python3 -I ", l)
         for rel in (("routines", "daily-watch.md"), ("routines", "weekly-tidy.md"), ("skills", "isr-bot-audit", "SKILL.md")):
-            self.assertIn("python3 -I /workspace/watchtower/app/isr_bot/isr.py", self.read(*rel), rel)
+            self.assertIn("python3 -I /workspace/isr-bot/app/isr_bot/isr.py", self.read(*rel), rel)
 
 
 class PlainNamesOnly(v068.Base):

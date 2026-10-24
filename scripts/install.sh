@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# ISR Bot installer. Pinned, checksummed, and confined to /workspace/watchtower.
+# ISR Bot installer. Pinned, checksummed, and confined to /workspace/isr-bot.
 # Usage: bash install.sh v0.7.4 [commit]   install that tagged release; with a commit ID, refuse anything else
 #        bash install.sh --scanners        add the optional scanners (second half of this file)
 set -euo pipefail
-ISR_HOME="${ISR_BOT_HOME:-/workspace/watchtower}"
-REPO="https://github.com/ken-aisec/grokbot-watchtower"
+ISR_HOME="${ISR_BOT_HOME:-/workspace/isr-bot}"
+REPO="https://github.com/ken-aisec/grokbot-isr-bot"
 
 if [[ "${1:-}" != "--scanners" ]]; then
   # ---- This is everything that runs for `bash install.sh <tag>`. It only writes inside $ISR_HOME.

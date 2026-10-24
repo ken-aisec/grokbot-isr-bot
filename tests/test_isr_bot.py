@@ -11,7 +11,7 @@ FIX = os.path.join(ROOT, "tests", "fixtures")
 warnings.simplefilter("ignore", ResourceWarning)
 
 
-# No test may fall back to the real Watchtower folder (/workspace/watchtower) or plant decoys in the real /tmp and /var/tmp:
+# No test may fall back to the real Watchtower folder (/workspace/isr-bot) or plant decoys in the real /tmp and /var/tmp:
 # every test that doesn't set its own gets a throwaway folder for the whole module, put back when the module ends.
 _MODULE_ENV = {}
 
@@ -19,7 +19,7 @@ _MODULE_ENV = {}
 def setUpModule():
     tmp = tempfile.mkdtemp(prefix="isr-bot-tests-")
     _MODULE_ENV.update({k: os.environ.get(k) for k in ("ISR_BOT_HOME", "ISR_BOT_DECOY_ROOT")}, _tmp=tmp)
-    os.environ["ISR_BOT_HOME"] = os.path.join(tmp, "watchtower")
+    os.environ["ISR_BOT_HOME"] = os.path.join(tmp, "isr-bot")
     os.environ["ISR_BOT_DECOY_ROOT"] = os.path.join(tmp, "decoys")
 
 
@@ -1005,7 +1005,7 @@ class Features(unittest.TestCase):
         self.assertEqual(mems[8], "If any ISR Bot command prints SELF-CHECK FAILED, stop and tell the owner at once: "
                                   "ISR Bot's own files changed. Don't run it again until they reinstall it from the release.")
         self.assertEqual(mems[9], "You are ISR Bot, the security officer for this Grok Bot roster. Your engine and files keep their "
-                                  "original folder names: /workspace/watchtower, isr.py, the isr-bot-* skill files and ISR-* rule IDs. "
+                                  "original folder names: /workspace/isr-bot, isr.py, the isr-bot-* skill files and ISR-* rule IDs. "
                                   "Never rename or move them; updates expect those paths. Keep it cheap: one pass over script output per "
                                   "run, short replies, no narration of tool calls. Roll-call is off unless the owner asks for it.")
 
@@ -1151,7 +1151,7 @@ class Features(unittest.TestCase):
         and the repo publishes tags, not GitHub releases, so releases/latest would have had nothing to say."""
         import subprocess as sp
         cfg = json.load(open(isr.FEEDS_PATH))
-        cfg.update(feeds=[], watch_pages=[], releases=[r for r in cfg["releases"] if r["installed"] == "watchtower"])
+        cfg.update(feeds=[], watch_pages=[], releases=[r for r in cfg["releases"] if r["installed"] == "isr-bot"])
         repo = cfg["releases"][0]["repo"]
         self.assertIn("ken-aisec", repo)
         installed = "1" * 40
@@ -1236,8 +1236,8 @@ def allowed(rule, target, text):
                for a in gitleaks_allowlists())
 
 
-REAL_GITLEAKS = shutil.which("gitleaks") or next((p for p in ("/workspace/watchtower/scanners/bin/gitleaks", "/workspace/watchtower/bin/gitleaks")
-                                                  if os.access(p, os.X_OK)), "/workspace/watchtower/bin/gitleaks")   # run, never changed
+REAL_GITLEAKS = shutil.which("gitleaks") or next((p for p in ("/workspace/isr-bot/scanners/bin/gitleaks", "/workspace/isr-bot/bin/gitleaks")
+                                                  if os.access(p, os.X_OK)), "/workspace/isr-bot/bin/gitleaks")   # run, never changed
 
 
 class GitleaksFalseAlarms(unittest.TestCase):

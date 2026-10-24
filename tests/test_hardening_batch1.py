@@ -276,7 +276,7 @@ class BaselineReset(Batch):
     def test_each_kind_of_reset_is_a_high_confirmed_alert(self):   # replay
         for kind in ("empty", "deleted", "garbage", "list", "fifo"):
             with self.subTest(kind=kind):
-                os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, f"isr-bot-{kind}", "watchtower")
+                os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, f"isr-bot-{kind}", "isr-bot")
                 ds = self.changed_after_first_run()
                 copy = isr.load_approved(ds[0])["hash"]
                 bp = isr.state_path("baseline.json")

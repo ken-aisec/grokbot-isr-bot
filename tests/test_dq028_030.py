@@ -50,7 +50,7 @@ class Box(unittest.TestCase):
         self.env = {k: os.environ.get(k) for k in ("HOME", "ISR_BOT_HOME", "ISR_BOT_DECOY_ROOT")}
         self.home = os.path.join(self.tmp, "home", "box"); os.makedirs(self.home)
         os.environ["HOME"] = self.home
-        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "workspace", "watchtower")
+        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "workspace", "isr-bot")
         os.environ["ISR_BOT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
         self.ws = os.path.join(self.tmp, "workspace"); os.makedirs(self.ws, exist_ok=True)
         self.roots = [self.home, self.ws]
@@ -287,7 +287,7 @@ class QuarantineHelperRules(unittest.TestCase):
         self.env = {k: os.environ.get(k) for k in ("HOME", "ISR_BOT_HOME")}
         self.home = os.path.join(self.tmp, "home", "box"); os.makedirs(self.home)
         os.environ["HOME"] = self.home
-        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "workspace", "watchtower")
+        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "workspace", "isr-bot")
         os.makedirs(os.environ["ISR_BOT_HOME"], exist_ok=True)
 
     def tearDown(self):

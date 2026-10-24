@@ -41,7 +41,7 @@ class Box(unittest.TestCase):
         self.env = {k: os.environ.get(k) for k in ("HOME", "ISR_BOT_HOME", "ISR_BOT_DECOY_ROOT")}
         self.home = os.path.join(self.tmp, "home", "box"); os.makedirs(self.home)
         os.environ["HOME"] = self.home
-        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "workspace", "watchtower")
+        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "workspace", "isr-bot")
         os.environ["ISR_BOT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
         self.ws = os.path.join(self.tmp, "workspace"); os.makedirs(self.ws, exist_ok=True)
         self.roots = [self.home, self.ws]
@@ -203,6 +203,18 @@ class PositiveControlLiveBadSkill(Box):
 
 
 class Helpers(unittest.TestCase):
+    def setUp(self):
+        # v0.8.0 unit f fix 1: is_quarantined_path reads state/quarantine.json, and state_path makes that folder
+        self.tmp = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.env = os.environ.get("ISR_BOT_HOME")
+        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "workspace", "isr-bot")
+
+    def tearDown(self):
+        if self.env is None:
+            os.environ.pop("ISR_BOT_HOME", None)
+        else:
+            os.environ["ISR_BOT_HOME"] = self.env
+
     def test_is_live_skill_path_rules(self):
         self.assertTrue(isr.is_live_skill_path("/home/box/sand-data/workflows/a/SKILL.md"))
         self.assertFalse(isr.is_live_skill_path("/workspace/proj/tests/fixtures/bad/x/SKILL.md"))

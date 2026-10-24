@@ -191,7 +191,7 @@ def owned_path(p, kind, log=True):
             places = {os.path.realpath(os.path.expanduser("~")), os.path.realpath(os.path.dirname(home()))}
             ok = _under(rp, places, strict=True) and not _under(rp, {h})
         elif kind == "home":
-            ok = rp == n and os.path.basename(n) == "watchtower" and os.path.isdir(os.path.join(n, "state")) and n not in ("/", os.path.realpath(os.path.expanduser("~")))
+            ok = rp == n and os.path.basename(n) == "isr-bot" and os.path.isdir(os.path.join(n, "state")) and n not in ("/", os.path.realpath(os.path.expanduser("~")))
     except (TypeError, ValueError, OSError):
         ok = False
     if not ok and log:

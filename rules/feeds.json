@@ -59,8 +59,8 @@
  "releases": [
   {
    "name": "ISR Bot",
-   "repo": "ken-aisec/grokbot-watchtower",
-   "installed": "watchtower"
+   "repo": "ken-aisec/grokbot-isr-bot",
+   "installed": "isr-bot"
   },
   {
    "name": "SkillSpector",

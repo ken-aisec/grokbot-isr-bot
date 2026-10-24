@@ -17,7 +17,7 @@ Commands
   exception add SKILL   owner-confirmed 30-day exception for one security-tool skill
   doctor [--save]       a support snapshot of this computer that is safe to share
 
-State lives in $ISR_BOT_HOME (default /workspace/watchtower).
+State lives in $ISR_BOT_HOME (default /workspace/isr-bot).
 """
 import sys
 if sys.version_info < (3, 8):   # degrade with one plain line, not a traceback (v0.6.9 old-Python profile)
@@ -315,7 +315,7 @@ def cmd_daily(args):
     pending = undelivered_open(snap, new)
     moved = snap.get("plugin_version_changes") or []   # DQ-047 fix round 1: a pending plugin's version bump is said, never NO_CHANGES
     if snap.get("scanners_missing") and not new and not fixed and not plat and not pending and not moved:
-        print("SCANNERS_MISSING " + ", ".join(snap["scanners_missing"]) + ": run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, then `isr.py daily` again")
+        print("SCANNERS_MISSING " + ", ".join(snap["scanners_missing"]) + ": run `bash /workspace/isr-bot/app/scripts/install.sh --scanners`, then `isr.py daily` again")
         return 0
     gap = list(snap.get("stages_skipped") or [])
     if not new and not fixed and not plat and not pending and not moved:
@@ -883,7 +883,7 @@ def cmd_uninstall(args):
     cache = os.path.expanduser("~/.cache/pip-audit")
     held = [e for e in load_json(state_path("quarantine.json"), []) if os.path.isdir(e.get("to", ""))]
     h = home()
-    safe_home = os.path.basename(h.rstrip("/")) == "watchtower" and os.path.isdir(os.path.join(h, "state")) and h not in ("/", os.path.expanduser("~")) \
+    safe_home = os.path.basename(h.rstrip("/")) == "isr-bot" and os.path.isdir(os.path.join(h, "state")) and h not in ("/", os.path.expanduser("~")) \
         and owned_path(h, "home", log=False)
     if not args.apply:
         print(fit({"mode": "preview (nothing removed)",

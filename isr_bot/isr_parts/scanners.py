@@ -263,7 +263,7 @@ def installed_root():
     rules files (the reviewed list, the normalization spec, the locks) are never held to MANIFEST.sha256. An installed copy is the
     `app` folder install.sh makes, whatever ISR_BOT_HOME says now.
     PR A, Codex round 2 (5): SELF_ROOT is the real folder of the isr.py that runs (isr.py follows links to itself), so a folder
-    holding only a `watchtower` link to the installed copy runs it as the installed copy; and only that real folder's name
+    holding only an `isr-bot` link to the installed copy runs it as the installed copy; and only that real folder's name
     counts, never a ISR_BOT_HOME whose app leads somewhere.
     PR A, Codex round 3 (3): the name alone made `mv app app.real` (with or without `ln -s app.real app`) a developer checkout:
     no self-check, and planted rules files accepted. It is also an installed copy when it has what install.sh leaves: its
@@ -277,7 +277,7 @@ def installed_root():
     return None
 
 
-DEFAULT_INSTALL_HOME = "/workspace/watchtower"   # install.sh's ISR_HOME when ISR_BOT_HOME isn't set
+DEFAULT_INSTALL_HOME = "/workspace/isr-bot"   # install.sh's ISR_HOME when ISR_BOT_HOME isn't set
 
 
 def install_home(root):

@@ -34,7 +34,7 @@ def walk(roots, max_depth=8, errors=None, skipped=None):
                 if skipped is not None:
                     skipped.append(ap)
                 continue
-            if _under(ap, {os.path.abspath(home()), SELF_ROOT}):   # R08: separator-aware; watchtower-customer-skill is not inside
+            if _under(ap, {os.path.abspath(home()), SELF_ROOT}):   # R08: separator-aware; isr-bot-customer-skill is not inside
                 dirnames[:] = []
                 continue
             kept = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith((".venv",) + SKIP_PREFIXES)]

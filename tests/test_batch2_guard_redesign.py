@@ -10,7 +10,7 @@ from test_batch2_fix_round1 import PIPE, RULES, SEND, judged, loud, vet_text
 import isr  # noqa: E402
 from test_batch2_fix_round2 import COOKIE, quiet
 from test_batch2_fix_round3 import ADJACENT, confirmed_critical
-from test_boxes import Box
+from test_boxes import Box, temp_home
 
 OWN = {"ISR-T004": "high", "ISR-T005": "critical", "ISR-T006": "critical", "ISR-T017": "high"}
 UPLOAD = ("ISR-T004", "ISR-T005", "ISR-T017")
@@ -18,6 +18,10 @@ DEEP = SEND + ' -H "' + "$(echo " * 1100 + "x" + ")" * 1100 + '"'
 
 
 class Checks(unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        temp_home(self)   # v0.8.0 unit f fix 2: vet and scored() reach the state folder; a temp home, never the default one
+
     def attack_upload(self, t, rules=UPLOAD):
         raw, fs, st, g = judged(t)
         for rule in rules:

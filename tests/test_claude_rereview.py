@@ -2,7 +2,7 @@
 import json, os, sqlite3, sys, time, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box  # noqa: E402
+from test_boxes import Box, temp_home  # noqa: E402
 import isr  # noqa: E402
 from test_oct11 import chrome_us  # noqa: E402
 
@@ -163,6 +163,9 @@ class T017CommonSendForms(unittest.TestCase):
 
 class LintSlashJoinedActions(unittest.TestCase):
     """E. Slash-joined action words are not paths; only / ~/ ./ or file extensions strip."""
+
+    def setUp(self):
+        temp_home(self)   # v0.8.0 unit f fix 2: lint_auto_review reads the owner's accepted lines from the state folder
 
     def test_pay_transfer_and_send_post_are_flagged(self):
         for t in ("Allow automatically pay/transfer", "Allow automatically send/post to anyone"):

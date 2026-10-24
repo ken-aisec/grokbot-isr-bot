@@ -2,7 +2,7 @@
 import json, os, shutil, sqlite3, subprocess, sys, tempfile, time, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, ROOT  # noqa: E402
+from test_boxes import Box, ROOT, temp_home  # noqa: E402
 import isr  # noqa: E402
 from test_scripts import stub  # noqa: E402
 from test_rfixes import R10R11InstallActivation  # noqa: E402
@@ -103,6 +103,9 @@ class S005RegisteredDomain(Box):
 
 
 class R18QuotedActions(unittest.TestCase):
+    def setUp(self):
+        temp_home(self)   # v0.8.0 unit f fix 2: lint_auto_review reads the owner's accepted lines from the state folder
+
     def test_a_quoted_action_is_still_the_action(self):
         """4: RULE_OBJECTS stripped quotes and backticks, so quoted actions passed with no finding."""
         for t in ('Allow automatically "send any email"', "Allow automatically `rm -rf *`", "Allow automatically 'delete all files'"):

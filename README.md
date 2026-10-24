@@ -55,16 +55,16 @@ Scripts find, the model judges, you approve. Scanning is deterministic Python wi
 2. Say yes when ISR Bot asks to set itself up.
 
 Manual install on the cloud computer. First copy the release's full commit ID from the GitHub release page
-(https://github.com/ken-aisec/grokbot-watchtower/releases), then use it for both the download and the install, so the
+(https://github.com/ken-aisec/grokbot-isr-bot/releases), then use it for both the download and the install, so the
 installer itself and everything it installs are pinned:
 
 ```bash
 COMMIT=<full commit ID from the release page>
-mkdir -p /workspace/watchtower && cd /workspace/watchtower
-curl -fsSLO "https://raw.githubusercontent.com/ken-aisec/grokbot-watchtower/$COMMIT/scripts/install.sh"
+mkdir -p /workspace/isr-bot && cd /workspace/isr-bot
+curl -fsSLO "https://raw.githubusercontent.com/ken-aisec/grokbot-isr-bot/$COMMIT/scripts/install.sh"
 head -40 install.sh && bash install.sh v0.7.4 "$COMMIT"
-bash /workspace/watchtower/app/scripts/install.sh --scanners
-python3 /workspace/watchtower/app/isr_bot/isr.py audit
+bash /workspace/isr-bot/app/scripts/install.sh --scanners
+python3 /workspace/isr-bot/app/isr_bot/isr.py audit
 ```
 
 ## Built to not break
@@ -131,7 +131,7 @@ isr.py doctor [--save]         a support snapshot of this computer, safe to shar
 isr.py uninstall [--apply] [--remove-folder]   preview, then remove what ISR Bot created (after the owner's yes)
 ```
 
-State lives in `$ISR_BOT_HOME` (default `/workspace/watchtower`). `state/ledger.jsonl` is an append-only record of every run: the audit trail non-Enterprise accounts don't get.
+State lives in `$ISR_BOT_HOME` (default `/workspace/isr-bot`). `state/ledger.jsonl` is an append-only record of every run: the audit trail non-Enterprise accounts don't get.
 
 Release drill, dev dry-run (precision plan item 8): before each release the dev build is run read-only against a real install and reports the score line plus every finding above info. Gotcha: don't just point `ISR_BOT_HOME` at a copy of the state. The real install folder then looks foreign to the dev build (its quarantine and its own state files get flagged) and the score comes out falsely low (a false 41/F on Oct 12, against a real 94/A). Use the sandbox instead: `scripts/dry-run.sh [REF]` runs the dev build in a private mount namespace with `/workspace`, the home folder and `/var/tmp` read-only, a copy of the install's state over its own path (so paths match), and one fresh sandbox folder under `/tmp` as the namespace's `/tmp`. Everything the run writes (code, state copy, caches, planted decoys) lives in that folder and is removed afterwards; only `audit.json` and `audit.err` are kept, in `/tmp/wt-dry-report-<sha>-<time>/`. Never copy a sandbox into `/workspace`: its planted decoys and canary registry copy are real decoy alarms to the daily watch (Oct 15), and the scanner has no name-based skip for them.
 

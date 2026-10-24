@@ -10,7 +10,7 @@ paths = [
   '''(^|/)scoped_dir[^/]*/''',
   '''(^|/)chrome-profile/''',
   '''(^|/)(\.codex/auth\.json|\.claude/\.credentials\.json|\.config/gh/hosts\.yml|\.aws/credentials|\.git-credentials|\.netrc|\.docker/config\.json|\.npmrc)$''',
-  '''(^|/)watchtower/(state|reports|app|\.venv|scanners|bin)/''',
+  '''(^|/)isr-bot/(state|reports|app|\.venv|scanners|bin)/''',
   '''chrome-cookie-seed\.json$''',
   '''\.h$''',
   '''(^|/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|go\.sum|Cargo\.lock|marketplace\.json)$''',
@@ -619,7 +619,7 @@ def self_findings(notes):
         return out
     if not os.path.isfile(os.path.join(os.path.dirname(os.path.dirname(py)), "LOCKED")):
         out.append(finding("ISR-W002", "ISR Bot's scanners were installed without the checksum lock", "low", ["ASI04", "AST02"], "watchtower scanners",
-                           "no LOCKED marker", "Run `bash /workspace/watchtower/app/scripts/install.sh --scanners` again; it installs only from the lock, and stops and says why if this computer's Python doesn't fit it."))
+                           "no LOCKED marker", "Run `bash /workspace/isr-bot/app/scripts/install.sh --scanners` again; it installs only from the lock, and stops and says why if this computer's Python doesn't fit it."))
     if not exe:
         if scanner_unavailable("pip-audit")[0]:   # batch 3: pip-audit's own line says why; this stage's last results are kept too
             fail_note(notes, "ISR Bot's own tools were NOT checked for known holes this run (pip-audit didn't run); the last results are kept.")

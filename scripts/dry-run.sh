@@ -16,7 +16,7 @@ set -euo pipefail
 
 DEV="$(cd "$(dirname "$0")/.." && pwd)"
 WS="$(realpath -m "${ISR_DRY_WORKSPACE:-/workspace}")"
-INSTALL="$(realpath -m "${ISR_DRY_INSTALL:-$WS/watchtower}")"
+INSTALL="$(realpath -m "${ISR_DRY_INSTALL:-$WS/isr-bot}")"
 TMPROOT="$(realpath -m "${ISR_DRY_TMPROOT:-/tmp}")"
 RO="${ISR_DRY_RO-$HOME /var/tmp}"
 REF="HEAD"

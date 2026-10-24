@@ -61,7 +61,7 @@ CVE_ID = re.compile(r"(?i)\bCVE-\d{4}-\d{4,7}\b")
 
 
 def version_of(name):
-    if name == "watchtower":
+    if name == "isr-bot":
         return VERSION
     exe = tool(name)
     if not exe:
@@ -313,7 +313,7 @@ def gather_brief(cfg, offline=None):
 
     updates, tag_moved = [], None
     for r in cfg.get("releases", []):
-        if r.get("installed") == "watchtower":    # v0.6.6 skipped its own repo here, so the newer-version notice could never fire
+        if r.get("installed") == "isr-bot":    # v0.6.6 skipped its own repo here, so the newer-version notice could never fire
             try:
                 u, tag_moved = watchtower_update(r, get)
                 if u:
