@@ -220,7 +220,7 @@ class Cross(_Cross):
             old = edit(self.old, DOCTOR, lambda d: d[0].update(python=VERSIONS[rn.OLD["pkg"]]))
             self.assertFails(edit(self.new, DOCTOR, lambda d: d[0].update(python="0.8.0")), f"{DOCTOR} python: the value differs", old)
 
-    # final review fix round 2 (the golden --cross rerun): one test, a subtest per case (README's "more than 1850" allows one more)
+    # final review fix round 2 (the golden --cross rerun): one test, a subtest per case (README's "more than 2000" allows one more)
     def test_16_a_cut_doctor_note_and_the_at_and_command_version(self):
         husk = dict(rn.TABLE["output"])["husk + " + rn.OLD["pkg"].capitalize()]   # the table's display name pair, new side
 
