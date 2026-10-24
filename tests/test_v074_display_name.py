@@ -12,11 +12,12 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
 import isr  # noqa: E402
+import rename_v080 as rn  # noqa: E402  (v0.8.0 unit h2: every old spelling here comes from the name table)
 
 warnings.simplefilter("ignore", ResourceWarning)
 
 NAME = "ISR Bot"
-OLD = "Watchtower"
+OLD = rn.old_display()[0][0]   # the display name before 0.8.0
 # Engine string constants (not docstrings) that keep the old name, by file and exact value. v0.8.0 unit g: none is left (the
 # engine labels, the X003/K005/X005/A003 evidence, the stage key and the User-Agent are renamed, the legacy names removed).
 ALLOWED = {}
@@ -27,7 +28,7 @@ LOWERCASE_OK = {("prepublish.py", "isr bot"): "no ISR-PP08 for the name in an un
                 ("plugins.py", "isr bot"): "UPDATE_NAMES: a brief's update named ISR Bot"}
 # The two phrases that let prose keep the old name before 0.8.0 (the docs' one-liner; the uninstall skill's, removed in unit g).
 # v0.8.0 unit h1: no prose is exempt any more, and the readme test checks that both are gone.
-PROSE_PHRASES = ("(the engine and its files keep the name Watchtower)", "(older installs: the Watchtower names the command lists)")
+PROSE_PHRASES = ("(the engine and its files keep the name %s)" % OLD, "(older installs: the %s names the command lists)" % OLD)
 CARD_DESCRIPTION = ("A read-only security officer for the shared computer your Grok Bots run on. Vets templates and skills before you "
                     "install them, sets decoy tripwires, audits your Bots weekly, and changes nothing without your yes.")
 MEMORY_9 = ("If any ISR Bot command prints SELF-CHECK FAILED, stop and tell the owner at once: ISR Bot's own files "
@@ -39,7 +40,7 @@ MEMORY_10 = ("You are ISR Bot, the security officer for this Grok Bot roster. Yo
 SKILLS_LINE = ("Every skill's full text is on this page's Skills tab and at "
                "github.com/ken-aisec/grokbot-isr-bot/tree/v0.7.4/skills.")
 NEW_ROUTINES = ("ISR Bot daily watch", "ISR Bot weekly audit", "ISR Bot weekly tidy", "ISR Bot monthly roll-call")
-OLD_ROUTINES = ("Watchtower daily watch", "Watchtower weekly audit", "Watchtower weekly tidy", "Watchtower monthly roll-call")
+OLD_ROUTINES = tuple(n.replace(NAME, OLD, 1) for n in NEW_ROUTINES)
 
 
 def read(*p):
@@ -169,7 +170,7 @@ def without_v074_blocks(rel, t):
 # is d2's old value, the alias line d1 writes). A3 (unit b): ISR, a hyphen and then {, [ or *: the f-string rebuild f"ISR-{…}",
 # a regex class ISR-[A-Z] and the glob ISR-*, any file. A4 (unit b): exact lowercase strings, each only in the file of that
 # basename: canonical_rule's case-insensitive regex in baseline.py, and the typed IDs test_hardening_batch1.py feeds it.
-# C (unit d1): the module name, in .py files only: `import isr` as a whole word (so the alias line `import isr as wt` that d2
+# C (unit d1): the module name, in .py files only: `import isr` as a whole word (so the alias line ALIAS d1 wrote and d2
 # removes), isr followed by a dot and a letter or _ (attributes, and patch targets like "isr.now"; never isr.pyc), isr followed by , or ),
 # and (isr| only where isr_parts/ follows (the doctor and golden frame regexes).
 NAME_RX = re.compile(r"(?i)\bisr\b(?![\s_-]*bot\b)|\bisr[\s_-]+bot[\s_-]+bot\b")   # no lone ISR as the name, no ISR Bot Bot
@@ -180,9 +181,10 @@ A2_FILES = (RENAME_TABLE, "tests/rename_v080.py")
 B = re.compile(r"isr\\?\.py\b")
 A3 = re.compile(r"ISR(?=-[{\[*])")
 A4 = {"baseline.py": ("(?i)isr-(",), "test_hardening_batch1.py": ("isr-t006k", "isr-t001R", "isr-k001", "isr-wsg")}
+ALIAS = "import isr as " + rn.OLD["main"][:-len(".py")]   # the test alias line d1 writes (d2's old value; the table keeps it)
 A5 = ('"(?i)isr-("', '"isr-t006k"', '"isr-t001R"', '"isr-k001"', '"isr-wsg"', '"(isr|isr_parts/"', '"/isr_bot/(isr|isr_parts/"',
-      r'"isr\\.py"', r'"isr\\\\.py"', '"isr."', r'"isr\\1"', '"import isr"', '"import isr as wt"', r'"\\1import isr as wt"',
-      r'"\\nimport isr as wt\\n"', r'"; import isr as wt\\n"', r'"\\1\\2\\3\\nimport isr  # noqa: E402"',
+      r'"isr\\.py"', r'"isr\\\\.py"', '"isr."', r'"isr\\1"', '"import isr"', '"%s"' % ALIAS, r'"\\1%s"' % ALIAS,
+      r'"\\n%s\\n"' % ALIAS, r'"; %s\\n"' % ALIAS, r'"\\1\\2\\3\\nimport isr  # noqa: E402"',
       r'"\\1\\2\\nimport isr  # noqa: E402"', r'"import \\1  # noqa: E402\\nimport isr  # noqa: E402"')
 C = re.compile(r"(?:\b|(?<=\\n))import isr\b|\bisr(?=\.[A-Za-z_]|[,)])(?!\.pyc\b)|\(isr(?=\|isr_parts/)")
 # A6 (unit g, Codex r2 HIGH 1): SAFE_CLAIM's pattern for the new name, exactly as written, only in the file that defines it
@@ -278,8 +280,8 @@ class NeverShortened(unittest.TestCase):
             self.assertNotEqual(name_hits(rel, f'x = "{s}"\n'), [], (rel, s))
 
     def test_allowances_module_name(self):   # bounds (v0.8.0 unit d1): C, both sides, on synthetic text
-        allowed = ("import isr", "import isr as wt", "isr.now", '"isr.now"', '(isr, "x")', "f(isr)", "(isr|isr_parts/",
-                   r'"x\nimport isr as wt\n"')
+        allowed = ("import isr", ALIAS, "isr.now", '"isr.now"', '(isr, "x")', "f(isr)", "(isr|isr_parts/",
+                   r'"x\n%s\n"' % ALIAS)
         for rel in ("tests/test_x.py", "isr_bot/isr.py", "scripts/x.py"):
             for text in allowed:
                 self.assertEqual(name_hits(rel, text + "\n"), [], (rel, text))

@@ -19,6 +19,7 @@ import isr  # noqa: E402
 from test_batch5_access_map import AGENT, w
 from test_batch5_access_round2 import CANT, DAY, _Small
 import golden_split as gs  # noqa: E402  (the module, never its TestCase)
+import rename_v080 as rn  # noqa: E402  (v0.8.0 unit h2: the golden file's old item names come from the name table)
 
 SLACK_MCP = {"mcpServers": {"slack": {"command": "npx"}}}
 SLACK_STORY = "Slack MCP server flaw lets attackers read every channel"
@@ -276,7 +277,7 @@ class TheProfileLineIsAlwaysSaid(_Round3):
 
 # ---------------------------------------------------------------- 4: golden must_see, per scenario
 SIDS = ("box-empty_account-cli", "box-odd_layout-cli")
-KEYS = ("tree workspace/watchtower/state/access_map.json", "tree workspace/watchtower/reports/2026-W43.md", "tree workspace/watchtower/reports/dashboard.html",
+KEYS = (rn.old_item("state/access_map.json"), rn.old_item("reports/2026-W43.md"), rn.old_item("reports/dashboard.html"),
         "003 audit :stdout", "004 report :stdout")
 
 
@@ -343,7 +344,7 @@ class MustSeeIsPerScenario(unittest.TestCase):
         self.assertEqual(self.harness(entries, healthy)[0], "passed")
         pre, post = healthy["box-odd_layout-cli"]
         dropped = dict(post)
-        for k in ("tree workspace/watchtower/state/access_map.json", "tree workspace/watchtower/reports/2026-W43.md"):
+        for k in (rn.old_item("state/access_map.json"), rn.old_item("reports/2026-W43.md")):
             if k in pre:
                 dropped[k] = pre[k]
             else:

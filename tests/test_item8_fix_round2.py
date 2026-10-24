@@ -17,6 +17,7 @@ import test_boxes  # noqa: E402
 import isr  # noqa: E402
 from test_item8_provenance import CLEAN, FLAGGED, ROOT, _Platform, add, put, sha  # noqa: E402
 import profiles  # noqa: E402
+import rename_v080 as rn  # noqa: E402
 
 
 class OwnWalk(_Platform):
@@ -269,7 +270,7 @@ class Docs(unittest.TestCase):
         unreleased = self.read("CHANGELOG.md").split("\n## v")[0]
         line = [l for l in unreleased.splitlines() if "Codex review, round 2" in l and "Item 8" in l]
         self.assertEqual(len(line), 1)
-        for word in ("platform_approved.json", "--platform-from", "WT-I011", "Known gaps"):
+        for word in ("platform_approved.json", "--platform-from", rn.old_rule("ISR-I011"), "Known gaps"):   # v0.8.0 h2: the old ID
             self.assertIn(word, line[0])
         self.assertIn("--platform-from", self.read("skills/isr-bot-fix/SKILL.md"))
         self.assertIn("platform_unverified", self.read("routines/daily-watch.md"))

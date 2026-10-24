@@ -11,6 +11,7 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
 import isr  # noqa: E402
+import rename_v080 as rn  # noqa: E402  (v0.8.0 unit h2: kept values that hold an old name come from the name table)
 # Tests never read this computer's real Grok Bot settings (Oct 11: the owner's live Auto-review rules leaked into the suite).
 isr.NATIVE_SETTINGS[:] = [p for p in isr.NATIVE_SETTINGS if p.startswith("~")]
 
@@ -651,11 +652,12 @@ class FreshAccountLessons(Box):
         self.assertTrue(os.path.isdir(os.path.join(self.home, "sand-data", "workflows", "skill000")))   # the user's own skills are never touched
 
     def test_uninstall_removes_only_the_installers_files_from_tmp(self):
-        """Main box, Oct 8: /tmp/wt-audit-066.json, wt-audit-t93.json, wt-fix-revet-t93.json and wt-daily-t93.json, saved there by the
+        """Main box, Oct 8: four audit, fix and daily copies in /tmp (the owner_tmp_* kept values), saved there by the
         owner's Bot, disappeared while their .time files stayed. The uninstall test ran `uninstall --apply` and cleared the real /tmp."""
         self.skills(1); self.scanners(); self.audit()
         tmp = isr.decoy_path("/tmp"); os.makedirs(tmp, exist_ok=True)
-        owners = ["wt-audit-066.json", "wt-audit-066.time", "wt-audit-t93.json", "wt-fix-revet-t93.json", "wt-daily-t93.json", "wt-notes.txt"]
+        owners = [rn.kept(k) for k in ("owner_tmp_audit", "owner_tmp_audit_time", "owner_tmp_audit_t93", "owner_tmp_fix_revet",
+                                       "owner_tmp_daily", "owner_tmp_notes")]
         installer = ["gitleaks_8.30.1_linux_x64.tar.gz", "gitleaks_checksums.txt", "trufflehog_3.97.9_linux_amd64.tar.gz",
                      "trufflehog_checksums.txt", "osv_sums.txt", "isr-bot-lock.err"]
         for f in owners + installer:

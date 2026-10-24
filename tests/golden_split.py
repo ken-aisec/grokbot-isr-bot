@@ -24,7 +24,9 @@ and an enabled `must_see` entry that matched nothing, in a run where its scenari
 Codex round 3: one that names its scenarios exactly, in each of them that ran, on its own; since batch 6, KL7: in each output of those scenarios its key_rx names; see unmet)."""
 import datetime as dt, difflib, hashlib, json, os, re, shutil, statistics, subprocess, sys, tempfile, unittest
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+import rename_v080 as rn   # v0.8.0 unit h2: the v0.7.4 display strings below come from the name table
+
+ROOT =os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 BANNER = b"# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.\n"
 LOADER_BEGIN = b"# >>> isr_parts loader (reassembly drops this block)\n"
@@ -562,23 +564,17 @@ JSON_COUNTS_FIELDS = {"at": list, "delta": dict}
 # display name is ISR Bot (owner decision, Oct 23).
 ALT_FIELDS = {"json_change": dict, "json_shape": dict, "json_exact": dict, "block": list, "json_counts": dict, "json_each": dict,
               "subst": dict}
-SUBST_PAIRS = [["Watchtower", "ISR Bot"]]
+SUBST_PAIRS = [list(p) for p in rn.v074("pairs")]
 # v0.7.4 fix round 1 (Codex MED2): the strings that keep the old name (ALLOWED and ALLOWED_FRAGMENTS in
 # tests/test_v074_display_name.py): engine labels, the User-Agent token, a stored stage key, evidence that feeds a finding key, the
 # legacy routine names and the legacy getting-started marker. subst_change refuses an item in which any of them is seen a different
-# number of times in post than in pre, so the rename can never take one of them along.
-SUBST_KEEP = ("Watchtower rules", "SkillSpector + Watchtower", "husk + Watchtower", "Watchtower/", "Watchtower's own tools",
-              "during a recorded Watchtower run",
-              "Watchtower's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run",
-              "its program file isn't the one Watchtower installed",
-              "Ask-first rules with no word Watchtower reads in any of its languages",
-              "Watchtower daily watch", "Watchtower weekly audit", "Watchtower weekly tidy", "Watchtower monthly roll-call",
-              "You are Watchtower", "Watchtower: package caches, lockfiles, headers and its own state")
+# number of times in post than in pre, so the rename can never take one of them along. v0.8.0 unit h2: the strings are the
+# name table's v074_display keep list, in this order.
+SUBST_KEEP = tuple(rn.v074("keep"))
 # A kept string that the display prose also says in full (the renamed sentence held it too) is counted without that prose: ISR-X005's
 # why is its evidence, and its fix text "<name> didn't run <scanner>: its program file isn't the one <name> installed" is display.
 # Fix round 2 (Codex MED2): only in plain display text or a JSON `fix` value (SUBST_PROSE_FIELDS); anywhere else it counts in full.
-SUBST_KEEP_PROSE = {"its program file isn't the one Watchtower installed": re.compile(r"\bdidn't run [^:\n]{1,40}: its program file "
-                                                                                       r"isn't the one Watchtower installed")}
+SUBST_KEEP_PROSE = {k: re.compile(rx) for k, rx in rn.v074("keep_prose").items()}   # v0.8.0 unit h2: the table's keep_prose
 # v0.7.4 fix round 2 (Codex MED2): in JSON (a document that starts a line, one per line or pretty-printed, or a `"key": value` line
 # of one that didn't parse) the rename may change only the string values of these display fields: a string under one of these keys,
 # or in a list under one. Any other change (evidence, where, key, key0, rule, engine, engines_used, a stage key, any object key, a

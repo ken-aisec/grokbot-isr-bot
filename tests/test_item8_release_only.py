@@ -17,6 +17,7 @@ import test_boxes  # noqa: E402
 import isr  # noqa: E402
 from test_item8_provenance import CLEAN, _Platform, put, sha  # noqa: E402
 import profiles  # noqa: E402
+import rename_v080 as rn  # noqa: E402  (v0.8.0 unit h2: the old record's sha256 input, a kept value)
 
 
 def file_sha(p):
@@ -33,7 +34,7 @@ class _ForgedState(_Platform):
         """What 7ab522f wrote for an approved platform file: the record, its bound ledger line and the baseline line."""
         h, t = sha(p), os.path.realpath(p)
         isr.save_json(isr.state_path("platform_approved.json"), {"v": 1, "files": {p: {"sha256": h, "target": t}}})
-        bind = hashlib.sha256(f"wt-platform-record-v1\n{os.path.normpath(p)}\t{h}\t{os.path.normpath(t)}\n".encode()).hexdigest()[:32]
+        bind = hashlib.sha256(f"{rn.kept('platform_record_v1')}\n{os.path.normpath(p)}\t{h}\t{os.path.normpath(t)}\n".encode()).hexdigest()[:32]
         with open(isr.state_path("ledger.jsonl"), "a") as f:
             f.write(json.dumps({"event": event, "count": 1, "bind": [bind], "at": isr.now()}) + "\n")
         if baseline:

@@ -15,6 +15,12 @@ ENGINE_ENV = ("home", "settings", "platform_reviewed", "platform_normalize", "de
 LAYOUT_KEYS = {"pkg", "main", "parts", "parts_var", "part_loader", "home", "home_name", "sandbox_home", "repo", "rule_prefix",
                "test_module", "slug_prefix", "env"}
 PLAN_ORDER = ["b", "c", "d1", "d2a", "d2b", "e", "f", "g", "h1", "h2", "k", "i"]   # plan section 3, the units that map names
+# v0.8.0 unit h2: the old spellings below come from the table. The display name before 0.8.0, the old install folder as an
+# item name has it (reader_rule), the file mode the keep_span holds, and the old main file's module name.
+OLD_NAME = rn.old_display()[0][0]
+OLD_ITEM_HOME = rn.OLD["home"].lstrip("/")
+MODE = json.dumps(rn.kept("file_mode"))
+OLD_MOD = rn.OLD["main"][:-len(".py")]
 
 
 def read(rel):
@@ -54,7 +60,7 @@ def map_units(units, rel, text, protect=True):
                    and (u not in src["unit_files"] or os.path.basename(rel) in src["unit_files"][u])]
         out = []
         for l in text.split("\n"):
-            if protect and (l.strip() in texts or (reader and ("workspace/watchtower" in l or re.search(r"Watchtower\b", l)))):
+            if protect and (l.strip() in texts or (reader and (OLD_ITEM_HOME in l or re.search(re.escape(OLD_NAME) + r"\b", l)))):
                 out.append(l)
                 continue
             spared = spare.get(line_key(l), set())
@@ -167,10 +173,11 @@ class RenameTable(unittest.TestCase):
         self.assertEqual(rn.TABLE["constant_keys"], ["bulk-decoy-read", "own-scan-decoy-read"])
         self.assertIsInstance(rn.old_display(), list)
         self.assertEqual(rn.kept("platform_record_v1"), rn.TABLE["kept_values"]["values"]["platform_record_v1"]["value"])
-        # every place the table protects is real now: the historical lines, and where each exempt region starts
+        # every place the table protects is real now: where each exempt region starts. The historical lines were held through
+        # b-g; since h2 each is spelled through the table (its "h2" note), so none is left in its file
         src = rn.TABLE["source"]
         for h in src["historical"]["lines"]:
-            self.assertIn(h["text"], [l.strip() for l in read(h["file"]).splitlines()], h["file"])
+            self.assertNotIn(h["text"], [l.strip() for l in read(h["file"]).splitlines()], h["file"])
         for r in src["exempt_regions"]:
             lines = read(r["file"]).splitlines()
             self.assertTrue(any(re.match(f, l) for f in r["from"] for l in lines), r["why"])
@@ -187,8 +194,18 @@ class RenameTable(unittest.TestCase):
         self.assertEqual(sorted(literals(text)), ["SUBST_KEEP", "SUBST_KEEP_PROSE"])
         mapped = map_units(units, rel, text)
         self.assertEqual(literals(mapped), literals(text))   # h2 converts them, not b-g
-        # unit h2 converts SUBST_KEEP/_PROSE to the helper, so it must update this line (its literals then hold no old name)
-        self.assertNotEqual(literals(map_units(units, rel, text, protect=False)), literals(text))   # unprotected, g changes them
+        # v0.8.0 unit h2: the two literals load from the table now (no old name left in them), so the protection is shown on
+        # the table's historical lines, the literals as they were through g: held, b-g leave them as they are
+        hist = "\n".join(h["text"] for h in rn.TABLE["source"]["historical"]["lines"] if h["file"] == rel)
+        self.assertEqual(sorted(literals(hist)), ["SUBST_KEEP", "SUBST_KEEP_PROSE"])
+        self.assertEqual(map_units(units, rel, hist), hist)
+        self.assertNotEqual(literals(map_units(units, rel, hist, protect=False)), literals(hist))   # unprotected, g changes them
+        # and the table's v074_display holds those strings byte for byte, in their order
+        old = {n.targets[0].id: n.value for n in ast.parse(hist).body}
+        self.assertEqual(list(ast.literal_eval(old["SUBST_KEEP"])), rn.v074("keep"))
+        self.assertEqual({ast.literal_eval(k): ast.literal_eval(v.args[0]) for k, v in zip(old["SUBST_KEEP_PROSE"].keys,
+                                                                                         old["SUBST_KEEP_PROSE"].values)},
+                         rn.v074("keep_prose"))
         # only the two literals are held: golden_split.py is no reader file, so c, d2b and f still rename the sandbox home line
         self.assertNotIn(os.path.basename(rel), rn.TABLE["source"]["reader_files"])
         # d1 fix 2: the home line may already be part renamed (c made it ISR_HOME), so it must be the old line taken through
@@ -213,61 +230,66 @@ class RenameTable(unittest.TestCase):
                               (f"'{old}'", f"'{new}'"), (f"({old})", f"({new})"), (f"run {old}", f"run {new}")):
             self.assertEqual(map_units(units, "tests/test_boxes.py", before), after)
 
-    def test_d2_open_mode_span_spares_the_module(self):   # replay (d2a fix 1: the "wt" mode span held a wt. call in the same open)
+    def test_d2_open_mode_span_spares_the_module(self):   # replay (d2a fix 1: the file-mode span held a module call in the same open)
         order, old, new = rn.TABLE["source"]["order"], rn.OLD["main"][:-len("py")], rn.NEW["main"][:-len("py")]
-        line = '        with gzip.open(%sapproved_path(d), "wt") as f:' % old
+        line = '        with gzip.open(%sapproved_path(d), %s) as f:' % (old, MODE)
         want = line.replace(old, new)
-        self.assertIn(', "wt")', want)   # the file mode stays
-        plain = '        with open(p, "wt") as f:'
+        self.assertIn(', %s)' % MODE, want)   # the file mode stays
+        plain = '        with open(p, %s) as f:' % MODE
         for u, rel in (("d2a", "tests/test_batch6_mask.py"), ("d2b", "tests/test_boxes.py")):
             self.assertEqual(os.path.basename(rel) in rn.TABLE["source"]["unit_files"]["d2a"], u == "d2a")
             units = order[:order.index(u) + 1]
             self.assertEqual(map_units(units, rel, line), want)
             self.assertEqual(map_units(order, rel, plain), plain)
             # the d2a build's span held the whole call, the module reference included, so it stayed old
-            with mock.patch.dict(rn.TABLE["source"], {"keep_spans": [{"re": 'open\\([^\\n]*?, "wt"'}]}):
+            with mock.patch.dict(rn.TABLE["source"], {"keep_spans": [{"re": 'open\\([^\\n]*?, ' + MODE}]}):
                 self.assertEqual(map_units(units, rel, line), line)
 
-    def test_d2_open_mode_span_holds_only_the_mode(self):   # replay (d2b table fix: the "wt" mode span held a home folder in the path)
+    def test_d2_open_mode_span_holds_only_the_mode(self):   # replay (d2b table fix: the file-mode span held a home folder in the path)
         order, old, new = rn.TABLE["source"]["order"], json.dumps(rn.OLD["sandbox_home"]), json.dumps(rn.NEW["sandbox_home"])
         line = '        with open(os.path.join(self.tmp, %s, "exports", "roster.json"), "w") as f:' % old
         want = line.replace(old, new)
         self.assertNotEqual(want, line)
-        modes = ('        with gzip.open(p, "wt", encoding="utf-8") as f:', '        with open(p, "wt") as f:')
+        modes = ('        with gzip.open(p, %s, encoding="utf-8") as f:' % MODE, '        with open(p, %s) as f:' % MODE)
         units = order[:order.index("d2b") + 1]
         for rel in ("tests/test_v069.py", "tests/test_v074_display_name.py"):
             self.assertNotIn(os.path.basename(rel), rn.TABLE["source"]["unit_files"]["d2a"])
             self.assertEqual(map_units(units, rel, line), want)
             for m in modes:
                 self.assertEqual(map_units(order, rel, m), m)   # the file mode stays
-            # the d2a fix 1 span ran to any ', "wt"' in the call, the home folder included, so the folder stayed old
-            with mock.patch.dict(rn.TABLE["source"], {"keep_spans": [{"re": 'open\\((?:(?!wt\\.)[^\\n])*?, "wt"'}]}):
+            # the d2a fix 1 span ran to any argument that looked like the file mode, the home folder included, so the folder stayed old
+            with mock.patch.dict(rn.TABLE["source"], {"keep_spans": [{"re": 'open\\((?:(?!%s\\.)[^\\n])*?, %s' % (OLD_MOD, MODE)}]}):
                 self.assertEqual(map_units(units, rel, line), line)
 
     def test_d2_alias_entry_spares_the_name_guard_data(self):   # replay (d2b fix 1: d2's alias entry hit A5, C's bounds data and a comment)
         rel, order = "tests/test_v074_display_name.py", rn.TABLE["source"]["order"]
         units = order[:order.index("d2b") + 1]
         new = rn.NEW["main"][:-len(".py")]
-        alias = "import %s as %s" % (new, rn.OLD["main"][:-len(".py")])
-        held = rn.TABLE["source"]["held_lines"]["lines"]
-        self.assertEqual({(h["file"], h["old"]) for h in held}, {(rel, alias)})   # one entry, one file
+        alias = "import %s as %s" % (new, OLD_MOD)
+        # v0.8.0 unit h2: the five lines d2b held spell the alias through the table now (the leftover guard), so their entries are
+        # gone and the file holds no alias text for d2's entry to change; the hold is replayed on lines of the same three kinds
+        self.assertEqual(rn.TABLE["source"]["held_lines"]["lines"], [])
         self.assertNotIn(os.path.basename(rel), rn.TABLE["source"]["unit_files"]["d2a"])
         text = read(rel)
-        lines = text.split("\n")
-        at = sorted(i for h in held for i, l in enumerate(lines) if line_key(l) == h["sha256"])
-        self.assertEqual(len(held), 5)
-        self.assertEqual(len(at), len(held))   # each key names one line of the file: none is stale
-        self.assertEqual(map_units(units, rel, text), text)   # the 5 lines stay as they are
-        # only those lines: a new alias line in the same file, or in another d2b file, still loses the alias
-        self.assertEqual(map_units(units, rel, "    " + alias), "    import " + new)
-        for other in ("tests/test_boxes.py", "tests/test_v069.py"):
-            self.assertNotIn(os.path.basename(other), rn.TABLE["source"]["unit_files"]["d2a"])
-            self.assertEqual(map_units(units, other, alias), "import " + new)
-        # without the hold, d2's alias entry changes exactly those 5 lines
-        with mock.patch.dict(rn.TABLE["source"], {"held_lines": {"lines": []}}):
-            mapped = map_units(units, rel, text).split("\n")
+        self.assertNotIn(alias, text)
+        self.assertEqual(map_units(units, rel, text), text)
+        # a comment naming the alias line, A5's exact table strings and C's bounds data, then a line no entry changes
+        lines = ["# so the alias line `%s` that d2 removes" % alias, "'\"%s\"', r'\"\\\\1%s\"'," % (alias, alias),
+                 "allowed = (\"import %s\", \"%s\")" % (new, alias), "x = 1"]
+        sample = "\n".join(lines)
+        held = [{"file": rel, "old": alias, "sha256": line_key(l), "at_d2b": 0, "what": "replay"} for l in lines[:3]]
+        self.assertEqual(sorted(i for h in held for i, l in enumerate(lines) if line_key(l) == h["sha256"]), [0, 1, 2])
+        with mock.patch.dict(rn.TABLE["source"], {"held_lines": {"lines": held}}):
+            self.assertEqual(map_units(units, rel, sample), sample)   # the held lines stay as they are
+            # only those lines: a new alias line in the same file, or in another d2b file, still loses the alias
+            self.assertEqual(map_units(units, rel, "    " + alias), "    import " + new)
+            for other in ("tests/test_boxes.py", "tests/test_v069.py"):
+                self.assertNotIn(os.path.basename(other), rn.TABLE["source"]["unit_files"]["d2a"])
+                self.assertEqual(map_units(units, other, alias), "import " + new)
+        # without the hold, d2's alias entry changes exactly those lines
+        mapped = map_units(units, rel, sample).split("\n")
         self.assertEqual(len(mapped), len(lines))
-        self.assertEqual([i for i, (a, b) in enumerate(zip(lines, mapped)) if a != b], at)
+        self.assertEqual([i for i, (a, b) in enumerate(zip(lines, mapped)) if a != b], [0, 1, 2])
 
     def test_f_maps_the_own_release_with_the_brief_that_reads_it(self):   # replay (f fix 1: feeds.json "installed" was only in g)
         order, units = rn.TABLE["source"]["order"], rn.TABLE["source"]["units"]

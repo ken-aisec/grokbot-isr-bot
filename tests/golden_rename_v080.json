@@ -133,7 +133,9 @@
    "owner_tmp_audit_t93": {"value": "wt-audit-t93.json", "where": "test_boxes", "why": "as above"},
    "owner_tmp_fix_revet": {"value": "wt-fix-revet-t93.json", "where": "test_boxes", "why": "as above"},
    "owner_tmp_daily": {"value": "wt-daily-t93.json", "where": "test_boxes", "why": "as above"},
-   "owner_tmp_notes": {"value": "wt-notes.txt", "where": "test_boxes", "why": "as above"}
+   "owner_tmp_notes": {"value": "wt-notes.txt", "where": "test_boxes", "why": "as above"},
+   "file_mode": {"value": "wt", "where": "test_v080_rename_table (the keep_span replay strings); in open and gzip.open calls source.keep_spans holds it and the leftover guard skips it there",
+                 "why": "open's text-write mode, not a name (h2)"}
   },
   "changelog_only": {"wt-platform-yes-v2": "CHANGELOG at or below 0.7.4 only, inside the exempt region: nothing to spell"}
  },
@@ -459,14 +461,8 @@
    {"re": "open\\((?:(?!wt\\.)[^\\n])*?, \"wt\"(?=\\)|, encoding=)", "why": "the file mode \"wt\" of gzip.open/open (approved.py:98, :132 and 9 tests); a wt. module reference inside the same call is still mapped (d2a fix 1), and only the mode argument is held, so a home folder \"wt\" in the call's path is still mapped (d2b table fix)"}
   ],
   "held_lines": {
-   "about": "Single lines one plain source entry (its old value) leaves as they are, in every unit that holds the entry; the other entries still apply there. A line is named by its file and the sha256 of its stripped text, first 16 hex (the text cannot sit in this file: the name guard would flag it); at_d2b is its line number when the hold was added, for reading only. (d2b fix 1) The d2 alias entry spares test_v074_display_name's allowance data: A5 and C must keep matching the alias values d1's entries write, which this table keeps for good, and the comment above C describes the line d2 removes.",
-   "lines": [
-    {"file": "tests/test_v074_display_name.py", "old": "import isr as wt", "sha256": "8548ef0dfd75c22d", "at_d2b": 191, "what": "the comment above C: the alias line d2 removes"},
-    {"file": "tests/test_v074_display_name.py", "old": "import isr as wt", "sha256": "30878a86741bdafa", "at_d2b": 203, "what": "A5's exact table strings"},
-    {"file": "tests/test_v074_display_name.py", "old": "import isr as wt", "sha256": "b23b898767976b46", "at_d2b": 204, "what": "A5's exact table strings"},
-    {"file": "tests/test_v074_display_name.py", "old": "import isr as wt", "sha256": "5e6ed596d77c7326", "at_d2b": 296, "what": "C's bounds data (allowed)"},
-    {"file": "tests/test_v074_display_name.py", "old": "import isr as wt", "sha256": "b4d2be256c8f14ee", "at_d2b": 297, "what": "C's bounds data (allowed)"}
-   ]
+   "about": "Single lines one plain source entry (its old value) leaves as they are, in every unit that holds the entry; the other entries still apply there. A line is named by its file and the sha256 of its stripped text, first 16 hex (the text cannot sit in this file: the name guard would flag it); at_d2b is its line number when the hold was added, for reading only. (d2b fix 1) The d2 alias entry spares test_v074_display_name's allowance data: A5 and C must keep matching the alias values d1's entries write, which this table keeps for good, and the comment above C describes the line d2 removes. h2 spells the alias in those five lines through tests/rename_v080.py (the leftover guard), so none holds the alias text and their entries are gone: the d2b keys were 8548ef0dfd75c22d (:191, the comment above C), 30878a86741bdafa and b23b898767976b46 (:203-204, A5's exact table strings), 5e6ed596d77c7326 and b4d2be256c8f14ee (:296-297, C's bounds data), each for d2's alias entry (its old value).",
+   "lines": []
   },
   "reader_files": ["test_golden_expect.py", "test_batch6_golden_counts.py", "test_batch6_golden_perkey.py", "test_batch5_access_round3.py", "test_batch5_codex_r1.py", "test_batch6b_codex_r1.py"],
   "reader_rule": "in a reader file, a line holding an old output value that is an item-name path (workspace/watchtower) or old display text (Watchtower, capitalised) is a historical literal: it keeps its old spelling through units b-g, and h2 switches it to tests/rename_v080.py",
@@ -531,7 +527,9 @@
    "h2": [
     {"what": "every source.historical line and every reader_rule line switches to rename_v080 (OLD, old_rule, old_display); every kept_values test line switches to rename_v080.kept(<key>)"},
     {"file": "tests/golden_split.py", "what": "SUBST_PAIRS, SUBST_KEEP, SUBST_KEEP_PROSE (and V074_KEPT) move into v074_display and load from there"},
-    {"file": "tests/test_v074_display_name.py", "what": "OLD, OLD_ROUTINES and the replay strings come from the helper"}
+    {"file": "tests/test_v074_display_name.py", "what": "OLD, OLD_ROUTINES and the replay strings come from the helper"},
+    {"file": "tests/golden_rename_v080.json", "what": "v074_display filled from golden_split and test_golden_expect; kept_values file_mode; held_lines emptied (h2 respells those five lines)"},
+    {"file": "tests/test_v080_leftovers.py", "what": "the leftover guard (new)"}
    ]
   }
  },
@@ -571,5 +569,22 @@
   "test_watchtowers_own_skills_and_routines_vet_clean": "test_isr_bots_own_skills_and_routines_vet_clean",
   "test_watchtower_passes_its_own_prepublish_check": "test_isr_bot_passes_its_own_prepublish_check"
  },
- "v074_display": []
+ "v074_display": {
+  "about": "v0.7.4's display rename, for the harness and the tests that read the v0.7.4 golden files (h2: tests/golden_split.py loads these, they were its literals). pairs: the one pair the subst kind may carry (SUBST_PAIRS). keep: the strings subst_change counts, which the display rename never takes along (SUBST_KEEP). keep_prose: a kept string the display prose also says in full, with the pattern of that prose (SUBST_KEEP_PROSE). v074_kept: the name guard's v0.7.4 allowed values as they were at 0ed5802, each distinct ALLOWED value and then the gitleaks fragment (test_golden_expect V074_KEPT, frozen there in unit g).",
+  "pairs": [["Watchtower", "ISR Bot"]],
+  "keep": ["Watchtower rules", "SkillSpector + Watchtower", "husk + Watchtower", "Watchtower/", "Watchtower's own tools",
+           "during a recorded Watchtower run",
+           "Watchtower's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run",
+           "its program file isn't the one Watchtower installed",
+           "Ask-first rules with no word Watchtower reads in any of its languages",
+           "Watchtower daily watch", "Watchtower weekly audit", "Watchtower weekly tidy", "Watchtower monthly roll-call",
+           "You are Watchtower", "Watchtower: package caches, lockfiles, headers and its own state"],
+  "keep_prose": {"its program file isn't the one Watchtower installed": "\\bdidn't run [^:\\n]{1,40}: its program file isn't the one Watchtower installed"},
+  "v074_kept": ["Watchtower rules", "Watchtower", "Watchtower/", "Watchtower daily watch", "Watchtower weekly audit",
+                "Watchtower weekly tidy", "Watchtower monthly roll-call", "You are Watchtower", ", during a recorded Watchtower run (",
+                "Watchtower's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run",
+                "its program file isn't the one Watchtower installed",
+                "Ask-first rules with no word Watchtower reads in any of its languages", "Watchtower's own tools",
+                "description = \"Watchtower: package caches, lockfiles, headers and its own state\""]
+ }
 }

@@ -16,8 +16,18 @@ def old_rule(new_id):
 
 
 def old_display():
-    """The v0.7.4 display strings (old, new) the table lists, in order."""
-    return [tuple(p) for p in TABLE["v074_display"]]
+    """The v0.7.4 display pairs (old, new) the table lists, in order: the display name before 0.8.0 first."""
+    return [tuple(p) for p in TABLE["v074_display"]["pairs"]]
+
+
+def v074(key):
+    """One of the table's v0.7.4 display lists by its key (pairs, keep, keep_prose, v074_kept): what the v0.7.4 golden files say."""
+    return TABLE["v074_display"][key]
+
+
+def old_item(rel):
+    """The name an old golden file gives a file of the old install folder: "tree " and the folder, without its leading /."""
+    return "tree " + OLD["home"].lstrip("/") + "/" + rel
 
 
 def kept(key):

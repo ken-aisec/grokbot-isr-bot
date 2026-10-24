@@ -490,12 +490,13 @@ class CurlCookieCopies(Box):
 # ---------------------------------------------------------------- 10: KL3's golden entries
 import golden_split as gs  # noqa: E402  (the module, never its TestCase)
 from unittest import mock  # noqa: E402
+import rename_v080 as rn  # noqa: E402  (v0.8.0 unit h2: the golden file's old item names come from the name table)
 
 EXPECT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "golden_expect", "batch6b.json")
 GSIDS = ("box-busy_clean_box-driver", "box-power_user-driver")
-COPY_A, COPY_B = "tree workspace/watchtower/state/approved/" + "a" * 16 + ".json.gz", "tree workspace/watchtower/state/approved/" + "b" * 16 + ".json.gz"
-CACHE = "tree workspace/watchtower/state/engine_cache.json"
-MARKER = "tree workspace/watchtower/state/approved_masked"
+COPY_A, COPY_B = rn.old_item("state/approved/" + "a" * 16 + ".json.gz"), rn.old_item("state/approved/" + "b" * 16 + ".json.gz")
+CACHE = rn.old_item("state/engine_cache.json")
+MARKER = rn.old_item("state/approved_masked")
 
 
 def copy_item(v, name="SKILL.md"):

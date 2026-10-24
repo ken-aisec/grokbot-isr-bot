@@ -12,6 +12,7 @@ import isr  # noqa: E402
 from test_batch4_codex_review3 import Folder, History, HEAD, HOOK, ev, vet_json
 from test_batch5_platform_notes import _SignIn, SIGNIN, LINE12, REL
 import golden_split as gs
+import rename_v080 as rn
 
 BODY = ("y" * 80 + "\n") * 55   # past the 4096 characters a crossing quote was read for
 
@@ -445,7 +446,7 @@ class GoldenExactChanges(unittest.TestCase):
         post = self.PRE.replace('"masked": 3', f'"masked": {isr.MASK_VERSION}').replace("[hidden]", "FAKEsecret")   # the version each shipped file expects
         with open(os.path.join(ROOT, "tests", "golden_expect", "batch5.json")) as f:
             shipped = gs.parse_expect(json.load(f), ["c"])
-        key = "tree workspace/watchtower/state/approved/0123456789abcdef.json.gz"
+        key = rn.old_item("state/approved/0123456789abcdef.json.gz")   # v0.8.0 unit h2: the shipped file's item name, from the table
         self.assertTrue(gs.unexpected_lines("box-busy_clean_box-full", key, self.PRE, post, shipped, {}))
 
     def test_only_the_version_field_changed_is_expected(self):   # guard

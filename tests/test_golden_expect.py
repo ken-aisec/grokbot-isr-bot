@@ -10,6 +10,11 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import golden_split as gs  # noqa: E402  (the module, never its TestCase)
+import rename_v080 as rn  # noqa: E402
+
+# v0.8.0 unit h2: the golden files and the v0.7.4 outputs these tests replay say the old names, spelled here through the name
+# table: OLD is the display name before 0.8.0, rn.old_item(rel) the old install folder's file rel as a golden item name
+OLD = rn.old_display()[0][0]
 
 PRE = {"001 audit :rc": "0", "001 audit :stdout": '{\n "masked": 3,\n "status": "ok"\n}\n', "001 audit :stderr": ""}
 POST = dict(PRE, **{"001 audit :stdout": '{\n "masked": 4,\n "status": "ok"\n}\n'})
@@ -85,11 +90,11 @@ class ExpectedDifferences(_Expect):
         self.assertNotIn("must_see", "\n".join(type(h).report))
 
     def test_a_new_item_is_a_line_of_its_own(self):
-        post = dict(PRE, **{"tree workspace/watchtower/state/new.json": "file 0600\n{}"})
+        post = dict(PRE, **{rn.old_item("state/new.json"): "file 0600\n{}"})
         self.assertEqual(gs.diff_lines(None, "file 0600\n{}"), [gs.NEW_ITEM, "+file 0600", "+{}"])
         self.assertEqual(gs.diff_lines("a\n", None), [gs.GONE_ITEM, "-a"])
         self.assertEqual(gs.diff_lines("a\n", "a"), ["~line ends differ"])
-        e = entry(key_rx=r"^tree workspace/watchtower/state/new\.json$", lines_rx=[r"^\+<new item>$", r"^\+file 0600$", r"^\+\{\}$"])
+        e = entry(key_rx="^" + rn.old_item("state/new") + r"\.json$", lines_rx=[r"^\+<new item>$", r"^\+file 0600$", r"^\+\{\}$"])
         h = self.harness([e], ["c"], post=post)
         self.assertEqual(self.outcome(h), "passed", type(h).report)
 
@@ -141,16 +146,16 @@ class AccessMapExpectations(unittest.TestCase):
                       "webhook_count": 0, "webhook_services": [], "webhooks": []},
            "unknown": ["connectors", "routines_on_box", "secrets_content", "approvals"], "v": 1}
     SECTION = ["", "## Who can reach what", "", "All your Bots share this computer, so every Bot can use everything in the first list.", "",
-               "Shared by all Bots", "- Browser: Watchtower found no shared browser cookies to check.", "- Command-line sign-ins: none found.",
-               "- Allowed without asking: Watchtower couldn't find Grok Bot's approval settings, so it can't say what Bots may do without asking.",
+               "Shared by all Bots", f"- Browser: {OLD} found no shared browser cookies to check.", "- Command-line sign-ins: none found.",
+               f"- Allowed without asking: {OLD} couldn't find Grok Bot's approval settings, so it can't say what Bots may do without asking.",
                "- Tool connections (MCP): none found.", "- Plugins: none.", "",
-               "Each Bot (what each Bot said in the roll-call; Watchtower can't check it)",
-               "- No Bot has answered a roll-call in the last 35 days, so Watchtower doesn't know which connectors each Bot uses. Ask Watchtower to run a roll-call.",
-               "", "What Watchtower can't see", "- Grok Bot's approval settings: Watchtower couldn't find them on this computer.",
+               f"Each Bot (what each Bot said in the roll-call; {OLD} can't check it)",
+               f"- No Bot has answered a roll-call in the last 35 days, so {OLD} doesn't know which connectors each Bot uses. Ask {OLD} to run a roll-call.",
+               "", f"What {OLD} can't see", f"- Grok Bot's approval settings: {OLD} couldn't find them on this computer.",
                "- Which connectors a Bot uses, except what it said in the roll-call. The Grok Bot app keeps that list, not this computer.",
                "- Routines and when they run: the Grok Bot app keeps them, not this computer.",
                "- What each sign-in or connector is allowed to do at its service (its permissions there).",
-               "- What's inside memories, messages or saved passwords. Watchtower never reads them."]
+               f"- What's inside memories, messages or saved passwords. {OLD} never reads them."]
 
     # the same box's map as 0a72c20 wrote it: its patterns took it, and took it tampered too (each tampering is tried on both)
     OLD_MAP = {"at": "<TS>", "bots": [], "bots_more": 0, "bots_no_detail": [], "bots_silent": [], "rollcall": {"at": None, "fresh": False},
@@ -173,7 +178,7 @@ class AccessMapExpectations(unittest.TestCase):
         m = copy.deepcopy(self.MAP if m is None else m)
         if change:
             change(m)
-        return self.bad("tree workspace/watchtower/state/access_map.json", None, "file 0644\n" + json.dumps(m, indent=2, sort_keys=True))
+        return self.bad(rn.old_item("state/access_map.json"), None, "file 0644\n" + json.dumps(m, indent=2, sort_keys=True))
 
     def both_fail(self, change):
         self.assertTrue(self.map_bad(change, self.OLD_MAP), "the 0a72c20-shaped map, tampered")
@@ -200,12 +205,12 @@ class AccessMapExpectations(unittest.TestCase):
     def report_pair(section):
         """(pre, post) report text around the section as a report has it: the findings table after it is longer than Top fixes
         before it, so the diff adds the section with its first empty line, as in the golden boxes (PR B, Codex round 2, 6: the
-        section is one exact block now, so its diff lines matter; was: pre "# Watchtower\\n\\n## All open findings\\n")."""
-        top, rest = ["# Watchtower", "", "## Top fixes", "Nothing to fix this week."], ["", "## All open findings", "", "Confirmed: x.", "", "| a |", "| b |"]
+        section is one exact block now, so its diff lines matter; was: pre "# <the old name>\\n\\n## All open findings\\n")."""
+        top, rest = ["# " + OLD, "", "## Top fixes", "Nothing to fix this week."], ["", "## All open findings", "", "Confirmed: x.", "", "| a |", "| b |"]
         return "\n".join(top + rest) + "\n", "\n".join(top + section + rest) + "\n"
 
     def test_an_added_report_line_fails(self):   # replay
-        key, (pre, post) = "tree workspace/watchtower/reports/2026-W43.md", self.report_pair(self.SECTION)
+        key, (pre, post) = rn.old_item("reports/2026-W43.md"), self.report_pair(self.SECTION)
         self.assertEqual(self.bad(key, pre, post), [])
         leak = post.replace("- Plugins: none.", "- Plugins: none.\n- Browser: FAKE_PRIVATE_MESSAGE")
         self.assertEqual(self.bad(key, pre, leak), ["+- Browser: FAKE_PRIVATE_MESSAGE"])
@@ -213,11 +218,11 @@ class AccessMapExpectations(unittest.TestCase):
 
     def test_an_added_card_item_fails(self):   # replay
         import html
-        key = "tree workspace/watchtower/reports/dashboard.html"
+        key = rn.old_item("reports/dashboard.html")
         items = lambda xs: "".join(f"<li>{html.escape(x[2:])}</li>" for x in xs)
         card = ("<h2 style='font-size:16px'>Who can reach what</h2><div class='card'><p class='mut'>" + html.escape(self.SECTION[3]) + "</p>"
                 "<p><b>Shared by all Bots</b></p><ul>" + items(self.SECTION[6:11]) + "</ul><p><b>" + html.escape(self.SECTION[12]) + "</b></p><ul>"
-                + items(self.SECTION[13:14]) + "</ul><p><b>What Watchtower can&#x27;t see</b></p><ul>"
+                + items(self.SECTION[13:14]) + f"</ul><p><b>What {OLD} can&#x27;t see</b></p><ul>"
                 + items(self.SECTION[16:21]) + "</ul></div>")   # round 2: SECTION has the five lines now (was four listed here + SECTION[16])
         self.assertEqual(self.bad(key, "<p>a</p>\n", card + "\n<p>a</p>\n"), [])
         self.assertTrue(self.bad(key, "<p>a</p>\n", card.replace("<li>Plugins: none.</li>", "<li>Plugins: none.</li><li>Browser: FAKE_PRIVATE_MESSAGE</li>") + "\n<p>a</p>\n"))
@@ -261,7 +266,7 @@ class AccessMapRound2Negatives(unittest.TestCase):
     def tampered_fails(self, sid, change):
         """This branch's map for the scenario is expected as written, and not once tampered."""
         import json
-        key, m = "tree workspace/watchtower/state/access_map.json", self.maps(sid)[0]
+        key, m = rn.old_item("state/access_map.json"), self.maps(sid)[0]
         self.assertEqual(gs.unexpected_lines(sid, key, None, "file 0644\n" + json.dumps(m, indent=2, sort_keys=True), self.entries, {}), [], sid)
         change(m)
         self.assertTrue(gs.unexpected_lines(sid, key, None, "file 0644\n" + json.dumps(m, indent=2, sort_keys=True), self.entries, {}), sid)
@@ -271,7 +276,7 @@ class AccessMapRound2Negatives(unittest.TestCase):
         import json
         m = self.maps(sid)[1]
         change(m)
-        self.assertTrue(gs.unexpected_lines(sid, "tree workspace/watchtower/state/access_map.json", None,
+        self.assertTrue(gs.unexpected_lines(sid, rn.old_item("state/access_map.json"), None,
                                             "file 0644\n" + json.dumps(m, indent=2, sort_keys=True), self.entries, {}))
 
     def test_three_plugins_where_none_are_fails(self):   # replay
@@ -288,13 +293,13 @@ class AccessMapRound2Negatives(unittest.TestCase):
         self.tampered_fails("box-emoji_names-cli", lambda m: m.update(bots_silent=[]))
 
     def section_fails(self, change):
-        key = "tree workspace/watchtower/reports/2026-W43.md"
+        key = rn.old_item("reports/2026-W43.md")
         for name, section in (("3170952's section", self.R1_SECTION), ("this branch's section", self.SECTION)):
             pre, post = self.report_pair(change(list(section)))
             self.assertTrue(self.bad(key, pre, post), name)
 
     def test_the_whole_section_is_expected(self):   # guard: untouched, it passes
-        self.assertEqual(self.bad("tree workspace/watchtower/reports/2026-W43.md", *self.report_pair(self.SECTION)), [])
+        self.assertEqual(self.bad(rn.old_item("reports/2026-W43.md"), *self.report_pair(self.SECTION)), [])
 
     def test_an_omitted_mcp_line_fails(self):   # replay
         self.section_fails(lambda s: [x for x in s if not x.startswith("- Tool connections (MCP)")])
@@ -375,9 +380,9 @@ class ExactKinds(unittest.TestCase):
 
 class SubstKind(unittest.TestCase):
     """v0.7.4: `subst` takes an item whole only when post is pre with the display name changed and nothing else."""
-    NAME = {"pairs": [["Watchtower", "ISR Bot"]]}
-    PRE = "# Watchtower report\nWatchtower rules\nscore 98\n"
-    POST = "# ISR Bot report\nWatchtower rules\nscore 98\n"   # an engine label kept as it was is fine
+    NAME = {"pairs": [list(p) for p in rn.old_display()]}
+    PRE = f"# {OLD} report\n{OLD} rules\nscore 98\n"
+    POST = f"# ISR Bot report\n{OLD} rules\nscore 98\n"   # an engine label kept as it was is fine
 
     def entries(self, subst=None):
         e = entry(key_rx=r"^r$", subst=self.NAME if subst is None else subst)
@@ -391,17 +396,17 @@ class SubstKind(unittest.TestCase):
         hits = {}
         self.assertEqual(gs.unexpected_lines("tierA", "r", self.PRE, self.POST, self.entries(), hits), [])
         self.assertEqual(hits, {0: 2})
-        self.assertTrue(gs.subst_change("Watchtower's own\n", "ISR Bot's own\n", self.NAME))   # the possessive too
+        self.assertTrue(gs.subst_change(f"{OLD}'s own\n", "ISR Bot's own\n", self.NAME))   # the possessive too
 
     def test_one_more_changed_character_takes_nothing(self):
         for post in (self.POST.replace("98", "97"), self.POST + "x\n", self.POST.replace("report", "Report"), self.POST.rstrip("\n")):
             self.assertTrue(self.bad(self.PRE, post), post)
 
     def test_a_version_change_is_not_a_rename(self):
-        self.assertTrue(self.bad("Watchtower 0.7.3.\n", "ISR Bot 0.7.4.\n"))
+        self.assertTrue(self.bad(f"{OLD} 0.7.3.\n", "ISR Bot 0.7.4.\n"))
 
     def test_pre_that_already_has_the_new_name_takes_nothing(self):
-        self.assertTrue(self.bad("ISR Bot and Watchtower\n", "ISR Bot and ISR Bot\n"))
+        self.assertTrue(self.bad(f"ISR Bot and {OLD}\n", "ISR Bot and ISR Bot\n"))
 
     def test_equal_new_or_gone_items_take_nothing(self):
         self.assertFalse(gs.subst_change(self.PRE, self.PRE, self.NAME))
@@ -409,16 +414,16 @@ class SubstKind(unittest.TestCase):
         self.assertEqual(self.bad(self.PRE, None), [gs.GONE_ITEM] + ["-" + l for l in self.PRE.splitlines()])
 
     def test_only_the_name_pair_is_accepted(self):   # the owner's override: never a general rewrite rule
-        for subst in ({"pairs": [["0.7.3", "0.7.4"]]}, {"pairs": [["Watchtower", "ISR Bot"], ["0.7.3", "0.7.4"]]},
-                      {"pairs": [["ISR Bot", "Watchtower"]]}, {"pairs": [["Watchtower", "ISR Bot!"]]},
-                      {"pairs": [["Watchtower", "ISR Bot"], ["Watchtower", "ISR Bot"]]},
-                      {"pairs": [["watchtower", "isr bot"]]}, {"pairs": [["", "ISR Bot"]]}, {"pairs": [["a", "a"]]}):
+        for subst in ({"pairs": [["0.7.3", "0.7.4"]]}, {"pairs": [[OLD, "ISR Bot"], ["0.7.3", "0.7.4"]]},
+                      {"pairs": [["ISR Bot", OLD]]}, {"pairs": [[OLD, "ISR Bot!"]]},
+                      {"pairs": [[OLD, "ISR Bot"], [OLD, "ISR Bot"]]},
+                      {"pairs": [[OLD.lower(), "isr bot"]]}, {"pairs": [["", "ISR Bot"]]}, {"pairs": [["a", "a"]]}):
             with self.assertRaises(ValueError, msg=repr(subst)):
                 self.entries(subst)
 
     def test_malformed_subst_entries_are_refused(self):
-        for subst in ({}, {"pairs": []}, {"pairs": "Watchtower"}, {"pairs": [["Watchtower"]]}, {"pairs": [("Watchtower", "ISR Bot")]},
-                      {"pairs": [["Watchtower", "ISR Bot"]], "also": 1}, {"pairs": [["Watchtower", 1]]}):
+        for subst in ({}, {"pairs": []}, {"pairs": OLD}, {"pairs": [[OLD]]}, {"pairs": [(OLD, "ISR Bot")]},
+                      {"pairs": [[OLD, "ISR Bot"]], "also": 1}, {"pairs": [[OLD, 1]]}):
             with self.assertRaises(ValueError, msg=repr(subst)):
                 self.entries(subst)
         with self.assertRaises(ValueError):
@@ -430,57 +435,53 @@ class SubstKind(unittest.TestCase):
         self.assertTrue(self.bad(pre, post), post)
 
     def test_an_engine_label_rename_is_refused(self):   # replay (cffd4b7: taken whole)
-        self.refused('# Watchtower report\n{"engines": ["Watchtower rules", "gitleaks"]}\n',
+        self.refused('# %s report\n{"engines": ["%s rules", "gitleaks"]}\n' % (OLD, OLD),
                      '# ISR Bot report\n{"engines": ["ISR Bot rules", "gitleaks"]}\n')
-        self.refused("Watchtower checked it: SkillSpector + Watchtower\n", "ISR Bot checked it: SkillSpector + ISR Bot\n")
+        self.refused(f"{OLD} checked it: SkillSpector + {OLD}\n", "ISR Bot checked it: SkillSpector + ISR Bot\n")
 
     def test_a_user_agent_rename_is_refused(self):   # replay (cffd4b7: taken whole)
-        self.refused("Watchtower brief\nUser-Agent: Watchtower/0.7.4 (+threat brief)\n",
+        self.refused(f"{OLD} brief\nUser-Agent: {OLD}/0.7.4 (+threat brief)\n",
                      "ISR Bot brief\nUser-Agent: ISR Bot/0.7.4 (+threat brief)\n")
 
     def test_the_stage_key_rename_is_refused(self):   # replay (cffd4b7: taken whole)
-        self.refused('{\n "seconds_per_stage": {\n  "Watchtower\'s own tools": 1.5\n }\n}\n',
+        self.refused('{\n "seconds_per_stage": {\n  "%s\'s own tools": 1.5\n }\n}\n' % OLD,
                      '{\n "seconds_per_stage": {\n  "ISR Bot\'s own tools": 1.5\n }\n}\n')
 
-    KEPT = ("Watchtower rules", "SkillSpector + Watchtower", "husk + Watchtower", "Watchtower/", "Watchtower's own tools",
-            ", during a recorded Watchtower run (", "Ask-first rules with no word Watchtower reads in any of its languages",
-            "Watchtower's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run",
-            "its program file isn't the one Watchtower installed", "Watchtower daily watch", "Watchtower weekly audit",
-            "Watchtower weekly tidy", "Watchtower monthly roll-call", "You are Watchtower")
+    KEPT = tuple(k % OLD for k in (
+        "%s rules", "SkillSpector + %s", "husk + %s", "%s/", "%s's own tools",
+        ", during a recorded %s run (", "Ask-first rules with no word %s reads in any of its languages",
+        "%s's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run",
+        "its program file isn't the one %s installed", "%s daily watch", "%s weekly audit",
+        "%s weekly tidy", "%s monthly roll-call", "You are %s"))
 
     def test_every_kept_string_is_refused_renamed_and_accepted_kept(self):   # replay (cffd4b7: every one taken whole)
         for k in self.KEPT + tuple(getattr(gs, "SUBST_KEEP", ())):
-            pre = "# Watchtower report\n" + k + "\n"
-            self.refused(pre, pre.replace("Watchtower", "ISR Bot"))
+            pre = f"# {OLD} report\n" + k + "\n"
+            self.refused(pre, pre.replace(OLD, "ISR Bot"))
             self.assertTrue(gs.subst_change(pre, "# ISR Bot report\n" + k + "\n", self.NAME), k)
 
     def test_isr_x005_fix_prose_renamed_its_evidence_kept_is_taken(self):   # the kept why is also said inside the renamed fix text
-        ev = "its program file isn't the one Watchtower installed"
-        pre = f'"evidence": "{ev}",\n"fix": "Watchtower didn\'t run gitleaks: {ev}, so its checks weren\'t done."\n'
-        post = pre.replace("Watchtower didn't run gitleaks: its program file isn't the one Watchtower installed",
+        ev = f"its program file isn't the one {OLD} installed"
+        pre = f'"evidence": "{ev}",\n"fix": "{OLD} didn\'t run gitleaks: {ev}, so its checks weren\'t done."\n'
+        post = pre.replace(f"{OLD} didn't run gitleaks: its program file isn't the one {OLD} installed",
                            "ISR Bot didn't run gitleaks: its program file isn't the one ISR Bot installed")
         self.assertTrue(gs.subst_change(pre, post, self.NAME))
-        self.refused(pre, pre.replace("Watchtower", "ISR Bot"))   # the evidence renamed too
-        self.refused(pre, post.replace(f'"evidence": "{ev}"', '"evidence": "' + ev.replace("Watchtower", "ISR Bot") + '"'))
+        self.refused(pre, pre.replace(OLD, "ISR Bot"))   # the evidence renamed too
+        self.refused(pre, post.replace(f'"evidence": "{ev}"', '"evidence": "' + ev.replace(OLD, "ISR Bot") + '"'))
 
     def test_a_plain_display_rename_is_still_taken(self):   # guard
-        pre = "# Watchtower report 2026-W43\nWatchtower checked 3 skills. Tell Watchtower \"fix it\".\nChecked by: Watchtower rules, gitleaks\n"
+        pre = f"# {OLD} report 2026-W43\n{OLD} checked 3 skills. Tell {OLD} \"fix it\".\nChecked by: {OLD} rules, gitleaks\n"
         hits = {}
-        self.assertEqual(gs.unexpected_lines("tierA", "r", pre, pre.replace("Watchtower", "ISR Bot").replace(
-            "ISR Bot rules", "Watchtower rules"), self.entries(), hits), [])
+        self.assertEqual(gs.unexpected_lines("tierA", "r", pre, pre.replace(OLD, "ISR Bot").replace(
+            "ISR Bot rules", f"{OLD} rules"), self.entries(), hits), [])
         self.assertEqual(hits, {0: 4})
 
     # v0.8.0 unit g: test_v074_display_name.py's ALLOWED and ALLOWED_FRAGMENTS are empty now, so the v0.7.4 kept values are frozen
-    # here as they were at 0ed5802 (each distinct ALLOWED value, then the gitleaks fragment); h2 moves them into the table
-    V074_KEPT = ("Watchtower rules", "Watchtower", "Watchtower/", "Watchtower daily watch", "Watchtower weekly audit",
-                 "Watchtower weekly tidy", "Watchtower monthly roll-call", "You are Watchtower", ", during a recorded Watchtower run (",
-                 "Watchtower's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run",
-                 "its program file isn't the one Watchtower installed",
-                 "Ask-first rules with no word Watchtower reads in any of its languages", "Watchtower's own tools",
-                 'description = "Watchtower: package caches, lockfiles, headers and its own state"')
+    # here as they were at 0ed5802 (each distinct ALLOWED value, then the gitleaks fragment); h2 moved them into the table
+    V074_KEPT = tuple(rn.v074("v074_kept"))
 
     def test_the_kept_strings_cover_the_name_guards_allowed_list(self):   # guard: SUBST_KEEP covers the v0.7.4 kept values
-        values = set(self.V074_KEPT) - {"Watchtower"}   # the bare WT-X003 label: only ever joined, "SkillSpector + Watchtower"
+        values = set(self.V074_KEPT) - {OLD}   # the bare X003 engine label: only ever said joined, after "SkillSpector + "
         self.assertGreater(len(values), 10)
         self.assertEqual(sorted(v for v in values if not any(k in v for k in getattr(gs, "SUBST_KEEP", ()))), [])
 
@@ -489,22 +490,19 @@ class SubstKind(unittest.TestCase):
         with open(os.path.join(ROOT, "tests", "golden_expect", "v074.json"), encoding="utf-8") as f:
             subst = [e for e in gs.parse_expect(json.load(f), ["v074"]) if e.get("_subst")]
         self.assertTrue(subst)
-        machine = ["tree workspace/watchtower/state/engines_used.json", "tree workspace/watchtower/state/stage_times.json",
-                   "tree workspace/watchtower/state/last_findings.json", "tree workspace/watchtower/state/ledger.jsonl",
-                   "tree workspace/watchtower/state/platform_held.json", "tree workspace/watchtower/state/progress.json",
-                   "tree workspace/watchtower/state/gitleaks.toml", "tree workspace/watchtower/state/deltas/audit-<EPOCH>.json",
-                   "tree workspace/watchtower/reports/support-2026-10-23.json", "tree workspace/watchtower/audit.lock",
-                   "tree workspace/watchtower/state/run.lock", "tree workspace/watchtower/state/score_history.csv",
-                   "tree workspace/watchtower/app/scripts/scanners.lock", "001 audit :rc"]
+        machine = [rn.old_item(rel) for rel in (
+            "state/engines_used.json", "state/stage_times.json", "state/last_findings.json", "state/ledger.jsonl",
+            "state/platform_held.json", "state/progress.json", "state/gitleaks.toml", "state/deltas/audit-<EPOCH>.json",
+            "reports/support-2026-10-23.json", "audit.lock", "state/run.lock", "state/score_history.csv",
+            "app/scripts/scanners.lock")] + ["001 audit :rc"]
         self.assertEqual([(e["id"], k) for e in subst for k in machine if e["_k"].search(k)], [])
-        display = ["003 doctor [driver] :stdout", "019 daily :stderr", "001 installed --version :stdout",
-                   "tree workspace/watchtower/reports/2026-W43.md", "tree workspace/watchtower/reports/dashboard.html",
-                   "tree workspace/watchtower/reports/threat-brief-2026-W43.html"]
+        display = ["003 doctor [driver] :stdout", "019 daily :stderr", "001 installed --version :stdout"] + [
+            rn.old_item(rel) for rel in ("reports/2026-W43.md", "reports/dashboard.html", "reports/threat-brief-2026-W43.html")]
         self.assertEqual([k for k in display if not any(e["_k"].search(k) for e in subst)], [])
 
     # v0.7.4 fix round 2 (Codex MED2): in JSON the rename may change only display fields (gs.SUBST_FIELDS); SUBST_KEEP_PROSE's
     # exception holds only in a `fix` value or plain text
-    X005 = "didn't run gitleaks: its program file isn't the one Watchtower installed"
+    X005 = f"didn't run gitleaks: its program file isn't the one {OLD} installed"
 
     @staticmethod
     def doc(**fields):
@@ -512,75 +510,75 @@ class SubstKind(unittest.TestCase):
         return json.dumps({"findings": [dict({"rule": "ISR-X005", "severity": "high"}, **fields)]}, indent=1) + "\n"
 
     def renamed(self, fields, which):
-        new = lambda v: [new(x) for x in v] if isinstance(v, list) else v.replace("Watchtower", "ISR Bot")
+        new = lambda v: [new(x) for x in v] if isinstance(v, list) else v.replace(OLD, "ISR Bot")
         return self.doc(**{k: new(v) if k in which else v for k, v in fields.items()})
 
     def test_codex_evidence_example_is_refused(self):   # replay (d7758f6: taken, kept_count 0 before and after)
-        self.refused(f'"evidence": "{self.X005}"\n', f'"evidence": "{self.X005}"\n'.replace("Watchtower", "ISR Bot"))
-        fields = {"title": "Watchtower's copy of gitleaks isn't the one it installed", "evidence": self.X005,
-                  "fix": f"Watchtower {self.X005}, so its checks weren't done."}
+        self.refused(f'"evidence": "{self.X005}"\n', f'"evidence": "{self.X005}"\n'.replace(OLD, "ISR Bot"))
+        fields = {"title": f"{OLD}'s copy of gitleaks isn't the one it installed", "evidence": self.X005,
+                  "fix": f"{OLD} {self.X005}, so its checks weren't done."}
         self.refused(self.doc(**fields), self.renamed(fields, ("title", "evidence", "fix")))
 
     def test_an_evidence_rename_is_refused(self):   # replay (d7758f6: taken whole)
-        self.refused('"evidence": "Watchtower foo"\n', '"evidence": "ISR Bot foo"\n')
-        fields = {"title": "Watchtower title", "evidence": "Watchtower foo", "fix": "Tell Watchtower \"fix it\"."}
+        self.refused(f'"evidence": "{OLD} foo"\n', '"evidence": "ISR Bot foo"\n')
+        fields = {"title": f"{OLD} title", "evidence": f"{OLD} foo", "fix": f"Tell {OLD} \"fix it\"."}
         self.refused(self.doc(**fields), self.renamed(fields, ("title", "evidence", "fix")))
         self.refused(self.doc(**fields), self.renamed(fields, ("evidence",)))
-        line = '{"rule": "WT-X001", "title": "Watchtower title", "evidence": "Watchtower foo"}\n'   # one object per line
-        self.refused("x\n" + line + line, "x\n" + line + line.replace("Watchtower", "ISR Bot"))
+        line = '{"rule": "%s", "title": "%s title", "evidence": "%s foo"}\n' % (rn.old_rule("ISR-X001"), OLD, OLD)   # one object per line
+        self.refused("x\n" + line + line, "x\n" + line + line.replace(OLD, "ISR Bot"))
 
     def test_a_where_key_or_object_key_rename_is_refused(self):   # replay (d7758f6: taken whole)
         for k in ("where", "key", "key0", "rule", "engine", "engines_used", "label", "source"):
-            fields = {"title": "Watchtower title", k: "Watchtower thing"}
+            fields = {"title": f"{OLD} title", k: f"{OLD} thing"}
             self.refused(self.doc(**fields), self.renamed(fields, ("title", k)))
-            self.refused(f'"{k}": "Watchtower thing",\n', f'"{k}": "ISR Bot thing",\n')
-        self.refused('{\n "Watchtower notes": [\n  "Watchtower checked it"\n ]\n}\n',
+            self.refused(f'"{k}": "{OLD} thing",\n', f'"{k}": "ISR Bot thing",\n')
+        self.refused('{\n "%s notes": [\n  "%s checked it"\n ]\n}\n' % (OLD, OLD),
                      '{\n "ISR Bot notes": [\n  "ISR Bot checked it"\n ]\n}\n')
-        self.refused('{"notes": {"Watchtower": "x"}}\n', '{"notes": {"ISR Bot": "x"}}\n')   # a key under a display field
-        self.refused('{"engine": "Watchtower patterns only", "files": 3}\n', '{"engine": "ISR Bot patterns only", "files": 3}\n')
+        self.refused('{"notes": {"%s": "x"}}\n' % OLD, '{"notes": {"ISR Bot": "x"}}\n')   # a key under a display field
+        self.refused('{"engine": "%s patterns only", "files": 3}\n' % OLD, '{"engine": "ISR Bot patterns only", "files": 3}\n')
 
     def test_title_and_fix_renamed_in_the_same_json_are_taken(self):   # guard first; replay (d7758f6) at the evidence one
-        fields = {"title": "Watchtower title", "where": "/x/Watchtower.md", "evidence": "Watchtower foo",
-                  "fix": "Tell Watchtower \"fix it\".", "notes": ["Watchtower checked it", "plain"]}
+        fields = {"title": f"{OLD} title", "where": f"/x/{OLD}.md", "evidence": f"{OLD} foo",
+                  "fix": f"Tell {OLD} \"fix it\".", "notes": [f"{OLD} checked it", "plain"]}
         self.assertTrue(gs.subst_change(self.doc(**fields), self.renamed(fields, ("title", "fix")), self.NAME))
         self.assertTrue(gs.subst_change(self.doc(**fields), self.renamed(fields, ("title", "fix", "notes")), self.NAME))
         self.refused(self.doc(**fields), self.renamed(fields, ("title", "fix", "where")))
         self.refused(self.doc(**fields), self.renamed(fields, ("title", "fix", "evidence")))
 
     def test_isr_x005_sentence_renamed_in_fix_is_taken_in_evidence_refused(self):   # replay (d7758f6: both taken)
-        fields = {"evidence": f"Watchtower {self.X005}", "fix": f"Watchtower {self.X005}, so its checks weren't done."}
+        fields = {"evidence": f"{OLD} {self.X005}", "fix": f"{OLD} {self.X005}, so its checks weren't done."}
         self.assertTrue(gs.subst_change(self.doc(**fields), self.renamed(fields, ("fix",)), self.NAME))
         self.refused(self.doc(**fields), self.renamed(fields, ("evidence",)))
         for k in ("why", "notes", "title", "next"):   # display fields, but the kept sentence counts in full there
-            other = {k: f"Watchtower {self.X005}.", "fix": "Tell Watchtower \"fix it\"."}
+            other = {k: f"{OLD} {self.X005}.", "fix": f"Tell {OLD} \"fix it\"."}
             self.refused(self.doc(**other), self.renamed(other, (k, "fix")))
             self.assertTrue(gs.subst_change(self.doc(**other), self.renamed(other, ("fix",)), self.NAME), k)
 
     def test_json_that_did_not_parse_is_held_to_its_lines(self):   # replay (d7758f6: taken whole)
-        pre = ('{\n "notes": [\n  "Watchtower checked it"\n ],\n "engines": [\n  "Watchtower patterns"\n ],\n'
-               ' "seconds": <TS>\n')   # cut short, and a bare placeholder PLACEHOLDER_VALUE doesn't read
-        post_notes = pre.replace("Watchtower checked", "ISR Bot checked")
+        pre = ('{\n "notes": [\n  "%s checked it"\n ],\n "engines": [\n  "%s patterns"\n ],\n'
+               ' "seconds": <TS>\n') % (OLD, OLD)   # cut short, and a bare placeholder PLACEHOLDER_VALUE doesn't read
+        post_notes = pre.replace(f"{OLD} checked", "ISR Bot checked")
         self.assertTrue(gs.subst_change(pre, post_notes, self.NAME))   # guard: a string in the notes list
-        self.refused(pre, post_notes.replace("Watchtower patterns", "ISR Bot patterns"))
-        self.refused('x\n  "Watchtower checked it"\n', 'x\n  "ISR Bot checked it"\n')   # a JSON string in no list
+        self.refused(pre, post_notes.replace(f"{OLD} patterns", "ISR Bot patterns"))
+        self.refused('x\n  "%s checked it"\n' % OLD, 'x\n  "ISR Bot checked it"\n')   # a JSON string in no list
 
     def test_real_display_outputs_are_still_taken(self):   # guard: the shapes v0.7.4's own JSON outputs print
         import json
         audit = {"status": "ok", "new": [{"rule": "ISR-X004", "title": "A scanner couldn't get through a skill", "where": "/s",
-                                          "evidence": "husk timed out", "fix": "Nothing to do; Watchtower retries it in a week."}],
-                 "notes": ["gitleaks not installed: secrets checked with Watchtower's rules only."],
-                 "platform_notes": {"count": 9, "lines": ["Grok Bot's own folder: Not on Watchtower's release list."],
-                                    "more": "8 more, 2 of them Watchtower would call critical or high"},
-                 "platform": ["Grok Bot's own folder: Not on Watchtower's release list."],
-                 "seconds_per_stage": {"Watchtower's own tools": "<DUR>"}, "engines": {"used": ["Watchtower rules"],
-                 "warning": "No outside scanner is installed, so this vet used Watchtower's own rules only. Say so."},
-                 "platform_unverified": {"open": 1, "next": "a real vendor update clears when a Watchtower release lists it."},
-                 "only_you": [{"what": "One of Watchtower's scanners was swapped", "how": "Tell Watchtower \"fix it\".", "links": []}],
-                 "changed_skills": [{"name": "s", "checked_by": ["Watchtower rules"], "why": "only a Watchtower release that lists them"}],
-                 "safe_fixes": [{"id": 1, "action": "empty_tool_cache", "path": "/workspace/watchtower/x", "owner": "Watchtower"}]}
+                                          "evidence": "husk timed out", "fix": f"Nothing to do; {OLD} retries it in a week."}],
+                 "notes": [f"gitleaks not installed: secrets checked with {OLD}'s rules only."],
+                 "platform_notes": {"count": 9, "lines": [f"Grok Bot's own folder: Not on {OLD}'s release list."],
+                                    "more": f"8 more, 2 of them {OLD} would call critical or high"},
+                 "platform": [f"Grok Bot's own folder: Not on {OLD}'s release list."],
+                 "seconds_per_stage": {f"{OLD}'s own tools": "<DUR>"}, "engines": {"used": [f"{OLD} rules"],
+                 "warning": f"No outside scanner is installed, so this vet used {OLD}'s own rules only. Say so."},
+                 "platform_unverified": {"open": 1, "next": f"a real vendor update clears when a {OLD} release lists it."},
+                 "only_you": [{"what": f"One of {OLD}'s scanners was swapped", "how": f"Tell {OLD} \"fix it\".", "links": []}],
+                 "changed_skills": [{"name": "s", "checked_by": [f"{OLD} rules"], "why": f"only a {OLD} release that lists them"}],
+                 "safe_fixes": [{"id": 1, "action": "empty_tool_cache", "path": rn.OLD["home"] + "/x", "owner": OLD}]}
         pre = json.dumps(audit, indent=1).replace('"<DUR>"', "<DUR>") + "\n"
-        post = pre.replace("Watchtower", "ISR Bot").replace("ISR Bot's own tools", "Watchtower's own tools").replace(
-            "ISR Bot rules", "Watchtower rules")
+        post = pre.replace(OLD, "ISR Bot").replace("ISR Bot's own tools", f"{OLD}'s own tools").replace(
+            "ISR Bot rules", f"{OLD} rules")
         self.assertTrue(gs.subst_change(pre, post, self.NAME))
         self.assertTrue(gs.subst_change("NO_CHANGES\n" + pre, "NO_CHANGES\n" + post, self.NAME))   # text before the document
 
@@ -588,10 +586,10 @@ class SubstKind(unittest.TestCase):
         e = entry(key_rx=".", subst=self.NAME)
         del e["lines_rx"]
         entries = gs.parse_expect({"entries": [e]}, ["c"])
-        pre, post = '# Watchtower report\n"Watchtower, fix it"\n', '# ISR Bot report\n"ISR Bot, fix it"\n'
-        for key in ("tree workspace/watchtower/reports/2026-W43.md", "tree workspace/watchtower/reports/dashboard.html"):
+        pre, post = '# %s report\n"%s, fix it"\n' % (OLD, OLD), '# ISR Bot report\n"ISR Bot, fix it"\n'
+        for key in (rn.old_item("reports/2026-W43.md"), rn.old_item("reports/dashboard.html")):
             self.assertEqual(gs.unexpected_lines("tierA", key, pre, post, entries, {}), [], key)
-            self.assertTrue(gs.unexpected_lines("tierA", key, pre + "Watchtower rules\n", post + "ISR Bot rules\n", entries, {}), key)
+            self.assertTrue(gs.unexpected_lines("tierA", key, pre + f"{OLD} rules\n", post + "ISR Bot rules\n", entries, {}), key)
         self.assertTrue(gs.unexpected_lines("tierA", "001 status :stdout", pre, post, entries, {}))   # stdout: a JSON string in no list
 
 
