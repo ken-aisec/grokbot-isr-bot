@@ -220,6 +220,40 @@ class Cross(_Cross):
             old = edit(self.old, DOCTOR, lambda d: d[0].update(python=VERSIONS[rn.OLD["pkg"]]))
             self.assertFails(edit(self.new, DOCTOR, lambda d: d[0].update(python="0.8.0")), f"{DOCTOR} python: the value differs", old)
 
+    # final review fix round 2 (the golden --cross rerun): one test, a subtest per case (README's "more than 1850" allows one more)
+    def test_16_a_cut_doctor_note_and_the_at_and_command_version(self):
+        husk = dict(rn.TABLE["output"])["husk + " + rn.OLD["pkg"].capitalize()]   # the table's display name pair, new side
+
+        def note(L, husk):   # the whole note before doctor cuts it; the names sit before the cut
+            return (f"The scanner check ({husk}) saw the list change mid-run ({L['rule_prefix']}X005). husk NOT ready: the scanners "
+                    "stay off until the next self-check passes and the lock file is read again.")
+        old_note, new_note = note(rn.OLD, "husk + " + rn.OLD["pkg"].capitalize()), note(rn.NEW, husk)
+        self.assertGreater(len(new_note), 161)
+        self.assertNotEqual(len(gc.map_old(old_note[:160], rn.TABLE)), 160)   # the mapped old note is no longer 160 long
+
+        def doctor(items, notes, command, **error):
+            def change(d):
+                d[0]["last_run"]["notes"] = [notes]
+                d[0]["last_error"] = dict(at_and_command=f"<TS> {command}", **error)
+            return edit(items, DOCTOR, change)
+        v_old, v_new = VERSIONS[rn.OLD["pkg"]], VERSIONS[rn.NEW["pkg"]]
+        old = doctor(self.old, old_note[:160], f"{rn.OLD['main']} report (v{v_old})", message=f"report failed (v{v_old})")
+
+        def new(notes=new_note[:160], command=f"{rn.NEW['main']} report (v{v_new})", message=f"report failed (v{v_old})"):
+            return doctor(self.new, notes, command, message=message)
+        with self.subTest(case="(a) both raw notes cut at 160, the mapped old one the new one's prefix, and (d) (v0.7.4) to "
+                               "(v0.8.0) in at_and_command: passes"):
+            self.assertEqual(self.problems(new(), old), [])
+        note_differs, command_differs = f"{DOCTOR} last_run/notes/0: the value differs", f"{DOCTOR} last_error/at_and_command: the value differs"
+        with self.subTest(case="(b) the same notes, raw lengths 160 (old) and 161 (new): fails"):
+            self.assertFails(new(notes=new_note[:161]), note_differs, old)
+        with self.subTest(case="(c) raw lengths equal, the prefix differs: fails"):
+            self.assertFails(new(notes=new_note.replace("NOT", "NOW")[:160]), note_differs, old)
+        with self.subTest(case="(d) another command name in at_and_command: fails"):
+            self.assertFails(new(command=f"{rn.NEW['main']} audit (v{v_new})"), command_differs, old)
+        with self.subTest(case="(d) the bracketed version change in another field: fails"):
+            self.assertFails(new(message=f"report failed (v{v_new})"), f"{DOCTOR} last_error/message: the value differs", old)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,8 +11,9 @@ every field of each paired record but its display wording (title, fix), its refe
 HIGH 5); each keyed record's class (N, I, G or U, decided on the old side) by the recipe; the key map the pairs give (a one-to-one
 function); every other 16-hex value at its position, through that map; and (final review fix round 1, Codex HIGH) outside the
 records, every other JSON value of each paired item: whether it parses as JSON on both sides, dict key sets (an old 16-hex key
-through the map), list lengths and every scalar after the table's mapping, the version fields (VERSION_FIELDS, 0.7.x to 0.8.0)
-excepted. Not compared: a record's display wording (title, fix), report and stdout wording that isn't JSON (the unit tests, the
+through the map), list lengths and every scalar after the table's mapping. Excepted: the version fields (VERSION_FIELDS, 0.7.x
+to 0.8.0), (fix round 2) "(v0.7.x)" to "(v0.8.0)" inside at_and_command (VERSION_IN), and a string pair whose raw values are of
+one length (the engine cut both at one width) when one mapped value is the other's prefix. Not compared: a record's display wording (title, fix), report and stdout wording that isn't JSON (the unit tests, the
 mechanical checker and the leftover guard cover it). A mismatch is reported, never guessed."""
 import collections, hashlib, json, re
 
@@ -29,6 +30,9 @@ VET_JSON = re.compile(r"^\d{3,} vet .* --json\b.*:stdout$")
 # and last_findings.json (version) and rollcall_findings.json (masked); only these fields, only from a 0.7.x string to 0.8.0
 VERSION_FIELDS = frozenset(("version", "isr_bot", "masked"))
 OLD_VERSION, NEW_VERSION = re.compile(r"0\.7\.\d+"), "0.8.0"
+# final review fix round 2: doctor's last_error at_and_command ends in the version in brackets (isr.py "<at> isr.py <cmd> (v…)");
+# only in that field, only (v0.7.x) to (v0.8.0)
+VERSION_IN, OLD_VERSION_IN = "at_and_command", re.compile(r"\(v0\.7\.\d+\)")
 NEG_KEY = hashlib.sha1(b"isr-bot-golden-neg").hexdigest()[:16]        # negative c's stand-in key
 NEG_REF = hashlib.sha1(b"isr-bot-golden-neg-ref").hexdigest()[:16]    # negative b's stand-in reference
 # negative b's containers, in order: the item names or keys a reference sits in (the second pass when the first finds none)
@@ -181,27 +185,46 @@ def _is_rec(v):
     return isinstance(v, dict) and isinstance(v.get("rule"), str)
 
 
-def _same(a, b, pos, keymap, out):
+def _raw(v, raw):
+    """raw's dict values or list items in order, as Side.walk pairs them with v's (the normalization keeps the order); _MISSING
+    for each when raw isn't of v's shape."""
+    if isinstance(v, (dict, list)) and isinstance(raw, type(v)) and len(raw) == len(v):
+        return list(raw.values()) if isinstance(raw, dict) else raw
+    return [_MISSING] * len(v)
+
+
+def _same(a, b, pos, keymap, out, ra=_MISSING, rb=_MISSING):
     """Final review fix round 1 (Codex HIGH): an old (mapped) and a new JSON value side by side, outside the records (paired and
     compared above) and the 16-hex values (compared through the key map): dict key sets (an old 16-hex key through the map),
-    list lengths and every other scalar. pos: the item name, then the JSON path with list indices."""
+    list lengths and every other scalar. pos: the item name, then the JSON path with list indices. ra, rb (fix round 2): the
+    same values as the runs wrote them (old unmapped, neither normalized), _MISSING when unknown."""
     if _is_rec(a) or _is_rec(b):
         if not (_is_rec(a) and _is_rec(b)):
             out.append(f"{_at(pos)}: a record on the {'old' if _is_rec(a) else 'new'} side only")
     elif isinstance(a, dict) and isinstance(b, dict):
-        a = {keymap.get(k, k) if HEX16.fullmatch(k) else k: v for k, v in a.items()}
+        ra, rb = dict(zip(a, _raw(a, ra))), dict(zip(b, _raw(b, rb)))
+        mk = lambda k: keymap.get(k, k) if HEX16.fullmatch(k) else k
+        a, ra = {mk(k): v for k, v in a.items()}, {mk(k): v for k, v in ra.items()}
         out += [f"{_at(pos)}: the key {k!r} is on the {'old' if k in a else 'new'} side only" for k in sorted(set(a) ^ set(b))]
         for k in sorted(set(a) & set(b)):
-            _same(a[k], b[k], pos + (k,), keymap, out)
+            _same(a[k], b[k], pos + (k,), keymap, out, ra[k], rb[k])
     elif isinstance(a, list) and isinstance(b, list):
         if len(a) != len(b):
             out.append(f"{_at(pos)}: {len(a)} list items (old), {len(b)} (new)")
         else:
-            for i, (x, y) in enumerate(zip(a, b)):
-                _same(x, y, pos + (str(i),), keymap, out)
+            for i, (x, y, rx, ry) in enumerate(zip(a, b, _raw(a, ra), _raw(b, rb))):
+                _same(x, y, pos + (str(i),), keymap, out, rx, ry)
     elif isinstance(a, str) and isinstance(b, str) and HEX16.fullmatch(a) and HEX16.fullmatch(b):
         pass
     elif len(pos) > 1 and pos[-1] in VERSION_FIELDS and isinstance(a, str) and OLD_VERSION.fullmatch(a) and b == NEW_VERSION:
+        pass
+    # fix round 2: a string the engine cut at one width on both sides (doctor's notes): the raw values are of one length and the
+    # mapped old and the new one end at different words because the names differ in length, so one is the other's prefix
+    elif (isinstance(a, str) and isinstance(b, str) and isinstance(ra, str) and isinstance(rb, str) and len(ra) == len(rb)
+          and (a.startswith(b) or b.startswith(a))):
+        pass
+    # fix round 2: the version in brackets inside at_and_command (VERSION_IN), (v0.7.x) to (v0.8.0); nothing else may change
+    elif pos[-1] == VERSION_IN and isinstance(a, str) and isinstance(b, str) and OLD_VERSION_IN.sub(f"(v{NEW_VERSION})", a) == b:
         pass
     elif a != b or type(a) is not type(b):
         out.append(f"{_at(pos)}: the value differs: {json.dumps(a)[:120]} (old, mapped), {json.dumps(b)[:120]} (new)")
@@ -319,9 +342,11 @@ def check(raw_old, raw_new, norm_old, norm_new, table):
             out.append(f"{n!r} parses as JSON on the {'old' if b is None else 'new'} side only")
         elif a is not None and len(a) != len(b):
             out.append(f"{n!r}: {len(a)} JSON documents (old), {len(b)} (new)")
-        elif a is not None:
-            for x, y in zip(a, b):
-                _same(x, y, (n,), keymap, out)
+        elif a is not None:   # fix round 2: with the raw documents (Side checked they parse alike), for the cut strings
+            ra, rb = documents(n, raw_old.get(names[n])), documents(n, raw_new.get(n))
+            ra, rb = _raw(a, ra), _raw(b, rb)
+            for x, y, rx, ry in zip(a, b, ra, rb):
+                _same(x, y, (n,), keymap, out, rx, ry)
     return out, {"classes": {c: classes[c] for c in "NIGU"}, "records": len(new.recs), "pairs": len(pairs), "refs": len(new.refs),
                  "changed": changed, "n_keys": n_keys}
 
