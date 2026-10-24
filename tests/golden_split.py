@@ -21,12 +21,34 @@ Expect mode (batch 5: changes that alter behavior on purpose; `--expect FILE --i
 that the working tree's reassembled isr.py compiles and that PRE_REF's isr.py has the loader block. Calibration and N1-N9 are as
 above; then every line by which a post item differs from pre must match an entry of an enabled item in FILE (see parse_expect),
 and an enabled `must_see` entry that matched nothing, in a run where its scenarios ran, is a problem too (since batch 5 PR B,
-Codex round 3: one that names its scenarios exactly, in each of them that ran, on its own; since batch 6, KL7: in each output of those scenarios its key_rx names; see unmet)."""
+Codex round 3: one that names its scenarios exactly, in each of them that ran, on its own; since batch 6, KL7: in each output of those scenarios its key_rx names; see unmet).
+
+Cross mode (v0.8.0 unit i, `--cross` to golden-check.sh): PRE_REF may have the other layout of the name table (layout_of; 0ed5802
+has the old one). Each tree runs in its own layout (main file, home, env names; the box builder, the post tree's code, gets the new
+env names pointing at the old paths), step 0 is not applicable when the layouts differ, calibration is as above, and in place of
+the post diff golden_cross.check maps pre1's outputs onto post's, followed by its live negatives. The outputs are always kept."""
 import datetime as dt, difflib, hashlib, json, os, re, shutil, statistics, subprocess, sys, tempfile, unittest
 
+import golden_cross   # v0.8.0 unit i: the cross-layout check (cross mode)
 import rename_v080 as rn   # v0.8.0 unit h2: the v0.7.4 display strings below come from the name table
 
 ROOT =os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LAYOUTS = {"old": rn.OLD, "new": rn.NEW}   # v0.8.0 unit i: the name table's two layouts (the main file, the home, the env names)
+
+
+def layout_of(tree):
+    """The layout whose main file the tree holds, "old" or "new". ValueError for a tree with neither (or both)."""
+    got = [n for n, L in LAYOUTS.items() if os.path.isfile(os.path.join(tree, L["pkg"], L["main"]))]
+    if len(got) != 1:
+        raise ValueError(f"{tree}: {'no' if not got else 'more than one'} layout's main file ({', '.join(L['pkg'] + '/' + L['main'] for L in LAYOUTS.values())})")
+    return got[0]
+
+
+def plan_layout(name):
+    """What the sandbox runner needs of a layout: its main file, home folder (sealed and not), rule prefix and env names."""
+    L = LAYOUTS[name]
+    return {"name": name, "pkg": L["pkg"], "main": L["main"], "home": L["home"], "sandbox_home": L["sandbox_home"],
+            "rule_prefix": L["rule_prefix"], "env": {k: L["env"][k] for k in ("home", "settings", "decoy_root")}}
 
 BANNER = b"# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.\n"
 LOADER_BEGIN = b"# >>> isr_parts loader (reassembly drops this block)\n"
@@ -99,21 +121,25 @@ if SEALED and not all(os.path.isfile(d + "/.golden-sentinel") for d in SCRATCH_R
     sys.exit("not inside the golden sandbox; nothing was done")
 HOME_DIR = "/home/box" if SEALED else X + "/home"
 ISR_HOME = "/workspace/isr-bot" if SEALED else X + "/isr_home"
+L = PLAN["layout"]   # v0.8.0 unit i: the tree's layout, from the name table (its main file, home and env names)
+ENV, MAIN = L["env"], L["pkg"] + "/" + L["main"]
+if L["name"] != "new":   # the line above is the new layout's home; the old layout has its own
+    ISR_HOME = L["home"] if SEALED else X + "/" + L["sandbox_home"]
 items = {}
 
 DRIVER = """
-import os, random, sys
-tree, argv = sys.argv[1], sys.argv[2:]
-sys.path.insert(0, os.path.join(tree, "isr_bot"))
-import isr
-b = os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin")
+import importlib, os, random, sys
+tree, pkg, name, home_var, argv = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5:]
+sys.path.insert(0, os.path.join(tree, pkg))
+engine = importlib.import_module(name)   # the layout's main module (v0.8.0 unit i)
+b = os.path.join(os.environ[home_var], "scanners", "bin")
 for n in sorted(os.listdir(b)) if os.path.isdir(b) else []:
-    if n in isr.SCANNER_NAMES:
-        isr.SCANNER_LOCK_EXTRA[n] = isr.scanner_digest(os.path.join(b, n))      # as test_boxes.Box.scanners registers them
+    if n in engine.SCANNER_NAMES:
+        engine.SCANNER_LOCK_EXTRA[n] = engine.scanner_digest(os.path.join(b, n))      # as test_boxes.Box.scanners registers them
 lock = os.environ.get("GOLDEN_PLATFORM_LOCK", "")
 if os.path.isfile(lock):
-    isr.PLATFORM_LOCK = lock
-isr.now = lambda: "2026-10-18T12:00:00+00:00"
+    engine.PLATFORM_LOCK = lock
+engine.now = lambda: "2026-10-18T12:00:00+00:00"
 import secrets
 rng = random.Random(20261018)
 secrets.token_hex = lambda n=32: "".join("%02x" % rng.randrange(256) for _ in range(n))
@@ -122,9 +148,9 @@ crash = os.environ.get("GOLDEN_CRASH")
 if crash:
     def boom(*a, **k):
         raise RuntimeError("golden forced crash")
-    setattr(isr, crash, boom)
+    setattr(engine, crash, boom)
 try:
-    code = isr.main(argv)
+    code = engine.main(argv)
 except SystemExit as e:
     code = e.code
 sys.stdout.flush()
@@ -167,9 +193,11 @@ elif phase == "refresh":
 """
 
 
-def env(extra=None, driver=False):
-    e = {"HOME": HOME_DIR, "ISR_BOT_HOME": ISR_HOME, "ISR_BOT_DECOY_ROOT": X + "/decoys",
-         "ISR_BOT_SETTINGS": HOME_DIR + "/agent-data/settings.json", "TMPDIR": X + "/tmpdir", "XDG_CACHE_HOME": X + "/cache",
+def env(extra=None, driver=False, names=None):
+    """names: the env names (by default the tree's layout's; the box builder, always the post tree's code, passes its own)."""
+    n = names or ENV
+    e = {"HOME": HOME_DIR, n["home"]: ISR_HOME, n["decoy_root"]: X + "/decoys",
+         n["settings"]: HOME_DIR + "/agent-data/settings.json", "TMPDIR": X + "/tmpdir", "XDG_CACHE_HOME": X + "/cache",
          "PATH": "/usr/bin:/bin", "TZ": "UTC", "LC_ALL": "C.UTF-8"}
     if driver:
         e["GOLDEN_PLATFORM_LOCK"] = X + "/box/platform-release.lock"
@@ -183,9 +211,9 @@ n_cmd = [0]
 def run(argv, mode="cli", cwd=None, stdin=None, extra=None, label=None, timeout=900, tree=TREE):
     """One isr.py command; its exit code, stdout and stderr become three items."""
     if mode == "cli":
-        cmd = [PY, "-I", tree + "/isr_bot/isr.py"] + list(argv)
+        cmd = [PY, "-I", tree + "/" + MAIN] + list(argv)
     else:
-        cmd = [PY, "-I", "-B", "-c", DRIVER, tree] + list(argv)
+        cmd = [PY, "-I", "-B", "-c", DRIVER, tree, L["pkg"], L["main"][:-len(".py")], ENV["home"]] + list(argv)
     p = subprocess.run(cmd, input=stdin if stdin is not None else b"", capture_output=True, env=env(extra, mode == "driver"),
                        cwd=cwd or X + "/cwd", timeout=timeout)
     n_cmd[0] += 1
@@ -193,12 +221,18 @@ def run(argv, mode="cli", cwd=None, stdin=None, extra=None, label=None, timeout=
     items[key + " :rc"] = str(p.returncode)
     items[key + " :stdout"] = p.stdout.decode("utf-8", "backslashreplace")
     items[key + " :stderr"] = p.stderr.decode("utf-8", "backslashreplace")
+    if PLAN.get("cross"):   # v0.8.0 unit i: the findings file after each command (the next one overwrites it)
+        try:
+            with open(ISR_HOME + "/state/last_findings.json", "rb") as f:
+                items[key + " :last_findings"] = f.read().decode("utf-8", "backslashreplace")
+        except OSError:
+            pass
     return p
 
 
 def build(profile, phase):
     p = subprocess.run([PY, "-I", "-B", "-c", BUILDER, "/tmp/trees/post", profile, phase], capture_output=True,
-                       env=env({"GOLDEN_BOXTMP": X + "/box"}, driver=True), cwd=X + "/cwd", timeout=600)
+                       env=env({"GOLDEN_BOXTMP": X + "/box"}, driver=True, names=PLAN["builder_env"]), cwd=X + "/cwd", timeout=600)
     if p.returncode:
         raise SystemExit("box builder failed: " + p.stderr.decode("utf-8", "replace")[-2000:])
 
@@ -320,10 +354,10 @@ def tier_a():
         lab = lambda a: " ".join(a) + tag
         for a in [["--version"], ["--help"], ["-h"]] + [[c, "--help"] for c in PLAN["subcommands"]] + [[], ["nosuchcmd"], ["status", "--bogus-flag"]]:
             run(a, cwd=cwd, label=lab(a))
-        for a in (["show", "ISR-X004"], ["status"], ["report"], ["breakdown"], ["doctor"], ["doctor", "--save"], ["dismiss", "--list"],
+        for a in (["show", L["rule_prefix"] + "X004"], ["status"], ["report"], ["breakdown"], ["doctor"], ["doctor", "--save"], ["dismiss", "--list"],
                   ["accept", "--list"], ["exception", "list"], ["events", "list"], ["canary", "status"], ["rollcall", "--question"]):
             run(a, cwd=cwd, label=lab(a))
-        run(["auto-allow", "list"], cwd=cwd, extra={"ISR_BOT_SETTINGS": fx + "/exports/settings.json"}, label=lab(["auto-allow", "list"]) + " [settings fixture]")
+        run(["auto-allow", "list"], cwd=cwd, extra={ENV["settings"]: fx + "/exports/settings.json"}, label=lab(["auto-allow", "list"]) + " [settings fixture]")
         for a in (["brief", "--offline", brief], ["diff", "nosuch"]):
             run(a, cwd=cwd, label=lab(a))
         for t in targets:
@@ -382,12 +416,12 @@ def tier_c():
 
 def timing():
     out = {}
-    trees = PLAN["timing_trees"]
+    trees = PLAN["timing_trees"]   # [tree, its main file]
     for r in range(10):
-        for t in (trees if r % 2 == 0 else trees[::-1]):
+        for t, main in (trees if r % 2 == 0 else trees[::-1]):
             for a in (["--version"], ["--help"]):
                 t0 = time.perf_counter()
-                subprocess.run([PY, "-I", t + "/isr_bot/isr.py"] + a, capture_output=True, env=env(), cwd=X + "/cwd", timeout=60)
+                subprocess.run([PY, "-I", t + "/" + main] + a, capture_output=True, env=env(), cwd=X + "/cwd", timeout=60)
                 out.setdefault("%s %s" % (os.path.basename(t), a[0]), []).append(time.perf_counter() - t0)
     return out
 
@@ -473,8 +507,11 @@ STAGE_TIMES = re.compile(r"(?<=: )\d+(?:\.\d+)?(?=[,\n}])")
 STAGE_BLOCK = re.compile(r'("seconds_per_stage": \{)([^{}]*)(\})')
 CHROME_TIME = re.compile(r"(?<!\d)1[34]\d{15}(?!\d)")      # a cookie's creation time, microseconds since 1601 (the box builder's clock)
 # N8 (crash scenario only): a traceback frame or doctor's frame label from isr.py or a part; the function sequence must match.
-FRAME_TB = re.compile(r'File "[^"]*/isr_bot/(isr|isr_parts/[a-z0-9_]+)\.py", line \d+, in (\w+)')
-FRAME_DOCTOR = re.compile(r"\b(isr|isr_parts/[a-z0-9_]+)\.py line \d+ in (\w+)")
+# v0.8.0 unit i: either layout's files (the name table's), so a cross run's old tree normalizes alike.
+_FRAME_PKGS = "|".join(re.escape(L["pkg"]) for L in LAYOUTS.values())
+_FRAME_FILES = "|".join(re.escape(L["main"][:-len(".py")]) + "|" + re.escape(L["parts"]) + "/[a-z0-9_]+" for L in LAYOUTS.values())
+FRAME_TB = re.compile(r'File "[^"]*/(?:%s)/(%s)\.py", line \d+, in (\w+)' % (_FRAME_PKGS, _FRAME_FILES))
+FRAME_DOCTOR = re.compile(r"\b(%s)\.py line \d+ in (\w+)" % _FRAME_FILES)
 
 
 ALWAYS = {"N4"}   # applied to post whether or not calibration happened to need it (durations: run speed)
@@ -505,13 +542,17 @@ def normalize(key, text, enabled, used, crash=False):
     return text
 
 
-def norm_items(items, enabled, crash=False):
-    """Items with normalized names and values. Names that normalize alike (two audit-<EPOCH>.json deltas) keep their order."""
+def norm_items(items, enabled, crash=False, names=None):
+    """Items with normalized names and values. Names that normalize alike (two audit-<EPOCH>.json deltas) keep their order.
+    names (v0.8.0 unit i, cross mode): filled with {raw name: normalized name}."""
     out, seen, used = {}, {}, {}
     for k in sorted(items):
         nk = normalize("", k, enabled, used, crash)
         seen[nk] = seen.get(nk, 0) + 1
-        out[nk if seen[nk] == 1 else f"{nk} #{seen[nk]}"] = normalize(k, items[k], enabled, used, crash)
+        nk = nk if seen[nk] == 1 else f"{nk} #{seen[nk]}"
+        out[nk] = normalize(k, items[k], enabled, used, crash)
+        if names is not None:
+            names[k] = nk
     return out
 
 
@@ -1074,12 +1115,17 @@ class GoldenSplit(unittest.TestCase):
     MODE = os.environ.get("ISR_GOLDEN_TIERS", "full")
     EXPECT = os.environ.get("ISR_GOLDEN_EXPECT", "")
     ITEMS = [x for x in os.environ.get("ISR_GOLDEN_ITEMS", "").split(",") if x]
+    # v0.8.0 unit i: cross mode (golden-check.sh --cross): golden_cross.check maps pre's outputs onto post's in place of the diff
+    CROSS = os.environ.get("ISR_GOLDEN_CROSS", "") == "1"
+    pre_layout = post_layout = "new"   # each tree's layout (layout_of), set in setUpClass
     expect = None   # expect mode: the enabled entries (parse_expect); None: post must equal pre
 
     @classmethod
     def setUpClass(cls):
         if not cls.PRE:
             raise RuntimeError("no baseline: run `bash scripts/golden-check.sh PRE_REF`, PRE_REF the commit before the split (9b106b9)")
+        if cls.CROSS and cls.EXPECT:
+            raise RuntimeError("cross mode and expect mode don't combine")
         if cls.EXPECT:
             path = os.path.join(ROOT, cls.EXPECT)
             try:
@@ -1100,7 +1146,8 @@ class GoldenSplit(unittest.TestCase):
             if rel:
                 os.makedirs(os.path.dirname(os.path.join(cls.post, rel)), exist_ok=True)
                 shutil.copy2(os.path.join(ROOT, rel), os.path.join(cls.post, rel), follow_symlinks=False)
-        cls.untracked = git("ls-files", "--others", "--exclude-standard", "isr_bot").decode().split()
+        cls.pre_layout, cls.post_layout = layout_of(cls.pre), layout_of(cls.post)
+        cls.untracked = git("ls-files", "--others", "--exclude-standard", LAYOUTS[cls.post_layout]["pkg"]).decode().split()
         cls.py = os.path.realpath(sys.executable)
         cls.sandbox = (not cls.py.startswith(("/home/", "/workspace/", "/tmp/", "/var/tmp/")) and shutil.which("unshare")
                        and subprocess.run(["unshare", "-rmn", "--propagation", "private", "true"], capture_output=True, timeout=30).returncode == 0)
@@ -1120,6 +1167,8 @@ class GoldenSplit(unittest.TestCase):
         print("\n" + text)
         if cls.failed:
             print(f"golden check FAILED; everything is kept in {cls.B}")
+        elif cls.CROSS:   # v0.8.0 unit i: a cross run's outputs are always kept
+            print(f"golden cross check passed; everything is kept in {cls.B}")
         else:
             subprocess.run(["chmod", "-R", "u+rwx", cls.B], capture_output=True)
             shutil.rmtree(cls.B, ignore_errors=True)
@@ -1133,9 +1182,13 @@ class GoldenSplit(unittest.TestCase):
 
     # -- step 0
     def test_0_reassembly(self):
-        self.say(f"golden check: pre={self.PRE} ({git('rev-parse', '--short', self.PRE + '^{commit}').decode().strip()}), post=working tree, mode={self.MODE}")
+        self.say(f"golden check: pre={self.PRE} ({git('rev-parse', '--short', self.PRE + '^{commit}').decode().strip()}), post=working tree, "
+                 f"mode={self.MODE}{', cross' if self.CROSS else ''}")
         if self.untracked:
             self.fail_with(f"untracked files under isr_bot/ (git add them): {self.untracked}")
+        if self.pre_layout != self.post_layout:   # v0.8.0 unit i: the other layout has no pre-split file this tree rebuilds
+            self.say(f"step 0: not applicable ({self.PRE} has the {self.pre_layout} layout, the working tree the {self.post_layout} one)")
+            return
         want = git("show", f"{self.PRE}:isr_bot/isr.py")
         isr_post = read(os.path.join(self.post, "isr_bot", "isr.py"))
         got, where = reassemble(isr_post, os.path.join(self.post, "isr_bot", "isr_parts"))
@@ -1211,12 +1264,13 @@ class GoldenSplit(unittest.TestCase):
         needed = set()
         compared = 0
         hits, hits_by, keys_by, sids, expected_items = {}, {}, {}, [], 0
+        cross_runs = {"classes": {}, "negatives": {}}
         for sid, plan in self.scenarios():
             res = {}
             sid_hits = hits_by.setdefault(sid, {})   # round 3 (4): what each entry took in this scenario alone
-            for tag, tree in (("pre1", self.pre), ("pre2", self.pre), ("post", self.post)):
+            for tag, tree, layout in (("pre1", self.pre, self.pre_layout), ("pre2", self.pre, self.pre_layout), ("post", self.post, self.post_layout)):
                 self.place(tree)
-                res[tag] = self.run_sandboxed(sid, plan, tag)["items"]
+                res[tag] = self.run_sandboxed(sid, self.with_layout(plan, layout), tag)["items"]
             crash = sid == "crash"
             a, b, c = res["pre1"], res["pre2"], res["post"]
             # calibration: pre against pre. Whatever differs must be covered by a rule; a rule is needed when the runs differ
@@ -1234,8 +1288,10 @@ class GoldenSplit(unittest.TestCase):
             # N4 (durations) is always applied to post: two calibration runs can show the same tenths of a second by chance (after
             # S5, both pre runs timed pip-audit at 0.3 s and post at 0.4 s), so calibration can't be what turns it on.
             apply = needed | ALWAYS
-            pa, pc = norm_items(a, apply, crash), norm_items(c, apply, crash)
-            diff_post = differing(pa, pc)
+            names_a, names_c = {}, {}
+            pa, pc = norm_items(a, apply, crash, names_a), norm_items(c, apply, crash, names_c)
+            diff_post = [] if self.CROSS else differing(pa, pc)   # cross mode: golden_cross in place of the diff
+            cross = self.cross_check(sid, a, c, pa, pc, names_a, names_c, apply, crash, problems, cross_runs) if self.CROSS else ""
             for k in diff_post:
                 if self.expect is None:
                     problems.append(f"[{sid}] post differs from pre in {k!r}:\n{short_diff(pa.get(k, '<missing>'), pc.get(k, '<missing>'))}")
@@ -1255,7 +1311,7 @@ class GoldenSplit(unittest.TestCase):
             for i, n in sid_hits.items():
                 if not isinstance(i, tuple):
                     hits[i] = hits.get(i, 0) + n
-            for r in sorted(apply | ({"N8"} if crash else set())):
+            for r in ([] if self.CROSS else sorted(apply | ({"N8"} if crash else set()))):
                 extra = len(differing(norm_items(a, apply - {r}, crash and r != "N8"), norm_items(c, apply - {r}, crash and r != "N8"))) - len(diff_post)
                 if extra > 0:
                     used_post[r] = used_post.get(r, 0) + extra
@@ -1266,9 +1322,16 @@ class GoldenSplit(unittest.TestCase):
             compared += 1
             n_cmds = len([k for k in a if k.endswith(" :rc")])
             self.say(f"{sid}: {n_cmds} commands, {len(a)} items; calibration {'ok' if not bad_cal else f'{len(bad_cal)} uncovered'}; "
-                     f"post {'identical' if not diff_post else f'{len(diff_post)} differing items'}")
+                     + (cross or f"post {'identical' if not diff_post else f'{len(diff_post)} differing items'}"))
         if self.sandbox and self.MODE != "quick":
             self.timing()
+        if self.CROSS:   # v0.8.0 unit i: over the run, every negative failed the check once, and tier A holds a class-N record
+            missing = [x for x in "abc" if not cross_runs["negatives"].get(x)]
+            if missing:
+                problems.append(f"cross: the checker's negatives did not run: {', '.join(missing)} (each must fail the check at least once a run)")
+            if not cross_runs["classes"].get("tierA", {}).get("N"):
+                problems.append("cross: no class-N record in tier A (the floor: the checker's key recipe must match the old engine's plain keys)")
+            self.say("cross negatives caught (scenarios): " + ", ".join(f"{x} {cross_runs['negatives'].get(x, 0)}" for x in "abc"))
         self.say("normalizations needed by calibration (items): " + (", ".join(f"{r} ({n})" for r, n in sorted(used_cal.items())) or "none"))
         self.say("normalizations applied where pre and post differed raw (items; N4 is always on): " + (", ".join(f"{r} ({n})" for r, n in sorted(used_post.items())) or "none"))
         if self.expect is not None:
@@ -1296,10 +1359,40 @@ class GoldenSplit(unittest.TestCase):
             self.say(f"RESULT: post == pre on every tier run except the expected differences of {','.join(self.ITEMS) or 'no item'} "
                      f"({compared} scenarios compared)")
             return
+        if self.CROSS:
+            self.say(f"RESULT: cross check: pre's outputs ({self.pre_layout} layout) map onto post's ({self.post_layout} layout) on every "
+                     f"tier run ({compared} scenarios compared)")
+            return
         self.say(f"RESULT: post == pre on every tier run ({compared} scenarios compared)")
 
+    def with_layout(self, plan, layout):
+        """v0.8.0 unit i: the plan with the tree's layout, the box builder's env names (the post tree's: the builder is its code)
+        and the mode."""
+        return dict(plan, layout=plan_layout(layout), builder_env=plan_layout(self.post_layout)["env"], cross=self.CROSS)
+
+    def cross_check(self, sid, a, c, pa, pc, names_a, names_c, apply, crash, problems, runs):
+        """v0.8.0 unit i (section 4): golden_cross.check on the scenario's pre1 and post (names_*: raw item name -> normalized), then
+        its live negatives, each of which must fail. Adds to problems and runs; returns the scenario's report text."""
+        raw_a = {names_a[k]: v for k, v in a.items()}
+        bad, s = golden_cross.check(raw_a, {names_c[k]: v for k, v in c.items()}, pa, pc, rn.TABLE)
+        problems += [f"[{sid}] cross: {x}" for x in bad[:200]] + ([f"[{sid}] cross: and {len(bad) - 200} more"] if len(bad) > 200 else [])
+        runs["classes"][sid] = s["classes"]
+        caught = []
+        for label, items in ([] if bad else golden_cross.negatives(c, s)):
+            names = {}
+            norm = norm_items(items, apply, crash, names)
+            if golden_cross.check(raw_a, {names[k]: v for k, v in items.items()}, pa, norm, rn.TABLE)[0]:
+                caught.append(label)
+                runs["negatives"][label] = runs["negatives"].get(label, 0) + 1
+            else:
+                problems.append(f"[{sid}] cross: negative {label} passed the check (it must fail)")
+        k = s["classes"]
+        return (f"cross {'ok' if not bad else f'{len(bad)} problems'} ({s['pairs']} record pairs of {s['records']}; old keys N {k['N']} "
+                f"I {k['I']} G {k['G']} U {k['U']}; {s['refs']} references; {s['changed']} keys changed; negatives caught: {','.join(caught) or 'none'})")
+
     def timing(self):
-        res =self.run_sandboxed("timing", {"kind": "timing", "timing_trees": ["/tmp/trees/pre", "/tmp/trees/post"]}, "both")["timing"]
+        trees = [[f"/tmp/trees/{t}", LAYOUTS[layout]["pkg"] + "/" + LAYOUTS[layout]["main"]] for t, layout in (("pre", self.pre_layout), ("post", self.post_layout))]
+        res = self.run_sandboxed("timing", self.with_layout({"kind": "timing", "timing_trees": trees}, self.post_layout), "both")["timing"]
         for what in ("--version", "--help"):
             pre, post = statistics.median(res[f"pre {what}"]), statistics.median(res[f"post {what}"])
             flag = " FLAG: post is more than 10% slower" if post > pre * 1.10 else ""

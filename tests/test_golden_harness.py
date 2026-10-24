@@ -5,12 +5,13 @@ compared (H1); an ONLY that matched no scenario printed "post == pre on every ti
 golden-check.sh compared against HEAD when no baseline was given, which fails step 0 once the split is committed (H3). These
 tests drive the harness with stubs (no unshare, no sandbox run, no real path): the sandbox and the runs are replaced, and the
 script runs from a copy with stub git and python3 first on PATH."""
-import os, shutil, subprocess, sys, tempfile, unittest
+import json, os, shutil, subprocess, sys, tempfile, unittest
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import golden_split as gs  # noqa: E402  (the module, never its TestCase: that would run the real check here)
+import rename_v080 as rn  # noqa: E402
 
 ITEMS = {"001 --version :rc": "0", "001 --version :stdout": "isr.py 1.0\n", "001 --version :stderr": ""}
 
@@ -84,6 +85,47 @@ class H2EmptySelection(_Harness):
         with mock.patch.dict(os.environ, {"ISR_GOLDEN_ONLY": "^tierA$"}):
             out = self.outcome(h)
         self.assertFailedLoudly(h, out, "1 problems")
+
+
+class CrossLayouts(_Harness):
+    def test_each_tree_runs_in_its_own_layout(self):   # v0.8.0 unit i: layout_of, the plans, and the old tree's env names
+        tmp = tempfile.mkdtemp(prefix="isr-bot-golden-harness-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        for name, L in gs.LAYOUTS.items():
+            os.makedirs(os.path.join(tmp, name, L["pkg"]))
+            open(os.path.join(tmp, name, L["pkg"], L["main"]), "w").close()
+            self.assertEqual(gs.layout_of(os.path.join(tmp, name)), name)
+        os.makedirs(os.path.join(tmp, "neither", rn.NEW["pkg"]))
+        with self.assertRaises(ValueError):
+            gs.layout_of(os.path.join(tmp, "neither"))
+        # an old pre tree: pre1 and pre2 run in the old layout, post in the new one; the box builder always gets the new env names
+        h, _ = self.harness()
+        type(h).pre_layout = "old"
+        plans = []
+        h.run_sandboxed = lambda sid, plan, tag: plans.append((tag, plan)) or {"items": dict(ITEMS)}
+        with mock.patch.dict(os.environ, {"ISR_GOLDEN_ONLY": "^tierA$"}):
+            self.assertEqual(self.outcome(h), "passed")
+        envs = {n: {k: L["env"][k] for k in ("home", "settings", "decoy_root")} for n, L in gs.LAYOUTS.items()}
+        self.assertEqual([(t, p["layout"]["name"], p["layout"]["env"], p["builder_env"], p["cross"]) for t, p in plans],
+                         [("pre1", "old", envs["old"], envs["new"], False), ("pre2", "old", envs["old"], envs["new"], False),
+                          ("post", "new", envs["new"], envs["new"], False)])
+        # (the unit c note) the runner's env for the old tree carries the old names (the table's) and its home the old one
+        plan = os.path.join(tmp, "plan.json")
+        with open(plan, "w") as f:
+            json.dump(dict(plans[0][1], scratch=os.path.join(tmp, "run"), sealed=False, tree=tmp), f)
+        prefix, sep, _ = gs.RUNNER.partition("\nn_cmd = [0]\n")   # the runner up to its env(): definitions only, nothing runs
+        self.assertTrue(sep)
+        ns = {}
+        with mock.patch.object(sys, "argv", ["runner.py", plan]):
+            exec(compile(prefix, "runner.py", "exec"), ns)
+        for name, code in (("runner", gs.RUNNER), ("driver", ns["DRIVER"]), ("builder", ns["BUILDER"])):
+            compile(code, name, "exec")   # the whole runner and the two programs it starts still compile
+        home = ns["X"] + "/" + rn.OLD["sandbox_home"]
+        e, b = ns["env"](), ns["env"](names=ns["PLAN"]["builder_env"])
+        self.assertEqual([e.get(n) for n in envs["old"].values()], [home, ns["HOME_DIR"] + "/agent-data/settings.json", ns["X"] + "/decoys"])
+        self.assertFalse(set(envs["new"].values()) & set(e))
+        self.assertEqual([b.get(n) for n in envs["new"].values()], [home, ns["HOME_DIR"] + "/agent-data/settings.json", ns["X"] + "/decoys"])
+        self.assertFalse(set(envs["old"].values()) & set(b))
 
 
 class H3BaselineRequired(unittest.TestCase):

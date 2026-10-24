@@ -17,15 +17,20 @@
 # --expect FILE (tests/golden_expect/*.json) --items A,B: step 0 only checks that the rebuilt isr.py compiles and that PRE_REF has
 # the loader block, and post may differ from pre only by lines an entry of an enabled item expects (an empty --items: none may).
 # Without --expect the check is exactly the split check.
+#
+# --cross (v0.8.0): PRE_REF may have the name table's other layout (0ed5802: the old one); each tree runs in its own, and
+# tests/golden_cross.py maps PRE_REF's outputs onto the working tree's in place of the diff. Not with --expect.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-USAGE="usage: scripts/golden-check.sh PRE_REF [quick|full] [ONLY] [--expect FILE --items A,B]   (PRE_REF is required: the commit before the split, 9b106b9)"
+USAGE="usage: scripts/golden-check.sh PRE_REF [quick|full] [ONLY] [--expect FILE --items A,B | --cross]   (PRE_REF is required: the commit before the split, 9b106b9)"
 POS=()
 EXPECT=""
 ITEMS=""
 HAVE_ITEMS=0
+CROSS=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --cross) CROSS=1; shift ;;
     --expect) [[ $# -ge 2 && -n "$2" ]] || { echo "golden-check: --expect needs a file" >&2; echo "$USAGE" >&2; exit 2; }
               EXPECT="$2"; shift 2 ;;
     --items) [[ $# -ge 2 ]] || { echo "golden-check: --items needs a list (it may be empty: --items '')" >&2; exit 2; }
@@ -40,6 +45,7 @@ MODE="${2:-full}"
 [[ "$MODE" == quick || "$MODE" == full ]] || { echo "golden-check: the mode is quick or full, not $MODE" >&2; exit 2; }
 [[ -z "$EXPECT" || -f "$EXPECT" ]] || { echo "golden-check: no expect file $EXPECT" >&2; exit 2; }
 [[ -n "$EXPECT" || "$HAVE_ITEMS" == 0 ]] || { echo "golden-check: --items needs --expect FILE" >&2; exit 2; }
+[[ -z "$CROSS" || -z "$EXPECT" ]] || { echo "golden-check: --cross and --expect don't combine" >&2; exit 2; }
 git rev-parse --verify --quiet "$PRE^{commit}" >/dev/null || { echo "golden-check: unknown ref $PRE" >&2; exit 2; }
 ISR_GOLDEN_PRE="$PRE" ISR_GOLDEN_TIERS="$MODE" ISR_GOLDEN_ONLY="${3:-}" ISR_GOLDEN_EXPECT="$EXPECT" ISR_GOLDEN_ITEMS="$ITEMS" \
-  exec python3 -I -B -m unittest discover -s tests -p golden_split.py -v
+  ISR_GOLDEN_CROSS="$CROSS" exec python3 -I -B -m unittest discover -s tests -p golden_split.py -v
