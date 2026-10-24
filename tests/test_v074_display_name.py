@@ -181,6 +181,38 @@ def without_v074_blocks(rel, t):
     return json.dumps(doc, indent=1)
 
 
+# v0.8.0 rename: the name guard's regex is unchanged; blank() first overwrites each allowed span with spaces of the same length,
+# so line numbers hold. A1: a rule ID (ISR, a hyphen, an uppercase letter), any file. A2: the bare rule prefix "ISR-" as a
+# string literal, only in the two name table files. B: the file name isr.py, plain or regex-escaped, any file. A5 (Codex r2
+# HIGH 1): the exact new values the name table holds that the guard would reject, as they are written there, only there.
+NAME_RX = re.compile(r"(?i)\bisr\b(?![\s_-]*bot\b)|\bisr[\s_-]+bot[\s_-]+bot\b")   # no lone ISR as the name, no ISR Bot Bot
+RENAME_TABLE = "tests/golden_rename_v080.json"
+A1 = re.compile(r"ISR(?=-[A-Z])")
+A2 = re.compile(r'"ISR-"')
+A2_FILES = (RENAME_TABLE, "tests/rename_v080.py")
+B = re.compile(r"isr\\?\.py\b")
+A5 = ('"(?i)isr-("', '"isr-t006k"', '"isr-t001R"', '"isr-k001"', '"isr-wsg"', '"(isr|isr_parts/"', r'"isr\\.py"',
+      r'"import isr as \\1"', '"isr."')
+
+
+def blank(rel, text):
+    spans = [m.span() for rx in (A1, B) for m in rx.finditer(text)]
+    if rel in A2_FILES:
+        spans += [m.span() for m in A2.finditer(text)]
+    if rel == RENAME_TABLE:
+        spans += [m.span() for s in A5 for m in re.finditer(re.escape(s), text)]
+    out = list(text)
+    for a, b in spans:
+        out[a:b] = " " * (b - a)
+    return "".join(out)
+
+
+def name_hits(rel, text):
+    """The line of each place the name guard flags in this file's text, after blank()."""
+    t = blank(rel, text)
+    return [t.count(chr(10), 0, m.start()) + 1 for m in NAME_RX.finditer(t)]
+
+
 class NeverShortened(unittest.TestCase):
     # The first 0.7.4 name (owner decision, Oct 22), split here so this file never holds it whole
     FIRST = re.compile(r"(?i)chief[\s_-]*" + "wor" + r"ry|" + "wor" + r"ry[\s_-]*bot")
@@ -198,9 +230,34 @@ class NeverShortened(unittest.TestCase):
 
 
     def test_the_name_is_always_isr_bot_anywhere(self):   # guard (fix round 1, Codex LOW5): every tracked file, this one aside
-        rx = re.compile(r"(?i)\bisr\b(?![\s_-]*bot\b)|\bisr[\s_-]+bot[\s_-]+bot\b")   # no lone ISR as the name, no ISR Bot Bot
-        bad = [f"{rel}:{t.count(chr(10), 0, m.start()) + 1}" for rel, t in tracked_text_files() for m in rx.finditer(t)]
+        bad = [f"{rel}:{n}" for rel, t in tracked_text_files() for n in name_hits(rel, t)]
         self.assertEqual(bad, [])
+
+    def test_allowances_rule_ids_and_file_name(self):   # bounds (v0.8.0 unit 0): A1, A2 and B, both sides, on synthetic text
+        anywhere = ("README.md", "docs/x.md", "data.json", "tests/test_x.py", "scripts/x.sh") + A2_FILES
+        for rel in anywhere:
+            for text in ("ISR-X004", "rule ISR-JSON here", "isr.py", "run `isr.py audit`", r"(isr\.py \S+)"):
+                self.assertEqual(name_hits(rel, text), [], (rel, text))
+            for text in ("ISR", "the ISR said", "ISR -X004", "ISR-", "ISR-x004", "ISR.py", "isr.pyc", r"isr\.pyc", '"isr"',
+                         "ISR Bot Bot", "'ISR-'"):
+                self.assertNotEqual(name_hits(rel, text), [], (rel, text))
+            self.assertEqual(name_hits(rel, "ISR-X004\nok\nISR\n"), [3], rel)   # blanking keeps line numbers
+        for rel in A2_FILES:
+            self.assertEqual(name_hits(rel, 'PREFIX = "ISR-"'), [], rel)
+            self.assertNotEqual(name_hits(rel, 'PREFIX = "ISR- "'), [], rel)
+        for rel in ("README.md", "data.json", "tests/test_x.py", "tests/golden_expect/v080.json", "golden_rename_v080.json",
+                    "scripts/rename_v080.py"):
+            self.assertNotEqual(name_hits(rel, 'PREFIX = "ISR-"'), [], rel)
+
+    def test_allowance_a5_exact_table_values(self):   # bounds (v0.8.0 unit 0, Codex r2 HIGH 1): A5, both sides
+        table = read(RENAME_TABLE)
+        for s in A5:
+            self.assertIn(s, table)   # none is stale
+            self.assertEqual(name_hits(RENAME_TABLE, "  " + s + ",\n"), [], s)
+            for rel in ("tests/other.json", "data.json", "README.md", "docs/KNOWN-LIMITS.md", "tests/golden_expect/v080.json"):
+                self.assertNotEqual(name_hits(rel, "  " + s + ",\n"), [], (rel, s))
+            for near in (s[:-1] + ' x"', '"x ' + s[1:], s[1:-1], "'" + s[1:-1] + "'"):
+                self.assertNotEqual(name_hits(RENAME_TABLE, "  " + near + ",\n"), [], (s, near))
 
 
 TITLE_COLUMNS = (48, 60)   # wt.py breakdown cuts finding titles at these widths
