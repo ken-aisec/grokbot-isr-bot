@@ -60,7 +60,7 @@ PLACE_WHOLE_RULES = frozenset(("ISR-S003", "ISR-S004", "ISR-S005", "ISR-T001r", 
 def _corrob_sig(g):
     """Everything corroborated() reads about a finding. Findings that share it give the same answer (Codex, batch 4 round 2)."""
     return (g["rule"], g.get("title") if g["rule"] in ("ISR-S001", "ISR-S002", "ISR-S005") else None, _place(g),
-            g.get("source", "watchtower"), g["severity"], g.get("severity_was"), bool(g.get("guarded")), tuple(sorted(g.get("kinds") or ())))
+            g.get("source", "isr-bot"), g["severity"], g.get("severity_was"), bool(g.get("guarded")), tuple(sorted(g.get("kinds") or ())))
 
 
 def _covers(a, b):
@@ -212,7 +212,7 @@ def corroborated(f, findings, index=None):
     ISR-T011x is ISR-T011 (same_rule)."""
     if f["rule"] == "ISR-S005" and f.get("title") != NEW_SIGN_IN:
         return False
-    here, src, skill = _place(f), f.get("source", "watchtower"), (index.skill(f) if index is not None else _skill_of(f))
+    here, src, skill = _place(f), f.get("source", "isr-bot"), (index.skill(f) if index is not None else _skill_of(f))
     skill_of = index.skill if index is not None else _skill_of
     loud = lambda g: (g.get("severity_was") or g["severity"]) in ("critical", "high")
     if index is not None:   # c5: only those that can answer yes, so the same answer (CorrobIndex); the skill folder is asked
@@ -229,7 +229,7 @@ def corroborated(f, findings, index=None):
         if g is f or g["rule"] in NO_OPINION or g.get("guarded"):
             continue                            # a scanner that didn't finish says nothing about the content (DQ-014); defensive text backs up nothing
         gp, gk = _place(g), kinds_of(g)
-        other = is_evidence(g) or g.get("source", "watchtower") != src
+        other = is_evidence(g) or g.get("source", "isr-bot") != src
         if g["rule"] == "ISR-I004" and _covers(gp, here):
             return True                          # a new plugin nobody has vetted: what the scanners flag in it counts until the owner decides
         if f["rule"] in WORDING_RULES and not fk:   # T014 has no kind: wording still needs a behavior signal in the same file
@@ -462,7 +462,7 @@ def group_root_causes(fs):
             else:
                 p["also_count"] = p.get("also_count", 0) + 1
                 if len(p.setdefault("also_flagged_by", [])) < 20:
-                    p["also_flagged_by"].append({"rule": f["rule"], "where": f["where"], "source": f.get("source", "watchtower")})
+                    p["also_flagged_by"].append({"rule": f["rule"], "where": f["where"], "source": f.get("source", "isr-bot")})
             continue
         root = skill_root(f["where"].split(":")[0]) if _groupable(f) else None
         if not root:
@@ -476,7 +476,7 @@ def group_root_causes(fs):
             continue
         p["also_count"] = p.get("also_count", 0) + 1
         if len(p.setdefault("also_flagged_by", [])) < ALSO_MAX:
-            p["also_flagged_by"].append({"rule": f["rule"], "where": f["where"], "source": f.get("source", "watchtower")})
+            p["also_flagged_by"].append({"rule": f["rule"], "where": f["where"], "source": f.get("source", "isr-bot")})
     for k, p in primary.items():
         if k[0] == "rollcall" and p.get("also_count"):
             p["title"] = f"{p['title']} ({p['also_count'] + 1} Bots)"

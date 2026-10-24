@@ -25,7 +25,7 @@ def known_names(shared):
     for e in items if isinstance(items, list) else []:
         if isinstance(e, dict) and isinstance(e.get("name"), str) and str(e.get("kind", "")).lower() in BOT_KINDS:
             names.append(e["name"].strip())
-    skip = {"watchtower", (shared or "").lower()}
+    skip = {(shared or "").lower()}
     return sorted({n for n in names if len(n) >= 3 and n.lower() not in skip})
 
 

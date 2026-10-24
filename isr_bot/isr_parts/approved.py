@@ -320,7 +320,7 @@ def revet(dirs, approve=False):
     for d in dirs:
         h = skill_dir_hash(d)
         diff = skill_diff(d)
-        r = {"name": skill_name(d), "path": d, "changed": diff["summary"], "checked_by": ["Watchtower rules"] + installed}
+        r = {"name": skill_name(d), "path": d, "changed": diff["summary"], "checked_by": ["ISR Bot rules"] + installed}
         if blocked:
             r.update(result="not finished", why=blocked)
         elif base_status == "reset":   # R4: a one-skill baseline would turn every other changed skill into a "new file"

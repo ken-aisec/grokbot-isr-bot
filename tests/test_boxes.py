@@ -450,7 +450,7 @@ class Doctor(Box):
         self.scanners(); self.audit()
         code, o, _ = self.run_cmd("doctor")
         snap = json.loads(o)
-        self.assertEqual(snap["watchtower"], isr.VERSION)
+        self.assertEqual(snap["isr_bot"], isr.VERSION)
         self.assertTrue(snap["scanners"]["SkillSpector"])
         self.assertEqual(snap["state_files"]["last_findings.json"], "ok")
         for private in (secret_name, "ghp_", "merger"):
@@ -657,7 +657,7 @@ class FreshAccountLessons(Box):
         tmp = isr.decoy_path("/tmp"); os.makedirs(tmp, exist_ok=True)
         owners = ["wt-audit-066.json", "wt-audit-066.time", "wt-audit-t93.json", "wt-fix-revet-t93.json", "wt-daily-t93.json", "wt-notes.txt"]
         installer = ["gitleaks_8.30.1_linux_x64.tar.gz", "gitleaks_checksums.txt", "trufflehog_3.97.9_linux_amd64.tar.gz",
-                     "trufflehog_checksums.txt", "osv_sums.txt", "wt-lock.err"]
+                     "trufflehog_checksums.txt", "osv_sums.txt", "isr-bot-lock.err"]
         for f in owners + installer:
             open(os.path.join(tmp, f), "w").write("x")
         code, o, _ = self.run_cmd("uninstall")

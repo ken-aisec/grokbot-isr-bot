@@ -320,7 +320,7 @@ def cmd_daily(args):
     gap = list(snap.get("stages_skipped") or [])
     if not new and not fixed and not plat and not pending and not moved:
         # R04: nothing changed among what WAS checked; a stage that didn't finish is said, never hidden behind NO_CHANGES
-        print(f"NO_CHANGES_BUT_NOT_CHECKED {'; '.join(map(stage_label, gap))[:300]}: these were not checked this run (last results kept)" if gap else "NO_CHANGES")
+        print(f"NO_CHANGES_BUT_NOT_CHECKED {'; '.join(gap)[:300]}: these were not checked this run (last results kept)" if gap else "NO_CHANGES")
         return 0
     out = {"score": snap["score"], "score_line": score_line(snap)}
     out["status"] = snap_status(snap)
@@ -726,14 +726,14 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
     accepted = [f for f in accepted if not f.get("exception")]
     fyi_n = sum(1 for f in (snap or {}).get("findings", []) if not counts(f))
     skipped = (snap or {}).get("stages_skipped", [])
-    acc_html = (f"<p class='small'><b>Skipped this run:</b> {e(', '.join(map(stage_label, skipped)))}. Their last results were kept, so the score didn't move because of it.</p>" if skipped else "")
+    acc_html = (f"<p class='small'><b>Skipped this run:</b> {e(', '.join(skipped))}. Their last results were kept, so the score didn't move because of it.</p>" if skipped else "")
     acc_html += (f"<p class='small'>{fyi_n} notes about built-in plugins and skills are listed for information and not counted in the score.</p>" if fyi_n else "")
     acc_html += "".join(f"<p class='small'><b>⚠ Security-tool exception:</b> {e(x['skill'])} is flagged by two scanners. You confirmed it is a security tool. "
                        f"Ends {e(x['until'])} ({x['days_left']} days) or when the skill changes.</p>" for x in exc)
     acc_html += ("<details><summary>" + f"{len(accepted)} accepted {'risk' if len(accepted) == 1 else 'risks'}</summary><ul class='small'>" +
                  "".join(f"<li>{e(plain(f)['title'])}</li>" for f in accepted) + "</ul></details>") if accepted else ""
     down = [s["name"] for s in b["sources"] if s["status"] != "ok"]
-    used = (load_json(state_path("engines_used.json"), {}) or {}).get("engines", ["Watchtower rules"])
+    used = (load_json(state_path("engines_used.json"), {}) or {}).get("engines", ["ISR Bot rules"])
     missing = [n for n in ("SkillSpector", "husk", "gitleaks", "TruffleHog", "pip-audit", "OSV-Scanner") if n not in used]
     engines_html = (f"<p class='engines'>Checked by {len(used)} scanners: {e(', '.join(used))}."
                     + (f" Not installed: {e(', '.join(missing))} (run setup step 2)." if missing else "") + "</p>")
@@ -865,10 +865,8 @@ _isr_part("quarantine")
 # ---------------------------------------------------------------- uninstall: leave nothing behind
 # Only what install.sh itself leaves in /tmp. A name like wt-audit-066.json is not Watchtower's: the owner's Bot saved its
 # own copy of a run there (`audit --json > /tmp/...`), and v0.6.3 to v0.6.6 deleted those along with the installer's files.
-TMP_LEFTOVERS = re.compile(r"^(gitleaks_.*\.tar\.gz|gitleaks_checksums\.txt|trufflehog_.*\.tar\.gz|trufflehog_checksums\.txt|osv_sums\.txt|wt-lock\.err)$")
+TMP_LEFTOVERS = re.compile(r"^(gitleaks_.*\.tar\.gz|gitleaks_checksums\.txt|trufflehog_.*\.tar\.gz|trufflehog_checksums\.txt|osv_sums\.txt|isr-bot-lock\.err)$")
 ROUTINE_NAMES = ("ISR Bot daily watch", "ISR Bot weekly audit", "ISR Bot weekly tidy", "ISR Bot monthly roll-call")
-# v0.7.4: the names routines set up before the display rename still have (the template keeps them until it is updated)
-LEGACY_ROUTINE_NAMES = ("Watchtower daily watch", "Watchtower weekly audit", "Watchtower weekly tidy", "Watchtower monthly roll-call")
 
 
 def cmd_uninstall(args):
@@ -888,13 +886,12 @@ def cmd_uninstall(args):
     if not args.apply:
         print(fit({"mode": "preview (nothing removed)",
                    "order": "routines first, then `isr.py uninstall --apply --remove-folder`. Any audit or daily run after the decoys are gone would not re-plant them, but a routine left on would report errors.",
-                   "you_do_first_after_the_owners_yes": ["Delete these routines (or tell the owner to, under your Details tab): " + ", ".join(ROUTINE_NAMES)
-                                                         + " (set up before 0.7.4: " + ", ".join(LEGACY_ROUTINE_NAMES) + ")"],
+                   "you_do_first_after_the_owners_yes": ["Delete these routines (or tell the owner to, under your Details tab): " + ", ".join(ROUTINE_NAMES)],
                    "this_command_removes": {"decoys": [short_path(p) for p in decoys if os.path.exists(p)],
                                             "decoy_folders_if_empty": [short_path(d) for d in decoy_dirs if os.path.isdir(d)],
                                             "installer_and_scratch_files_in_tmp": len(tmp), "scanner_cache": short_path(cache) if os.path.isdir(cache) else None,
-                                            "watchtower_folder": h + " (with --remove-folder: scanners, reports, state, vet copies)"},
-                   "not_removed_outside_watchtower": [short_path(p) for p in refused] or None,
+                                            "isr_bot_folder": h + " (with --remove-folder: scanners, reports, state, vet copies)"},
+                   "not_removed_outside_isr_bot": [short_path(p) for p in refused] or None,
                    "quarantined_skills": [e["name"] for e in held] or None,
                    "quarantine_note": "These go with the folder. Restore any the owner wants first (`isr.py quarantine --restore <name>`)." if held else None,
                    "only_the_owner_can": ["Keep the three Ask-first rules in Auto-review: they protect every Bot, with or without ISR Bot.",
@@ -997,8 +994,8 @@ def cmd_doctor(args):
     except OSError:
         writable = False
     lock = load_json(state_path("run.lock"), None)
-    out = {"watchtower": VERSION, "python": platform.python_version(), "system": f"{platform.system()} {platform.machine()}",
-           "home_is": h.replace(os.path.basename(h), "<user>") if h.count("/") > 1 else h, "watchtower_home": home(), "can_write_state": writable,
+    out = {"isr_bot": VERSION, "python": platform.python_version(), "system": f"{platform.system()} {platform.machine()}",
+           "home_is": h.replace(os.path.basename(h), "<user>") if h.count("/") > 1 else h, "isr_bot_home": home(), "can_write_state": writable,
            "workspace_exists": os.path.isdir("/workspace"), "folders": folders,
            "scanners": {n: bool(tool(t)) for n, t in (("SkillSpector", "skillspector"), ("husk", "husk"), ("gitleaks", "gitleaks"),
                                                        ("TruffleHog", "trufflehog"), ("pip-audit", "pip-audit"), ("OSV-Scanner", "osv-scanner"))},

@@ -98,7 +98,7 @@ git merge-base --is-ancestor origin/main "$REVIEWED" || stop "GitHub has commits
 [[ "$(gh repo view "$REPO" --json visibility -q .visibility)" == "PUBLIC" ]] || stop "$REPO is not public, so the installer can't reach it. Visibility is the owner's decision"
 git push origin "$REVIEWED:refs/heads/main" || stop "the push to main failed"
 [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "$REVIEWED" ]] || stop "main on GitHub isn't the reviewed commit after the push"
-git tag -a "$TAG" "$REVIEWED" -m "Watchtower $TAG"
+git tag -a "$TAG" "$REVIEWED" -m "ISR Bot $TAG"
 git push origin "refs/tags/$TAG" || stop "the tag push failed (the local tag $TAG is left for you to inspect)"
 [[ "$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)" == "$REVIEWED" ]] || stop "tag $TAG on GitHub doesn't point at the reviewed commit"
 echo "Done: https://github.com/$REPO (tag $TAG = $REVIEWED; main = $REVIEWED)"

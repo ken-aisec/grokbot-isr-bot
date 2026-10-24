@@ -183,8 +183,8 @@ def ask_first_state(native, exported):
     return "unread", gaps
 
 
-# v0.7.4: keeps the old name; the evidence is part of the tip's finding key, and ask_first_unread compares stored tips with it
-ASK_UNREAD_EVIDENCE = "Ask-first rules with no word Watchtower reads in any of its languages"
+# v0.8.0: renamed; the evidence is part of the tip's finding key, and ask_first_unread compares stored tips with it
+ASK_UNREAD_EVIDENCE = "Ask-first rules with no word ISR Bot reads in any of its languages"
 
 
 def ask_first_unread(f):

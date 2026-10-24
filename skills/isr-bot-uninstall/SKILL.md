@@ -14,7 +14,7 @@ description: Remove ISR Bot and everything it put on this computer, after one ye
    Then ask: "Reply yes to remove all of it."
 3. On yes, in this order:
    - Restore any quarantined skill the owner asked for: `isr.py quarantine --restore <name>`.
-   - Delete the four ISR Bot routines (older installs: the Watchtower names the command lists). If you can't, tell the owner to delete them under your Details tab, and wait until they say it's done.
+   - Delete the four ISR Bot routines. If you can't, tell the owner to delete them under your Details tab, and wait until they say it's done.
    - Run `isr.py uninstall --apply --remove-folder`.
    - Check: `ls /workspace/isr-bot` should fail, and none of the three decoy paths should exist. Check with `test -e <path>`, not by opening anything.
 4. Reply in at most 4 lines: what was removed, anything that was left and why, and the last step that is the owner's: "To remove me completely, right-click ISR Bot in the sidebar and choose Delete."

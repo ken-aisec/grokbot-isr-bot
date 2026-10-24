@@ -355,4 +355,4 @@ class R10R11InstallActivation(unittest.TestCase):
         self.assertEqual(os.listdir(victim), ["keep.txt"])
         self.assertFalse([x for x in os.listdir(self.isr_home) if x.startswith(".stage.")])   # cleaned up
         src = open(os.path.join(ROOT, "scripts", "install.sh")).read()
-        self.assertIn('mktemp -d "$ISR_HOME/.stage.', src); self.assertIn('mktemp -d "${TMPDIR:-/tmp}/wt-dl.', src)
+        self.assertIn('mktemp -d "$ISR_HOME/.stage.', src); self.assertIn('mktemp -d "${TMPDIR:-/tmp}/isr-bot-dl.', src)

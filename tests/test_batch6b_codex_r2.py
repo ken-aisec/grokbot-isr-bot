@@ -203,9 +203,9 @@ class GitleaksPrivateFiles(_Keys):
     def test_the_private_folder_is_gone_after(self):   # guard (new)
         import tempfile
         self.real_hit()
-        before = {x for x in os.listdir(tempfile.gettempdir()) if x.startswith(("wt-gitleaks-", "wt-metadata-"))}
+        before = {x for x in os.listdir(tempfile.gettempdir()) if x.startswith(("isr-bot-gitleaks-", "isr-bot-metadata-"))}
         self.scan()
-        after = {x for x in os.listdir(tempfile.gettempdir()) if x.startswith(("wt-gitleaks-", "wt-metadata-"))}
+        after = {x for x in os.listdir(tempfile.gettempdir()) if x.startswith(("isr-bot-gitleaks-", "isr-bot-metadata-"))}
         self.assertEqual(after - before, set())
 
 

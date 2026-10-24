@@ -58,8 +58,8 @@ SS="skillspector @ git+https://github.com/NVIDIA/SkillSpector@a50b9c93835c94f7d3
 # If the lock can't be used, the Python scanners are not installed without it (up to v0.6.6 this fell back to unchecked
 # downloads). gitleaks, TruffleHog and OSV-Scanner don't come from the lock: they still install from their own checksums,
 # and the script ends with CHECKSUM LOCK FAILED and a non-zero exit so the failure is never missed.
-DL="$(mktemp -d "${TMPDIR:-/tmp}/wt-dl.XXXXXXXX")"; chmod 700 "$DL"; trap 'rm -rf "$DL"' EXIT   # private: no shared-/tmp link games
-LOCK_ERR="$DL/wt-lock.err"; LOCK_FAILED=""
+DL="$(mktemp -d "${TMPDIR:-/tmp}/isr-bot-dl.XXXXXXXX")"; chmod 700 "$DL"; trap 'rm -rf "$DL"' EXIT   # private: no shared-/tmp link games
+LOCK_ERR="$DL/isr-bot-lock.err"; LOCK_FAILED=""
 if [[ -f "$LOCK" ]] && "$PIP" install --quiet --require-hashes -r "$LOCK" 2>"$LOCK_ERR" \
    && "$PIP" install --quiet --no-deps "$SS" 2>>"$LOCK_ERR"; then
   touch "$ISR_HOME/scanners/LOCKED"; echo "Scanners installed from the checksum lock."

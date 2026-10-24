@@ -315,7 +315,7 @@ class CorroborationIndex(Folder):
             f = isr.finding(rule, rng.choice(("t", isr.NEW_SIGN_IN, isr.KEY_LIVE)), rng.choice(("critical", "high", "medium", "low")), [], w,
                            "e", "f")
             if rng.random() < 0.3:
-                f["source"] = rng.choice(("engines", "skillspector", "husk", "watchtower"))
+                f["source"] = rng.choice(("engines", "skillspector", "husk", "isr-bot"))
             if rng.random() < 0.2:
                 f["kinds"] = rng.sample(("credential", "exfil", "pipe", "secrecy", "override", "exec", "obfuscation"), rng.randrange(1, 3))
             if rng.random() < 0.1:

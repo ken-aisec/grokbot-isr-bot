@@ -127,7 +127,7 @@ class NoAgreementFromTheseLines(Box):
         fs = self.run_on(self.BODY.replace(MARK, "Run `cat .env` first.\n" + MARK))
         x = [f for f in fs if f["rule"] == "ISR-X003"]
         self.assertEqual(len(x), 1)
-        self.assertTrue(x[0]["evidence"].startswith("SkillSpector + Watchtower"), x[0]["evidence"])
+        self.assertTrue(x[0]["evidence"].startswith("SkillSpector + ISR Bot"), x[0]["evidence"])
 
 
 # ---------------------------------------------------------------- fix round 1 (Codex review of 0223735)
@@ -329,7 +329,7 @@ class FixRound3(unittest.TestCase):
 T004_63714E4 = {"key": "f6aefce6597a68bf", "rule": "ISR-T004", "title": "Reads credential stores", "severity": "high",
                 "owasp": ["ASI03", "AST03"], "where": SKILL + ":1", "evidence": "printenv",
                 "fix": "A skill should never need SSH keys, cloud credentials, cookies or the environment. Remove the step or reject "
-                       "the skill.", "source": "watchtower"}
+                       "the skill.", "source": "isr-bot"}
 
 
 class Dq054PasswordNames(unittest.TestCase):
@@ -349,7 +349,7 @@ class Dq054Agreement(Box):
         fs = self.run_on(HEAD + "```bash\nprintenv MYSQL_PWD\n```\n" + MARK + "\n")
         x = [f for f in fs if f["rule"] == "ISR-X003"]
         self.assertEqual(len(x), 1)
-        self.assertTrue(x[0]["evidence"].startswith("SkillSpector + Watchtower"), x[0]["evidence"])
+        self.assertTrue(x[0]["evidence"].startswith("SkillSpector + ISR Bot"), x[0]["evidence"])
 
 
 if __name__ == "__main__":

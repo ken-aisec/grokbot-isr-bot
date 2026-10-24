@@ -53,7 +53,7 @@ class DQ014TimeoutIsNotASecondOpinion(Base):
 
 class Prepublish(Base):
     def stage(self, files, roster=None):
-        d = os.path.join(self.tmp, "prepublish", "Watchtower"); os.makedirs(d)
+        d = os.path.join(self.tmp, "prepublish", "ISR Bot"); os.makedirs(d)
         for n, t in files.items():
             open(os.path.join(d, n), "w").write(t)
         if roster is not None:
@@ -67,14 +67,14 @@ class Prepublish(Base):
         os.makedirs(os.path.join(self.tmp, "isr_home", "exports"), exist_ok=True)
         open(os.path.join(self.tmp, "isr_home", "exports", "names.txt"), "w").write("Owner\n")
         routine = ("Every day at 6:00 AM run the daily check. Never send without my approval.\n"
-                   "Owner's standing rule: Builder develops Watchtower; never message Builder.\n"
+                   "Owner's standing rule: Builder develops ISR Bot; never message Builder.\n"
                    "The result goes to Owner in this chat.\n")
-        code, r = self.stage({"routine-daily-watch.md": routine}, roster=[{"name": "Builder", "kind": "bot"}, {"name": "Watchtower", "kind": "bot"},
+        code, r = self.stage({"routine-daily-watch.md": routine}, roster=[{"name": "Builder", "kind": "bot"}, {"name": "ISR Bot", "kind": "bot"},
                                                                           {"name": "Ops room", "kind": "room"}])
         names = [f for f in r["findings"] if f["rule"] == "ISR-PP08"]
         self.assertEqual(sorted({f["where"].rsplit(":", 1)[1] for f in names}), ["2", "3"])
         self.assertEqual(r["verdict"], "FAIL"); self.assertEqual(code, 1)
-        self.assertFalse(any("Watchtower" in f["evidence"] for f in names))       # the Bot being shared may name itself
+        self.assertFalse(any("ISR Bot" in f["evidence"] for f in names))       # the Bot being shared may name itself
         self.assertFalse(any("forged" in f["evidence"] for f in names))
 
     def test_dq015_no_names_known_means_nothing_invented(self):

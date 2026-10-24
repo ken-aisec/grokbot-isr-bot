@@ -147,7 +147,7 @@ class UnreadableIsNotChanged(_Scanners):
             self.assertIsNone(isr.tool("skillspector"))
             self.assertTrue(isr.engines_blocked())                               # revet and the built-in roll still refuse
         for t in __import__("threading").enumerate():
-            if t.name == "watchtower-hash":
+            if t.name == "isr-bot-hash":
                 t.join(10)
         self.assert_unreadable("skillspector")
 

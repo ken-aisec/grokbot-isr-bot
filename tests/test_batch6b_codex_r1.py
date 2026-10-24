@@ -332,7 +332,7 @@ class DismissalsOverAChange(_Dismiss):
 
 class DismissalUnits(Box):   # round 2: a box, since set_aside_dismissed reads the box's accepted risks
     def f(self, rule, where, sev, key, ev=None, cls="corroborated", **kw):
-        out = {"rule": rule, "where": where, "severity": sev, "key": key, "class": cls, "title": rule, "evidence": "x", "source": "watchtower"}
+        out = {"rule": rule, "where": where, "severity": sev, "key": key, "class": cls, "title": rule, "evidence": "x", "source": "isr-bot"}
         if ev:
             out["ev256"] = ev
         out.update(kw)

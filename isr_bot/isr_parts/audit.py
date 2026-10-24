@@ -311,7 +311,7 @@ def audit(roots, exports, quick=False):
         fs += soft("gitleaks (keys in files)", ("ISR-S002",), notes, [], gitleaks_findings, roots, notes)
         fs += soft("pip-audit (installed Python packages)", ("ISR-D001",), notes, [], package_findings, notes)
         fs += soft("OSV-Scanner (project dependencies)", ("ISR-D002",), notes, [], osv_findings, roots, notes)
-        fs += soft("Watchtower's own tools", ("ISR-W001",), notes, [], self_findings, notes)
+        fs += soft("ISR Bot's own tools", ("ISR-W001",), notes, [], self_findings, notes)
         secret_paths = [f["where"].split(":")[0] for f in fs if f["rule"] in ("ISR-S001", "ISR-S002")]
         ks = soft("TruffleHog (which keys still work)", (), notes, None, trufflehog_status, secret_paths, notes)
         if ks is None or "TruffleHog (which keys still work)" in STAGE_FAILED:
@@ -339,7 +339,7 @@ def audit(roots, exports, quick=False):
     # every scanner expected before plus every one that ran, until all of them are back.
     before = list(dict.fromkeys(n for k in ("expected", "engines") for n in (prev_used.get(k) if isinstance(prev_used.get(k), list) else [])
                                 if isinstance(n, str)))
-    used_now = ["Watchtower rules"] + [n for n, t in (
+    used_now = ["ISR Bot rules"] + [n for n, t in (
         ("SkillSpector", "skillspector"), ("husk", "husk"), ("gitleaks", "gitleaks"), ("TruffleHog", "trufflehog"),
         ("pip-audit", "pip-audit"), ("OSV-Scanner", "osv-scanner")) if scanner_used(t)]   # Claude review 2 (3)
     gone = [n for n in before if n not in used_now]

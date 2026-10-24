@@ -8,7 +8,7 @@ import isr  # noqa: E402
 from test_boxes import temp_home  # noqa: E402
 
 warnings.simplefilter("ignore", ResourceWarning)
-F = lambda rule, sev, where, source="watchtower", title="t": isr.finding(rule, title, sev, ["X"], where, "ev", "fix", source=source)
+F = lambda rule, sev, where, source="isr-bot", title="t": isr.finding(rule, title, sev, ["X"], where, "ev", "fix", source=source)
 
 
 class QuietFalseAlarms(unittest.TestCase):

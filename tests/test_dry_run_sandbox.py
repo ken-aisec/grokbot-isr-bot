@@ -1,4 +1,4 @@
-"""Claude via bridge, Oct 15: the release dry run left full sandbox copies in /workspace/wt-dry-*, and the daily watch rightly
+"""Claude via bridge, Oct 15: the release dry run left full sandbox copies in /workspace/isr-bot-dry-*, and the daily watch rightly
 raised seven critical decoy alarms on their planted decoys and canary registry copies. scripts/dry-run.sh now writes only inside
 its own /tmp sandbox and leaves the workspace exactly as it was. No name-based skip was added to the scanner.
 
@@ -24,7 +24,7 @@ def attempt(name, path, body="x"):
 attempt("state", os.path.join(home, "state", "canaries.json"), '{"api-env": "copied"}')
 attempt("state_new", os.path.join(home, "state", "last_findings.json"), "[]")
 attempt("install", os.path.join(home, "reports", "new.json"))
-attempt("workspace", os.path.join(ws, "wt-dry-leftover", "canaries.json"))
+attempt("workspace", os.path.join(ws, "isr-bot-dry-leftover", "canaries.json"))
 attempt("decoy", "/tmp/.sync-abcdef/prod-1234.env", "STRIPE_SECRET_KEY=rk_live_x")
 res["state_seen"] = open(os.path.join(home, "state", "seed.json")).read()
 res["args"] = sys.argv[1:]
@@ -73,7 +73,7 @@ class DryRunLeavesWorkspaceAlone(unittest.TestCase):
 
     @staticmethod
     def real_workspace():
-        return sorted(n for n in os.listdir("/workspace") if n.startswith("wt-dry")) if os.path.isdir("/workspace") else None
+        return sorted(n for n in os.listdir("/workspace") if n.startswith("isr-bot-dry")) if os.path.isdir("/workspace") else None
 
     def run_dry(self, **extra):
         env = {**os.environ, "ISR_DRY_WORKSPACE": self.ws, "ISR_DRY_INSTALL": self.install, "ISR_DRY_TMPROOT": self.tmproot,
@@ -86,10 +86,10 @@ class DryRunLeavesWorkspaceAlone(unittest.TestCase):
         r = self.run_dry()
         self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
         self.assertEqual(snapshot(self.ws), before, "the dry run changed the workspace")
-        self.assertEqual(self.real_workspace(), self.real_ws_before, "a wt-dry-* folder appeared in the real /workspace")
+        self.assertEqual(self.real_workspace(), self.real_ws_before, "a isr-bot-dry-* folder appeared in the real /workspace")
         left = os.listdir(self.tmproot)
         self.assertEqual(len(left), 1, left)                              # the sandbox itself is gone
-        self.assertTrue(left[0].startswith("wt-dry-report-"), left)
+        self.assertTrue(left[0].startswith("isr-bot-dry-report-"), left)
         rep = os.path.join(self.tmproot, left[0])
         self.assertEqual(sorted(os.listdir(rep)), ["audit.err", "audit.json"])
         import json
@@ -107,7 +107,7 @@ class DryRunLeavesWorkspaceAlone(unittest.TestCase):
         r = self.run_dry(ISR_DRY_KEEP="1")
         self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
         self.assertEqual(snapshot(self.ws), before)
-        kept = [n for n in os.listdir(self.tmproot) if n.startswith("wt-dry.")]
+        kept = [n for n in os.listdir(self.tmproot) if n.startswith("isr-bot-dry.")]
         self.assertEqual(len(kept), 1)
         self.assertTrue(os.path.exists(os.path.join(self.tmproot, kept[0], ".sync-abcdef", "prod-1234.env")))
         self.assertEqual(open(os.path.join(self.tmproot, kept[0], "state", "canaries.json")).read(), '{"api-env": "copied"}')
@@ -117,7 +117,7 @@ class DryRunLeavesWorkspaceAlone(unittest.TestCase):
         before = snapshot(self.ws)
         r = self.run_dry(ISR_DRY_TMPROOT=os.path.join(self.ws, "scratch"))
         self.assertEqual(r.returncode, 2); self.assertIn("inside", r.stderr)
-        r = self.run_dry(ISR_DRY_OUT=os.path.join(self.ws, "wt-dry-report"))
+        r = self.run_dry(ISR_DRY_OUT=os.path.join(self.ws, "isr-bot-dry-report"))
         self.assertEqual(r.returncode, 2); self.assertIn("inside", r.stderr)
         self.assertEqual(snapshot(self.ws), before)
         self.assertEqual(os.listdir(self.tmproot), [])
@@ -126,7 +126,7 @@ class DryRunLeavesWorkspaceAlone(unittest.TestCase):
 class NoNameBasedSkip(unittest.TestCase):
     def test_scanner_has_no_isr_bot_dry_exception(self):
         src = open(os.path.join(ROOT, "isr_bot", "isr.py")).read()
-        self.assertNotIn("wt-dry", src, "a name-based skip for dry-run folders would be a blind spot")
+        self.assertNotIn("isr-bot-dry", src, "a name-based skip for dry-run folders would be a blind spot")
 
 
 if __name__ == "__main__":

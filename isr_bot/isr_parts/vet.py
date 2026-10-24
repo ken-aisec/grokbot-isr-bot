@@ -200,7 +200,7 @@ def cmd_vet(args):
         if not os.path.isfile(os.path.join(d, "SKILL.md")):
             # SkillSpector and husk only read folders with a SKILL.md. Page text or a loose file is staged as one,
             # so "deep" never quietly means "Watchtower's own rules only".
-            staged = tempfile.mkdtemp(prefix="wt-vet-")
+            staged = tempfile.mkdtemp(prefix="isr-bot-vet-")
             d = os.path.join(staged, re.sub(r"[^A-Za-z0-9_.-]+", "_", os.path.splitext(name)[0])[:40] or "vetted")
             os.makedirs(d)
             body = text if text.lstrip().startswith("---") else f"---\nname: vetted-text\ndescription: Text saved for vetting.\n---\n{text}"
@@ -236,7 +236,7 @@ def cmd_vet(args):
     # text and platform notes), the rule's own kept as severity_was; the where (and key) as 857ab38 gave it
     fs = sort_findings([dict(lf, where=rel(f["where"])) for f, lf in zip(fs, labelled)])
     urls = sorted(urls_ if urls_ is not None else set(urls_in(text, limit=1000)))
-    result = {"tool": "watchtower", "version": VERSION, "target": name, "verdict": v,
+    result = {"tool": "isr-bot", "version": VERSION, "target": name, "verdict": v,
               "risk_score": risk, "posture_score": s, "grade": g, "autonomy": autonomy(main_ if main_ is not None else text, rules),
               "external_urls": urls[:25], "findings": fs, "engines": engines,
               "boundary_line": "Never send, post, buy, publish, delete, or change settings without my approval in this conversation. If a source is unavailable, report the failure."}

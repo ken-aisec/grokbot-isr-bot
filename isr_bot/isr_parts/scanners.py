@@ -159,7 +159,7 @@ def _in_hash_time(fn, cleanup=None, deadline=None):
                 return
             box.update(res=res, err=err)
             done.set()
-    threading.Thread(target=work, name="watchtower-hash", daemon=True).start()
+    threading.Thread(target=work, name="isr-bot-hash", daemon=True).start()
     done.wait(limit)
     with lock:
         if not done.is_set():
@@ -211,7 +211,7 @@ def _seal_copy(path):
         # Claude review 2 (1): a failure of the copy (not of the program file) is SealUnavailable, never a verdict on the program.
         # No memfd or sealing on this computer: nothing is run from a copy that could still change.
         try:
-            mfd = os.memfd_create("watchtower-scanner", os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
+            mfd = os.memfd_create("isr-bot-scanner", os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
         except (AttributeError, OSError):
             raise SealUnavailable("this computer can't keep a sealed copy of it to run")
 
@@ -381,7 +381,7 @@ def _reader_path():
 
 def _reader_namespace(src):
     path = _reader_path()
-    ns = {"__name__": "watchtower_scanner_lock", "__file__": path, "__builtins__": builtins}
+    ns = {"__name__": "isr_bot_scanner_lock", "__file__": path, "__builtins__": builtins}
     exec(compile(src, path, "exec", dont_inherit=True), ns)   # noqa: S102 - Watchtower's own checked file, from its bytes
     return ns
 
@@ -475,11 +475,11 @@ def _digest_problem(name, digest):
         return None
     want = _scanner_listed(name)
     if not want and scanner_list_changed():
-        return "changed", "Watchtower's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run"  # v0.7.4: the old name kept, this is ISR-X005's evidence, part of the finding key
+        return "changed", "ISR Bot's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run"  # v0.8.0: renamed; this is ISR-X005's evidence, part of the finding key
     if not want:
         return "unlisted", f"its checksum isn't in ISR Bot's list for this computer ({scanner_arch()}) yet"
     if digest not in want:
-        return "changed", "its program file isn't the one Watchtower installed"  # v0.7.4: the old name kept, this is ISR-X005's evidence, part of the finding key
+        return "changed", "its program file isn't the one ISR Bot installed"  # v0.8.0: renamed; this is ISR-X005's evidence, part of the finding key
     return None
 
 
@@ -728,7 +728,7 @@ def scanner_x005():
                            f"ISR Bot didn't run {label}: its program file isn't the one ISR Bot installed, so its checks weren't "
                            f"done this time and its last results are kept. {put_back} "
                            "If this comes back, something on this computer is changing ISR Bot's files: tell the owner.",
-                           source="watchtower", ident=name))
+                           source="isr-bot", ident=name))
     return out
 
 

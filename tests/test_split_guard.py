@@ -255,7 +255,7 @@ class G05DefinitionOrder(unittest.TestCase):
             have |= bound_names(s)
 
 
-SOURCE_ABSENT = ("wt-dry",                                     # test_dry_run_sandbox: no name-based skip for dry-run folders
+SOURCE_ABSENT = ("isr-bot-dry",                                     # test_dry_run_sandbox: no name-based skip for dry-run folders
                  "ships with no entries",                      # test_item8_churn: the lock header names the exception
                  "install semgrep for deeper analysis",        # test_batch3_selfcheck_docs: no unchecked semgrep advice
                  "Remove the three Ask-first rules")           # test_v068_hardening: uninstall keeps them

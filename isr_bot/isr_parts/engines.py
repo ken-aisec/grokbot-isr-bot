@@ -15,13 +15,6 @@ TIMED_OUT = "ran out of time"
 
 
 STAGE_FAILED = []        # stages that did not finish in the current run
-# v0.7.4 fix round 1 (Codex MED1): a stage's name is a stored key (stage_times.json, progress.json, stages_skipped) and keeps its
-# old wording; prose shows its label
-STAGE_LABELS = {"Watchtower's own tools": "ISR Bot's own tools"}
-
-
-def stage_label(stage):
-    return STAGE_LABELS.get(stage, stage)
 
 
 def carry(rules):
@@ -60,7 +53,7 @@ def soft(stage, rules, notes, default, fn, *a, **k):
         failed = len(STAGE_FAILS) > fails_before or any(re.search(r"(?i)\bfailed\b", n) for n in notes[before:])
     except Exception as e:   # noqa: BLE001 - nothing a scanner or a strange file does may break the audit
         res, failed = default, True
-        notes.append(f"{stage_label(stage)} FAILED ({type(e).__name__}: {mask_secrets(str(e)[:MASK_WINDOW])[:100]}): skipped, NOT checked this run; "
+        notes.append(f"{stage} FAILED ({type(e).__name__}: {mask_secrets(str(e)[:MASK_WINDOW])[:100]}): skipped, NOT checked this run; "
                      "the last results are kept.")
     if failed:
         STAGE_FAILED.append(stage)
@@ -245,7 +238,7 @@ def husk_batch(exe, stage, mapping, timeout=600, partial=None):
     return res, None
 
 
-X003_PAIRS = (("SkillSpector", "husk"), ("SkillSpector", "Watchtower"), ("husk", "Watchtower"))
+X003_PAIRS = (("SkillSpector", "husk"), ("SkillSpector", "ISR Bot"), ("husk", "ISR Bot"))
 
 
 def engine_evidence(rule, s_, hk, engines=()):
@@ -295,7 +288,7 @@ def engine_entry_masked(d, e):
     return e
 
 
-def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=None):
+def engine_findings(skill_dirs, isr_findings, notes, user_root_dirs=(), budget=None):
     """Second and third opinions on skills. Each engine starts once per batch of 40 skills; a skill is only re-scanned when
     its files change; work stops at the time budget and resumes next run. A skill is 'corroborated' only when two engines flag it."""
     out, started = [], time.monotonic()
@@ -434,10 +427,10 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
                      + (". To check them all now, run `isr.py audit --budget 1800` (up to 30 minutes)." if 300 <= budget < 1800 else "."))
     set_progress("done", scanned, len(todo), started)
 
-    wt_hits = {}   # v0.7.1 item 2: wording never votes (one word used to give one critical plus one high)
-    for f in wt_findings:
+    isr_hits = {}   # v0.7.1 item 2: wording never votes (one word used to give one critical plus one high)
+    for f in isr_findings:
         if f["severity"] in ("critical", "high") and f["rule"] in BEHAVIOR_RULES:
-            wt_hits.setdefault(os.path.dirname(f["where"].split(":")[0]), []).append(f["rule"])
+            isr_hits.setdefault(os.path.dirname(f["where"].split(":")[0]), []).append(f["rule"])
     for d in targets:
         e_ = cache.get(d) or {}
         if e_.get("hash") != hashes[d] or not (e_.get("stuck") or entry_engines(e_)):
@@ -454,7 +447,7 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
         raw_keys = e_["keys"] if isinstance(e_.get("keys"), dict) and e_["keys"].get("for") == d else {}
         ss_flag = s_.get("recommendation") == "DO_NOT_INSTALL"
         hk_flag = bool(hk)
-        wt_k = {RISK_KIND[r] for k, rs in wt_hits.items() if k == d or k.startswith(d + "/") for r in rs}
+        isr_k = {RISK_KIND[r] for k, rs in isr_hits.items() if k == d or k.startswith(d + "/") for r in rs}
         ss_k = set(s_["kinds"] if "kinds" in s_ else e_.get("top_kinds", engine_kinds(s_.get("top", [])))) if ss_flag else set()
         hk_k = set(e_.get("hk_kinds", engine_kinds(hk))) if hk_flag else set()
         tier = skill_tier(d + "/")
@@ -463,15 +456,15 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
         if ss_flag and hk_flag:
             agree = [("SkillSpector", ss_k), ("husk", hk_k)]
         else:
-            agree = [(n, k) for n, flag, k in (("SkillSpector", ss_flag, ss_k), ("husk", hk_flag, hk_k)) if flag and wt_k & k]
-            agree += [("Watchtower", wt_k & (ss_k | hk_k))] if agree else []
+            agree = [(n, k) for n, flag, k in (("SkillSpector", ss_flag, ss_k), ("husk", hk_flag, hk_k)) if flag and isr_k & k]
+            agree += [("ISR Bot", isr_k & (ss_k | hk_k))] if agree else []
         engines = [n for n, _ in agree]
         if len(engines) >= 2:
             x = finding("ISR-X003", "Corroborated by multiple engines", "critical" if tier == "user" else "high",
                         ["AST01", "AST08"], d, engine_evidence("ISR-X003", s_, hk, engines),
                         "Two independent engines agree. Disable this skill until you've read the flagged lines.", source="engines")
             x["key"] = raw_keys.get(" + ".join(engines), x["key"])
-            x["kinds"] = sorted(agree[-1][1] if engines[-1] == "Watchtower" else ss_k | hk_k)
+            x["kinds"] = sorted(agree[-1][1] if engines[-1] == "ISR Bot" else ss_k | hk_k)
             if not entry_current(e_, hashes[d], installed):   # Codex, DQ-042 rounds 2-3: an old answer not yet scanned again (the budget
                 x["kinds_incomplete"] = True                  # ran out), or husk's words missing, may lack a kind: never filed under Platform
             out.append(x)

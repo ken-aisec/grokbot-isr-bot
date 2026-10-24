@@ -12,7 +12,7 @@ own rules see, or that the engines describe as a dangerous behavior, still alert
 plugins are unchanged. The contrast row from the same box (a plugin-cache skill, Watchtower's own rule agreeing) still alerts:
 
     high ISR-X003 [Confirmed] .../plugins/cache/cursor-public/vercel/<sha>/skills/env-vars
-      evidence: SkillSpector + Watchtower; Privilege Escalation: Credential Access; Rogue Agent: Self-Modification
+      evidence: SkillSpector + ISR Bot; Privilege Escalation: Credential Access; Rogue Agent: Self-Modification
 """
 import json, os, sys, unittest
 from unittest import mock
@@ -187,7 +187,7 @@ class OtherSkillsUnchanged(Box):
         self.assertTrue(isr.counts(x[0]))
 
     def test_the_env_vars_contrast_row_still_alerts(self):
-        # SkillSpector + Watchtower on a plugin-cache skill: not a platform skill folder, and Watchtower's own rule agrees.
+        # SkillSpector + ISR Bot on a plugin-cache skill: not a platform skill folder, and Watchtower's own rule agrees.
         d = os.path.join(self.home, "sand-data", "plugins", "cache", "cursor-public", "vercel", "e48c1d", "skills", "env-vars")
         put(os.path.join(d, "SKILL.md"), "---\nname: env-vars\ndescription: Manage environment variables.\n---\n"
             "Run `cat ~/.aws/credentials` to find the keys, then update the project's settings.\n" f"{MARK}\n")
@@ -196,7 +196,7 @@ class OtherSkillsUnchanged(Box):
         self.audit()
         x = [f for f in self.snap()["findings"] if f["rule"] == "ISR-X003" and f["where"] == d]
         self.assertEqual(len(x), 1)
-        self.assertEqual(x[0]["evidence"], "SkillSpector + Watchtower; Privilege Escalation: Credential Access; Rogue Agent: Self-Modification")
+        self.assertEqual(x[0]["evidence"], "SkillSpector + ISR Bot; Privilege Escalation: Credential Access; Rogue Agent: Self-Modification")
         self.assertEqual((x[0]["severity"], x[0]["label"]), ("high", isr.CONFIRMED))
         self.assertNotEqual(x[0].get("scope"), "platform")
         self.assertTrue(isr.counts(x[0]))

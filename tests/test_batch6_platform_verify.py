@@ -355,7 +355,7 @@ def gitleaks_hit(path, needle=NEEDLE, swap=None, touch_copy=False):
             'def put(data):\n    os.remove(path)\n    open(path, "w").write(data)\n'
             'mine = swap and path.startswith(src.rstrip("/") + "/")\n'
             'if mine:\n    put(swap[0])\n'
-            'for d, _, fs in os.walk(src) if touch and os.path.basename(src).startswith("wt-metadata-") else ():\n'
+            'for d, _, fs in os.walk(src) if touch and os.path.basename(src).startswith("isr-bot-metadata-") else ():\n'
             '    for fn in fs:\n        p = os.path.join(d, fn); data = open(p, "rb").read(); os.chmod(p, 0o600); open(p, "wb").write(data)\n'
             'leaks = []\nfor d, _, fs in os.walk(src):\n    for fn in sorted(fs):\n        p = os.path.join(d, fn)\n'
             '        try:\n            lines = open(p, encoding="utf-8").read().split("\\n")\n        except (OSError, UnicodeDecodeError):\n            continue\n'

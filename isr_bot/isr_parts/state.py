@@ -155,7 +155,7 @@ def read_text(path, limit=1_000_000):
         return None
 
 
-def finding(rule_id, title, severity, owasp, where, evidence, fix, source="watchtower", ident=None, path=None, shown=None):
+def finding(rule_id, title, severity, owasp, where, evidence, fix, source="isr-bot", ident=None, path=None, shown=None):
     """`ident` names the finding when its evidence holds a count that drifts (63 logins, 6 advisories): the same problem
     keeps the same key, so it is never reported as fixed and new in one run. `key0` is the key older versions gave it.
     `path` is the literal file a "<file>:<line>" where is about (item 8, from Codex's batch 3 round 2), kept with the finding

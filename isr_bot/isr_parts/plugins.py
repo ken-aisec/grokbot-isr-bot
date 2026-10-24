@@ -4,10 +4,9 @@ def norm_body(t):
     return re.sub(r"\s+", " ", t).strip()
 
 
-# v0.7.4 (display rename): a getting-started copy saved earlier says "You are Watchtower", and a brief saved earlier names the
-# update Watchtower; both still count
-GETTING_STARTED_MARKERS = ("You are ISR Bot", "You are Watchtower")
-UPDATE_NAMES = ("isr bot", "watchtower")
+# v0.8.0: a saved getting-started copy and a brief's update are ours by the name ISR Bot only
+GETTING_STARTED_MARKERS = ("You are ISR Bot",)
+UPDATE_NAMES = ("isr bot",)
 
 
 def saved_skill_notes(notes):
@@ -42,7 +41,7 @@ def update_notes(notes):
         u = upd[0]
         notes.append(f"A newer ISR Bot is out ({u.get('have')} → {u.get('latest')}" + (f", commit {u['commit'][:12]}" if u.get("commit") else "")
                      + "). Tell ISR Bot \"update yourself\" when you want it.")
-    moved = b.get("watchtower_tag_moved")
+    moved = b.get("isr_bot_tag_moved")
     if moved:
         notes.append(f"The {moved.get('tag')} tag on GitHub now points at commit {str(moved.get('now'))[:12]}, not {str(moved.get('installed'))[:12]}, "
                      "the one installed here. A published tag should never move: don't update from it until you know why.")

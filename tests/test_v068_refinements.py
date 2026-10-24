@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
 import isr  # noqa: E402
 
 warnings.simplefilter("ignore", ResourceWarning)
-F = lambda rule, sev, where, source="watchtower", title="t", ev="ev": isr.finding(rule, title, sev, ["X"], where, ev, "fix", source=source)
+F = lambda rule, sev, where, source="isr-bot", title="t", ev="ev": isr.finding(rule, title, sev, ["X"], where, ev, "fix", source=source)
 ALL_AREAS = {w for w, _ in isr.ASK_AREAS}
 
 

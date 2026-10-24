@@ -494,7 +494,7 @@ def canary_findings(record=True):
             out.append(f)
         elif all(own(t) for t in times):
             out.append(finding("ISR-K005", "Decoys were read while an ISR Bot run was recorded", "high", ["ASI03", "ASI10"], places,
-                               f"{len(reads)} decoy(s) at {when(min(times))}, during a recorded Watchtower run ({each})",   # v0.7.4: the old name kept, the evidence is part of the finding key
+                               f"{len(reads)} decoy(s) at {when(min(times))}, during a recorded ISR Bot run ({each})",   # v0.8.0: renamed; the evidence is part of the finding key
                                "The run record can be written by any Bot, so it doesn't prove the read was ISR Bot's, and the backup's proof "
                                "is missing. Tell ISR Bot \"incident check\"."))
         elif len(reads) >= 2 and max(times) - min(times) <= 180:

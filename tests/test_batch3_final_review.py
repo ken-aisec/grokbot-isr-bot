@@ -148,7 +148,7 @@ class LaunchDeadline(_Scanners):
         with mock.patch.object(isr.os, "read", slow):
             (code, _, _), took = self.timed([p], 1)
         for t in threading.enumerate():                                         # let the copy given up on finish and close
-            if t.name == "watchtower-hash":
+            if t.name == "isr-bot-hash":
                 t.join(10)
         self.assertEqual(code, 124)
         self.assertLess(took, 2)

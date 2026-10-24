@@ -30,11 +30,11 @@ die() { echo "dry-run: $*" >&2; exit 2; }
 inside "$TMPROOT" "$WS" && die "sandbox root $TMPROOT is inside $WS; a dry run must leave $WS untouched"
 [[ -d "$INSTALL/state" ]] || die "no install state at $INSTALL/state"
 SHA="$(git -C "$DEV" rev-parse --short "$REF^{commit}")" || die "unknown ref $REF"
-OUT="$(realpath -m "${ISR_DRY_OUT:-$TMPROOT/wt-dry-report-$SHA-$(date +%Y%m%dT%H%M%S)}")"
+OUT="$(realpath -m "${ISR_DRY_OUT:-$TMPROOT/isr-bot-dry-report-$SHA-$(date +%Y%m%dT%H%M%S)}")"
 inside "$OUT" "$WS" && die "report folder $OUT is inside $WS"
 command -v unshare >/dev/null || die "unshare is missing"
 
-B="$(mktemp -d "$TMPROOT/wt-dry.XXXXXX")"
+B="$(mktemp -d "$TMPROOT/isr-bot-dry.XXXXXX")"
 cleanup() { [[ "${ISR_DRY_KEEP:-}" == 1 ]] || rm -rf "$B"; }
 trap cleanup EXIT
 mkdir -p "$B/code" "$B/state" "$B/cache" "$B/out"

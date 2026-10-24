@@ -3,7 +3,7 @@ GITLEAKS_CONFIG = r"""[extend]
 useDefault = true
 
 [[allowlists]]
-description = "Watchtower: package caches, lockfiles, headers and its own state"
+description = "ISR Bot: package caches, lockfiles, headers and its own state"
 paths = [
   '''(^|/)(go/pkg|pkg/mod|\.local/go|node_modules|\.cache|\.npm|\.venv|site-packages|dist-packages)/''',
   '''(^|/)\.config/(google-chrome[^/]*|chromium[^/]*|BraveSoftware)/''',
@@ -383,7 +383,7 @@ def gitleaks_findings(roots, notes):
         if not os.path.isdir(r):
             continue
         try:
-            priv = PrivateDir("wt-gitleaks-")
+            priv = PrivateDir("isr-bot-gitleaks-")
         except OSError as e:
             fail_note(notes, f"gitleaks FAILED on {r} (no private folder for its report: {e.strerror or e}): secrets there were NOT checked by gitleaks.")
             continue
@@ -499,8 +499,8 @@ def scan_copies(exe, named):
     (PrivateDir.read), never from state/. (metadata_bound's private scan.)"""
     src = priv = None
     try:
-        src = PrivateDir("wt-metadata-")    # the copies
-        priv = PrivateDir("wt-gitleaks-")   # gitleaks' config and report
+        src = PrivateDir("isr-bot-metadata-")    # the copies
+        priv = PrivateDir("isr-bot-gitleaks-")   # gitleaks' config and report
         copies = []
         for i, (name, data) in enumerate(named):
             os.mkdir(str(i), 0o700, dir_fd=src.fd)
@@ -618,7 +618,7 @@ def self_findings(notes):
                              "isn't the computer's own); the last results are kept.")
         return out
     if not os.path.isfile(os.path.join(os.path.dirname(os.path.dirname(py)), "LOCKED")):
-        out.append(finding("ISR-W002", "ISR Bot's scanners were installed without the checksum lock", "low", ["ASI04", "AST02"], "watchtower scanners",
+        out.append(finding("ISR-W002", "ISR Bot's scanners were installed without the checksum lock", "low", ["ASI04", "AST02"], "isr-bot scanners",
                            "no LOCKED marker", "Run `bash /workspace/isr-bot/app/scripts/install.sh --scanners` again; it installs only from the lock, and stops and says why if this computer's Python doesn't fit it."))
     if not exe:
         if scanner_unavailable("pip-audit")[0]:   # batch 3: pip-audit's own line says why; this stage's last results are kept too
@@ -644,6 +644,6 @@ def self_findings(notes):
         if d.get("vulns"):
             ids = list(dict.fromkeys(v.get("id", "") for v in d["vulns"]))
             out.append(finding("ISR-W001", f"ISR Bot's own tool needs an update: {d.get('name')} {d.get('version')}", "low", ["ASI04", "AST02"],
-                               "watchtower scanners", f"{len(ids)} known: {', '.join(ids[:3])}",
+                               "isr-bot scanners", f"{len(ids)} known: {', '.join(ids[:3])}",
                                "Update ISR Bot: each release carries newer pinned scanners. This package lives only in ISR Bot's own folder.", source="pip-audit"))
     return out

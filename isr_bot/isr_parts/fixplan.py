@@ -282,7 +282,7 @@ def apply_fix(plan):
                     t = f.read()
                 new, n = SCRUB.subn(REDACTED, t)
                 if n:
-                    tmp = p + ".wt-tmp"
+                    tmp = p + ".isr-bot-tmp"
                     with open(tmp, "w", encoding="utf-8") as f:
                         f.write(new)
                     os.replace(tmp, p)

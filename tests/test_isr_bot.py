@@ -869,13 +869,13 @@ class Features(unittest.TestCase):
         code, o = self.out("fix", "--roots", self.tmp)
         ch = {r["name"]: r for r in json.loads(o)["changed_skills"]}
         self.assertEqual((ch["skill000"]["result"], ch["skill000"]["changed"]), ("clean", "+1 −0 lines in SKILL.md"))
-        self.assertEqual(ch["skill000"]["checked_by"], ["Watchtower rules", "SkillSpector", "husk"])
+        self.assertEqual(ch["skill000"]["checked_by"], ["ISR Bot rules", "SkillSpector", "husk"])
         self.assertEqual(ch["skill001"]["result"], "flagged")
         base_before = dict(isr.load_json(isr.state_path("baseline.json"), {}))
         self.assertEqual(isr.load_json(isr.state_path("baseline.json"), {}), base_before)          # the preview changed nothing
         code, o = self.out("fix", "--revet", "--roots", self.tmp)
         done = " | ".join(json.loads(o)["done"])
-        self.assertIn("skill000 (+1 −0 lines in SKILL.md) with Watchtower rules, SkillSpector, husk: clean, re-approved", done)
+        self.assertIn("skill000 (+1 −0 lines in SKILL.md) with ISR Bot rules, SkillSpector, husk: clean, re-approved", done)
         self.assertIn("skill001", done); self.assertIn("flagged, stays open", done)
         code, o = self.out("audit", "--roots", self.tmp)
         left = [os.path.basename(os.path.dirname(f["where"])) for f in isr.load_json(isr.state_path("last_findings.json"), {})["findings"] if f["rule"] == "ISR-I001"]
@@ -1040,7 +1040,7 @@ class Features(unittest.TestCase):
         self.assertEqual(isr.engine_findings(dirs, [], notes), [])
         self.assertEqual(isr.load_json(isr.state_path("engine_cache.json"), {}), {})   # nothing pretends to be scanned
         self.assertEqual(isr.load_json(isr.state_path("engines.json"), {})["scanned_this_run"], 0)
-        self.assertEqual(isr.revet([dirs[0]])[0]["checked_by"], ["Watchtower rules"])
+        self.assertEqual(isr.revet([dirs[0]])[0]["checked_by"], ["ISR Bot rules"])
         # an entry written by v0.5.3 or earlier while the scanners were missing looks like this; it must not count
         isr.save_json(isr.state_path("engine_cache.json"), {d: {"hash": isr.skill_dir_hash(d), "ss": None, "hk": None, "at": isr.now()} for d in dirs})
         os.rename(bindir + ".gone", bindir)                                  # scanners are back
@@ -1168,7 +1168,7 @@ class Features(unittest.TestCase):
             app = os.path.join(isr.SELF_ROOT, "isr_bot", "isr.py"); before = os.stat(app).st_mtime
             b = isr.gather_brief(cfg, offline=offline)
             self.assertEqual([(u["latest"], u["commit"]) for u in b["updates"]], [("0.6.10", "a" * 40)])   # the highest version, not the last listed
-            self.assertIsNone(b["watchtower_tag_moved"])
+            self.assertIsNone(b["isr_bot_tag_moved"])
             isr.save_json(isr.state_path("last_brief.json"), b)
             notes = []
             isr.update_notes(notes)

@@ -140,8 +140,8 @@ class OwnToolsPython(_Scanners):
         self.skills(1); self.engines()
         self.audit()
         snap = isr.load_json(isr.state_path("last_findings.json"), {})
-        w1 = isr.finding("ISR-W001", "Watchtower's own tool urllib3 1.0 has known holes", "medium", ["ASI04", "AST02"],
-                        "watchtower scanner package urllib3", "1 known: GHSA-test", "Tell Watchtower \"update yourself\".", source="pip-audit")
+        w1 = isr.finding("ISR-W001", "ISR Bot's own tool urllib3 1.0 has known holes", "medium", ["ASI04", "AST02"],
+                        "isr-bot scanner package urllib3", "1 known: GHSA-test", "Tell ISR Bot \"update yourself\".", source="pip-audit")
         snap["findings"].append(w1)
         isr.save_json(isr.state_path("last_findings.json"), snap)
         os.symlink(script(os.path.join(self.tmp, "python-anyone-can-edit"), f"#!/bin/sh\nexec {REAL_PY} \"$@\"\n"),
@@ -149,13 +149,13 @@ class OwnToolsPython(_Scanners):
         r = self.audit()
         self.assertIn(w1["key"], [f["key"] for f in self.snap()["findings"]])
         self.assertFalse([f for f in r["fixed"] if f["rule"] == "ISR-W001"])
-        self.assertIn("Watchtower's own tools", r.get("stages_skipped", []))
+        self.assertIn("ISR Bot's own tools", r.get("stages_skipped", []))
 
     def test_8_contrast_no_scanner_python_ever_is_a_plain_skip(self):
         """Contrast: passes on the build commit too."""
         self.skills(1); self.engines()
         r = self.audit()
-        self.assertNotIn("Watchtower's own tools", r.get("stages_skipped", []))
+        self.assertNotIn("ISR Bot's own tools", r.get("stages_skipped", []))
 
 
 class BoundedHashing(_Scanners):

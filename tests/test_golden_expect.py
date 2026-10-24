@@ -470,15 +470,17 @@ class SubstKind(unittest.TestCase):
             "ISR Bot rules", "Watchtower rules"), self.entries(), hits), [])
         self.assertEqual(hits, {0: 4})
 
-    def test_the_kept_strings_cover_the_name_guards_allowed_list(self):   # guard: SUBST_KEEP follows test_v074_display_name.py
-        import ast
-        with open(os.path.join(ROOT, "tests", "test_v074_display_name.py"), encoding="utf-8") as f:
-            tree = ast.parse(f.read())
-        kept = {}
-        for node in tree.body:
-            if isinstance(node, ast.Assign) and [getattr(t, "id", None) for t in node.targets] in (["ALLOWED"], ["ALLOWED_FRAGMENTS"]):
-                kept.update(ast.literal_eval(node.value))
-        values = {v for _, v in kept} - {"Watchtower"}   # the bare WT-X003 label: only ever joined, "SkillSpector + Watchtower"
+    # v0.8.0 unit g: test_v074_display_name.py's ALLOWED and ALLOWED_FRAGMENTS are empty now, so the v0.7.4 kept values are frozen
+    # here as they were at 0ed5802 (each distinct ALLOWED value, then the gitleaks fragment); h2 moves them into the table
+    V074_KEPT = ("Watchtower rules", "Watchtower", "Watchtower/", "Watchtower daily watch", "Watchtower weekly audit",
+                 "Watchtower weekly tidy", "Watchtower monthly roll-call", "You are Watchtower", ", during a recorded Watchtower run (",
+                 "Watchtower's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run",
+                 "its program file isn't the one Watchtower installed",
+                 "Ask-first rules with no word Watchtower reads in any of its languages", "Watchtower's own tools",
+                 'description = "Watchtower: package caches, lockfiles, headers and its own state"')
+
+    def test_the_kept_strings_cover_the_name_guards_allowed_list(self):   # guard: SUBST_KEEP covers the v0.7.4 kept values
+        values = set(self.V074_KEPT) - {"Watchtower"}   # the bare WT-X003 label: only ever joined, "SkillSpector + Watchtower"
         self.assertGreater(len(values), 10)
         self.assertEqual(sorted(v for v in values if not any(k in v for k in getattr(gs, "SUBST_KEEP", ()))), [])
 
