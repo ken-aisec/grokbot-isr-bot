@@ -1,7 +1,7 @@
 """v0.8.0 unit i: the golden cross-layout check (tests/golden_cross.py) passes the right mapping and fails each kind of break.
 
 One synthetic scenario, written once per layout (scenario()): vet and prepublish --json stdout, a last_findings with suppressed,
-grouped_into and undelivered, resolved.json, dismissed.jsonl, a delta and an events file. Its keys are made with the checker's
+grouped_into and undelivered, resolved.json, dismissed.jsonl, a delta, an events file and a doctor --json stdout. Its keys are made with the checker's
 recipe copy, and it holds an N, an I and a G record. Old names come from the name table (tests/rename_v080.py); nothing here
 imports the engine."""
 import hashlib, json, os, re, sys, unittest
@@ -15,6 +15,8 @@ CONTENT = hashlib.sha1(b"a file's bytes").hexdigest()[:16]   # a 16-hex content 
 VET = "001 vet /tmp/code/tests/fixtures/bad/notes --json :stdout"
 PREPUBLISH = "002 prepublish /tmp/code/tests/fixtures/bad/notes --json :stdout"
 LAST = "003 audit :last_findings"
+DOCTOR = "005 doctor --json :stdout"
+VERSIONS = {rn.OLD["pkg"]: "0.7.4", rn.NEW["pkg"]: "0.8.0"}   # the version each layout's engine writes
 
 
 def h(text):
@@ -43,7 +45,11 @@ def scenario(L):
     ev["key"] = rn.TABLE["constant_keys"][0]
     pp = {"rule": p + "PP03", "severity": "medium", "title": "a key in the text", "where": "SKILL.md:2", "evidence": "a masked value"}
     last = json.dumps({"findings": [n1, n2, i, g], "suppressed": [s1, s2], "undelivered": [i["key"]], "digest": CONTENT})
-    items = {VET.replace(":stdout", ":rc"): "1", VET: json.dumps({"findings": [n1, i, g], "score": 40}),
+    ver = VERSIONS[L["pkg"]]   # final review fix round 1: doctor's fields outside records, each layout's version
+    doctor = {L["pkg"]: ver, "python": "3.12.3", L["pkg"] + "_home": L["home"], "can_write_state": True,
+              "last_run": {"at": "<TS>", "version": ver, "score": 40, "open_by_severity": {"high": 2, "info": 1}}}
+    items = {VET.replace(":stdout", ":rc"): "1",
+             VET: json.dumps({"tool": L["home_name"], "version": ver, "findings": [n1, i, g], "score": 40}),
              PREPUBLISH.replace(":stdout", ":rc"): "1", PREPUBLISH: json.dumps({"findings": [pp]}),
              "003 audit :rc": "0", "003 audit :stdout": f"Audit done ({L['main']}).\n", LAST: last,
              f"004 show {p}T001 :rc": "0", f"004 show {p}T001 :stdout": f"{p}T001: one finding\n",
@@ -51,7 +57,8 @@ def scenario(L):
              state + "resolved.json": "file 0600\n" + json.dumps({n2["key"]: {"at": "<TS>"}}),
              state + "dismissed.jsonl": "file 0600\n" + json.dumps({"key": g["key"], "reason": "golden"}) + "\n",
              state + "deltas/audit-<EPOCH>.json": "file 0600\n" + json.dumps({"new": [n2["key"]], "fixed": [], "seen": [n1["key"], i["key"]]}),
-             state + "events.json": "file 0600\n" + json.dumps({"events": [ev, {"at": "<TS>", "keys": [g["key"]]}]})}
+             state + "events.json": "file 0600\n" + json.dumps({"events": [ev, {"at": "<TS>", "keys": [g["key"]]}]}),
+             DOCTOR.replace(":stdout", ":rc"): "0", DOCTOR: json.dumps(doctor, indent=2)}
     keys = {"N1": n1["key"], "N2": n2["key"], "I": i["key"], "I0": i["key0"], "G": g["key"], "S1": s1["key"], "S2": s2["key"]}
     return items, keys
 
@@ -185,6 +192,33 @@ class Cross(_Cross):
             with self.subTest(windows=n):
                 out = check(n, 1792832291.2927184)
                 self.assertEqual(out, [f"the normalized texts differ in {name!r} (compared as text: the normalized JSON doesn't parse)"])
+
+    # final review fix round 1 (Codex HIGH): the JSON values outside records, one test per Codex probe
+    HOME = rn.NEW["pkg"] + "_home"
+
+    def test_11_a_deleted_doctor_home_field_fails(self):
+        self.assertFails(edit(self.new, DOCTOR, lambda d: d[0].pop(self.HOME)), f"{DOCTOR}: the key {self.HOME!r} is on the old side only")
+
+    def test_12_a_corrupted_doctor_home_value_fails(self):
+        changed = edit(self.new, DOCTOR, lambda d: d[0].update({self.HOME: rn.NEW["home"] + "-elsewhere"}))
+        self.assertFails(changed, f"{DOCTOR} {self.HOME}: the value differs")
+
+    def test_13_a_changed_vet_score_fails(self):
+        self.assertFails(edit(self.new, VET, lambda d: d[0].update(score=41)), f"{VET} score: the value differs")
+
+    def test_14_malformed_doctor_json_fails(self):
+        broken = dict(self.new, **{DOCTOR: self.new[DOCTOR].rstrip()[:-1]})   # the closing brace gone
+        self.assertIsNone(gc.documents(DOCTOR, broken[DOCTOR]))
+        self.assertFails(broken, f"{DOCTOR!r} parses as JSON on the old side only")
+
+    def test_15_the_unchanged_scenario_passes_and_only_the_version_may_change(self):
+        self.assertEqual(self.problems(self.new), [])   # 0.7.4 (old) to 0.8.0 (new) in the version fields
+        with self.subTest(what="another new version"):
+            changed = edit(self.new, DOCTOR, lambda d: d[0].update({rn.NEW["pkg"]: "0.8.1"}))
+            self.assertFails(changed, f"{DOCTOR} {rn.NEW['pkg']}: the value differs")
+        with self.subTest(what="the version change in another field"):
+            old = edit(self.old, DOCTOR, lambda d: d[0].update(python=VERSIONS[rn.OLD["pkg"]]))
+            self.assertFails(edit(self.new, DOCTOR, lambda d: d[0].update(python="0.8.0")), f"{DOCTOR} python: the value differs", old)
 
 
 if __name__ == "__main__":
