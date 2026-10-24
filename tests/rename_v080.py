@@ -20,8 +20,13 @@ def old_display():
     return [tuple(p) for p in TABLE["v074_display"]]
 
 
+def kept(key):
+    """A value that stays byte for byte through the rename (the table's kept_values), by its key."""
+    return TABLE["kept_values"]["values"][key]["value"]
+
+
 def old_patterns():
     """What an old name looks like anywhere: the old product word in any case, and the old short name as a token of its own
-    (wt.py, wt_parts, WT-X004, "wt")."""
+    (the main file, the parts folder, a rule ID, the sandbox home)."""
     return [re.compile("(?i)" + re.escape(OLD["pkg"])),
             re.compile(r"(?i)(?<![a-z0-9])" + re.escape(OLD["main"][:-len(".py")]) + r"(?![a-z0-9])")]

@@ -184,15 +184,18 @@ def without_v074_blocks(rel, t):
 # v0.8.0 rename: the name guard's regex is unchanged; blank() first overwrites each allowed span with spaces of the same length,
 # so line numbers hold. A1: a rule ID (ISR, a hyphen, an uppercase letter), any file. A2: the bare rule prefix "ISR-" as a
 # string literal, only in the two name table files. B: the file name isr.py, plain or regex-escaped, any file. A5 (Codex r2
-# HIGH 1): the exact new values the name table holds that the guard would reject, as they are written there, only there.
+# HIGH 1): the exact new values the name table holds that the guard would reject, as they are written there, only there (one
+# is d2's old value, the alias line d1 writes).
 NAME_RX = re.compile(r"(?i)\bisr\b(?![\s_-]*bot\b)|\bisr[\s_-]+bot[\s_-]+bot\b")   # no lone ISR as the name, no ISR Bot Bot
 RENAME_TABLE = "tests/golden_rename_v080.json"
 A1 = re.compile(r"ISR(?=-[A-Z])")
 A2 = re.compile(r'"ISR-"')
 A2_FILES = (RENAME_TABLE, "tests/rename_v080.py")
 B = re.compile(r"isr\\?\.py\b")
-A5 = ('"(?i)isr-("', '"isr-t006k"', '"isr-t001R"', '"isr-k001"', '"isr-wsg"', '"(isr|isr_parts/"', r'"isr\\.py"',
-      r'"import isr as \\1"', '"isr."')
+A5 = ('"(?i)isr-("', '"isr-t006k"', '"isr-t001R"', '"isr-k001"', '"isr-wsg"', '"(isr|isr_parts/"', '"/isr_bot/(isr|isr_parts/"',
+      r'"isr\\.py"', r'"isr\\\\.py"', '"isr."', r'"isr\\1"', '"import isr"', '"import isr as wt"', r'"\\1import isr as wt"',
+      r'"\\nimport isr as wt\\n"', r'"; import isr as wt\\n"', r'"\\1\\2\\3\\nimport isr  # noqa: E402"',
+      r'"\\1\\2\\nimport isr  # noqa: E402"', r'"import \\1  # noqa: E402\\nimport isr  # noqa: E402"')
 
 
 def blank(rel, text):
