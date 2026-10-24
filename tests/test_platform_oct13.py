@@ -26,7 +26,7 @@ class PlatformSecretStore(Box):
         write(self.store, json.dumps({"CLAUDE_CODE_OAUTH_TOKEN": KEY}), 0o600)
         self.audit()
         fs = [f for f in self.snap()["findings"] if self.store in f["where"]]
-        self.assertEqual([f["rule"] for f in fs], ["WT-I009"], fs)
+        self.assertEqual([f["rule"] for f in fs], ["ISR-I009"], fs)
         self.assertEqual(fs[0]["label"], wt.PLATFORM)
         self.assertIn("mode 0600", fs[0]["evidence"])
         self.assertFalse(wt.counts(fs[0]))
@@ -37,14 +37,14 @@ class PlatformSecretStore(Box):
         other = os.path.join(self.home, "sand-data", "my-notes.txt")
         write(other, "token " + KEY + "\n")
         self.audit()
-        s1 = [f for f in self.snap()["findings"] if f["rule"] == "WT-S001" and other in f["where"]]
+        s1 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-S001" and other in f["where"]]
         self.assertTrue(s1 and all(wt.counts(f) for f in s1), s1)
 
     def test_a_file_with_that_name_elsewhere_is_not_the_store(self):
         stray = os.path.join(self.ws, "copy", "box-secrets.json")
         write(stray, json.dumps({"k": KEY}))
         self.audit()
-        self.assertTrue([f for f in self.snap()["findings"] if f["rule"] == "WT-S001" and stray in f["where"]])
+        self.assertTrue([f for f in self.snap()["findings"] if f["rule"] == "ISR-S001" and stray in f["where"]])
 
 
 class OtherPlatformBuiltins(Box):
@@ -62,7 +62,7 @@ class PlatformHook(Box):
         write(os.path.join(self.ws, ".cursor", "hooks.json"), json.dumps(
             {"hooks": {"beforeShellExecution": [{"command": "bash /tmp/x/run.sh"}]}}))
         self.audit()
-        c5 = [f for f in self.snap()["findings"] if f["rule"] == "WT-C005"]
+        c5 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-C005"]
         plat = [f for f in c5 if "expand_mcp_file_args" in f["evidence"]]
         other = [f for f in c5 if "/tmp/x/run.sh" in f["evidence"]]
         self.assertTrue(plat and all(f["label"] == wt.PLATFORM and not wt.counts(f) for f in plat), c5)

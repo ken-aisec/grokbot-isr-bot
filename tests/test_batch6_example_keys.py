@@ -1,6 +1,6 @@
 """Batch 6 PR2, B5 (DQ-043/044): example-looking keys are listed low, and a real key is critical wherever it sits.
 
-One content check (secret_kind) for Watchtower's own rule (WT-T011, WT-S001) and every gitleaks hit, on the secret value only:
+One content check (secret_kind) for Watchtower's own rule (ISR-T011, ISR-S001) and every gitleaks hit, on the secret value only:
 FAKE or placeholder text, an environment-variable reference, a key block whose structure isn't a key, and (gitleaks
 generic-api-key) a file's checksum by its line's format look like examples. gitleaks runs with --redact; its secret is found
 again in the file from its Match, judged in memory and never stored. Fix round 2 (Codex 3, 4; the owner's rule): anyone can write a
@@ -177,7 +177,7 @@ class _Keys(Box):
         return self.snap()["findings"], r["notes"]
 
     def keys(self, findings, under):
-        return [f for f in findings if f["rule"] in ("WT-S001", "WT-S002", "WT-T011", "WT-T011x") and f["where"].startswith(under)]
+        return [f for f in findings if f["rule"] in ("ISR-S001", "ISR-S002", "ISR-T011", "ISR-T011x") and f["where"].startswith(under)]
 
 
 class ExampleKeysAreNotSecrets(_Keys):
@@ -204,33 +204,33 @@ class ExampleKeysAreNotSecrets(_Keys):
         fs, notes = self.scan()
         got = self.keys(fs, self.skill)
         self.assertTrue(self.noted_only(got, "critical"), got)
-        self.assertEqual([(f["where"], f["title"]) for f in got if f["rule"] == "WT-S002"],
+        self.assertEqual([(f["where"], f["title"]) for f in got if f["rule"] == "ISR-S002"],
                          [(os.path.join(self.skill, "examples"), "gitleaks: secrets in 4 files under examples")])
         self.assertIn("gitleaks: 4 hit(s) look like example or checksum values; each is scored as any other hit and noted, to check "
                       "(anyone can write a real key that way).", self.snap()["notes"])
 
-    def test_key_blocks_that_arent_keys_are_noted(self):   # replay (5dcd0a2: WT-T011 critical on each BEGIN line, and gitleaks)
+    def test_key_blocks_that_arent_keys_are_noted(self):   # replay (5dcd0a2: ISR-T011 critical on each BEGIN line, and gitleaks)
         # fix round 3 (Codex 3): a body that can't be read (words), is short, or starts like a key (0x30) is a key; only random
         # bytes starting no key are an example, noted. Four files in one folder: one folder finding, as for real hits
-        # batch 7d (B): "random" (a whole public-key packet, its modulus opaque bytes) is a key too (was WT-T011x, noted);
+        # batch 7d (B): "random" (a whole public-key packet, its modulus opaque bytes) is a key too (was ISR-T011x, noted);
         # the FAKE-text body below is the example now
-        want = {"words": "WT-T011", "random": "WT-T011", "short": "WT-T011", "random8": "WT-T011"}
+        want = {"words": "ISR-T011", "random": "ISR-T011", "short": "ISR-T011", "random8": "ISR-T011"}
         for name, block in fake_pems().items():
             p = self.put(f"sand-data/workflows/setup-dev-tools/references/{name}.md", "Your key file looks like this:\n\n" + block)
             self.leak(p, block.rstrip("\n"), rule="private-key")
         fs, notes = self.scan()
-        got = [f for f in self.keys(fs, self.skill) if f["rule"] == "WT-S002"]
+        got = [f for f in self.keys(fs, self.skill) if f["rule"] == "ISR-S002"]
         self.assertEqual([(f["title"], f.get("severity_was") or f["severity"]) for f in got],
                          [("gitleaks: secrets in 4 files under references", "critical")])
         self.assertNotIn(NOTE, got[0]["fix"])   # three of its four hits are keys
         for name, block in fake_pems().items():
-            t11 = [f for f in wt.scan_text("Key:\n" + block, "/s/SKILL.md", wt.load_rules()) if f["rule"] in ("WT-T011", "WT-T011x")]
+            t11 = [f for f in wt.scan_text("Key:\n" + block, "/s/SKILL.md", wt.load_rules()) if f["rule"] in ("ISR-T011", "ISR-T011x")]
             self.assertEqual([(f["rule"], f["title"], f["severity"]) for f in t11], [(want[name], "Secret or key in text", "critical")], name)
             self.assertEqual(NOTE in t11[0]["fix"], False, name)   # batch 7d (B): was name == "random"
         # batch 7d (B): a body of FAKE text starts no key: the example path, noted
         t11 = [f for f in wt.scan_text("Key:\n" + pem("RSA ", fake_text_body(300)), "/s/SKILL.md", wt.load_rules())
-               if f["rule"] in ("WT-T011", "WT-T011x")]
-        self.assertEqual([(f["rule"], f["title"], f["severity"]) for f in t11], [("WT-T011x", "Secret or key in text", "critical")])
+               if f["rule"] in ("ISR-T011", "ISR-T011x")]
+        self.assertEqual([(f["rule"], f["title"], f["severity"]) for f in t11], [("ISR-T011x", "Secret or key in text", "critical")])
         self.assertIn(NOTE, t11[0]["fix"])
 
     def test_environment_references_in_a_ci_log(self):   # replay (5dcd0a2: S002 critical, and the log was on the scrub list)
@@ -267,17 +267,17 @@ class ExampleKeysAreNotSecrets(_Keys):
         rp = self.put(f"{d}/real.md", "token: " + real + "\n")
         self.leak(rp, real, rule="github-pat")
         fs, _ = self.scan()
-        s2 = [f for f in self.keys(fs, self.skill) if f["rule"] == "WT-S002"]
+        s2 = [f for f in self.keys(fs, self.skill) if f["rule"] == "ISR-S002"]
         self.assertEqual([(f["where"], f["title"], f.get("severity_was") or f["severity"]) for f in s2],
                          [(os.path.join(self.home, d), "gitleaks: secrets in 6 files under examples", "critical")])   # as 5dcd0a2
         self.assertNotIn(NOTE, s2[0]["fix"])   # a real one among them: no note
 
     def test_fake_akia_is_noted_and_a_real_one_critical(self):   # replay of fix round 2 (de3b328 left the fake out)
-        rules = wt.load_rules()   # fix round 3 (Codex 1): WT-T011's own title and severity, noted
-        got = [f for f in wt.scan_text("Use AKIAFAKE" + "Q7" * 6 + " to call it.", "/s/SKILL.md", rules) if f["rule"].startswith("WT-T011")]
-        self.assertEqual([(f["rule"], f["title"], f["severity"]) for f in got], [("WT-T011x", "Secret or key in text", "critical")])
+        rules = wt.load_rules()   # fix round 3 (Codex 1): ISR-T011's own title and severity, noted
+        got = [f for f in wt.scan_text("Use AKIAFAKE" + "Q7" * 6 + " to call it.", "/s/SKILL.md", rules) if f["rule"].startswith("ISR-T011")]
+        self.assertEqual([(f["rule"], f["title"], f["severity"]) for f in got], [("ISR-T011x", "Secret or key in text", "critical")])
         self.assertIn(NOTE, got[0]["fix"])
-        self.assertIn("WT-T011", {f["rule"] for f in wt.scan_text("Use " + token("AKIA", 0) + "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ234567") for _ in range(16)) + " to call it.", "/s/SKILL.md", rules)})
+        self.assertIn("ISR-T011", {f["rule"] for f in wt.scan_text("Use " + token("AKIA", 0) + "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ234567") for _ in range(16)) + " to call it.", "/s/SKILL.md", rules)})
 
 
 class RealKeysAreReportedAnywhere(_Keys):
@@ -287,7 +287,7 @@ class RealKeysAreReportedAnywhere(_Keys):
         self.leak(p, gh, rule="github-pat")
         self.leak(p, sk, rule="stripe-access-token")
         fs, _ = self.scan()
-        self.assertTrue([f for f in self.keys(fs, p) if f["rule"] == "WT-S002"], self.keys(fs, p))
+        self.assertTrue([f for f in self.keys(fs, p) if f["rule"] == "ISR-S002"], self.keys(fs, p))
 
     def test_under_fixtures_and_in_a_test_file(self):   # replay (5dcd0a2: the fixtures/ and *.test.ts skips hid them)
         for rel in ("projects/app/fixtures/keys.json", "projects/app/src/client.test.ts", "projects/app/__tests__/k.js"):
@@ -296,7 +296,7 @@ class RealKeysAreReportedAnywhere(_Keys):
         fs, _ = self.scan()
         for rel in ("projects/app/fixtures/keys.json", "projects/app/src/client.test.ts", "projects/app/__tests__/k.js"):
             p = os.path.join(self.home, rel)
-            self.assertTrue([f for f in self.keys(fs, p) if f["rule"] == "WT-S002"], rel)
+            self.assertTrue([f for f in self.keys(fs, p) if f["rule"] == "ISR-S002"], rel)
 
     def test_real_key_blocks_in_a_live_skill_are_critical(self):   # guard (critical on 5dcd0a2 too)
         for name, block in real_pems().items():
@@ -305,40 +305,40 @@ class RealKeysAreReportedAnywhere(_Keys):
         fs, notes = self.scan()
         got = self.keys(fs, self.skill)
         self.assertTrue(got)
-        self.assertEqual({f.get("severity_was") or f["severity"] for f in got if f["rule"] == "WT-S002"}, {"critical"})
+        self.assertEqual({f.get("severity_was") or f["severity"] for f in got if f["rule"] == "ISR-S002"}, {"critical"})
         self.assertFalse(any("were example values" in n for n in notes), notes)
         for name, block in real_pems().items():
-            self.assertIn("WT-T011", {f["rule"] for f in wt.scan_text("Key:\n" + block, "/s/SKILL.md", wt.load_rules())}, name)
+            self.assertIn("ISR-T011", {f["rule"] for f in wt.scan_text("Key:\n" + block, "/s/SKILL.md", wt.load_rules())}, name)
 
     def test_a_fake_word_inside_a_real_key_block_is_still_a_key(self):   # guard
         b = pem("RSA ", rsa_der())
         body = b.split("\n")
         body[3] = body[3][:20] + "FAKE" + body[3][24:]
         block = "\n".join(body)
-        self.assertIn("WT-T011", {f["rule"] for f in wt.scan_text("Key:\n" + block, "/s/SKILL.md", wt.load_rules())})
+        self.assertIn("ISR-T011", {f["rule"] for f in wt.scan_text("Key:\n" + block, "/s/SKILL.md", wt.load_rules())})
         p = self.put("sand-data/workflows/setup-dev-tools/examples/k.md", "Key:\n" + block)
         self.leak(p, block.rstrip("\n"), rule="private-key")
         fs, _ = self.scan()
-        self.assertTrue([f for f in self.keys(fs, p) if f["rule"] == "WT-S002"])
+        self.assertTrue([f for f in self.keys(fs, p) if f["rule"] == "ISR-S002"])
 
-    def test_a_pem_file_is_read(self):   # replay (5dcd0a2 never read .pem files: no WT-S001)
+    def test_a_pem_file_is_read(self):   # replay (5dcd0a2 never read .pem files: no ISR-S001)
         p = self.put("projects/app/deploy/server.pem", pem("RSA ", rsa_der()))
         fs, _ = self.scan()
-        self.assertEqual([f["rule"] for f in self.keys(fs, p)], ["WT-S001"])
+        self.assertEqual([f["rule"] for f in self.keys(fs, p)], ["ISR-S001"])
 
     def test_a_real_key_on_the_line_of_a_var(self):   # replay (5dcd0a2: the line rule hid the whole line)
         real = token("", 32)
         p = self.put("projects/app/deploy.sh", f"curl -H token=$GITHUB_TOKEN api_key={real} https://api.example\n")
         self.leak(p, f"api_key={real}", real)
         fs, _ = self.scan()
-        self.assertTrue([f for f in self.keys(fs, p) if f["rule"] == "WT-S002"])
+        self.assertTrue([f for f in self.keys(fs, p) if f["rule"] == "ISR-S002"])
 
     def test_a_real_key_beside_a_fake_key_block_line(self):   # guard: a key block judges only gitleaks' private-key hit
         real = token("", 32)
         p = self.put("projects/app/notes.md", f"-----BEGIN RSA PRIVATE KEY----- api_key={real}\n-----END RSA PRIVATE KEY-----\n")
         self.leak(p, f"api_key={real}", real)
         fs, notes = self.scan()
-        self.assertTrue([f for f in self.keys(fs, p) if f["rule"] == "WT-S002"], self.keys(fs, p))
+        self.assertTrue([f for f in self.keys(fs, p) if f["rule"] == "ISR-S002"], self.keys(fs, p))
         self.assertFalse(any("were example values" in n for n in notes), notes)
 
     def test_a_hit_in_a_file_changed_after_gitleaks_is_kept(self):   # guard: never judged on other bytes
@@ -349,7 +349,7 @@ class RealKeysAreReportedAnywhere(_Keys):
         self.leak(p2, f"API_KEY={r2}", r2, then="API_KEY=FAKEexampleKEYforDOCS\n")   # the value swapped for an example one
         fs, notes = self.scan()
         for p in (p1, p2):
-            self.assertTrue([f for f in self.keys(fs, p) if f["rule"] == "WT-S002"], p)
+            self.assertTrue([f for f in self.keys(fs, p) if f["rule"] == "ISR-S002"], p)
         self.assertFalse(any("were example values" in n for n in notes), notes)
 
     def test_no_secret_value_is_stored(self):   # guard: the secrets gitleaks found again are judged and dropped

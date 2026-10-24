@@ -22,21 +22,21 @@ def unread(label, at):
 
 
 class CodexExample(unittest.TestCase):
-    def test_behind_timeout(self):   # replay (83fd9bf: no WT-M001)
+    def test_behind_timeout(self):   # replay (83fd9bf: no ISR-M001)
         self.assertEqual(evidence(servers(("timeout", "30") + CODEX)), [unread("npm exec", "npx -y mutable")])
 
-    def test_behind_nice(self):   # replay (83fd9bf: no WT-M001 for each)
+    def test_behind_nice(self):   # replay (83fd9bf: no ISR-M001 for each)
         for head in (("nice",), ("nice", "-n", "5"), ("nice", "-n5"), ("nice", "--adjustment=5")):
             with self.subTest(head=head):
                 self.assertEqual(evidence(servers(head + CODEX)), [unread("npm exec", "npx -y mutable")])
 
-    def test_inside_a_pinned_outer_npm_exec(self):   # replay (83fd9bf: no WT-M001 for each)
+    def test_inside_a_pinned_outer_npm_exec(self):   # replay (83fd9bf: no ISR-M001 for each)
         for cmd in (PIN + CODEX, PIN + ("env", "timeout", "30") + CODEX, PIN + ("npx -y mutable",),
                     PIN + ("sh -c 'npx -y mutable'",), PIN + ("env", "A=1", "nice", "npx -y mutable")):
             with self.subTest(cmd=cmd):
                 self.assertEqual(evidence(servers(cmd)), [unread("npm exec", cmd[-1])])
 
-    def test_at_the_top(self):   # replay (83fd9bf: no WT-M001 for each)
+    def test_at_the_top(self):   # replay (83fd9bf: no ISR-M001 for each)
         for cmd, want in (((" ".join(CODEX[:-1]) + " 'npx -y mutable'",), unread("npm exec", "'npx")),   # one "command" string
                           (CODEX, unread("npm exec", "npx -y mutable")),
                           (("x;/usr/bin/npx", "-y", "pkg@1.2.3"), unread("(command)", "x;/usr/bin/npx")),
@@ -48,7 +48,7 @@ class CodexExample(unittest.TestCase):
 
 
 class EverySyntax(unittest.TestCase):
-    def test_each_character_in_command_position(self):   # replay (83fd9bf read each as a pinned npx: no WT-M001)
+    def test_each_character_in_command_position(self):   # replay (83fd9bf read each as a pinned npx: no ISR-M001)
         for ch in SYNTAX:
             word = "x" + ch + "/usr/bin/npx"
             for cmd, label in ((("timeout", "30", word, "-y", "pkg@1.2.3"), "(command)"),
@@ -57,7 +57,7 @@ class EverySyntax(unittest.TestCase):
                 with self.subTest(cmd=cmd):
                     self.assertEqual(evidence(servers(cmd)), [unread(label, word)])
 
-    def test_a_backslash_that_hides_a_name(self):   # replay (83fd9bf: no WT-M001 for each)
+    def test_a_backslash_that_hides_a_name(self):   # replay (83fd9bf: no ISR-M001 for each)
         for cmd, want in ((PIN + ("n\\px", "-y", "mutable"), unread("npm exec", "n\\px")),
                           (PIN + ("\\s\\h", "-c", "x"), unread("npm exec", "\\s\\h")),
                           (("timeout", "30", "n\\px.cmd", "-y", "mutable"), unread("(command)", "n\\px.cmd"))):

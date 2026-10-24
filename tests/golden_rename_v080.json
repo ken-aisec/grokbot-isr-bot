@@ -458,10 +458,28 @@
   "reader_files": ["test_golden_expect.py", "test_batch6_golden_counts.py", "test_batch6_golden_perkey.py", "test_batch5_access_round3.py", "test_batch5_codex_r1.py", "test_batch6b_codex_r1.py"],
   "reader_rule": "in a reader file, a line holding an old output value that is an item-name path (workspace/watchtower) or old display text (Watchtower, capitalised) is a historical literal: it keeps its old spelling through units b-g, and h2 switches it to tests/rename_v080.py",
   "historical": {
-   "about": "Codex r1 HIGH 5: the literal lines a historical reader compares with old text (CHANGELOG at or below 0.7.4, the old golden files, the older KNOWN-LIMITS sections), not the line that opens the file. They keep their old spelling through b-g; h2 converts each to a helper call. Lines matched by reader_rule are historical too.",
+   "about": "Codex r1 HIGH 5: the literal lines a historical reader compares with old text (CHANGELOG at or below 0.7.4, the old golden files, the older KNOWN-LIMITS sections), not the line that opens the file. They keep their old spelling through b-g; h2 converts each to a helper call. Lines matched by reader_rule are historical too. Codex r2 HIGH (unit b fix 1): tests/golden_split.py's SUBST_KEEP and SUBST_KEEP_PROSE (the strings subst_change counts in the v0.7.4 golden files) are listed here line by line, not through reader_files, because c, d2b and f must still change that file's sandbox home line (WT_HOME = \"/workspace/watchtower\" ..., which reader_rule would hold).",
    "lines": [
     {"file": "tests/test_item8_fix_round2.py", "at_0ed5802": 271, "text": "for word in (\"platform_approved.json\", \"--platform-from\", \"WT-I011\", \"Known gaps\"):",
-     "reads": "the CHANGELOG's Item 8 round 2 line (Unreleased, below 0.7.4)", "h2": "old_rule(\"ISR-I011\")"}
+     "reads": "the CHANGELOG's Item 8 round 2 line (Unreleased, below 0.7.4)", "h2": "old_rule(\"ISR-I011\")"},
+    {"file": "tests/golden_split.py", "at_0ed5802": 570, "text": "SUBST_KEEP = (\"Watchtower rules\", \"SkillSpector + Watchtower\", \"husk + Watchtower\", \"Watchtower/\", \"Watchtower's own tools\",",
+     "reads": "the v0.7.4 golden files (SUBST_KEEP)", "h2": "SUBST_KEEP's old strings read from the table"},
+    {"file": "tests/golden_split.py", "at_0ed5802": 571, "text": "\"during a recorded Watchtower run\",",
+     "reads": "the v0.7.4 golden files (SUBST_KEEP)", "h2": "SUBST_KEEP's old strings read from the table"},
+    {"file": "tests/golden_split.py", "at_0ed5802": 572, "text": "\"Watchtower's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run\",",
+     "reads": "the v0.7.4 golden files (SUBST_KEEP)", "h2": "SUBST_KEEP's old strings read from the table"},
+    {"file": "tests/golden_split.py", "at_0ed5802": 573, "text": "\"its program file isn't the one Watchtower installed\",",
+     "reads": "the v0.7.4 golden files (SUBST_KEEP)", "h2": "SUBST_KEEP's old strings read from the table"},
+    {"file": "tests/golden_split.py", "at_0ed5802": 574, "text": "\"Ask-first rules with no word Watchtower reads in any of its languages\",",
+     "reads": "the v0.7.4 golden files (SUBST_KEEP)", "h2": "SUBST_KEEP's old strings read from the table"},
+    {"file": "tests/golden_split.py", "at_0ed5802": 575, "text": "\"Watchtower daily watch\", \"Watchtower weekly audit\", \"Watchtower weekly tidy\", \"Watchtower monthly roll-call\",",
+     "reads": "the v0.7.4 golden files (SUBST_KEEP)", "h2": "SUBST_KEEP's old strings read from the table"},
+    {"file": "tests/golden_split.py", "at_0ed5802": 576, "text": "\"You are Watchtower\", \"Watchtower: package caches, lockfiles, headers and its own state\")",
+     "reads": "the v0.7.4 golden files (SUBST_KEEP)", "h2": "SUBST_KEEP's old strings read from the table"},
+    {"file": "tests/golden_split.py", "at_0ed5802": 580, "text": "SUBST_KEEP_PROSE = {\"its program file isn't the one Watchtower installed\": re.compile(r\"\\bdidn't run [^:\\n]{1,40}: its program file \"",
+     "reads": "the v0.7.4 golden files (SUBST_KEEP_PROSE)", "h2": "SUBST_KEEP_PROSE's key and pattern read from the table"},
+    {"file": "tests/golden_split.py", "at_0ed5802": 581, "text": "r\"isn't the one Watchtower installed\")}",
+     "reads": "the v0.7.4 golden files (SUBST_KEEP_PROSE)", "h2": "SUBST_KEEP_PROSE's key and pattern read from the table"}
    ],
    "checked_no_old_literal": {
     "tests/test_item8_fix_round3.py": "CHANGELOG Item 8 round 3 line (:166-170): its words hold no old name",

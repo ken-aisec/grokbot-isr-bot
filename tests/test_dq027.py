@@ -5,7 +5,7 @@ import wt
 
 
 def a001(t):
-    return [f for f in wt.lint_auto_review(t, "s", check_missing=False) if f["rule"] == "WT-A001"]
+    return [f for f in wt.lint_auto_review(t, "s", check_missing=False) if f["rule"] == "ISR-A001"]
 
 
 class DQ027(unittest.TestCase):

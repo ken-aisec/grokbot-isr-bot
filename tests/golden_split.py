@@ -318,7 +318,7 @@ def tier_a():
         lab = lambda a: " ".join(a) + tag
         for a in [["--version"], ["--help"], ["-h"]] + [[c, "--help"] for c in PLAN["subcommands"]] + [[], ["nosuchcmd"], ["status", "--bogus-flag"]]:
             run(a, cwd=cwd, label=lab(a))
-        for a in (["show", "WT-X004"], ["status"], ["report"], ["breakdown"], ["doctor"], ["doctor", "--save"], ["dismiss", "--list"],
+        for a in (["show", "ISR-X004"], ["status"], ["report"], ["breakdown"], ["doctor"], ["doctor", "--save"], ["dismiss", "--list"],
                   ["accept", "--list"], ["exception", "list"], ["events", "list"], ["canary", "status"], ["rollcall", "--question"]):
             run(a, cwd=cwd, label=lab(a))
         run(["auto-allow", "list"], cwd=cwd, extra={"WATCHTOWER_SETTINGS": fx + "/exports/settings.json"}, label=lab(["auto-allow", "list"]) + " [settings fixture]")
@@ -574,7 +574,7 @@ SUBST_KEEP = ("Watchtower rules", "SkillSpector + Watchtower", "husk + Watchtowe
               "Ask-first rules with no word Watchtower reads in any of its languages",
               "Watchtower daily watch", "Watchtower weekly audit", "Watchtower weekly tidy", "Watchtower monthly roll-call",
               "You are Watchtower", "Watchtower: package caches, lockfiles, headers and its own state")
-# A kept string that the display prose also says in full (the renamed sentence held it too) is counted without that prose: WT-X005's
+# A kept string that the display prose also says in full (the renamed sentence held it too) is counted without that prose: ISR-X005's
 # why is its evidence, and its fix text "<name> didn't run <scanner>: its program file isn't the one <name> installed" is display.
 # Fix round 2 (Codex MED2): only in plain display text or a JSON `fix` value (SUBST_PROSE_FIELDS); anywhere else it counts in full.
 SUBST_KEEP_PROSE = {"its program file isn't the one Watchtower installed": re.compile(r"\bdidn't run [^:\n]{1,40}: its program file "

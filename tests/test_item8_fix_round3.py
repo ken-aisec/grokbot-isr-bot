@@ -49,7 +49,7 @@ class RootsInsidePlatformFolders(_Platform):
         finally:
             wt.PLATFORM_WALK_MAX_FILES = was
         self.assertNotEqual(out, "NO_CHANGES")
-        x = [f for f in self.snap()["findings"] if f["rule"] == "WT-I011"]
+        x = [f for f in self.snap()["findings"] if f["rule"] == "ISR-I011"]
         self.assertEqual([(f["severity"], wt.counts(f)) for f in x], [("high", True)])
 
     def test_1_contrast_a_root_inside_one_already_walked_is_walked_once(self):

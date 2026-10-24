@@ -163,7 +163,7 @@ class NewSkillFolders(_Middle):
         put(extra, "More notes for alpha.\n")
         self.assertNotEqual(self.daily(), "NO_CHANGES")
         x = self.counted_high(extra)
-        self.assertEqual([f["rule"] for f in x], ["WT-I002"])
+        self.assertEqual([f["rule"] for f in x], ["ISR-I002"])
 
     def test_loose_new_file_is_high(self):
         """G: a file in a platform folder outside any skill folder, at no existing path."""
@@ -193,7 +193,7 @@ class StillHigh(_Middle):
         out = json.loads(self.daily())
         self.assertIn(self.md("alpha"), [f["where"] for f in out["platform_unverified"]["files"]])
         x = self.counted_high(self.md("alpha"))
-        self.assertEqual([f["rule"] for f in x], ["WT-I001"])
+        self.assertEqual([f["rule"] for f in x], ["ISR-I001"])
         self.assertEqual(x[0]["title"], "One of Grok Bot's own files changed, and the new version isn't on Grok Bot's release list")
         self.audit()
         self.assertEqual(wt.load_baseline()[0][self.md("alpha")], v1)
@@ -215,7 +215,7 @@ class StillHigh(_Middle):
         v1 = sha(self.md("alpha"))
         add(self.md("alpha"), "Release notes: EVIL HUSK.\n")
         self.audit()
-        x = [f for f in self.snap()["findings"] if f["rule"] == "WT-X003" and f["where"] == os.path.dirname(self.md("alpha"))]
+        x = [f for f in self.snap()["findings"] if f["rule"] == "ISR-X003" and f["where"] == os.path.dirname(self.md("alpha"))]
         self.assertEqual(len(x), 1)
         self.assertEqual(len(self.counted_high(self.md("alpha"))), 1)
         self.assertEqual(wt.load_baseline()[0][self.md("alpha")], v1)
@@ -234,7 +234,7 @@ class StillHigh(_Middle):
         cache[d]["ss"].pop("kinds", None)                                       # an answer from before DQ-042 read every kind
         wt.save_json(p, cache)
         self.audit("--budget", "0")
-        x = [f for f in self.snap()["findings"] if f["rule"] == "WT-X003" and f["where"] == d]
+        x = [f for f in self.snap()["findings"] if f["rule"] == "ISR-X003" and f["where"] == d]
         self.assertEqual([f.get("kinds_incomplete") for f in x], [True])
         self.assertEqual(len(self.counted_high(md)), 1)
         self.assertEqual(wt.load_baseline()[0][md], hashlib.sha256(dq042.LEARN_V1.encode()).hexdigest())
@@ -299,7 +299,7 @@ class StillHigh(_Middle):
         self.start()
         add(evil, "One more line.\n"); add(mine, "One more line.\n")
         self.audit()
-        x = [f for f in self.at(mine) if f["rule"] == "WT-I001"]
+        x = [f for f in self.at(mine) if f["rule"] == "ISR-I001"]
         self.assertEqual([(f["title"], f["severity"], wt.counts(f)) for f in x], [("Reviewed skill or plugin changed", "high", True)])
         for p in (evil, mine):
             self.assertFalse(wt.platform_skill_path(p, line=False), p)
@@ -368,11 +368,11 @@ class WordingOnlyVote(_Middle):
         self.assertEqual(self.daily(), "NO_CHANGES")
         tip = self.quiet(md)
         self.assertIn("learn", tip["title"])
-        x = [f for f in self.snap()["findings"] if f["rule"] == "WT-X003" and f["where"] == d]
+        x = [f for f in self.snap()["findings"] if f["rule"] == "ISR-X003" and f["where"] == d]
         self.assertEqual([(f["severity"], f["label"]) for f in x], [("info", wt.PLATFORM)])
         self.audit()
         self.assertEqual(wt.load_baseline()[0][md], sha(md))
-        self.assertFalse([f for f in self.at(md) if f["rule"] in ("WT-I001", "WT-I002")])
+        self.assertFalse([f for f in self.at(md) if f["rule"] in ("ISR-I001", "ISR-I002")])
 
 
 class KeptVoteInDaily(_Middle):
@@ -390,7 +390,7 @@ class KeptVoteInDaily(_Middle):
         add(md, "One more line.\n")
         self.scanners(skillspector=None, husk=None)                             # no engine answers in daily: last run's line is kept
         self.daily()
-        x = [f for f in self.snap()["findings"] if f["rule"] == "WT-X003" and f["where"] == d]
+        x = [f for f in self.snap()["findings"] if f["rule"] == "ISR-X003" and f["where"] == d]
         self.assertEqual([f.get("kinds_incomplete") for f in x], [True])
         held = self.counted_high(md)
         self.assertEqual(len(held), 1)
@@ -410,7 +410,7 @@ class ManagedMirror(_Middle):
         before = self.audit()["open_by_severity"]["high"]
         s, g = self.pair(FLAGGED.format(n="x"), FLAGGED.format(n="x"))
         r = self.audit()
-        x = [f for f in self.snap()["findings"] if f["rule"] == "WT-I002" and f.get("unverified_platform")]
+        x = [f for f in self.snap()["findings"] if f["rule"] == "ISR-I002" and f.get("unverified_platform")]
         self.assertEqual([f["where"] for f in x], [s])
         self.assertEqual(x[0].get("also_at"), [g])
         self.assertIn(f"The same file (same sha256) is also at {g}.", x[0]["fix"])
@@ -421,7 +421,7 @@ class ManagedMirror(_Middle):
         self.start()
         s, g = self.pair(FLAGGED.format(n="x"), FLAGGED.format(n="y"))
         self.audit()
-        x = [f for f in self.snap()["findings"] if f["rule"] == "WT-I002" and f.get("unverified_platform")]
+        x = [f for f in self.snap()["findings"] if f["rule"] == "ISR-I002" and f.get("unverified_platform")]
         self.assertEqual(sorted(f["where"] for f in x), sorted([s, g]))
 
 

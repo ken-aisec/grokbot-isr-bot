@@ -54,7 +54,7 @@ class ForgedEntryPoint(_Scanners):
         self.assertIsNone(wt.tool("skillspector"))
         self.assertEqual(wt.SCANNER_PROBLEMS["skillspector"][0], "changed")
         x5 = wt.scanner_x005()
-        self.assertEqual([(f["rule"], f["severity"]) for f in x5], [("WT-X005", "high")])
+        self.assertEqual([(f["rule"], f["severity"]) for f in x5], [("ISR-X005", "high")])
         self.assertNotEqual(wt.scanner_check()["skillspector"], "verified")
         self.assertFalse(os.path.exists(self.log))
 
@@ -126,7 +126,7 @@ class LockHeldToTheManifest(_Scanners):
 
 class UnreadableIsNotChanged(_Scanners):
     """Finding 4: plain I/O failures (a slow read, no memory or file descriptors, sealing refused, no /proc) were recorded as
-    "changed", a Confirmed high WT-X005 saying something is changing Watchtower's files."""
+    "changed", a Confirmed high ISR-X005 saying something is changing Watchtower's files."""
 
     def assert_unreadable(self, name):
         self.assertEqual(wt.SCANNER_PROBLEMS[name][0], "unreadable", wt.SCANNER_PROBLEMS)
@@ -185,14 +185,14 @@ class Codescan(_Scanners):
         return p
 
     def test_5_a_swapped_semgreps_alert_is_never_trimmed(self):
-        """Finding 5: criticals sort first and the handoff keeps about 40 findings, so the high WT-X005 was cut."""
+        """Finding 5: criticals sort first and the handoff keeps about 40 findings, so the high ISR-X005 was cut."""
         with open(os.path.join(self.proj, "run.py"), "w") as f:
             f.write("".join(f"os.system('job {i}')\n" for i in range(80)))       # 80 critical A03 lines
         self.put("semgrep", "#!/bin/sh\necho '{\"results\": []}'\n", register=False)
         self.lock_line("semgrep")                                               # the lock lists another program
         wt._SCANNER_LOCK_CACHE.clear()
         r = self.codescan()
-        self.assertEqual([(f["rule"], os.path.basename(f["where"])) for f in r.get("scanner_alerts", [])], [("WT-X005", "semgrep")])
+        self.assertEqual([(f["rule"], os.path.basename(f["where"])) for f in r.get("scanner_alerts", [])], [("ISR-X005", "semgrep")])
 
     def test_5_semgrep_errors_mean_it_did_not_finish(self):
         """Finding 5: exit 0 with a results list counted as a full run even when `errors` listed files it couldn't parse."""

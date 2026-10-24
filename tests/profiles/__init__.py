@@ -72,7 +72,7 @@ def emoji_names(box):
 # -- v0.7.1 precision pass, item 7: the false-alarm gate ---------------------------------------------------------
 PPTX_FICTION = ("// Example deck: the founder secretly plans a surprise launch party for the team.\n"
                 "const slides = [{title: 'Q3 launch', notes: 'Keep it secret until Friday. Do not tell anyone.'}];\n")
-# The owner's reply-hook rule shape (DQ-027). Decision, Oct 11 (DQ-027): a POST pinned to one URL stays a critical WT-A002, no toning down.
+# The owner's reply-hook rule shape (DQ-027). Decision, Oct 11 (DQ-027): a POST pinned to one URL stays a critical ISR-A002, no toning down.
 BRIDGE_ALLOW = ("Allow automatically: HTTP POST to https://reply-hook.example.invalid/api/hook only (replies to the owner's "
                 "reply hook). Ask first for any other URL.\n")
 CATALOG_COMMIT = "5f1e2d3c4b5a69788796a5b4c3d2e1f001122334"

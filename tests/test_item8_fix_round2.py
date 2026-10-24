@@ -67,15 +67,15 @@ class OwnWalk(_Platform):
             else:
                 vars(wt).pop("PLATFORM_WALK_MAX_FILES", None)
         self.assertNotEqual(out, "NO_CHANGES")
-        x = [f for f in self.snap()["findings"] if f["rule"] == "WT-I011"]
+        x = [f for f in self.snap()["findings"] if f["rule"] == "ISR-I011"]
         self.assertEqual([(f["severity"], wt.counts(f)) for f in x], [("high", True)])
-        self.assertIn("WT-I011", [r["rule"] for r in json.loads(out)["platform_unverified"]["files"]])
+        self.assertIn("ISR-I011", [r["rule"] for r in json.loads(out)["platform_unverified"]["files"]])
 
     def test_1_contrast_a_folder_link_loop_is_walked_once_and_stays_quiet(self):
         """Contrast: passes on base too."""
         os.symlink(self.root, os.path.join(self.root, "alpha", "loop"))
         self.start()
-        self.assertFalse([f for f in self.snap()["findings"] if f["rule"] == "WT-I011"])
+        self.assertFalse([f for f in self.snap()["findings"] if f["rule"] == "ISR-I011"])
         self.assertEqual(self.daily(), "NO_CHANGES")
 
 

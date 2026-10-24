@@ -60,7 +60,7 @@ class ConnectorsKeepNoText(_Outputs):
         rnd = wt.open_rollcall_round()
         wt.save_json(wt.state_path("rollcall_findings.json"), {
             "at": wt.now(), "round": rnd, "masked": wt.VERSION, "shape_only": True, "bots": ["Hotel"],
-            "findings": [dict(wt.finding("WT-R013", "t", "medium", ["ASI02"], "rollcall:Hotel", f"key {TOKEN} password=hunter2", "fix"), bot="Hotel")],
+            "findings": [dict(wt.finding("ISR-R013", "t", "medium", ["ASI02"], "rollcall:Hotel", f"key {TOKEN} password=hunter2", "fix"), bot="Hotel")],
             "access": {"Hotel": {"said_at": wt.now()[:10], "connectors": ["Slack", "password=hunter2", "Client Dana Ortiz has cancer"], "routines": []}}})
         self.rollcall(dict(self.REPLY, connectors=["Notion"]))
         rc = open(wt.state_path("rollcall_findings.json")).read()
@@ -262,7 +262,7 @@ class NoMapBriefAsBefore(_Brief):
 # ---------------------------------------------------------------- 7: "sensitive: none"
 class SensitiveNone(_Access):
     def test_none_is_no_site(self):   # replay (0a72c20 counted "none" as a signed-in site)
-        seed = wt.finding("WT-S004", "Shared browser cookies visible to every Bot", "medium", ["ASI03"], os.path.join(self.home, "sand-data", "cookies.json"),
+        seed = wt.finding("ISR-S004", "Shared browser cookies visible to every Bot", "medium", ["ASI03"], os.path.join(self.home, "sand-data", "cookies.json"),
                           "12 domains; sensitive: none", "fix")
         m = wt.build_access_map({"findings": [seed]}, {"access_sources": {"roots": self.roots}, "persistence": {}})
         self.assertEqual(m["shared"]["browser"]["sites"], 0)

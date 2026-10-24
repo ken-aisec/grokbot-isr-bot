@@ -38,16 +38,16 @@ class DQ014TimeoutIsNotASecondOpinion(Base):
         open(os.path.join(skill, "SKILL.md"), "w").write("---\nname: topic-digest\ndescription: Watch topics.\n---\n")
         lines = ["x = 1"] * 59 + ['    return f"\U0001F4F0 *topic-digest update: {topic}*\\n{new} new, {updated} updated"']
         open(os.path.join(skill, "scripts", "watchlist.py"), "w").write("\n".join(lines) + "\n")
-        x2 = wt.finding("WT-X002", "husk flagged this skill", "low", ["AST01"], os.path.join(skill, "scripts", "watchlist.py") + ":60",
+        x2 = wt.finding("ISR-X002", "husk flagged this skill", "low", ["AST01"], os.path.join(skill, "scripts", "watchlist.py") + ":60",
                         "sql-injection: f-string", "Read it.", source="husk")
-        x4 = wt.finding("WT-X004", "A scanner couldn't finish this skill", "low", ["AST08"], skill,
+        x4 = wt.finding("ISR-X004", "A scanner couldn't finish this skill", "low", ["AST08"], skill,
                         "SkillSpector gave no answer in time", "Nothing to do.", source="skillspector")
         out = wt.label_findings([x2, x4])
         self.assertEqual(out[0]["label"], wt.MAYBE_FINE)
         self.assertEqual(out[0]["class"], "pattern")
         self.assertEqual(out[1]["label"], wt.CONFIRMED)                         # the timeout itself is still a fact
         # a real second engine at the same skill still corroborates
-        x1 = wt.finding("WT-X001", "SkillSpector: do not install", "high", ["AST01"], skill, "verdict", "fix", source="skillspector")
+        x1 = wt.finding("ISR-X001", "SkillSpector: do not install", "high", ["AST01"], skill, "verdict", "fix", source="skillspector")
         self.assertEqual(wt.label_findings([x2, x1])[0]["label"], wt.CONFIRMED)
 
 
@@ -71,7 +71,7 @@ class Prepublish(Base):
                    "The result goes to Owner in this chat.\n")
         code, r = self.stage({"routine-daily-watch.md": routine}, roster=[{"name": "Builder", "kind": "bot"}, {"name": "Watchtower", "kind": "bot"},
                                                                           {"name": "Ops room", "kind": "room"}])
-        names = [f for f in r["findings"] if f["rule"] == "WT-PP08"]
+        names = [f for f in r["findings"] if f["rule"] == "ISR-PP08"]
         self.assertEqual(sorted({f["where"].rsplit(":", 1)[1] for f in names}), ["2", "3"])
         self.assertEqual(r["verdict"], "FAIL"); self.assertEqual(code, 1)
         self.assertFalse(any("Watchtower" in f["evidence"] for f in names))       # the Bot being shared may name itself
@@ -79,7 +79,7 @@ class Prepublish(Base):
 
     def test_dq015_no_names_known_means_nothing_invented(self):
         code, r = self.stage({"routine-a.md": "Never send without my approval. Owner reviews it."})
-        self.assertFalse([f for f in r["findings"] if f["rule"] == "WT-PP08"])
+        self.assertFalse([f for f in r["findings"] if f["rule"] == "ISR-PP08"])
 
     def test_dq016_a_stale_getting_started_is_flagged(self):
         cur = open(os.path.join(ROOT, "bot", "getting-started.md")).read()
@@ -87,28 +87,28 @@ class Prepublish(Base):
         stale = cur.replace("in /tmp and /var/tmp, with folder and file names picked at random for this computer", "at " + old_name)
         code, r = self.stage({"skill-getting-started.md": "---\nname: getting-started\n---\n" + stale})
         rules = {f["rule"] for f in r["findings"]}
-        self.assertIn("WT-PP09", rules); self.assertIn("WT-PP10", rules)
+        self.assertIn("ISR-PP09", rules); self.assertIn("ISR-PP10", rules)
         self.assertFalse(any(old_name in f["evidence"] for f in r["findings"]))   # never prints a decoy location
         self.assertEqual(r["verdict"], "FAIL")
 
     def test_dq016_a_current_getting_started_passes(self):
         cur = open(os.path.join(ROOT, "bot", "getting-started.md")).read()
         code, r = self.stage({"skill-getting-started.md": "---\nname: getting-started\ndescription: First run.\n---\n\n" + cur})
-        self.assertFalse({"WT-PP09", "WT-PP10"} & {f["rule"] for f in r["findings"]}, r)
+        self.assertFalse({"ISR-PP09", "ISR-PP10"} & {f["rule"] for f in r["findings"]}, r)
 
 
 class DailyListsDismissals(Base):
     def test_the_routine_lists_what_it_dismissed(self):
         md = os.path.join(self.tmp, "s", "SKILL.md"); os.makedirs(os.path.dirname(md))
         open(md, "w").write("# x\nNever send anything.\n")
-        f = wt.label_findings([wt.finding("WT-T013", "t", "high", ["X"], md + ":2", "send", "fix")])[0]
+        f = wt.label_findings([wt.finding("ISR-T013", "t", "high", ["X"], md + ":2", "send", "fix")])[0]
         wt.save_json(wt.state_path("last_findings.json"), {"findings": [f]})
         code, out, _ = self.run_wt("dismiss", "--list")
         self.assertEqual(out.strip(), "NONE_DISMISSED")
         self.assertEqual(self.run_wt("dismiss", f["key"], "--reason", "the line says never send")[0], 0)
         code, out, _ = self.run_wt("dismiss", "--list")
         rows = json.loads(out)["dismissed"]
-        self.assertEqual([(r["rule"], r["reason"]) for r in rows], [("WT-T013", "the line says never send")])
+        self.assertEqual([(r["rule"], r["reason"]) for r in rows], [("ISR-T013", "the line says never send")])
         self.assertTrue(rows[0]["where"].endswith("SKILL.md:2"))
         code, out, _ = self.run_wt("dismiss", "--list", "--since", "2999-01-01")
         self.assertEqual(out.strip(), "NONE_DISMISSED")

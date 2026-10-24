@@ -17,7 +17,7 @@ def server(command, *args):
 
 class Pins(Box):
     def m001(self, configs):
-        """{name: the WT-M001 evidence an audit gives for ~/<name>/mcp.json}, every config in one box and one audit."""
+        """{name: the ISR-M001 evidence an audit gives for ~/<name>/mcp.json}, every config in one box and one audit."""
         for name, doc in configs.items():
             d = os.path.join(self.home, name)
             os.makedirs(d, exist_ok=True)
@@ -25,7 +25,7 @@ class Pins(Box):
                 f.write(doc if isinstance(doc, str) else json.dumps(doc, indent=2))
         self.audit("--budget", "0")
         snap = self.snap()
-        fs = [f for k in ("findings", "suppressed") for f in snap.get(k) or [] if f.get("rule") == "WT-M001"]
+        fs = [f for k in ("findings", "suppressed") for f in snap.get(k) or [] if f.get("rule") == "ISR-M001"]
         self.fixes = {f.get("fix") for f in fs}
         return {name: sorted(f["evidence"] for f in fs if f"/{name}/mcp.json" in f["where"]) for name in configs}
 

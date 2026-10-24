@@ -14,7 +14,7 @@ SLACK = "https://hooks.slack.com/services/T0/B0/FAKE"
 
 
 def rules_of(text, where="/s/SKILL.md"):
-    return {f["rule"] for f in wt.scan_text(text, where, wt.load_rules())} & {"WT-T005", "WT-T018"}
+    return {f["rule"] for f in wt.scan_text(text, where, wt.load_rules())} & {"ISR-T005", "ISR-T018"}
 
 
 def fenced(code, lang="python"):
@@ -44,35 +44,35 @@ class Lookups(Folder):
              "url = 'https://collector.example' if quiet else '" + HOOK + "'",
              "url = config.hook or '" + HOOK + "' or 'https://collector.example'")
 
-    def test_the_codex_key_lookup_is_critical(self):   # replay (13cbfa4: Install with changes, WT-T018)
+    def test_the_codex_key_lookup_is_critical(self):   # replay (13cbfa4: Install with changes, ISR-T018)
         code, r = vet_json(self.write("SKILL.md", fenced(self.CODEX_KEY)))
         self.assertEqual(r["verdict"], "Do not install")
         # batch 6 (B7): vet shows the audit's labelled severity; the rule's own is severity_was
-        self.assertIn(("WT-T005", "critical"), [(f["rule"], f.get("severity_was", f["severity"])) for f in r["findings"]])
-        self.assertNotIn("WT-T018", [f["rule"] for f in r["findings"]])
+        self.assertIn(("ISR-T005", "critical"), [(f["rule"], f.get("severity_was", f["severity"])) for f in r["findings"]])
+        self.assertNotIn("ISR-T018", [f["rule"] for f in r["findings"]])
 
-    def test_a_url_used_as_a_lookup_key_is_never_the_destination(self):   # replay (13cbfa4: WT-T018 for several)
+    def test_a_url_used_as_a_lookup_key_is_never_the_destination(self):   # replay (13cbfa4: ISR-T018 for several)
         for c in self.KEYS:
-            self.assertEqual(rules_of(fenced(c, "js" if c.startswith("fetch") else "python")), {"WT-T005"}, c)
+            self.assertEqual(rules_of(fenced(c, "js" if c.startswith("fetch") else "python")), {"ISR-T005"}, c)
 
-    def test_only_maybe_the_destination_next_to_another_url_or_a_credential(self):   # replay (13cbfa4: WT-T018 for several)
+    def test_only_maybe_the_destination_next_to_another_url_or_a_credential(self):   # replay (13cbfa4: ISR-T018 for several)
         for c in self.MAYBE:
-            self.assertEqual(rules_of(fenced(c)), {"WT-T005"}, c)
-        self.assertEqual(rules_of(fenced("const url = quiet ? 'https://collector.example' : '" + HOOK + "'", "js")), {"WT-T005"})
+            self.assertEqual(rules_of(fenced(c)), {"ISR-T005"}, c)
+        self.assertEqual(rules_of(fenced("const url = quiet ? 'https://collector.example' : '" + HOOK + "'", "js")), {"ISR-T005"})
 
-    def test_the_codex_safe_default_stays_a_chat_webhook(self):   # replay (13cbfa4: Do not install, WT-T005)
-        # batch 7b: a lookup's default is never a recognised send: Do not install, WT-T005 (was Install with changes, WT-T018)
+    def test_the_codex_safe_default_stays_a_chat_webhook(self):   # replay (13cbfa4: Do not install, ISR-T005)
+        # batch 7b: a lookup's default is never a recognised send: Do not install, ISR-T005 (was Install with changes, ISR-T018)
         code, r = vet_json(self.write("SKILL.md", fenced(self.CODEX_DEFAULT)))
         self.assertEqual(r["verdict"], "Do not install")
-        self.assertIn("WT-T005", [f["rule"] for f in r["findings"]])
-        self.assertNotIn("WT-T018", [f["rule"] for f in r["findings"]])
+        self.assertIn("ISR-T005", [f["rule"] for f in r["findings"]])
+        self.assertNotIn("ISR-T018", [f["rule"] for f in r["findings"]])
 
-    def test_safe_defaults_stay_chat_webhooks(self):   # replay (13cbfa4: WT-T005 for each)
+    def test_safe_defaults_stay_chat_webhooks(self):   # replay (13cbfa4: ISR-T005 for each)
         # batch 6 PR3, Codex round 1 (9): a helper that isn't defined may send anywhere; its argument proves nothing (was T018)
         for lang, c in (("python", "notify('" + HOOK + "', 'Build done')"),):
-            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T005"}, c)
+            self.assertEqual(rules_of(fenced(c, lang)), {"ISR-T005"}, c)
         # batch 6 (KL1, Codex #15 high 1): these codified the gap. The environment, a sibling config, getattr, a ConfigParser's
-        # fallback, an unknown map or the other side of an or may each hold another destination at run time: WT-T005 (was T018)
+        # fallback, an unknown map or the other side of an or may each hold another destination at run time: ISR-T005 (was T018)
         for lang, c in (("python", "config.get('hook', '" + HOOK + "')"),
                         ("python", "url = config.get('hook', '" + HOOK + "')"),
                         ("python", "requests.post(os.environ.get('SLACK_WEBHOOK', '" + SLACK + "'), json={'text': msg})"),
@@ -82,33 +82,33 @@ class Lookups(Folder):
                         ("python", "requests.post(config.get(name, '" + HOOK + "'), json=payload)"),   # a computed key, nothing else
                         ("python", "url = os.environ.get('HOOK') or '" + HOOK + "'"),
                         ("js", "const url = process.env.HOOK || '" + HOOK + "'")):
-            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T005"}, c)
+            self.assertEqual(rules_of(fenced(c, lang)), {"ISR-T005"}, c)
 
     def test_http_get_with_options_or_a_callback_is_still_a_sender(self):   # guard
-        self.assertEqual(rules_of(fenced("requests.get('" + HOOK + "', timeout=5)")), {"WT-T018"})
-        # batch 7b: a session's or the https module's get is not a recognised send (were WT-T018)
+        self.assertEqual(rules_of(fenced("requests.get('" + HOOK + "', timeout=5)")), {"ISR-T018"})
+        # batch 7b: a session's or the https module's get is not a recognised send (were ISR-T018)
         for lang, c in (("python", "session = requests.Session()\nsession.get('" + HOOK + "')"),
                         ("js", "https.get('" + HOOK + "', (res) => res.resume())"),
                         ("js", "https.get('" + HOOK + "', {timeout: 5}, cb)")):
-            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T005"}, c)
+            self.assertEqual(rules_of(fenced(c, lang)), {"ISR-T005"}, c)
 
     def test_round_1_guards_still_hold(self):   # guard
         from test_batch5_codex_r1 import SenderDestination as R1
-        self.assertEqual(rules_of(fenced(R1.CODEX)), {"WT-T005"})
+        self.assertEqual(rules_of(fenced(R1.CODEX)), {"ISR-T005"})
         for lang, c in R1.NEAR:
-            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T005"}, c)
+            self.assertEqual(rules_of(fenced(c, lang)), {"ISR-T005"}, c)
         for lang, c in (("python", "requests.post('" + HOOK + "').raise_for_status()"),
                         ("python", "resp = requests.post('" + HOOK + "', json=payload)"),
                         ("python", "requests.post('" + HOOK + "', json={'link': 'https://docs.example/x'})")):
-            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T018"}, c)
-        # batch 7b: the same six forms as round 1's guard are no longer recognised sends (were WT-T018)
+            self.assertEqual(rules_of(fenced(c, lang)), {"ISR-T018"}, c)
+        # batch 7b: the same six forms as round 1's guard are no longer recognised sends (were ISR-T018)
         for lang, c in (("python", "urllib.request.urlopen(urllib.request.Request('" + HOOK + "', data=body))"),
                         ("python", "requests.request('POST', '" + HOOK + "')"),
                         ("python", "requests.post(url='" + HOOK + "')"),
                         ("js", "axios({url: '" + HOOK + "', method: 'post', data: body})"),
                         ("js", "await fetch('" + HOOK + "', {method: 'POST', body})"),
                         ("js", "fetch('" + HOOK + "').then(r => r.json())")):
-            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T005"}, c)
+            self.assertEqual(rules_of(fenced(c, lang)), {"ISR-T005"}, c)
 
 
 # ---------------------------------------------------------------- 2: the whole logical word names the tool and the flag
@@ -300,7 +300,7 @@ from test_batch5_platform_notes import _SignIn
 
 
 def owner_high(home, i):
-    return dict(wt.finding("WT-I002", f"A new file appeared in your own skill folder {i}", "high", ["AST09"],
+    return dict(wt.finding("ISR-I002", f"A new file appeared in your own skill folder {i}", "high", ["AST09"],
                            os.path.join(home, "sand-data", "workflows", f"w{i:02d}", "SKILL.md"), f"abc{i}", "Look at it before using the skill."),
                 label=wt.CONFIRMED)
 
@@ -454,7 +454,7 @@ class NormalizedScannedBytes(pn._Meta):
             return real(*a)
         with mock.patch.object(wt, "platform_listed_normalized", swap):
             self.audit()
-        self.assertEqual([(f["rule"], f["severity"]) for f in self.counted()], [("WT-I001", "high")])
+        self.assertEqual([(f["rule"], f["severity"]) for f in self.counted()], [("ISR-I001", "high")])
 
     def test_the_scanned_bytes_are_still_normalized(self):   # guard
         self.baseline_with(pn.V1)

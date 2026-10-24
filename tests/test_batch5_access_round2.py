@@ -49,11 +49,11 @@ class TheSeedIsLookedAtNow(_Small):
                  [{"domain": ".mail.google.com", "name": "SID", "value": "FAKEcookieVALUE"}, {"domain": "example.com", "name": "_ga", "value": "x"}])
 
     def forget_the_seed_finding(self):
-        """Delete WT-S004 from state/last_findings.json, as the Bot could."""
+        """Delete ISR-S004 from state/last_findings.json, as the Bot could."""
         p = wt.state_path("last_findings.json")
         snap = json.load(open(p))
         for k in ("findings", "suppressed"):
-            snap[k] = [f for f in snap.get(k) or [] if f.get("rule") != "WT-S004"]
+            snap[k] = [f for f in snap.get(k) or [] if f.get("rule") != "ISR-S004"]
         wt.save_json(p, snap)
 
     def test_deleting_the_cached_finding_hides_no_sign_in(self):   # replay (3170952: "found no shared browser cookies")

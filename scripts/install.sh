@@ -44,7 +44,7 @@ GITLEAKS_VERSION="8.30.1"
 TRUFFLEHOG_VERSION="3.97.9"
 OSV_VERSION="2.6.0"
 # Claude review 1 (6): `python3 -m venv` leaves an existing scanners/bin/python* link alone, so a re-pointed one survived
-# the reinstall WT-X005 tells the owner to run, and this script's own pip ran through it. They are made new every time.
+# the reinstall ISR-X005 tells the owner to run, and this script's own pip ran through it. They are made new every time.
 rm -f "$WT_HOME/scanners/bin/python" "$WT_HOME"/scanners/bin/python[0-9]*
 # Claude review 2 (4): nor bin/pip, the entry points or site-packages (pip skips what is already installed), so a swapped
 # skillspector survived too and a planted pip ran below. The environment is made from scratch: everything in it is installed

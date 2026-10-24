@@ -1,4 +1,4 @@
-"""DQ-026: WT-S004 counts a sensitive site as signed-in only with a session cookie (not visit/analytics)."""
+"""DQ-026: ISR-S004 counts a sensitive site as signed-in only with a session cookie (not visit/analytics)."""
 import json, os, shutil, sys, tempfile, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -54,7 +54,7 @@ class DQ026BrowserSessions(unittest.TestCase):
             fs = wt.browser_sessions([d])
             self.assertEqual(len(fs), 1, fs)
             f = fs[0]
-            self.assertEqual(f["rule"], "WT-S004")
+            self.assertEqual(f["rule"], "ISR-S004")
             self.assertEqual(f["severity"], "medium", f)
             self.assertIn("sensitive: none", f["evidence"])
             self.assertNotIn("bitwarden", f["evidence"].split("sensitive:")[-1])
@@ -107,7 +107,7 @@ class DQ026AccountContext(Box):
                   open(os.path.join(seed, "chrome-cookie-seed.json"), "w"))
         self.skills(1); self.scanners()
         self.audit()
-        s4 = next(f for f in self.snap()["findings"] if f["rule"] == "WT-S004")
+        s4 = next(f for f in self.snap()["findings"] if f["rule"] == "ISR-S004")
         self.assertEqual(s4["severity"], "high")
         self.assertIn("google", s4["evidence"])
         self.assertNotIn("bitwarden", s4["evidence"].split("sensitive:")[-1])

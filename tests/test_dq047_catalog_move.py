@@ -3,13 +3,13 @@ plugin version bump as a new install.
 
 The real run (`wt.py daily`, 6:00 AM ET, score 85, 55 new): the platform moved nine cursor-public plugins (calendly, excalidraw,
 finance, github, gmail, google-calendar, google-drive, pstack, x) from catalog folder 190d28736eff128ec94f502a22c7fe0c4b56cd37 to
-d1453c11d1dde9714d4c313c97d3a68432265c7f with the same versions. Files with identical hashes were listed as new low WT-I002 at
+d1453c11d1dde9714d4c313c97d3a68432265c7f with the same versions. Files with identical hashes were listed as new low ISR-I002 at
 the new path and "fixed" at the old one, e.g. `.../pstack/d1453c11.../plugin.json` evidence 8a5811042556 new and
 `.../pstack/190d2873.../plugin.json` evidence 8a5811042556 fixed (same for .cursor-plugin/plugin.json 079de0bc2c33,
 skills/ketchup/SKILL.md f2923ffd14f6, skills/create-formal-verification-skill/SKILL.md 6c934cd15a95).
 
 Also: OpenAI's codex `sites` plugin went 1.0.1 -> 1.1.1 (/home/box/.codex/plugins/cache/openai-curated-remote/sites/1.1.1),
-raised as medium WT-I004 "New plugin installed"; the 1.0.1 WT-I004 was listed as fixed.
+raised as medium ISR-I004 "New plugin installed"; the 1.0.1 ISR-I004 was listed as fixed.
 
 The two pstack manifests below are the vendor's real bytes (MIT, (c) 2026 Lauren Tan; their sha256 prefixes are the queue's
 evidence). The skill bodies are stand-ins at the real relative paths (their hashes differ from the queue's; only "same bytes before
@@ -106,7 +106,7 @@ class DQ047CatalogFolderMove(Box):
 
 
     def i002(self, rows, commit):
-        return sorted(f["where"] for f in rows if f["rule"] == "WT-I002" and f"/{commit}/" in f["where"])
+        return sorted(f["where"] for f in rows if f["rule"] == "ISR-I002" and f"/{commit}/" in f["where"])
 
     def test_the_real_values(self):
         self.assertEqual(sha12(PSTACK_PLUGIN_JSON), "8a5811042556")
@@ -121,7 +121,7 @@ class DQ047CatalogFolderMove(Box):
         return open_old, daily(self)
 
     def test_open_new_files_keep_their_keys_across_the_catalog_move(self):
-        """The real case: the 190d copies were still open low WT-I002s (never accepted) when the platform moved the folder."""
+        """The real case: the 190d copies were still open low ISR-I002s (never accepted) when the platform moved the folder."""
         open_old, d = self._arrive_then_move()
         pj = f"{self.cache}/pstack/{OLD}/plugin.json"
         self.assertIn(pj, open_old)                    # the 190d manifest was an open finding, evidence 8a5811042556
@@ -156,7 +156,7 @@ class DQ047CatalogFolderMove(Box):
                     q = os.path.join(dp, fn)
                     put(os.path.join(dst, os.path.relpath(q, src)), open(q).read())
         daily(self)
-        fs = [f for f in self.snap()["findings"] if f["rule"] == "WT-I002" and "/pstack/" in f["where"]]
+        fs = [f for f in self.snap()["findings"] if f["rule"] == "ISR-I002" and "/pstack/" in f["where"]]
         self.assertEqual(len(fs), 2 * (2 + len(PSTACK_SKILLS)))
         keys = [k for f in fs for k in (f["key"], f.get("key0")) if k]
         self.assertEqual(len(keys), len(set(keys)))
@@ -185,7 +185,7 @@ class DQ047CatalogFolderMove(Box):
         d = daily(self)
         want = sorted(f"{dst}/{r}" for r in ["plugin.json", ".cursor-plugin/plugin.json"] + [f"skills/{s}/SKILL.md" for s in PSTACK_SKILLS])
         self.assertEqual(self.i002(d["new"], NEW), want)
-        got = [f for f in d["new"] if f["rule"] == "WT-I002" and f["where"].startswith(dst + "/")]
+        got = [f for f in d["new"] if f["rule"] == "ISR-I002" and f["where"].startswith(dst + "/")]
         self.assertEqual({k for f in got for k in (f["key"], f.get("key0")) if k} & old_keys, set())
 
     def test_a_linked_manifest_beside_the_originals_is_new(self):
@@ -200,7 +200,7 @@ class DQ047CatalogFolderMove(Box):
         put(os.path.join(dst, "skills", "github", "SKILL.md"), open(os.path.join(src, "skills", "github", "SKILL.md")).read())
         d = daily(self)
         self.assertEqual(self.i002(d["new"], sib), [f"{dst}/.cursor-plugin/plugin.json", f"{dst}/skills/github/SKILL.md"])
-        got = [f for f in d["new"] if f["rule"] == "WT-I002" and f["where"].startswith(dst + "/")]
+        got = [f for f in d["new"] if f["rule"] == "ISR-I002" and f["where"].startswith(dst + "/")]
         self.assertEqual({k for f in got for k in (f["key"], f.get("key0")) if k} & old_keys, set())
 
 
@@ -220,14 +220,14 @@ class DQ047PluginVersionBump(Box):
         self.audit()
         old = self.sites("1.0.1")
         d = daily(self)
-        self.assertEqual([f["where"] for f in d["new"] if f["rule"] == "WT-I004"], [old])
+        self.assertEqual([f["where"] for f in d["new"] if f["rule"] == "ISR-I004"], [old])
         os.rename(old, os.path.join(os.path.dirname(old), "1.1.1"))
         new = os.path.join(os.path.dirname(old), "1.1.1")
         put(os.path.join(new, ".codex-plugin", "plugin.json"), json.dumps({"name": "sites", "version": "1.1.1", "author": {"name": "OpenAI"}}))
         d = daily(self)
-        self.assertEqual([f for f in d["new"] if f["rule"] == "WT-I004"], [])
-        self.assertEqual([f for f in d["fixed"] if f["rule"] == "WT-I004"], [])
-        i4 = [f for f in self.snap()["findings"] if f["rule"] == "WT-I004"]
+        self.assertEqual([f for f in d["new"] if f["rule"] == "ISR-I004"], [])
+        self.assertEqual([f for f in d["fixed"] if f["rule"] == "ISR-I004"], [])
+        i4 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-I004"]
         self.assertEqual([f["where"] for f in i4], [new])   # still waiting for the owner's decision, at the new folder
         self.assertEqual(i4[0]["severity"], "medium")
         self.assertTrue(any("sites changed version folder (1.0.1 → 1.1.1)" in n for n in self.snap()["notes"]), self.snap()["notes"])
@@ -247,20 +247,20 @@ class DQ047PluginVersionBump(Box):
         self.audit()
         pk = wt.keys_of(prev)
         new_rules = {f["rule"] for f in self.snap()["findings"] if not wt.known(f, pk) and "/sites/1.1.1/skills/sites" in f["where"]}
-        self.assertIn("WT-X001", new_rules)
-        self.assertTrue(new_rules - {"WT-X001", "WT-X002", "WT-X003"}, new_rules)   # Watchtower's own rules too
-        self.assertNotIn("WT-I004", {f["rule"] for f in self.snap()["findings"] if not wt.known(f, pk)})
+        self.assertIn("ISR-X001", new_rules)
+        self.assertTrue(new_rules - {"ISR-X001", "ISR-X002", "ISR-X003"}, new_rules)   # Watchtower's own rules too
+        self.assertNotIn("ISR-I004", {f["rule"] for f in self.snap()["findings"] if not wt.known(f, pk)})
 
     def test_a_file_added_inside_a_pending_plugin_is_new(self):
-        """Fix round 1 (Codex): nothing moved, a file added: the pending plugin's WT-I004 is new, as before DQ-047."""
+        """Fix round 1 (Codex): nothing moved, a file added: the pending plugin's ISR-I004 is new, as before DQ-047."""
         self.skills(1); self.scanners()
         self.audit()
         old = self.sites("1.0.1")
         d = daily(self)
-        self.assertEqual([f["where"] for f in d["new"] if f["rule"] == "WT-I004"], [old])
+        self.assertEqual([f["where"] for f in d["new"] if f["rule"] == "ISR-I004"], [old])
         put(os.path.join(old, "skills", "sites", "notes.md"), "Notes on page layouts.\n")
         d = daily(self)
-        self.assertEqual([(f["where"], f["evidence"]) for f in d["new"] if f["rule"] == "WT-I004"], [(old, "sites: 4 files, 2 skills")])
+        self.assertEqual([(f["where"], f["evidence"]) for f in d["new"] if f["rule"] == "ISR-I004"], [(old, "sites: 4 files, 2 skills")])
 
     def test_a_clean_bump_is_said_in_daily(self):
         """Fix round 1 (Codex): the version-folder note reaches daily's own output; a clean bump is never NO_CHANGES."""
@@ -277,7 +277,7 @@ class DQ047PluginVersionBump(Box):
         lines = j.get("plugin_version_changes") or []
         self.assertEqual(len(lines), 1, lines)
         self.assertIn("sites changed version folder (1.0.1 → 1.1.1)", lines[0])
-        self.assertEqual([f for f in j.get("new", []) + j.get("fixed", []) if f["rule"] == "WT-I004"], [])
+        self.assertEqual([f for f in j.get("new", []) + j.get("fixed", []) if f["rule"] == "ISR-I004"], [])
 
 
 if __name__ == "__main__":

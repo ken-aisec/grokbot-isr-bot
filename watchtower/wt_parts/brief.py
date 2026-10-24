@@ -137,7 +137,7 @@ def account_context():
     snap = load_json(state_path("last_findings.json"), {}) or {}
     inv = snap.get("inventory", {})
     fs = snap.get("findings", [])
-    sess = next((f for f in fs if f["rule"] == "WT-S004"), None)
+    sess = next((f for f in fs if f["rule"] == "ISR-S004"), None)
     sites = None
     if sess:
         ev = sess.get("evidence") or ""
@@ -150,7 +150,7 @@ def account_context():
     rc = load_json(state_path("rollcall_findings.json"), {}) or {}
     return {"mcp": inv.get("mcp_configs", 0), "skills": inv.get("skills", 0), "plugins": inv.get("plugin_files", 0),
             "sites": sites, "packages": pkg.get("packages"), "bots": len(rc.get("bots", [])) or None,
-            "cli": sum(1 for f in fs if f["rule"] == "WT-S003"), "secrets": sum(1 for f in fs if f["rule"] in ("WT-S001", "WT-S002") and f["severity"] == "critical")}
+            "cli": sum(1 for f in fs if f["rule"] == "ISR-S003"), "secrets": sum(1 for f in fs if f["rule"] in ("ISR-S001", "ISR-S002") and f["severity"] == "critical")}
 
 
 def means_here(cat, ctx, amap=None):
@@ -208,8 +208,8 @@ def split_stories(b):
 def threat_level(b, snap, stories):
     fs = (snap or {}).get("findings", [])
     pts = min(2, sum(1 for k in b["kev"] if k["relevant"])) + min(2, sum(1 for s in stories if s["tier"] == "act"))
-    pts += 2 if any(f["severity"] == "critical" and not f["rule"].startswith("WT-K") for f in fs) else 0
-    pts += 3 if any(f["rule"].startswith("WT-K") for f in fs) else 0  # a tripwire firing is the strongest signal there is
+    pts += 2 if any(f["severity"] == "critical" and not f["rule"].startswith("ISR-K") for f in fs) else 0
+    pts += 3 if any(f["rule"].startswith("ISR-K") for f in fs) else 0  # a tripwire firing is the strongest signal there is
     pts += 1 if (snap or {}).get("score", 100) < 50 else 0
     for i, (lvl, cut) in enumerate((("Low", 1), ("Guarded", 3), ("Elevated", 5), ("High", 7))):
         if pts <= cut:
@@ -347,13 +347,13 @@ def gather_brief(cfg, offline=None):
 
 
 EXPOSURE_AREAS = [
-    ("Secrets on the shared computer", ("WT-S001", "WT-S002", "WT-S003", "WT-T011", "WT-T011x")),   # batch 6: T011x is T011
-    ("Logged-in browser sessions", ("WT-S004",)),
-    ("Skills and templates", ("WT-X001", "WT-X002", "WT-X003", "WT-T001", "WT-T002", "WT-T003", "WT-T004", "WT-T005", "WT-T006", "WT-T007", "WT-T008", "WT-T018", "WT-I001")),
-    ("Approvals and settings", ("WT-A001", "WT-A002", "WT-A003", "WT-A004", "WT-A005", "WT-C001", "WT-C003", "WT-C005")),
-    ("Bots, memories and routines", ("WT-M010", "WT-L001", "WT-R002", "WT-T013", "WT-R011", "WT-R012", "WT-R013")),
-    ("Packages", ("WT-D001",)),
-    ("Tripwires and history", ("WT-K001", "WT-K002", "WT-K003", "WT-K006", "WT-H001", "WT-H002", "WT-H003", "WT-H004", "WT-H005", "WT-H006", "WT-H009")),
+    ("Secrets on the shared computer", ("ISR-S001", "ISR-S002", "ISR-S003", "ISR-T011", "ISR-T011x")),   # batch 6: T011x is T011
+    ("Logged-in browser sessions", ("ISR-S004",)),
+    ("Skills and templates", ("ISR-X001", "ISR-X002", "ISR-X003", "ISR-T001", "ISR-T002", "ISR-T003", "ISR-T004", "ISR-T005", "ISR-T006", "ISR-T007", "ISR-T008", "ISR-T018", "ISR-I001")),
+    ("Approvals and settings", ("ISR-A001", "ISR-A002", "ISR-A003", "ISR-A004", "ISR-A005", "ISR-C001", "ISR-C003", "ISR-C005")),
+    ("Bots, memories and routines", ("ISR-M010", "ISR-L001", "ISR-R002", "ISR-T013", "ISR-R011", "ISR-R012", "ISR-R013")),
+    ("Packages", ("ISR-D001",)),
+    ("Tripwires and history", ("ISR-K001", "ISR-K002", "ISR-K003", "ISR-K006", "ISR-H001", "ISR-H002", "ISR-H003", "ISR-H004", "ISR-H005", "ISR-H006", "ISR-H009")),
 ]
 
 

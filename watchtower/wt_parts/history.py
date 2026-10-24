@@ -26,18 +26,18 @@ def remember_events(new):
 # ---------------------------------------------------------------- shell history (closest thing to Action Recording)
 HISTORY_FILES = ("~/.bash_history", "~/.zsh_history", "~/.local/share/fish/fish_history", "~/.python_history")
 HISTORY_RULES = [
-    ("WT-H001", "Script piped into a shell from an unknown host", "high", ["ASI05", "AST02"],
+    ("ISR-H001", "Script piped into a shell from an unknown host", "high", ["ASI05", "AST02"],
      r"(curl|wget)[^\n|]{0,200}\|\s*(sudo\s+)?(ba|z)?sh\b"),
-    ("WT-H002", "Decoded payload executed", "critical", ["ASI05"], r"base64\s+(-d|--decode)[^\n]{0,80}\|\s*(ba|z)?sh|python3?\s+-c\s+['\"].{0,40}(exec|b64decode)"),
-    ("WT-H003", "Reverse shell pattern", "critical", ["ASI05", "ASI10"],
+    ("ISR-H002", "Decoded payload executed", "critical", ["ASI05"], r"base64\s+(-d|--decode)[^\n]{0,80}\|\s*(ba|z)?sh|python3?\s+-c\s+['\"].{0,40}(exec|b64decode)"),
+    ("ISR-H003", "Reverse shell pattern", "critical", ["ASI05", "ASI10"],
      r"(bash\s+-i\s*>&\s*/dev/tcp/|nc(at)?\s+[^\n]{0,40}-e\s|mkfifo\s+/tmp/[^\n]{0,60}\bnc\b|socat\s+[^\n]{0,60}exec:)"),
-    ("WT-H004", "Credential store read", "high", ["ASI03"],
+    ("ISR-H004", "Credential store read", "high", ["ASI03"],
      r"(cat|less|head|tail|cp|scp|base64)\s+[^\n]{0,40}(\.ssh/id_|\.aws/credentials|\.git-credentials|\.netrc|credentials\.json|cookie)"),
-    ("WT-H005", "File uploaded with curl", "high", ["ASI04"], r"curl\s[^\n]{0,200}(-d\s*@|--data(-binary)?\s*@|-F\s*\S*=@|-T\s)"),
-    ("WT-H006", "History tampering", "high", ["ASI10"], r"(history\s+-c|unset\s+HISTFILE|HISTFILE=/dev/null|>\s*~?/?\.?bash_history|shred\s+[^\n]*history)"),
-    ("WT-H007", "World-writable permissions", "medium", ["ASI03"], r"chmod\s+(-R\s+)?(0?777|a\+rwx|o\+w)\b"),
-    ("WT-H008", "New persistence added", "medium", ["ASI10"], r"(crontab\s+(-\s*$|-r|[^\s-])|>>\s*~?/?\.(bashrc|profile|zshrc)|systemctl\s+(--user\s+)?enable)"),
-    ("WT-H009", "Environment dumped to a file or the network", "high", ["ASI03"], r"\b(env|printenv|set)\s*(>|\|\s*(curl|nc|tee))"),
+    ("ISR-H005", "File uploaded with curl", "high", ["ASI04"], r"curl\s[^\n]{0,200}(-d\s*@|--data(-binary)?\s*@|-F\s*\S*=@|-T\s)"),
+    ("ISR-H006", "History tampering", "high", ["ASI10"], r"(history\s+-c|unset\s+HISTFILE|HISTFILE=/dev/null|>\s*~?/?\.?bash_history|shred\s+[^\n]*history)"),
+    ("ISR-H007", "World-writable permissions", "medium", ["ASI03"], r"chmod\s+(-R\s+)?(0?777|a\+rwx|o\+w)\b"),
+    ("ISR-H008", "New persistence added", "medium", ["ASI10"], r"(crontab\s+(-\s*$|-r|[^\s-])|>>\s*~?/?\.(bashrc|profile|zshrc)|systemctl\s+(--user\s+)?enable)"),
+    ("ISR-H009", "Environment dumped to a file or the network", "high", ["ASI03"], r"\b(env|printenv|set)\s*(>|\|\s*(curl|nc|tee))"),
 ]
 
 
@@ -53,7 +53,7 @@ def history_findings(rules):
         start = offsets.get(p, 0)
         if start > size:  # truncated or rotated
             start = 0
-            out.append(finding("WT-H006", HISTORY_SHRANK, "medium", ["ASI10"], p,
+            out.append(finding("ISR-H006", HISTORY_SHRANK, "medium", ["ASI10"], p,
                                f"{offsets.get(p)} → {size} bytes", "Something cleared or rotated the history. Confirm it was you."))
         with open(p, "r", encoding="utf-8", errors="replace") as f:
             f.seek(start)
@@ -64,7 +64,7 @@ def history_findings(rules):
             line = re.sub(r"^: \d+:\d+;", "", line)  # zsh extended history prefix
             for rid, title, sev, owasp, rx in compiled:
                 if rx.search(line):
-                    if rid == "WT-H001" and known_installer(line):
+                    if rid == "ISR-H001" and known_installer(line):
                         continue
                     legacy = secret.sub(lambda m: mask(m.group(0)), line)   # the key, as before (finding() cuts it to 160)
                     # Codex, batch 4 round 1: what is stored is masked from the raw line, so a private key's body is hidden before

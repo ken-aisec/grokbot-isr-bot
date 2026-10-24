@@ -436,12 +436,12 @@ class IgnoredPackets(_Keys):
         out["public then secret"] = public_packet() + sk
         return out
 
-    def test_a_secret_key_behind_an_ignored_packet_is_real(self):   # replay (a3e535e: WT-T011x, "isn't a real key")
+    def test_a_secret_key_behind_an_ignored_packet_is_real(self):   # replay (a3e535e: ISR-T011x, "isn't a real key")
         for name, raw in self.packets().items():
-            # WT-T011's pattern names labels ending in PRIVATE KEY; the verdict reads the body alone, so the same packets in a
+            # ISR-T011's pattern names labels ending in PRIVATE KEY; the verdict reads the body alone, so the same packets in a
             # PRIVATE KEY block are what it judges, and the PGP armor is what secret_kind judges
             got = t011("Key:\n" + pem("", raw))
-            self.assertEqual([(f["rule"], f["severity"]) for f in got], [("WT-T011", "critical")], name)
+            self.assertEqual([(f["rule"], f["severity"]) for f in got], [("ISR-T011", "critical")], name)
             self.assertNotIn(NOTE, got[0]["fix"], name)
             block = pgp_armor(raw)
             self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real", name)
@@ -451,7 +451,7 @@ class IgnoredPackets(_Keys):
         p = self.put("projects/app/release.asc", block)
         self.leak(p, block.rstrip("\n"), rule="private-key")
         fs, _ = self.scan()
-        got = [f for f in self.keys(fs, p) if f["rule"] == "WT-S002"]
+        got = [f for f in self.keys(fs, p) if f["rule"] == "ISR-S002"]
         self.assertEqual(len(got), 1, got)
         self.assertNotIn(NOTE, got[0]["fix"])
         self.assertEqual(wt.plain(got[0])["title"], "Keys left in files")
@@ -496,7 +496,7 @@ class IgnoredPackets(_Keys):
         raw = b"\x99\xff\xff" + secret_packet()   # a public header declaring 65,535 bytes, then the secret-key packet
         self.assertIsNone(wt.pgp_packets(raw))
         got = t011("Key:\n" + pem("", raw))
-        self.assertEqual([(f["rule"], f["severity"]) for f in got], [("WT-T011", "critical")])
+        self.assertEqual([(f["rule"], f["severity"]) for f in got], [("ISR-T011", "critical")])
         self.assertNotIn(NOTE, got[0]["fix"])
         block = pgp_armor(raw)
         self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real")
@@ -506,7 +506,7 @@ class IgnoredPackets(_Keys):
         raw = old_packet(6, fields + secret_packet())   # its declared length is exact; the secret packet rides in its payload
         self.assertIsNone(wt.pgp_packets(raw))
         got = t011("Key:\n" + pem("", raw))
-        self.assertEqual([(f["rule"], f["severity"]) for f in got], [("WT-T011", "critical")])
+        self.assertEqual([(f["rule"], f["severity"]) for f in got], [("ISR-T011", "critical")])
         self.assertNotIn(NOTE, got[0]["fix"])
         block = pgp_armor(raw)
         self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real")
@@ -567,7 +567,7 @@ class IgnoredPackets(_Keys):
             with self.subTest(name):
                 self.assertIsNone(wt.pgp_packets(raw), name)
                 got = t011("Key:\n" + pem("", raw))
-                self.assertEqual([(f["rule"], f["severity"]) for f in got], [("WT-T011", "critical")], name)
+                self.assertEqual([(f["rule"], f["severity"]) for f in got], [("ISR-T011", "critical")], name)
                 self.assertFalse(NOTE in got[0]["fix"], f"noted as an example: {name}")
                 block = pgp_armor(raw)
                 self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real", name)

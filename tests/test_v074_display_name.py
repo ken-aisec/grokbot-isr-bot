@@ -1,5 +1,5 @@
 """v0.7.4, the display rename (owner decisions, Oct 22 and Oct 23): the product is called ISR Bot in display text only. Paths, the repo,
-WATCHTOWER_*, wt.py, the WT-* IDs, the watchtower-* slugs, state and report file names, JSON keys and code identifiers keep the old
+WATCHTOWER_*, wt.py, the ISR-* IDs, the watchtower-* slugs, state and report file names, JSON keys and code identifiers keep the old
 name, and so does every engine string listed in ALLOWED below, each with its reason (docs/KNOWN-LIMITS.md "v0.7.4").
 
 Guards: no other engine string, prose file or script message says Watchtower; the name is always written ISR Bot and the first
@@ -19,30 +19,30 @@ NAME = "ISR Bot"
 OLD = "Watchtower"
 # Engine string constants (not docstrings) that keep the old name, by file and exact value.
 ALLOWED = {
-    ("wt.py", "Watchtower rules"): "engine label: the WT-* rule set's name in engines_used.json and the score fingerprint (decision 1)",
+    ("wt.py", "Watchtower rules"): "engine label: the ISR-* rule set's name in engines_used.json and the score fingerprint (decision 1)",
     ("audit.py", "Watchtower rules"): "engine label (decision 1): renaming it prints a false SCANNERS MISSING after the upgrade",
     ("approved.py", "Watchtower rules"): "engine label (decision 1): revet's checked_by",
-    ("engines.py", "Watchtower"): "engine label (decision 1): in the WT-X003 agreement evidence, part of its finding key",
+    ("engines.py", "Watchtower"): "engine label (decision 1): in the ISR-X003 agreement evidence, part of its finding key",
     ("brief.py", "Watchtower/"): "the User-Agent token Watchtower/<version> (decision 2): a token can't hold spaces",
     ("wt.py", "Watchtower daily watch"): "LEGACY_ROUTINE_NAMES: routines set up before 0.7.4",
     ("wt.py", "Watchtower weekly audit"): "LEGACY_ROUTINE_NAMES",
     ("wt.py", "Watchtower weekly tidy"): "LEGACY_ROUTINE_NAMES",
     ("wt.py", "Watchtower monthly roll-call"): "LEGACY_ROUTINE_NAMES",
     ("plugins.py", "You are Watchtower"): "the legacy getting-started marker: a copy saved before 0.7.4 is still reported as older",
-    ("canaries.py", ", during a recorded Watchtower run ("): "WT-K005 evidence: part of its finding key (no ident)",
+    ("canaries.py", ", during a recorded Watchtower run ("): "ISR-K005 evidence: part of its finding key (no ident)",
     ("scanners.py", "Watchtower's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run"):
-        "WT-X005 evidence (a scanner held as changed): part of its finding key (v0.7.4 golden)",
+        "ISR-X005 evidence (a scanner held as changed): part of its finding key (v0.7.4 golden)",
     ("scanners.py", "its program file isn't the one Watchtower installed"):
-        "WT-X005 evidence (a scanner held as changed): part of its finding key (v0.7.4 golden)",
+        "ISR-X005 evidence (a scanner held as changed): part of its finding key (v0.7.4 golden)",
     ("settings_lint.py", "Ask-first rules with no word Watchtower reads in any of its languages"):
-        "the WT-A003 Tip's evidence: part of its key, and ask_first_unread compares stored tips with it",
+        "the ISR-A003 Tip's evidence: part of its key, and ask_first_unread compares stored tips with it",
     ("audit.py", "Watchtower's own tools"): "a stage name: the key of stage_times.json and stages_skipped (fix round 1, Codex MED1)",
     ("engines.py", "Watchtower's own tools"): "STAGE_LABELS: that stage key, shown in prose as ISR Bot's own tools",
 }
 # A fragment of a longer constant: the gitleaks config's description, which gitleaks reads and nobody sees (decision 3).
 ALLOWED_FRAGMENTS = {("secrets_pkgs.py", 'description = "Watchtower: package caches, lockfiles, headers and its own state"'): "decision 3"}
 # Lowercase forms of the new name that code compares with
-LOWERCASE_OK = {("prepublish.py", "isr bot"): "no WT-PP08 for the name in an unchanged copy of its own template files",
+LOWERCASE_OK = {("prepublish.py", "isr bot"): "no ISR-PP08 for the name in an unchanged copy of its own template files",
                 ("plugins.py", "isr bot"): "UPDATE_NAMES: a brief's update named ISR Bot"}
 # The only places prose may still say Watchtower
 PROSE_PHRASES = ("(the engine and its files keep the name Watchtower)", "(older installs: the Watchtower names the command lists)")
@@ -51,7 +51,7 @@ CARD_DESCRIPTION = ("A read-only security officer for the shared computer your G
 MEMORY_9 = ("If any ISR Bot command prints SELF-CHECK FAILED, stop and tell the owner at once: ISR Bot's own files "
             "changed. Don't run it again until they reinstall it from the release.")
 MEMORY_10 = ("You are ISR Bot, the security officer for this Grok Bot roster. Your engine and files keep their original folder "
-             "names: /workspace/watchtower, wt.py, the watchtower-* skill files and WT-* rule IDs. Never rename or move them; updates "
+             "names: /workspace/watchtower, wt.py, the watchtower-* skill files and ISR-* rule IDs. Never rename or move them; updates "
              "expect those paths. Keep it cheap: one pass over script output per run, short replies, no narration of tool calls. "
              "Roll-call is off unless the owner asks for it.")
 SKILLS_LINE = ("Every skill's full text is on this page's Skills tab and at "
@@ -185,13 +185,17 @@ def without_v074_blocks(rel, t):
 # so line numbers hold. A1: a rule ID (ISR, a hyphen, an uppercase letter), any file. A2: the bare rule prefix "ISR-" as a
 # string literal, only in the two name table files. B: the file name isr.py, plain or regex-escaped, any file. A5 (Codex r2
 # HIGH 1): the exact new values the name table holds that the guard would reject, as they are written there, only there (one
-# is d2's old value, the alias line d1 writes).
+# is d2's old value, the alias line d1 writes). A3 (unit b): ISR, a hyphen and then {, [ or *: the f-string rebuild f"ISR-{…}",
+# a regex class ISR-[A-Z] and the glob ISR-*, any file. A4 (unit b): exact lowercase strings, each only in the file of that
+# basename: canonical_rule's case-insensitive regex in baseline.py, and the typed IDs test_hardening_batch1.py feeds it.
 NAME_RX = re.compile(r"(?i)\bisr\b(?![\s_-]*bot\b)|\bisr[\s_-]+bot[\s_-]+bot\b")   # no lone ISR as the name, no ISR Bot Bot
 RENAME_TABLE = "tests/golden_rename_v080.json"
 A1 = re.compile(r"ISR(?=-[A-Z])")
 A2 = re.compile(r'"ISR-"')
 A2_FILES = (RENAME_TABLE, "tests/rename_v080.py")
 B = re.compile(r"isr\\?\.py\b")
+A3 = re.compile(r"ISR(?=-[{\[*])")
+A4 = {"baseline.py": ("(?i)isr-(",), "test_hardening_batch1.py": ("isr-t006k", "isr-t001R", "isr-k001", "isr-wsg")}
 A5 = ('"(?i)isr-("', '"isr-t006k"', '"isr-t001R"', '"isr-k001"', '"isr-wsg"', '"(isr|isr_parts/"', '"/isr_bot/(isr|isr_parts/"',
       r'"isr\\.py"', r'"isr\\\\.py"', '"isr."', r'"isr\\1"', '"import isr"', '"import isr as wt"', r'"\\1import isr as wt"',
       r'"\\nimport isr as wt\\n"', r'"; import isr as wt\\n"', r'"\\1\\2\\3\\nimport isr  # noqa: E402"',
@@ -199,7 +203,8 @@ A5 = ('"(?i)isr-("', '"isr-t006k"', '"isr-t001R"', '"isr-k001"', '"isr-wsg"', '"
 
 
 def blank(rel, text):
-    spans = [m.span() for rx in (A1, B) for m in rx.finditer(text)]
+    spans = [m.span() for rx in (A1, A3, B) for m in rx.finditer(text)]
+    spans += [m.span() for s in A4.get(os.path.basename(rel), ()) for m in re.finditer(re.escape(s), text)]
     if rel in A2_FILES:
         spans += [m.span() for m in A2.finditer(text)]
     if rel == RENAME_TABLE:
@@ -262,6 +267,25 @@ class NeverShortened(unittest.TestCase):
             for near in (s[:-1] + ' x"', '"x ' + s[1:], s[1:-1], "'" + s[1:-1] + "'"):
                 self.assertNotEqual(name_hits(RENAME_TABLE, "  " + near + ",\n"), [], (s, near))
 
+    def test_allowances_rule_prefix_patterns(self):   # bounds (v0.8.0 unit b): A3 and A4, both sides, on synthetic text
+        for rel in ("README.md", "bot/memories.md", "data.json", "tests/test_x.py", "scripts/x.sh", "engine/baseline.py",
+                    "tests/test_hardening_batch1.py"):
+            for text in ("the ISR-* rule IDs", 'f"ISR-{x}"', r're.fullmatch(r"ISR-[A-Z]\d{3}", rule)'):
+                self.assertEqual(name_hits(rel, text), [], (rel, text))
+            for text in ("ISR-?", '"ISR-?"', "ISR- and the letters", "ISR-(", "ISR-]", "ISR -*", "ISR-\n{"):
+                self.assertNotEqual(name_hits(rel, text), [], (rel, text))
+        for base, strings in A4.items():
+            for rel in ("engine/" + base, "tests/" + base):
+                for s in strings:
+                    self.assertEqual(name_hits(rel, f'x = "{s}"\n'), [], (rel, s))
+        for rel, s in (("tests/test_x.py", "isr-t006k"), ("engine/text.py", "isr-k001"), ("README.md", "isr-wsg"),
+                       ("data.json", "isr-t001R"), ("tests/test_hardening_batch1.json", "isr-k001"),
+                       ("engine/baseline.py", "isr-t006k"), ("tests/test_hardening_batch1.py", "isr-x001"),
+                       ("tests/test_hardening_batch1.py", "isr-t006K"), ("tests/test_hardening_batch1.py", "(?i)isr-("),
+                       ("engine/scope.py", "(?i)isr-("), ("docs/baseline.md", "(?i)isr-("), ("engine/baseline.py", "(?i)isr-x"),
+                       ("engine/baseline.py", "isr-(")):
+            self.assertNotEqual(name_hits(rel, f'x = "{s}"\n'), [], (rel, s))
+
 
 TITLE_COLUMNS = (48, 60)   # wt.py breakdown cuts finding titles at these widths
 
@@ -292,7 +316,7 @@ def titles_with_the_name():
     for p in engine_files():
         for n in ast.walk(ast.parse(read(p), filename=p)):
             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "finding" and len(n.args) > 1:
-                rule = n.args[0].value if isinstance(n.args[0], ast.Constant) else "WT-?"
+                rule = n.args[0].value if isinstance(n.args[0], ast.Constant) else "ISR-X000"
                 out += [(rule, os.path.basename(p), t) for t in renderings(n.args[1]) if NAME in t]
     out += [(rid, "prepublish.py", t) for rid, t, *_ in wt.PREPUB_RULES if NAME in t]
     out += [(r["id"], "rules", r["title"]) for r in wt.load_rules()["rules"] if NAME in str(r.get("title", ""))]
@@ -379,7 +403,7 @@ class RenderedTitles(_Box):
 
     def cut(self, text):
         """Every place an "ISR" isn't the start of the whole name: a cut "ISR Bo", "ISR B", "ISR"."""
-        return [text[max(0, m.start() - 30):m.start() + 20] for m in re.finditer("ISR", text) if not text.startswith(NAME, m.start())]
+        return [text[max(0, m.start() - 30):m.start() + 20] for m in re.finditer(r"ISR(?!-[A-Z])", text) if not text.startswith(NAME, m.start())]
 
     def test_breakdown_and_the_report_never_cut_it(self):   # replay (cffd4b7: the first 0.7.4 name was cut in breakdown)
         p = os.path.join(self.home, ".grok", "bundled", "manifest.json")
@@ -405,27 +429,27 @@ class Prepublish(_Box):
     # v0.7.4 fix round 1 (Codex MED3): no global exemption for the new name. Only an unchanged copy of this install's own template
     # files may say ISR Bot while it is on the roster (wt.own_release_digests); any other text naming it is flagged. The owner's
     # decision (Oct 23): exempt only those exact files, for the name ISR Bot.
-    def test_the_templates_own_name_is_no_roster_name(self):   # replay (accbe5e: a WT-PP08 high)
+    def test_the_templates_own_name_is_no_roster_name(self):   # replay (accbe5e: a ISR-PP08 high)
         self.roster("ISR Bot", "bot-a")
         code, r = self.prepublish({"routine-x.md": os.path.join(ROOT, "routines", "daily-watch.md")})
-        self.assertEqual([f for f in r["findings"] if f["rule"] == "WT-PP08"], [])
+        self.assertEqual([f for f in r["findings"] if f["rule"] == "ISR-PP08"], [])
         self.assertEqual((code, r["verdict"]), (0, "PASS"))
 
     def test_another_bots_name_is_still_flagged(self):   # guard
         self.roster("ISR Bot", "bot-a")
         code, r = self.prepublish({"routine-x.md": "ISR Bot reports to bot-a. Never send without my approval.\n"})
-        self.assertEqual(sorted(f["evidence"] for f in r["findings"] if f["rule"] == "WT-PP08"), ["ISR Bot", "bot-a"])
+        self.assertEqual(sorted(f["evidence"] for f in r["findings"] if f["rule"] == "ISR-PP08"), ["ISR Bot", "bot-a"])
 
     def test_the_name_in_any_other_text_is_flagged(self):   # replay (cffd4b7: the new name was skipped everywhere)
         self.roster("ISR Bot", "bot-a")
         edited = read("routines", "daily-watch.md").replace("ISR Bot", "ISR Bot (ours)", 1)
         code, r = self.prepublish({"routine-x.md": "ISR Bot watches this computer. Never send without my approval.\n",
                                    "routine-y.md": edited})
-        self.assertEqual(sorted({f["where"].rsplit("/", 1)[1].split(":")[0] for f in r["findings"] if f["rule"] == "WT-PP08"}),
+        self.assertEqual(sorted({f["where"].rsplit("/", 1)[1].split(":")[0] for f in r["findings"] if f["rule"] == "ISR-PP08"}),
                          ["routine-x.md", "routine-y.md"])
         self.assertEqual((code, r["verdict"]), (1, "FAIL"))
 
-    def test_the_release_bundle_with_its_card_passes_with_itself_on_the_roster(self):   # replay (accbe5e: WT-PP08 on the card)
+    def test_the_release_bundle_with_its_card_passes_with_itself_on_the_roster(self):   # replay (accbe5e: ISR-PP08 on the card)
         self.roster("ISR Bot", "bot-a")
         files = {fn: os.path.join(ROOT, "bot", fn) for fn in ("card.json", "description.md", "memories.md", "getting-started.md")}
         files.update({"skill-" + os.path.basename(os.path.dirname(p)) + ".md": p for p in glob.glob(os.path.join(ROOT, "skills", "*", "SKILL.md"))})
@@ -437,7 +461,7 @@ class Prepublish(_Box):
     # self-check checked (wt.release_manifest) lists for bot/*, routines/* or skills/*/SKILL.md
     def flagged(self, files):
         code, r = self.prepublish(files)
-        return sorted({f["where"].rsplit("/", 1)[1].split(":")[0] for f in r["findings"] if f["rule"] == "WT-PP08" and f["evidence"] == NAME})
+        return sorted({f["where"].rsplit("/", 1)[1].split(":")[0] for f in r["findings"] if f["rule"] == "ISR-PP08" and f["evidence"] == NAME})
 
     def raw(self):
         with open(os.path.join(ROOT, "routines", "daily-watch.md"), "rb") as f:

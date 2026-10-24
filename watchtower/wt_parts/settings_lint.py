@@ -45,12 +45,12 @@ def hook_findings(roots, inv):
                 continue
             there = "is there now" if os.path.exists(m.group(0)) else "is not there now, so whatever is put there runs"
             if c.strip() in PLATFORM_HOOKS and "/plugins/" not in p:
-                out.append(finding("WT-C005", "The platform's own hook runs a script from a shared temp folder", "low", ["ASI05", "ASI10"], p,
+                out.append(finding("ISR-C005", "The platform's own hook runs a script from a shared temp folder", "low", ["ASI05", "ASI10"], p,
                                    f"{c[:90]} ({there})", "This hook came with the computer and you can't change it. Every Bot can write to that folder, so a "
                                    "Bot that was tricked could plant the script. It's listed so you know; it is worth reporting to the platform.", ident=c))
                 out[-1]["platform_hook"] = True   # Decision, Oct 13: shown in the Platform section, not scored
             else:
-                out.append(finding("WT-C005", "A hook runs a script from a folder every Bot can write to", "high", ["ASI05", "ASI10"], p,
+                out.append(finding("ISR-C005", "A hook runs a script from a folder every Bot can write to", "high", ["ASI05", "ASI10"], p,
                                    f"{c[:90]} ({there})", "Find out what added this hook. If it isn't yours, remove it from that file; if it is, move the "
                                    "script somewhere only you write to.", ident=c))
     return out
@@ -188,10 +188,10 @@ ASK_UNREAD_EVIDENCE = "Ask-first rules with no word Watchtower reads in any of i
 
 
 def ask_first_unread(f):
-    """The WT-A003 Tip about the rules' language (B4). Fix round 1 (Codex 5): it is added beside the counted medium, never
+    """The ISR-A003 Tip about the rules' language (B4). Fix round 1 (Codex 5): it is added beside the counted medium, never
     instead of it, and its evidence names no area, so it can never be the medium (whose evidence is the missing areas) and
     never makes an area look covered (ask_first_covered)."""
-    return f["rule"] == "WT-A003" and f.get("ask_first_unread") is True and f.get("evidence") == ASK_UNREAD_EVIDENCE
+    return f["rule"] == "ISR-A003" and f.get("ask_first_unread") is True and f.get("evidence") == ASK_UNREAD_EVIDENCE
 
 
 # Only real paths/URLs/filenames: slash-joined words like pay/transfer or send/post are the actions themselves.
@@ -218,7 +218,7 @@ def accepted_auto_allow():
     out = {}
     data = load_json_regular(state_path("accepted_auto_allow.json"), [])
     for e_ in data if isinstance(data, list) else []:
-        if isinstance(e_, dict) and isinstance(e_.get("sha256"), str) and e_.get("rule", "WT-A002") == "WT-A002":
+        if isinstance(e_, dict) and isinstance(e_.get("sha256"), str) and e_.get("rule", "ISR-A002") == "ISR-A002":
             out[e_["sha256"].lower()] = e_.get("label", "accepted by owner")
     return out
 
@@ -238,21 +238,21 @@ def lint_auto_review(text, where, check_missing=True):
         broad_l = ASK_FIRST_CLAUSE.sub(" ", l)
         wild_obj = any("*" in m.group(0) for m in RULE_OBJECTS.finditer(ASK_FIRST_CLAUSE.sub(" ", raw)))
         if re.search(r"(?i)allow\s+automatically", l) and (wild_obj or re.search(r"(?i)\b(everything|anything|all|any)\b|\*|browser|all\s+commands", broad_l)):
-            out.append(finding("WT-A001", "Broad Allow-automatically rule", "critical", ["ASI03", "ASI09"], f"{where}:{i}", raw,
+            out.append(finding("ISR-A001", "Broad Allow-automatically rule", "critical", ["ASI03", "ASI09"], f"{where}:{i}", raw,
                                "Delete it. xAI's docs: avoid rules like 'allow everything in the browser'; keep allow rules to one command in one folder."))
         if re.search(r"(?i)allow\s+automatically", l) and re.search(r"(?i)\b(send|sending|sends|email|emails|post|posts|posting|publish\w*|purchase\w*|pay|pays|paying|payments?|delete\w*|transfer\w*|permissions?)\b", l):
-            out.append(finding("WT-A002", "Auto-allow on a consequential action", "critical", ["ASI02", "ASI09"], f"{where}:{i}", raw,
+            out.append(finding("ISR-A002", "Auto-allow on a consequential action", "critical", ["ASI02", "ASI09"], f"{where}:{i}", raw,
                                "Change it to Ask first. Sending, paying, publishing and deleting always need your yes."))
             fp = auto_allow_fingerprint(raw)
             out[-1]["fingerprint"] = fp
             if fp in accepted:   # still critical; active() files it under accepted risks so it shows, but doesn't count
                 out[-1]["accepted_exact"] = {"sha256": fp, "label": accepted[fp]}
         if re.search(r"(?i)allow\s+automatically", l) and re.search(r"(?i)(automation|routine|schedul|cron|trigger|create\s+(a\s+)?skill|install|plugin|connector)", l):
-            out.append(finding("WT-A004", "Auto-allow on creating automations or installs", "high", ["ASI10", "ASI03"], f"{where}:{i}", raw[:140],
+            out.append(finding("ISR-A004", "Auto-allow on creating automations or installs", "high", ["ASI10", "ASI03"], f"{where}:{i}", raw[:140],
                                "Change it to Ask first. Anything that creates a routine or installs code can give injected text a way to run again later, unattended."))
     missing = ask_first_gaps("\n".join(lines)) if check_missing else []
     if missing:
-        out.append(finding("WT-A003", "Missing Ask-first rules", "medium", ["ASI09"], where, ", ".join(missing),
+        out.append(finding("ISR-A003", "Missing Ask-first rules", "medium", ["ASI09"], where, ", ".join(missing),
                            "Add Ask-first rules in Settings → General → Auto-review for: " + ", ".join(missing) + "."))
     return out
 
@@ -274,7 +274,7 @@ def note_earlier_auto_allow(prev, live):
     have = {e_["sha256"] for e_ in earlier}
     added = 0
     for f in list((prev or {}).get("findings") or []) + list((prev or {}).get("suppressed") or []):
-        acc = f.get("accepted_exact") if isinstance(f, dict) and f.get("rule") == "WT-A002" else None
+        acc = f.get("accepted_exact") if isinstance(f, dict) and f.get("rule") == "ISR-A002" else None
         fp = acc.get("sha256") if isinstance(acc, dict) else None
         if isinstance(fp, str) and fp not in kept and fp not in have:
             earlier.append({"sha256": fp, "label": str(acc.get("label", ""))[:80], "where": str(f.get("where", "")), "captured_at": now()})
@@ -283,7 +283,7 @@ def note_earlier_auto_allow(prev, live):
     if added:
         save_json_keep_mode(state_path(EARLIER_AUTO_ALLOW), earlier)
     for f in live:
-        if f["rule"] == "WT-A002" and f.get("fingerprint") in have:
+        if f["rule"] == "ISR-A002" and f.get("fingerprint") in have:
             f["fix"] = ("ISR Bot used to accept this exact line for you. It needs your yes once more: say \"keep it\" and ISR Bot runs "
                         f"`wt.py auto-allow keep {f['fingerprint']} --owner-said-yes`. Otherwise change it to Ask first.")
 
@@ -306,7 +306,7 @@ def auto_allow_lines():
     out, seen = [], set()
     for where, text in srcs:
         for i, raw in enumerate(rule_entries(text), 1):   # a native entry stays whole, so `keep` covers every line the owner is shown
-            if any(f["rule"] == "WT-A002" for f in lint_auto_review([raw], where, check_missing=False)):
+            if any(f["rule"] == "ISR-A002" for f in lint_auto_review([raw], where, check_missing=False)):
                 fp = auto_allow_fingerprint(raw)
                 if fp not in seen:
                     seen.add(fp)
@@ -360,7 +360,7 @@ def cmd_auto_allow(args):
     data = data if isinstance(data, list) else []
     new = [x for fp, x in picked.items() if fp not in kept]
     for x in new:
-        data.append({"rule": "WT-A002", "sha256": x["sha256"], "label": exact_line(x["line"])[:80], "accepted": f"owner, {dt.date.today().isoformat()}",
+        data.append({"rule": "ISR-A002", "sha256": x["sha256"], "label": exact_line(x["line"])[:80], "accepted": f"owner, {dt.date.today().isoformat()}",
                      "reason": (args.reason or "")[:200]})
     if new:
         save_json_keep_mode(state_path("accepted_auto_allow.json"), data)
@@ -374,15 +374,15 @@ def lint_settings(s, where):
     out = []
     le = str(s.get("local_execution", "")).lower()
     if le in ("always", "always allow", "always_allow"):
-        out.append(finding("WT-C001", "Local-computer execution set to Always allow", "critical", ["ASI03", "ASI05"], where, le,
+        out.append(finding("ISR-C001", "Local-computer execution set to Always allow", "critical", ["ASI03", "ASI05"], where, le,
                            "Settings → General → Bot → Execution on Local Computer → Never allow (xAI's own recommendation)."))
     elif le in ("ask", "ask every time"):
-        out.append(finding("WT-C002", "Running commands on this computer asks you first each time", "low", ["ASI03"], where, le,
+        out.append(finding("ISR-C002", "Running commands on this computer asks you first each time", "low", ["ASI03"], where, le,
                            "That's a safe setting; if you never use it, Never allow is safer still."))   # a Tip (B3: SETTING_TIPS)
     if s.get("auto_review") is False:
-        out.append(finding("WT-C003", "Auto Review is off", "high", ["ASI09"], where, "auto_review=false",
+        out.append(finding("ISR-C003", "Auto Review is off", "high", ["ASI09"], where, "auto_review=false",
                            "Turn it on in Settings → General → Auto-review. It is fallible, but it is the only inline check."))
     for c in s.get("unused_connectors", []):
-        out.append(finding("WT-C004", "Connector installed but unused", "low", ["ASI03"], where, c,
+        out.append(finding("ISR-C004", "Connector installed but unused", "low", ["ASI03"], where, c,
                            "Uninstall it and revoke its authorization in the source service."))
     return out

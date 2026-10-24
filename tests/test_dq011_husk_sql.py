@@ -34,7 +34,7 @@ class FakeHusk(Box):
         return d
 
     def engine_rules(self, d):
-        return [(f["rule"], f["severity"]) for f in self.snap()["findings"] if f["where"].startswith(d) and f["rule"].startswith("WT-X")]
+        return [(f["rule"], f["severity"]) for f in self.snap()["findings"] if f["where"].startswith(d) and f["rule"].startswith("ISR-X")]
 
     def watchlist(self):
         return ["# filler"] * 59 + [WATCHLIST_60, '    return f"topic-digest: {new} new findings"']
@@ -44,14 +44,14 @@ class FakeHusk(Box):
         self.scanners(husk=self.husk({"topic-digest": [MSG_RETURN]})); self.audit()
         cache = wt.load_json(wt.state_path("engine_cache.json"), {})
         self.assertEqual(cache[d]["hk"], [MSG_RETURN])          # husk really ran and said it; the answer is kept as husk gave it
-        self.assertEqual(self.engine_rules(d), [])               # v0.6.7: WT-X002 "husk flagged this skill"
+        self.assertEqual(self.engine_rules(d), [])               # v0.6.7: ISR-X002 "husk flagged this skill"
 
     def test_a_query_passed_to_execute_still_counts(self):
         d = self.skill("topic-digest", {"scripts/watchlist.py": self.watchlist(),
                                       "scripts/store.py": ["import sqlite3", "def bump(c, t, v):",
                                                            '    c.execute(f"UPDATE {t} SET seen = 1 WHERE id = {v}")']})
         self.scanners(husk=self.husk({"topic-digest": [MSG_RETURN, MSG_EXECUTE]})); self.audit()
-        x2 = [f for f in self.snap()["findings"] if f["where"].startswith(d) and f["rule"] == "WT-X002"]
+        x2 = [f for f in self.snap()["findings"] if f["where"].startswith(d) and f["rule"] == "ISR-X002"]
         self.assertEqual(len(x2), 1)
         self.assertIn("store.py", x2[0]["evidence"])             # the real one leads; the chat message is gone
 
@@ -59,13 +59,13 @@ class FakeHusk(Box):
         msg = MSG_RETURN.replace("watchlist.py", "query.py").replace("Line 60", "Line 2")
         d = self.skill("topic-digest", {"scripts/query.py": ["def q(t, v):", '    return f"UPDATE {t} SET name = \'{v}\'"']})
         self.scanners(husk=self.husk({"topic-digest": [msg]})); self.audit()
-        self.assertIn("WT-X002", [r for r, _ in self.engine_rules(d)])
+        self.assertIn("ISR-X002", [r for r, _ in self.engine_rules(d)])
 
     def test_a_query_split_over_lines_still_counts(self):
         msg = MSG_RETURN.replace("watchlist.py", "query.py").replace("Line 60", "Line 2")
         d = self.skill("topic-digest", {"scripts/query.py": ["def q(t):", '    return (f"SELECT * "', '            f"FROM {t}")']})
         self.scanners(husk=self.husk({"topic-digest": [msg]})); self.audit()
-        self.assertIn("WT-X002", [r for r, _ in self.engine_rules(d)])
+        self.assertIn("ISR-X002", [r for r, _ in self.engine_rules(d)])
 
     def test_a_message_without_file_and_line_is_kept(self):
         self.assertEqual(wt.husk_messages_that_count("/nowhere", ["obfuscated loader", "flagged (3 issues)"]),

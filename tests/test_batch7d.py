@@ -26,12 +26,12 @@ def unread(label, at):
 
 
 class EmptyCommand(unittest.TestCase):
-    def test_codex_example_with_an_empty_command(self):   # replay (staged: no WT-M001 for each)
+    def test_codex_example_with_an_empty_command(self):   # replay (staged: no ISR-M001 for each)
         for head in (("timeout", "30"), ("nice",), ("nice", "-n", "5"), PIN):
             with self.subTest(head=head):
                 self.assertEqual(evidence(servers(head + EMPTY)), [unread("npm exec", ""), unread("npm exec", "npx -y mutable")])
 
-    def test_an_empty_command_after_wrappers_and_at_the_top(self):   # replay (staged: no WT-M001 for each)
+    def test_an_empty_command_after_wrappers_and_at_the_top(self):   # replay (staged: no ISR-M001 for each)
         for cmd, want in ((("timeout", "30", "", "-c", "x"), unread("(command)", "")),
                           (("env", "A=1", "", "x"), unread("(command)", "")),
                           (("nice", "-n", "5", "", "x"), unread("(command)", "")),
@@ -46,12 +46,12 @@ class LineContinuation(unittest.TestCase):
     CONTINUED = ("true\nn\\\npx -y mutable", "n\\\npx -y mutable", "timeout 30 n\\\npx -y mutable",
                  "npm exec --package=npm@11.21.0 -- n\\\npx -y mutable", "true\r\nn^\r\npx -y mutable", "true\nn`\npx -y mutable")
 
-    def test_a_continued_line_at_the_top(self):   # replay (staged: no WT-M001 for each)
+    def test_a_continued_line_at_the_top(self):   # replay (staged: no ISR-M001 for each)
         for cmd in self.CONTINUED:
             with self.subTest(cmd=cmd):
                 self.assertEqual(evidence(servers((cmd,))), [unread("(command)", cmd)])
 
-    def test_a_continued_line_in_a_plugin_hook(self):   # replay (staged: no WT-M001); the audit reads plugin files with mcp_unpinned
+    def test_a_continued_line_in_a_plugin_hook(self):   # replay (staged: no ISR-M001); the audit reads plugin files with mcp_unpinned
         cmd = self.CONTINUED[0]
         text = json.dumps({"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": cmd}]}]}}, indent=2)
         self.assertEqual(evidence(text), [unread("(command)", cmd)])

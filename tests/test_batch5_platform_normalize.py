@@ -4,7 +4,7 @@ d3a: an unverified metadata JSON is still a counted high, with honest wording: t
 when a Watchtower release lists the version. d3b (decision 3, Oct 18): rules/platform-normalize.json names fields the sync
 rewrites; the release list holds the digest of the file without them. The shipped spec is EMPTY, so nothing changes until a spike
 proves which fields are unused; these tests use a spec of their own. A file read strictly (no duplicate keys, NaN, BOM, link or
-oversize) with only those fields changed is a Platform refresh Tip; any other change stays a counted WT-I001.
+oversize) with only those fields changed is a Platform refresh Tip; any other change stays a counted ISR-I001.
 
 "replay" tests fail on 151e40c on their assertion; "guard" tests keep real changes counted.
 
@@ -74,7 +74,7 @@ class MetadataWording(_Meta):
         was = wt.sha256_file(self.p)
         self.write(text(dict(V1, generated_at="2026-10-18T08:00:00Z")))
         self.audit()
-        i1 = [f for f in self.mine() if f["rule"] == "WT-I001"]
+        i1 = [f for f in self.mine() if f["rule"] == "ISR-I001"]
         self.assertEqual([(f["severity"], wt.counts(f)) for f in i1 if wt.counts(f)], [])   # b8i4: the middle path's quiet line
         self.assertNotIn(self.p, wt.VERIFIED_METADATA)                         # not compared with the released version
         held = wt.unverified_platform_finding(self.p, wt.sha256_file(self.p), was)   # the wording a held version gets
@@ -88,7 +88,7 @@ class MetadataWording(_Meta):
         self.skills(1)
         self.write(text(V1))
         self.audit()
-        i2 = [f for f in self.mine() if f["rule"] == "WT-I002"]
+        i2 = [f for f in self.mine() if f["rule"] == "ISR-I002"]
         self.assertEqual([(f["severity"], wt.counts(f)) for f in i2], [("high", True)])
         self.assertTrue(i2[0]["title"].startswith("ISR Bot's release list doesn't have Grok Bot's new list of what it loads"))
 
@@ -99,7 +99,7 @@ class MetadataWording(_Meta):
         with open(q, "w") as f:
             f.write("---\nname: learn\n---\nLearn.\n")
         self.audit()
-        i2 = [f for f in self.snap()["findings"] if f["where"] == q and f["rule"] == "WT-I002"]
+        i2 = [f for f in self.snap()["findings"] if f["where"] == q and f["rule"] == "ISR-I002"]
         self.assertIn("treat it like a file someone added", i2[0]["fix"])
 
 
@@ -115,11 +115,11 @@ class Normalized(_Meta):
         self.skills(1); self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         self.assertEqual(self.counted(), [])
 
-    def test_a_timestamp_only_sync_is_a_tip(self):   # replay (151e40c: a counted high WT-I001)
+    def test_a_timestamp_only_sync_is_a_tip(self):   # replay (151e40c: a counted high ISR-I001)
         self.baseline_with(V1)
         self.write(text(dict(V1, generated_at="2026-10-18T09:30:00.123Z")))
         self.assertEqual(self.run_cmd("daily", "--roots", *self.roots)[1].strip(), "NO_CHANGES")
-        tip = [f for f in self.snap()["findings"] if f["rule"] == "WT-I008"]
+        tip = [f for f in self.snap()["findings"] if f["rule"] == "ISR-I008"]
         self.assertEqual([(f["label"], f["severity"]) for f in tip], [(wt.TIP, "info")])
         self.assertIn("Platform refresh: 1 of Grok Bot's own files changed", tip[0]["title"])
         r = json.loads(self.run_cmd("audit", "--roots", *self.roots)[1])   # the full audit accepts it like any listed platform update
@@ -130,7 +130,7 @@ class Normalized(_Meta):
     def assert_counted(self, data, why):
         self.write(data)
         self.audit()
-        self.assertEqual([(f["rule"], f["severity"]) for f in self.counted()], [("WT-I001", "high")], why)
+        self.assertEqual([(f["rule"], f["severity"]) for f in self.counted()], [("ISR-I001", "high")], why)
 
     def assert_quiet_unverified(self, data, why):
         """b8i4: not normalized (so never verified), and the middle path lets it through: no counted finding, not compared."""

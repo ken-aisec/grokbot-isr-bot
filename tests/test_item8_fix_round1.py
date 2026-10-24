@@ -3,7 +3,7 @@
 1. high: inventory kept one name per real file, the alphabetically first, so a baselined .agents/skills alias turned into a
    link to a new .grok/bundled file hid the platform file; daily said NO_CHANGES.
 2. high: platform_ish() cut at the first colon and said no for paths in or through an owner's folder, so a platform file
-   linked into a workflow was an ordinary WT-I001 (`--revet` approved it), and helper:alias leading into .grok/bundled rolled
+   linked into a workflow was an ordinary ISR-I001 (`--revet` approved it), and helper:alias leading into .grok/bundled rolled
    in as a built-in update.
 3. high: revet hashed a file for the release-list check and again for the baseline, so bytes swapped in between were saved.
 4. high: a suppressions.json entry with the finding's key accepted an unverified platform file before accept_refused ran.
@@ -43,7 +43,7 @@ class InventoryAliases(_Platform):
         os.makedirs(os.path.dirname(alias))
         os.symlink(plant, alias)
         self.start()
-        rules = {f["rule"] for f in self.snap()["findings"] if f["where"].startswith((alias, plant)) and f["rule"].startswith("WT-T")}
+        rules = {f["rule"] for f in self.snap()["findings"] if f["where"].startswith((alias, plant)) and f["rule"].startswith("ISR-T")}
         self.assertTrue(rules)
         per = [f["where"].split(":")[0] for f in self.snap()["findings"] if f["rule"] in rules]
         self.assertEqual(len(set(per)), 1, per)
@@ -133,7 +133,7 @@ class KeySuppressions(_Platform):
         self.assertFalse([g for g in self.snap().get("suppressed", []) if g.get("where") == plant])
 
     def test_4_contrast_dismiss_and_accept_refuse_it_too(self):
-        """Contrast: passes on base too (WT-I00x is not acceptable, and these findings aren't Worth-a-look lines)."""
+        """Contrast: passes on base too (ISR-I00x is not acceptable, and these findings aren't Worth-a-look lines)."""
         self.start()
         plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
@@ -168,7 +168,7 @@ class OwnReleaseAfterProvenance(_Platform):
         self.start()
         shutil.copyfile(os.path.join(wt.SELF_ROOT, "skills", "watchtower-fix", "SKILL.md"), os.path.join(d, "SKILL.md"))
         self.audit()
-        self.assertFalse([f for f in self.snap()["findings"] if f["where"] == os.path.join(d, "SKILL.md") and f["rule"].startswith("WT-I")])
+        self.assertFalse([f for f in self.snap()["findings"] if f["where"] == os.path.join(d, "SKILL.md") and f["rule"].startswith("ISR-I")])
 
 
 class BoundedPlatformList(_Platform):
@@ -195,7 +195,7 @@ class BoundedPlatformList(_Platform):
             self.assertEqual(pv["open"], self.N)
             self.assertEqual(len(pv["files"]), wt.PLATFORM_OPEN_SHOWN)
             self.assertEqual(pv.get("more"), self.N - wt.PLATFORM_OPEN_SHOWN)
-            self.assertIn("wt.py show WT-I002", pv["next"])
+            self.assertIn("wt.py show ISR-I002", pv["next"])
             self.assertIn("platform-release.lock", self.approve("0" * 20))
             self.assertEqual(len(reads), 0)
         finally:

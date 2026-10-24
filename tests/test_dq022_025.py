@@ -97,7 +97,7 @@ class DQ022FixturesNotLive(Box):
         self.assertEqual(scored_crit, [], scored_crit)
         self.assertNotIn("hidden-unicode", {os.path.basename(os.path.dirname(f["where"].split(":")[0]))
                                             for f in self.snap()["findings"] if wt.counts(f) and f["severity"] in ("critical", "high")})
-        info = [f for f in self.snap()["findings"] if f["rule"] == "WT-I007"]
+        info = [f for f in self.snap()["findings"] if f["rule"] == "ISR-I007"]
         self.assertEqual(len(info), 1)
 
 
@@ -130,7 +130,7 @@ class DQ023QuarantineNotScored(Box):
 
 class DQ024BundledTemplateFiction(Box):
     def test_secretly_in_bundled_pptx_template_does_not_score_critical(self):
-        """DQ-024: example story text in a built-in deck template is not a scoring critical WT-T008."""
+        """DQ-024: example story text in a built-in deck template is not a scoring critical ISR-T008."""
         tmpl = os.path.join(self.home, ".grok", "bundled", "skills", "pptx", "templates")
         os.makedirs(tmpl)
         open(os.path.join(self.home, ".grok", "bundled", "skills", "pptx", "SKILL.md"), "w").write(
@@ -139,12 +139,12 @@ class DQ024BundledTemplateFiction(Box):
         open(js, "w").write("// pitch\nconst beat = 'The hero secretly trains at night';\n")
         self.assertTrue(wt.is_vendor_template_file(js))
         rules = wt.load_rules()
-        hits = [f for f in wt.scan_text(open(js).read(), js, rules, kind="vendor") if f["rule"] == "WT-T008"]
+        hits = [f for f in wt.scan_text(open(js).read(), js, rules, kind="vendor") if f["rule"] == "ISR-T008"]
         self.assertTrue(hits)  # the rule still matches the word
         # full audit path demotes it
         self.scanners()
         r = self.audit()
-        t008 = [f for f in self.snap()["findings"] if f["rule"] == "WT-T008" and "tv_series_pitch_deck" in f["where"]]
+        t008 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-T008" and "tv_series_pitch_deck" in f["where"]]
         self.assertTrue(t008)
         self.assertTrue(all(f["severity"] == "info" for f in t008), t008)
         self.assertFalse(any(wt.counts(f) for f in t008))

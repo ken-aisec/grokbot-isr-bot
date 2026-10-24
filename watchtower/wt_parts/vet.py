@@ -211,7 +211,7 @@ def cmd_vet(args):
         finally:
             if staged:
                 shutil.rmtree(staged, ignore_errors=True)
-        bump = {"WT-X001": "high", "WT-X002": "medium", "WT-X003": "critical"}
+        bump = {"ISR-X001": "high", "ISR-X002": "medium", "ISR-X003": "critical"}
         for f in found:   # you are deciding whether to install this, so a scanner flag is rated as it would be on your own skill
             f["severity"] = bump.get(f["rule"], f["severity"])
             if staged:

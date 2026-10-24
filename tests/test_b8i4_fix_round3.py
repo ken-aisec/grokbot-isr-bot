@@ -4,7 +4,7 @@
    between settlement and the roll) wasn't rolled, but it stayed the info Platform refresh line, with no counted high. Every run
    checks each quiet update again before the roll's gate (hold_unbound_updates), and roll_builtin checks it once more before it
    writes the baseline; one that fails is a counted high, with every place a merged finding names, and keeps its old hash.
-2. A grouped result saved before fix round 2 (gitleaks's WT-S002 on a folder, without `affected_files`), carried by a daily or by
+2. A grouped result saved before fix round 2 (gitleaks's ISR-S002 on a folder, without `affected_files`), carried by a daily or by
    an audit whose gitleaks failed, held no file. A grouped result that doesn't name all its files holds every candidate under its
    folder until a scan that finishes gives the files again (coverage_gaps).
 3. Daily on a box with a missing scanner prints what f7c28e6 printed again (fix round 2's scanner-alert change undone).
@@ -114,7 +114,7 @@ class LateRedirect(_Middle):
 
 
 class LegacyGroupedSecrets(_Middle):
-    """Codex 2: a grouped WT-S002 saved before fix round 2 (no `affected_files`) held none of its files."""
+    """Codex 2: a grouped ISR-S002 saved before fix round 2 (no `affected_files`) held none of its files."""
 
     def files(self, needle):
         ps = [os.path.join(self.home, ".grok", "bundled", f"{n}.json") for n in ("a", "b", "c", "d")]
@@ -124,16 +124,16 @@ class LegacyGroupedSecrets(_Middle):
 
     def group(self):
         d = os.path.join(self.home, ".grok", "bundled")
-        return [f for f in self.snap()["findings"] if f["rule"] == "WT-S002" and f["where"] == d]
+        return [f for f in self.snap()["findings"] if f["rule"] == "ISR-S002" and f["where"] == d]
 
     def legacy(self):
-        """Four baselined files under .grok/bundled with a key hit each (one grouped WT-S002 on the folder), then the saved line
+        """Four baselined files under .grok/bundled with a key hit each (one grouped ISR-S002 on the folder), then the saved line
         made as 47d3aba saved it: no `affected_files`, a Platform line (info, severity_was medium)."""
         ps = self.files(NEEDLE)
         profiles.vendor_release(self, *ps)
         self.start(gitleaks=leaks_in("/.grok/bundled/"))
         snap = self.snap()
-        gs = [f for f in snap["findings"] if f["rule"] == "WT-S002" and f["where"] == os.path.dirname(ps[0])]
+        gs = [f for f in snap["findings"] if f["rule"] == "ISR-S002" and f["where"] == os.path.dirname(ps[0])]
         self.assertEqual(len(gs), 1)
         gs[0].pop("affected_files", None)
         gs[0]["severity"], gs[0]["severity_was"] = "info", "medium"
@@ -176,9 +176,9 @@ class LegacyGroupedSecrets(_Middle):
         in its skill folder it doesn't name (d2d24e5: no hold)."""
         d = os.path.dirname(self.md("alpha"))
         put(os.path.join(d, "ref.md"), "Notes.\n")
-        g = {"rule": "WT-T001", "severity": "medium", "where": os.path.join(d, "ref.md:3"), "also_count": 25,
-             "also_flagged_by": [{"rule": "WT-T001", "where": os.path.join(d, f"n{i}.md")} for i in range(20)]}
-        self.assertEqual(wt._flagged_here(self.md("alpha"), wt.flag_index([g])), ["WT-T001"])
+        g = {"rule": "ISR-T001", "severity": "medium", "where": os.path.join(d, "ref.md:3"), "also_count": 25,
+             "also_flagged_by": [{"rule": "ISR-T001", "where": os.path.join(d, f"n{i}.md")} for i in range(20)]}
+        self.assertEqual(wt._flagged_here(self.md("alpha"), wt.flag_index([g])), ["ISR-T001"])
         g["also_count"] = 20
         self.assertEqual(wt._flagged_here(self.md("alpha"), wt.flag_index([g])), [])   # G: every member named
 
@@ -192,10 +192,10 @@ class DailyScannersMissing(_Middle):
         wt._SCANNER_OK.clear()
 
     def x005(self):
-        return sorted(os.path.basename(f["where"]) for f in self.snap()["findings"] if f["rule"] == "WT-X005")
+        return sorted(os.path.basename(f["where"]) for f in self.snap()["findings"] if f["rule"] == "ISR-X005")
 
     def test_a_missing_scanner_with_an_open_alert_is_the_missing_line(self):
-        """R: a swapped gitleaks (WT-X005, said the first day), then a daily with nothing changed: f7c28e6's SCANNERS_MISSING
+        """R: a swapped gitleaks (ISR-X005, said the first day), then a daily with nothing changed: f7c28e6's SCANNERS_MISSING
         line, exactly (d2d24e5: full JSON with scanner_alerts)."""
         self.start()
         self.swap("gitleaks")
@@ -205,7 +205,7 @@ class DailyScannersMissing(_Middle):
         self.assertEqual(self.x005(), ["gitleaks"])
 
     def test_scanners_never_installed_right_with_open_alerts_is_not_checked(self):
-        """R: a box whose SkillSpector, husk, gitleaks and TruffleHog were never the copies Watchtower installed (four WT-X005 from
+        """R: a box whose SkillSpector, husk, gitleaks and TruffleHog were never the copies Watchtower installed (four ISR-X005 from
         the first audit): daily with nothing changed is f7c28e6's NO_CHANGES_BUT_NOT_CHECKED line, exactly (d2d24e5: full JSON
         with four scanner_alerts)."""
         self.scanners()

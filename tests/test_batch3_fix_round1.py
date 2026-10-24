@@ -114,7 +114,7 @@ class InterpreterTrust(_Scanners):
 class ExpectedScanners(_Scanners):
     def test_3_a_scanner_first_used_while_another_is_missing_is_still_expected(self):
         """Finding 3: SkillSpector goes, OSV-Scanner arrives and runs, then OSV-Scanner goes. Its second absent run treated it as
-        never installed and dropped its WT-D002 lines."""
+        never installed and dropped its ISR-D002 lines."""
         self.skills(1); self.project()
         self.engines()
         os.remove(os.path.join(self.bin, "osv-scanner"))
@@ -122,24 +122,24 @@ class ExpectedScanners(_Scanners):
         os.remove(os.path.join(self.bin, "skillspector"))
         self.put("osv-scanner", SCANNERS["osv-scanner"])
         self.audit()
-        d2 = self.rules("WT-D002")
+        d2 = self.rules("ISR-D002")
         self.assertTrue(d2)
         os.remove(os.path.join(self.bin, "osv-scanner"))
         self.audit()
         r = self.audit()
-        self.assertEqual(self.rules("WT-D002"), d2)
-        self.assertFalse([f for f in r["fixed"] if f["rule"] == "WT-D002"])
+        self.assertEqual(self.rules("ISR-D002"), d2)
+        self.assertFalse([f for f in r["fixed"] if f["rule"] == "ISR-D002"])
         self.assertIn("OSV-Scanner", r.get("scanners_missing", []))
 
 
 class OwnToolsPython(_Scanners):
     def test_8_a_refused_scanner_python_keeps_the_last_w001_lines(self):
-        """Finding 8: a missing or refused scanner Python returned before the stage was marked failed, so last run's WT-W001
+        """Finding 8: a missing or refused scanner Python returned before the stage was marked failed, so last run's ISR-W001
         lines read as fixed."""
         self.skills(1); self.engines()
         self.audit()
         snap = wt.load_json(wt.state_path("last_findings.json"), {})
-        w1 = wt.finding("WT-W001", "Watchtower's own tool urllib3 1.0 has known holes", "medium", ["ASI04", "AST02"],
+        w1 = wt.finding("ISR-W001", "Watchtower's own tool urllib3 1.0 has known holes", "medium", ["ASI04", "AST02"],
                         "watchtower scanner package urllib3", "1 known: GHSA-test", "Tell Watchtower \"update yourself\".", source="pip-audit")
         snap["findings"].append(w1)
         wt.save_json(wt.state_path("last_findings.json"), snap)
@@ -147,7 +147,7 @@ class OwnToolsPython(_Scanners):
                    os.path.join(self.bin, "python"))
         r = self.audit()
         self.assertIn(w1["key"], [f["key"] for f in self.snap()["findings"]])
-        self.assertFalse([f for f in r["fixed"] if f["rule"] == "WT-W001"])
+        self.assertFalse([f for f in r["fixed"] if f["rule"] == "ISR-W001"])
         self.assertIn("Watchtower's own tools", r.get("stages_skipped", []))
 
     def test_8_contrast_no_scanner_python_ever_is_a_plain_skip(self):

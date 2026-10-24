@@ -638,12 +638,12 @@ def plugin_file_key(rule_id, path, sha, versions):
 
 
 def plugin_place_key(name, roots, files):
-    """DQ-047: the key a pending plugin's WT-I004 is also known by: its name, the place its folders sit in, how many there are
+    """DQ-047: the key a pending plugin's ISR-I004 is also known by: its name, the place its folders sit in, how many there are
     and the files inside each (`files`: each root's sorted paths relative to it, in root order), not the version folder. A
     version bump with the same files under the same name and place, while it waits for the owner's decision, is the same open
     finding; a file added, removed or renamed is not (fix round 1, Codex)."""
     places = sorted({os.path.dirname(os.path.normpath(r)) for r in roots})
-    return hashlib.sha1(f"WT-I004|plugin:{name}|{'|'.join(places)}|{len(roots)}|{json.dumps(files)}".encode()).hexdigest()[:16]
+    return hashlib.sha1(f"ISR-I004|plugin:{name}|{'|'.join(places)}|{len(roots)}|{json.dumps(files)}".encode()).hexdigest()[:16]
 
 
 PLUGIN_MOVES = {}   # DQ-047: this run's pending plugins whose folders changed, {name: (old roots, new roots)}
@@ -847,7 +847,7 @@ def keep_plugin(where):
     return kept
 
 
-REFRESH_RULE = "WT-I008"
+REFRESH_RULE = "ISR-I008"
 PLATFORM_DANGER_KINDS = frozenset(RISK_KIND[r] for r in BEHAVIOR_RULES)   # credential, exfil, pipe, obfuscation, exec
 
 
@@ -858,11 +858,11 @@ def unconfirmed_platform_vote(f, fs):
     behavior (the kinds of BEHAVIOR_RULES), or a Confirmed critical/high Watchtower finding in the same skill backs it. Engines
     that agree only on wording (override, secrecy) or name no kind at all are a Platform line, the same line v0.7.1 item 2
     draws: wording alone is never Confirmed. A built-in that turns bad in a way Watchtower sees still alerts (Claude v0.7.1 F4)."""
-    if (f["rule"] != "WT-X003" or f.get("kinds_incomplete") or not platform_skill_path(f.get("where") or "", line=False)
+    if (f["rule"] != "ISR-X003" or f.get("kinds_incomplete") or not platform_skill_path(f.get("where") or "", line=False)
             or kinds_of(f) & PLATFORM_DANGER_KINDS):
         return False
     here = _path_part(f["where"], line=False)
-    return not any(g is not f and not g["rule"].startswith(("WT-I", "WT-X")) and g.get("label") == CONFIRMED
+    return not any(g is not f and not g["rule"].startswith(("ISR-I", "ISR-X")) and g.get("label") == CONFIRMED
                    and (g.get("severity_was") or g["severity"]) in ("critical", "high")
                    and _covers(here, _path_part(g["where"]) if str(g.get("where") or "").startswith("/") else _place(g)) for g in fs)
 
@@ -872,7 +872,7 @@ def summarize_refresh(fs):
     are one summary line, a Tip, never an alert — unless the change brings a new Confirmed critical or high (Claude v0.7.1 F4).
     Then daily gets a real alert: the built-in turned bad; don't use it until Grok Bot fixes it. Unflagged platform changes
     still roll into the one Tip. Owner skill changes and installed-plugin changes still alert as before."""
-    ref = [f for f in fs if f.get("refresh") and f["rule"] in ("WT-I001", "WT-I002", "WT-I003")]
+    ref = [f for f in fs if f.get("refresh") and f["rule"] in ("ISR-I001", "ISR-I002", "ISR-I003")]
     if not ref:
         return fs
     # Confirmed critical/high on a platform path (label may already be set; else evidence/corroboration still counts).
@@ -928,7 +928,7 @@ def summarize_refresh(fs):
             _, n = skill_of_path(f["where"])
             if n not in names:
                 names.append(n)
-        c = {r: sum(1 for f in unflagged if f["rule"] == r) for r in ("WT-I001", "WT-I002", "WT-I003")}
+        c = {r: sum(1 for f in unflagged if f["rule"] == r) for r in ("ISR-I001", "ISR-I002", "ISR-I003")}
         shown = ", ".join(names[:6]) + (f", +{len(names) - 6} more" if len(names) > 6 else "")
         # b8i4: each vendor's count (platform_vendor), Grok Bot first; one vendor alone keeps the title as it was for Grok Bot
         per = {}
@@ -948,7 +948,7 @@ def summarize_refresh(fs):
                       else "it accepts them on the next full audit when nothing flags them."))
         files = sorted({min(_home_rels(q), key=lambda r: (len(r), r), default=q)
                         for f in unflagged for q in [f["where"]] + list(f.get("also_at") or [])})
-        evidence, n = f"{c['WT-I001']} updated, {c['WT-I002']} added, {c['WT-I003']} removed", 0
+        evidence, n = f"{c['ISR-I001']} updated, {c['ISR-I002']} added, {c['ISR-I003']} removed", 0
         for q in files:   # the paths that fit in the evidence's 160 characters, then how many more
             rest = len(files) - n - 1
             if len(f"{evidence}, {q}") + (len(f", +{rest} more") if rest else 0) > 160:
@@ -980,7 +980,7 @@ def builtin(f):
     return bool(vendor_root_path(w) or platform_config_finding(f) or w.startswith("system python package "))
 
 
-SECRET_RULES = ("WT-S001", "WT-S002", "WT-K003")   # a key or a decoy copy counts wherever it sits (v0.7.0 review R3)
+SECRET_RULES = ("ISR-S001", "ISR-S002", "ISR-K003")   # a key or a decoy copy counts wherever it sits (v0.7.0 review R3)
 
 # v0.7.1 precision item 4 (decision, Oct 12): built-ins never move the score. Grok Bot's own files (the bundled and managed skills,
 # its config files, the platform's plugin catalog cache, the computer's own Python packages) go in a separate Platform section,
@@ -1052,10 +1052,10 @@ def platform_secret_store_note(p):
     m = f"mode {mode:04o}" if mode is not None else "mode unknown"
     tight = mode is not None and not (mode & 0o077)
     if os.path.normpath(str(p)).endswith(os.sep + os.path.normpath(GROK_CLI_SIGN_IN)):
-        return finding("WT-I009", "Grok CLI sign-in file present" + ("" if tight else " (readable beyond its owner)"), "info", ["ASI03"], p,
+        return finding("ISR-I009", "Grok CLI sign-in file present" + ("" if tight else " (readable beyond its owner)"), "info", ["ASI03"], p,
                        f"{m}; value not read", "This is the platform's own Grok CLI sign-in file. ISR Bot never reads it. Nothing for you to do"
                        + ("." if tight else "; its permissions are wider than 0600, worth reporting to the platform."), ident="platform-grok-cli-sign-in")
-    return finding("WT-I009", "Platform secret store present" + ("" if tight else " (readable beyond its owner)"), "info", ["ASI03"], p,
+    return finding("ISR-I009", "Platform secret store present" + ("" if tight else " (readable beyond its owner)"), "info", ["ASI03"], p,
                    f"{m}; value not read", "This is the platform's own store for secrets saved through the secure secret request. "
                    "ISR Bot never reads it. Nothing for you to do" + ("." if tight else "; its permissions are wider than 0600, worth reporting to the platform."),
                    ident="platform-secret-store")
@@ -1106,11 +1106,11 @@ def mark_platform(fs):
             continue
         if f.get("class") in ("pattern", "tip") or f.get("platform_hook") or unconfirmed_platform_vote(f, fs):   # Decision, Oct 13: the platform's hook is a Platform line
             f["class"], f["label"] = "platform", PLATFORM
-            f["fix"] = f["fix"] if f.get("platform_hook") or f["rule"] == "WT-I009" else PLATFORM_FIX
+            f["fix"] = f["fix"] if f.get("platform_hook") or f["rule"] == "ISR-I009" else PLATFORM_FIX
             if f["severity"] != "info" and not f.get("platform_hook"):   # the hook keeps its low (listed fact), never scored
                 f["severity_was"], f["severity"] = f["severity"], "info"
         elif f["rule"] not in SECRET_RULES:
-            if f["rule"] == "WT-X003" and f["severity"] == "info" and f.get("severity_was"):   # daily re-adds last run's Platform line;
+            if f["rule"] == "ISR-X003" and f["severity"] == "info" and f.get("severity_was"):   # daily re-adds last run's Platform line;
                 f["severity"] = f.pop("severity_was")                                        # Watchtower now backs it (DQ-042)
             f["fix"] = PLATFORM_CONFIRMED_FIX
     return fs
@@ -1144,7 +1144,7 @@ def metadata_hit_note(f):
     one line of one file; its `metadata_sha256` is the bytes gitleaks_findings bound it to (a private copy of the verified
     bytes gave gitleaks exactly the same hits); and the file has those bytes now, they verify against the release list, and
     every unit's file is itself on it (metadata_proof). Anything else counts, with its cleanup."""
-    if f.get("rule") != "WT-S002" or f.get("source") != "gitleaks" or f.get("severity") == "critical":
+    if f.get("rule") != "ISR-S002" or f.get("source") != "gitleaks" or f.get("severity") == "critical":
         return False
     if f.get("title") not in ("gitleaks: secrets in file", KEY_MAYBE):
         return False
@@ -1157,7 +1157,7 @@ def platform_owned(fs):
     upgrade: they stay visible as low, for-information findings and never count."""
     for f in fs:
         w = f.get("where", "")
-        if platform_config_finding(f) and f["rule"] in ("WT-S001", "WT-S002"):   # item 8: exactly Grok Bot's config, never a name in the path
+        if platform_config_finding(f) and f["rule"] in ("ISR-S001", "ISR-S002"):   # item 8: exactly Grok Bot's config, never a name in the path
             f.update(severity="low", title="The platform's own access token (every Bot can read it)" if "gateway.json" in w
                      else "The platform's own key file (every Bot can read it)",
                      fix="This is Grok Bot's own config file. You can't change it; it's listed so you know every Bot on this computer can read it.")

@@ -1,7 +1,7 @@
 """v0.8.0 rename, unit 0: the reviewed name table (tests/golden_rename_v080.json) is well formed. Every entry is unique, and
 where one old value holds another the longer one comes first; no entry maps a name to itself; no new value holds an old name
 and each passes the name guards of test_v074_display_name, through the same blank(); the old and new layouts are complete."""
-import json, os, re, unittest
+import ast, json, os, re, unittest
 
 import rename_v080 as rn
 import test_v074_display_name as v074
@@ -29,6 +29,31 @@ def entry_dicts():
 
 def apply(e, text):
     return re.sub(e["re"], e["new"], text) if "re" in e else text.replace(e["old"], e["new"])
+
+
+def map_units(units, rel, text, protect=True):
+    """text through each unit's plain source entries in turn, as the probe applies them: keep_spans held, an entry's files and
+    unit_files honoured, the historical lines (and a reader file's old-output lines) left as they are unless protect is off."""
+    src = rn.TABLE["source"]
+    keep = [re.compile(k["re"]) for k in src["keep_spans"]]
+    texts = {h["text"] for h in src["historical"]["lines"] if h["file"] == rel}
+    reader = os.path.basename(rel) in src["reader_files"]
+    for u in units:
+        entries = [e for e in src["units"][u] if not e.get("scope") and ("files" not in e or os.path.basename(rel) in e["files"])
+                   and (u not in src["unit_files"] or os.path.basename(rel) in src["unit_files"][u])]
+        out = []
+        for l in text.split("\n"):
+            if protect and (l.strip() in texts or (reader and ("workspace/watchtower" in l or re.search(r"Watchtower\b", l)))):
+                out.append(l)
+                continue
+            held = []
+            for rx in keep:
+                l = rx.sub(lambda m: held.append(m.group(0)) or f"\x00{len(held) - 1}\x00", l)
+            for e in entries:
+                l = apply(e, l)
+            out.append(re.sub("\x00(\\d+)\x00", lambda m: held[int(m.group(1))], l))
+        text = "\n".join(out)
+    return text
 
 
 def no_duplicate_keys(pairs):
@@ -137,6 +162,23 @@ class RenameTable(unittest.TestCase):
             lines = read(r["file"]).splitlines()
             self.assertTrue(any(re.match(f, l) for f in r["from"] for l in lines), r["why"])
             self.assertTrue(r["units"] == "all" or set(r["units"]) <= set(src["order"]), r["why"])
+
+    def test_golden_split_kept_strings_stay_old_through_g(self):   # replay (Codex r2 HIGH: g's map rewrote SUBST_KEEP and SUBST_KEEP_PROSE)
+        rel, order = "tests/golden_split.py", rn.TABLE["source"]["order"]
+        units = order[order.index("b"):order.index("g") + 1]
+        text = read(rel)
+
+        def literals(t):
+            return {n.targets[0].id: ast.get_source_segment(t, n) for n in ast.parse(t).body if isinstance(n, ast.Assign)
+                    and isinstance(n.targets[0], ast.Name) and n.targets[0].id in ("SUBST_KEEP", "SUBST_KEEP_PROSE")}
+        self.assertEqual(sorted(literals(text)), ["SUBST_KEEP", "SUBST_KEEP_PROSE"])
+        mapped = map_units(units, rel, text)
+        self.assertEqual(literals(mapped), literals(text))   # h2 converts them, not b-g
+        self.assertNotEqual(literals(map_units(units, rel, text, protect=False)), literals(text))   # unprotected, g changes them
+        # only the two literals are held: golden_split.py is no reader file, so c, d2b and f still rename the sandbox home line
+        self.assertNotIn(os.path.basename(rel), rn.TABLE["source"]["reader_files"])
+        self.assertIn(rn.OLD["env"]["install_home"] + " = " + json.dumps(rn.OLD["home"]), text)
+        self.assertIn(rn.NEW["env"]["install_home"] + " = " + json.dumps(rn.NEW["home"]), mapped)
 
 
 if __name__ == "__main__":

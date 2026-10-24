@@ -2,7 +2,7 @@
 
 Two votes count only when they are about the same file and the same kind of risk (credential read, sending data out, secrecy,
 install-by-pipe...). A wording hit alone is never Confirmed: it needs a behavior signal in the same file. Watchtower's own wording
-match no longer votes for WT-X003 (Oct 12 data dump: one word in the platform's pptx skill gave one critical plus one high).
+match no longer votes for ISR-X003 (Oct 12 data dump: one word in the platform's pptx skill gave one critical plus one high).
 """
 import os, sys, unittest
 
@@ -22,27 +22,27 @@ class LabelRules(unittest.TestCase):
     md, other, skill = "/w/sk/SKILL.md", "/w/sk/notes.md", "/w/sk"
 
     def test_a_wording_hit_alone_is_never_confirmed(self):
-        out = wt.label_findings([F("WT-T008", "critical", f"{self.md}:3"), F("WT-T001", "critical", f"{self.md}:4")])
+        out = wt.label_findings([F("ISR-T008", "critical", f"{self.md}:3"), F("ISR-T001", "critical", f"{self.md}:4")])
         self.assertEqual([f["label"] for f in out], [wt.MAYBE_FINE] * 2)    # two wording rules are still only wording
 
     def test_wording_needs_the_behavior_in_the_same_file(self):
-        out = wt.label_findings([F("WT-T008", "critical", f"{self.md}:3"), F("WT-T017", "high", f"{self.other}:9")])
+        out = wt.label_findings([F("ISR-T008", "critical", f"{self.md}:3"), F("ISR-T017", "high", f"{self.other}:9")])
         self.assertEqual([f["label"] for f in out], [wt.MAYBE_FINE] * 2)    # different files: no chain
-        out = wt.label_findings([F("WT-T008", "critical", f"{self.md}:3"), F("WT-T017", "high", f"{self.md}:9")])
+        out = wt.label_findings([F("ISR-T008", "critical", f"{self.md}:3"), F("ISR-T017", "high", f"{self.md}:9")])
         self.assertEqual([(f["label"], f["severity"]) for f in out], [(wt.CONFIRMED, "critical"), (wt.CONFIRMED, "high")])
 
     def test_a_folder_verdict_backs_up_only_the_same_kind_of_risk(self):
-        ss = F("WT-X001", "high", self.skill, source="skillspector", kinds=["exfil"])
-        out = wt.label_findings([F("WT-T017", "high", f"{self.md}:9"), ss])
+        ss = F("ISR-X001", "high", self.skill, source="skillspector", kinds=["exfil"])
+        out = wt.label_findings([F("ISR-T017", "high", f"{self.md}:9"), ss])
         self.assertEqual(out[0]["label"], wt.CONFIRMED)                     # SkillSpector "Exfil" backs up a send out
-        hk = F("WT-X002", "medium", self.skill, source="husk", kinds=["obfuscation"])
-        out = wt.label_findings([F("WT-T004", "high", f"{self.md}:2"), hk])
+        hk = F("ISR-X002", "medium", self.skill, source="husk", kinds=["obfuscation"])
+        out = wt.label_findings([F("ISR-T004", "high", f"{self.md}:2"), hk])
         self.assertEqual(out[0]["label"], wt.MAYBE_FINE)                    # "husk found something in the folder" is not a vote
-        out = wt.label_findings([F("WT-T008", "critical", f"{self.md}:3"), dict(ss, kinds=["secrecy"])])
+        out = wt.label_findings([F("ISR-T008", "critical", f"{self.md}:3"), dict(ss, kinds=["secrecy"])])
         self.assertEqual(out[0]["label"], wt.MAYBE_FINE)                    # a folder verdict never confirms wording
 
     def test_credential_read_plus_send_out_in_one_file_is_the_chain(self):
-        out = wt.label_findings([F("WT-T004", "high", f"{self.md}:2"), F("WT-T017", "high", f"{self.md}:3")])
+        out = wt.label_findings([F("ISR-T004", "high", f"{self.md}:2"), F("ISR-T017", "high", f"{self.md}:3")])
         self.assertEqual([f["label"] for f in out], [wt.CONFIRMED] * 2)
 
 
@@ -60,7 +60,7 @@ class EnginesOnABox(Box):
         d = self.skill("deck-builder", "Build the deck the user asks for.", SECRECY, "HUSK")
         self.scanners(); self.audit()
         fs = self.at(d)
-        self.assertNotIn("WT-X003", [f["rule"] for f in fs])
+        self.assertNotIn("ISR-X003", [f["rule"] for f in fs])
         self.assertFalse([f for f in fs if f["label"] == wt.CONFIRMED and f["severity"] in ("critical", "high")],
                          [(f["rule"], f["severity"], f["label"]) for f in fs])
 
@@ -68,15 +68,15 @@ class EnginesOnABox(Box):
         a = self.skill("reads-keys", "EVIL", CRED_READ)            # SkillSpector says Exfil; Watchtower says credential read
         b = self.skill("sends-out", "EVIL", CRED_READ, SEND_OUT)   # SkillSpector says Exfil; Watchtower sees a send out
         self.scanners(); self.audit()
-        self.assertNotIn("WT-X003", [f["rule"] for f in self.at(a)])
-        x3 = [f for f in self.at(b) if f["rule"] == "WT-X003"]
+        self.assertNotIn("ISR-X003", [f["rule"] for f in self.at(a)])
+        x3 = [f for f in self.at(b) if f["rule"] == "ISR-X003"]
         self.assertEqual([(f["severity"], f["kinds"]) for f in x3], [("critical", ["exfil"])])
 
     def test_two_scanners_agreeing_still_confirm(self):
         d = self.skill("evil-both", "EVIL upload HUSK loader")
         self.scanners(); self.audit()
-        self.assertEqual([(f["rule"], f["severity"], f["label"]) for f in self.at(d) if f["rule"].startswith("WT-X")],
-                         [("WT-X003", "critical", wt.CONFIRMED)])
+        self.assertEqual([(f["rule"], f["severity"], f["label"]) for f in self.at(d) if f["rule"].startswith("ISR-X")],
+                         [("ISR-X003", "critical", wt.CONFIRMED)])
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ def write(p, text):
 
 
 class ArchiveAndCandidatesLeak(Box):
-    """workflows/_archive/<date>/... snapshots raised WT-I002, and deleted /workspace/skill-hunt-*/candidates raised WT-I003."""
+    """workflows/_archive/<date>/... snapshots raised ISR-I002, and deleted /workspace/skill-hunt-*/candidates raised ISR-I003."""
     def setUp(self):
         super().setUp()
         self.skills(1); self.scanners()
@@ -24,7 +24,7 @@ class ArchiveAndCandidatesLeak(Box):
         write(os.path.join(self.cand, "scripts", "cli.py"), "print('x')\n")
 
     def drift(self):
-        return [f for f in self.snap()["findings"] if f["rule"] in ("WT-I001", "WT-I002", "WT-I003")]
+        return [f for f in self.snap()["findings"] if f["rule"] in ("ISR-I001", "ISR-I002", "ISR-I003")]
 
     def test_archive_snapshot_raises_no_new_file_alarm(self):
         self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
@@ -32,7 +32,7 @@ class ArchiveAndCandidatesLeak(Box):
         self.audit()
         fs = [f for f in self.snap()["findings"] if "_archive" in f["where"]]
         self.assertEqual(fs, [])
-        i7 = [f for f in self.snap()["findings"] if f["rule"] == "WT-I007"]
+        i7 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-I007"]
         self.assertEqual(len(i7), 1); self.assertEqual(i7[0]["label"], wt.TIP)
 
     def test_removed_candidate_outside_live_places_is_not_a_removal(self):
@@ -49,7 +49,7 @@ class ArchiveAndCandidatesLeak(Box):
         self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         import shutil; shutil.rmtree(os.path.join(self.wf, "skill000"))
         self.audit()
-        self.assertTrue([f for f in self.drift() if f["rule"] == "WT-I003" and "skill000" in f["where"]])
+        self.assertTrue([f for f in self.drift() if f["rule"] == "ISR-I003" and "skill000" in f["where"]])
 
     def test_a_live_skill_in_a_folder_named_tests_still_counts(self):
         """DQ-028/029 unchanged: only archive-named folders are snapshots."""
@@ -62,7 +62,7 @@ class ArchiveAndCandidatesLeak(Box):
 
 
 class ListenerWordingAlone(Box):
-    """email.md:19 'every email' was Confirmed medium only because the file changed after approval (WT-I001)."""
+    """email.md:19 'every email' was Confirmed medium only because the file changed after approval (ISR-I001)."""
     def test_every_email_in_a_changed_file_is_not_confirmed(self):
         self.scanners()
         d = os.path.join(self.home, "sand-data", "workflows", "outreach")
@@ -71,17 +71,17 @@ class ListenerWordingAlone(Box):
         self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         write(os.path.join(d, "references", "email.md"), "# Email\nTone notes.\nFor every email, open with the hook.\n")
         self.audit()
-        t14 = [f for f in self.snap()["findings"] if f["rule"] == "WT-T014"]
+        t14 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-T014"]
         self.assertTrue(t14)
         self.assertFalse([f for f in t14 if f["label"] == wt.CONFIRMED], t14)
-        self.assertTrue([f for f in self.snap()["findings"] if f["rule"] == "WT-I001" and f["label"] == wt.CONFIRMED])
+        self.assertTrue([f for f in self.snap()["findings"] if f["rule"] == "ISR-I001" and f["label"] == wt.CONFIRMED])
 
 
 class PlainCookieJar(Box):
     def jar(self, cookies):
         write(os.path.join(self.home, "sand-data", "chrome-cookie-seed.json"), json.dumps(cookies))
         self.skills(1); self.scanners(); self.audit()
-        return next(f for f in self.snap()["findings"] if f["rule"] == "WT-S004")
+        return next(f for f in self.snap()["findings"] if f["rule"] == "ISR-S004")
 
     def test_no_sensitive_sign_in_is_a_tip_not_confirmed_medium(self):
         f = self.jar([{"domain": f"site{i}.example", "name": "_ga", "value": "x"} for i in range(37)])
@@ -90,24 +90,24 @@ class PlainCookieJar(Box):
         self.assertEqual(f["severity"], "info")
 
     def test_a_real_sensitive_sign_in_stays_confirmed_high(self):
-        f = self.jar([{"domain": ".google.com", "name": "SID", "value": "FAKE-WT-COOKIE"}])
+        f = self.jar([{"domain": ".google.com", "name": "SID", "value": "FAKE-ISR-COOKIE"}])
         self.assertEqual((f["label"], f["severity"]), (wt.CONFIRMED, "high"))
 
 
 class RollCallOneLinePerRule(Box):
-    """15 Bots with the same connectors gave 15 WT-L001 lines and 10 memories gave 10 WT-M010 lines (no roster saved)."""
+    """15 Bots with the same connectors gave 15 ISR-L001 lines and 10 memories gave 10 ISR-M010 lines (no roster saved)."""
     def test_worth_a_look_rollcall_findings_are_one_line_per_rule(self):
         self.skills(1); self.scanners()
         fs = []
         for i in range(15):
-            fs.append(wt.finding("WT-L001", "Lethal trifecta: private data + untrusted input + a way out", "high", ["ASI01"], f"rollcall:Bot{i}", "Gmail X Slack", "x"))
+            fs.append(wt.finding("ISR-L001", "Lethal trifecta: private data + untrusted input + a way out", "high", ["ASI01"], f"rollcall:Bot{i}", "Gmail X Slack", "x"))
         for i in range(10):
-            fs.append(wt.finding("WT-M010", "Memory acts as a standing instruction", "medium", ["ASI06"], f"rollcall:Bot{i}:memory1", "note", "x"))
+            fs.append(wt.finding("ISR-M010", "Memory acts as a standing instruction", "medium", ["ASI06"], f"rollcall:Bot{i}:memory1", "note", "x"))
         wt.save_json(wt.state_path("rollcall_findings.json"), {"at": wt.now(), "masked": wt.VERSION, "bots": [f"Bot{i}" for i in range(15)], "findings": fs})
         r = self.audit()
         look = [f for f in self.snap()["findings"] if f.get("label") == wt.MAYBE_FINE and f["where"].startswith("rollcall:")]
-        self.assertEqual(sorted(f["rule"] for f in look), ["WT-L001", "WT-M010"], look)
-        l1 = next(f for f in look if f["rule"] == "WT-L001")
+        self.assertEqual(sorted(f["rule"] for f in look), ["ISR-L001", "ISR-M010"], look)
+        l1 = next(f for f in look if f["rule"] == "ISR-L001")
         self.assertEqual(l1["also_count"], 14)
         self.assertIn("15 Bots", l1["title"])
         self.assertTrue(any("No roster saved" in n for n in self.snap()["notes"]))
@@ -127,7 +127,7 @@ class ToolchainTestKeys(Box):
               f'open(a[a.index("--report-path") + 1], "w").write({report!r})\n')
         self.scanners(gitleaks=gl)
         r = self.audit()
-        s2 = [f["where"] for f in self.snap()["findings"] if f["rule"] == "WT-S002"]
+        s2 = [f["where"] for f in self.snap()["findings"] if f["rule"] == "ISR-S002"]
         self.assertTrue(any("notes/keys.txt" in w for w in s2), s2)
         self.assertFalse([w for w in s2 if "go.prev" in w or "pnpm" in w], s2)
 

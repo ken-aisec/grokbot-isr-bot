@@ -2,7 +2,7 @@
 #
 # Watchtower runs a scanner only from its own folder ($WATCHTOWER_HOME/scanners/bin/<name>, where `install.sh --scanners`
 # puts it) and only when the sha256 of that program file is listed here for this computer's architecture. Anything else
-# is not run, and its last results are kept: a program whose name has lines here but none that match is a high WT-X005
+# is not run, and its last results are kept: a program whose name has lines here but none that match is a high ISR-X005
 # ("Watchtower's copy of <scanner> isn't the one it installed"); a name with no line for this architecture is "not listed"
 # (a plain note, no alarm). A scanner found on PATH or in any other folder is never run.
 #

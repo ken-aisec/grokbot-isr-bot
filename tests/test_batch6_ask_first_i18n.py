@@ -61,7 +61,7 @@ class _Settings(Box):
 
     def a003(self):
         self.audit()
-        return [f for f in self.snap()["findings"] if f["rule"] == "WT-A003"]
+        return [f for f in self.snap()["findings"] if f["rule"] == "ISR-A003"]
 
     def counted(self):
         return [(f["rule"], f["severity"], f["title"], f["evidence"]) for f in self.a003() if f.get("class") != "tip"]
@@ -83,13 +83,13 @@ class OtherLanguages(_Settings):
 
     def test_a_spanish_set_without_payments_names_only_that(self):   # replay (5dcd0a2: all five)
         self.native(ask=[s for s in SPANISH if "pagos" not in s])
-        self.assertEqual(self.counted(), [("WT-A003", "medium", "Ask-first rules don't cover everything", "purchases or payments")])
+        self.assertEqual(self.counted(), [("ISR-A003", "medium", "Ask-first rules don't cover everything", "purchases or payments")])
 
     def test_a_language_watchtower_cant_read_stays_counted_with_a_tip(self):   # replay (5dcd0a2: the medium, no Tip)
         self.native(ask=SWAHILI)   # fix round 1 (Codex 5): the medium stays; the language Tip is added beside it
         fs = self.a003()
         self.assertEqual(sorted((f["class"], f["severity"]) for f in fs), [("evidence", "medium"), ("tip", "info")])
-        self.assertEqual(self.counted(), [("WT-A003", "medium", "Ask-first rules don't say what they cover", ", ".join(AREAS))])
+        self.assertEqual(self.counted(), [("ISR-A003", "medium", "Ask-first rules don't say what they cover", ", ".join(AREAS))])
         tip = next(f for f in fs if f["class"] == "tip")
         self.assertIn("ISR Bot can't check your Ask-first rules if it doesn't read their language", tip["title"])
         self.assertIn("The alert above stays", tip["fix"])
@@ -100,11 +100,11 @@ class OtherLanguages(_Settings):
     def test_rules_that_name_no_area_stay_the_counted_medium(self):   # replay, Codex 5 (6cd1ab4: a Tip, nothing counted)
         for ask in (["."], ["every shell command"]):
             self.native(ask=ask)
-            self.assertEqual(self.counted(), [("WT-A003", "medium", "Ask-first rules don't say what they cover", ", ".join(AREAS))], ask)
+            self.assertEqual(self.counted(), [("ISR-A003", "medium", "Ask-first rules don't say what they cover", ", ".join(AREAS))], ask)
             self.assertEqual(self.audit()["open_by_severity"]["medium"], 1, ask)
 
     def test_a_forged_tip_flag_never_lowers_the_medium(self):   # guard: the Tip is known by its own evidence, never the medium's
-        med = wt.finding("WT-A003", "Ask-first rules not found", "medium", ["ASI09"], "Auto-review rules", ", ".join(AREAS), "x")
+        med = wt.finding("ISR-A003", "Ask-first rules not found", "medium", ["ASI09"], "Auto-review rules", ", ".join(AREAS), "x")
         med["ask_first_unread"] = True
         self.assertFalse(wt.ask_first_unread(med))
         self.assertEqual(wt.label_findings([med])[0]["severity"], "medium")
@@ -112,15 +112,15 @@ class OtherLanguages(_Settings):
 
 class EnglishAsBefore(_Settings):
     def test_no_rules_is_still_the_medium_not_found(self):   # guard
-        self.assertEqual(self.counted(), [("WT-A003", "medium", "Ask-first rules not found", ", ".join(AREAS))])
+        self.assertEqual(self.counted(), [("ISR-A003", "medium", "Ask-first rules not found", ", ".join(AREAS))])
 
     def test_only_allow_rules_is_still_not_found(self):   # guard
         self.native(allow=["Create Notion pages under the Team Wiki tree"])
-        self.assertEqual(self.counted(), [("WT-A003", "medium", "Ask-first rules not found", ", ".join(AREAS))])
+        self.assertEqual(self.counted(), [("ISR-A003", "medium", "Ask-first rules not found", ", ".join(AREAS))])
 
     def test_an_english_partial_set_names_the_same_gaps(self):   # guard: same severity and gaps as 5dcd0a2
         self.export("Ask first: before sending email\n")
-        self.assertEqual([(r, s, e) for r, s, _, e in self.counted()], [("WT-A003", "medium", ", ".join(AREAS[1:]))])
+        self.assertEqual([(r, s, e) for r, s, _, e in self.counted()], [("ISR-A003", "medium", ", ".join(AREAS[1:]))])
 
     def test_an_english_full_set_is_still_quiet(self):   # guard
         self.export(ENGLISH_CORPUS[0])
@@ -132,7 +132,7 @@ class EnglishAsBefore(_Settings):
 
     def test_lint_auto_review_is_unchanged_for_english(self):   # guard (test_watchtower's test_auto_review shape)
         t = open(os.path.join(ROOT, "tests", "fixtures", "exports", "auto-review.txt")).read()
-        self.assertIn("WT-A003", {f["rule"] for f in wt.lint_auto_review(t, "x")})
+        self.assertIn("ISR-A003", {f["rule"] for f in wt.lint_auto_review(t, "x")})
         self.assertEqual(len(wt.ask_first_gaps("Ask first: before sending email")), 4)
 
 

@@ -206,8 +206,8 @@ SESSION_FILES = ("chrome-cookie-seed.json", "cookie-seed.json", "cookies.json")
 
 
 SENSITIVE_SITE = re.compile(r"(anthropic|claude|openai|x\.ai|github|google|microsoft|aws|stripe|bank|paypal|slack|notion|"
-                            r"bitwarden|1password|lastpass|dashlane|keeper|vercel|cloudflare|okta)")   # WT-S004 summary wording only
-# WT-S005: registered domains, matched exactly or as a dot-suffix (fonts.googleapis.com, max.ai and notionalvalue.io are not these).
+                            r"bitwarden|1password|lastpass|dashlane|keeper|vercel|cloudflare|okta)")   # ISR-S004 summary wording only
+# ISR-S005: registered domains, matched exactly or as a dot-suffix (fonts.googleapis.com, max.ai and notionalvalue.io are not these).
 SENSITIVE_DOMAINS = ("anthropic.com", "claude.ai", "openai.com", "chatgpt.com", "x.ai", "grok.com", "github.com", "google.com",
                      "microsoft.com", "live.com", "microsoftonline.com", "aws.amazon.com", "amazon.com", "stripe.com", "paypal.com",
                      "slack.com", "notion.so", "notion.com", "bitwarden.com", "1password.com", "lastpass.com", "dashlane.com",
@@ -274,9 +274,9 @@ def _prev_host_sessions(prev):
 
 
 def new_sign_ins(seen=None):
-    """WT-S005: a sensitive site that got its first session in the shared browser since the last look. The first look is a baseline.
+    """ISR-S005: a sensitive site that got its first session in the shared browser since the last look. The first look is a baseline.
     State stores per-host whether a session cookie was seen, so a visit that later becomes a sign-in still alarms.
-    The sessions WT-S004 lists are carried across box resets by the platform's cookie seed; a new one is something that happened.
+    The sessions ISR-S004 lists are carried across box resets by the platform's cookie seed; a new one is something that happened.
     `seen` (a dict) gets "hosts": {host: had a session cookie} from this look, or None with no jar (batch 5 a: the access map)."""
     hosts = browser_jar_hosts()
     if seen is not None:
@@ -301,12 +301,12 @@ def new_sign_ins(seen=None):
             signed.append(h)   # visit-only host flipped to a real session
     out = []
     if signed:
-        out.append(finding("WT-S005", NEW_SIGN_IN, "high", ["ASI03", "AST06"], "shared browser",
+        out.append(finding("ISR-S005", NEW_SIGN_IN, "high", ["ASI03", "AST06"], "shared browser",
                            "; ".join(f"{h} first session {when(h)}" for h in signed)[:200],
                            "Every Bot can now use this login. If neither you nor a Bot you asked signed in there, sign out of that site from its "
                            "security settings (all sessions) and change its password.", ident=",".join(signed)))
     if cookies:
-        out.append(finding("WT-S005", "New cookies from a sensitive site (no session cookie seen)", "medium", ["ASI03"], "shared browser",
+        out.append(finding("ISR-S005", "New cookies from a sensitive site (no session cookie seen)", "medium", ["ASI03"], "shared browser",
                            "; ".join(f"{h} first cookie {when(h)}" for h in cookies)[:200],
                            "Probably a visit, not a sign-in. If you don't expect any Bot to use this site, clear its cookies in the Grok Bot browser.",
                            ident="cookies:" + ",".join(cookies)))
@@ -315,7 +315,7 @@ def new_sign_ins(seen=None):
 
 def browser_sessions(roots):
     """Grok Bot seeds the shared browser with login cookies. Report which domains, never values.
-    A sensitive domain is signed-in only when at least one of its cookies is a session/auth cookie (same test as WT-S005)."""
+    A sensitive domain is signed-in only when at least one of its cookies is a session/auth cookie (same test as ISR-S005)."""
     out, seen = [], set()
     for r in [os.path.expanduser("~/sand-data"), os.path.expanduser("~/agent-data")] + list(roots):
         if not os.path.isdir(r) or os.path.realpath(r) in seen:
@@ -345,7 +345,7 @@ def browser_sessions(roots):
                 title, sev, ident = "Shared browser cookies visible to every Bot", "medium", "plain"
                 fix = ("These are cookies every Bot can see. Visit/analytics cookies on sensitive domains are not treated as a "
                        "sign-in. Clear cookies for sites no Bot needs.")
-            out.append(finding("WT-S004", title, sev, ["ASI03", "AST06"], p,
+            out.append(finding("ISR-S004", title, sev, ["ASI03", "AST06"], p,
                                f"{len(domains)} domains; sensitive: {', '.join(signed_in[:8]) or 'none'}",
                                fix, ident=ident))
             break

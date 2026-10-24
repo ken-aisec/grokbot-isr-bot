@@ -260,7 +260,7 @@ def find_skill(name, dirs):
 
 def cmd_diff(args):
     snap = load_json(state_path("last_findings.json"), {"findings": []})
-    dirs = {skill_root(f["where"].split(":")[0]) for f in expand_groups(snap.get("findings", [])) if f["rule"] in ("WT-I001", "WT-I002")} - {None}
+    dirs = {skill_root(f["where"].split(":")[0]) for f in expand_groups(snap.get("findings", [])) if f["rule"] in ("ISR-I001", "ISR-I002")} - {None}
     d = skill_root(args.skill) if os.path.exists(args.skill) else find_skill(args.skill, dirs)
     if not d:
         base = load_baseline()[0]
@@ -283,7 +283,7 @@ def changed_skills(findings):
     """Skills with a changed file since approval, and changed files that aren't part of a skill (plugin or MCP config files)."""
     skills, other = {}, []
     for f in expand_groups(findings):
-        if f["rule"] != "WT-I001" or f.get("unverified_platform"):   # item 8: never re-approved through the engines
+        if f["rule"] != "ISR-I001" or f.get("unverified_platform"):   # item 8: never re-approved through the engines
             continue
         p = f["where"].split(":")[0]
         d = skill_root(p)
@@ -335,7 +335,7 @@ def revet(dirs, approve=False):
             fs = dedupe(per[d] + [f for f in eng if os.path.normpath(f["where"]) == d])
             bad = [f for f in active(fs)[0] if f["severity"] in ("critical", "high") or warned_danger(f)]
             if bad:
-                r.update(result="flagged", why="; ".join(sorted({plain(f)["title"] if f["rule"].startswith("WT-X") else f["title"] for f in bad}))[:200])
+                r.update(result="flagged", why="; ".join(sorted({plain(f)["title"] if f["rule"].startswith("ISR-X") else f["title"] for f in bad}))[:200])
             else:
                 r["result"] = "clean"
                 files = skill_dir_files(os.path.join(d, "SKILL.md")) if approve else []
@@ -372,14 +372,14 @@ def looks_like_security_tool(d):
 
 def exception_candidates(findings):
     return [{"name": skill_name(f["where"]), "path": os.path.normpath(f["where"])} for f in findings
-            if f["rule"] == "WT-X003" and os.path.isdir(f["where"]) and looks_like_security_tool(f["where"])]
+            if f["rule"] == "ISR-X003" and os.path.isdir(f["where"]) and looks_like_security_tool(f["where"])]
 
 
 def add_exception(name, reason):
     """Owner-confirmed exception for one named security-tool skill that two scanners flag. 30 days, no longer; ends early if
     the skill's files change. Returns (ok, message)."""
     snap = load_json(state_path("last_findings.json"), {"findings": []})
-    flagged = {os.path.normpath(f["where"]) for f in snap.get("findings", []) + snap.get("suppressed", []) if f["rule"] == "WT-X003"}
+    flagged = {os.path.normpath(f["where"]) for f in snap.get("findings", []) + snap.get("suppressed", []) if f["rule"] == "ISR-X003"}
     if any(c in name for c in "*?[],") or not name.strip():
         return False, "Name exactly one skill. Patterns and lists aren't allowed."
     d = find_skill(name.strip(), flagged)
@@ -391,7 +391,7 @@ def add_exception(name, reason):
         return False, "Give the owner's reason in their own words with --reason."
     exp = (dt.date.today() + dt.timedelta(days=EXC_DAYS)).isoformat()
     sup = [s_ for s_ in load_json(state_path("suppressions.json"), []) if not (s_.get("kind") == EXC_KIND and s_.get("where") == d)]
-    sup.append({"rule": "WT-X003", "kind": EXC_KIND, "where": d, "hash": skill_dir_hash(d), "reason": reason.strip()[:200], "expires": exp, "added": now()})
+    sup.append({"rule": "ISR-X003", "kind": EXC_KIND, "where": d, "hash": skill_dir_hash(d), "reason": reason.strip()[:200], "expires": exp, "added": now()})
     save_json(state_path("suppressions.json"), sup)
     ledger({"event": "exception", "skill": d, "expires": exp, "reason": reason.strip()[:200]})
     return True, f"Security-tool exception for “{skill_name(d)}” until {exp}. It's marked in every report and ends early if the skill changes."
@@ -655,7 +655,7 @@ def cmd_fix(args):
     in_q = lambda f: bool(q_names) and skill_name(skill_root(f["where"].split(":")[0]) or "") in q_names and skill_tier(f["where"]) == "user"
     only_you = [{"what": g["title"], "how": g["how"], "links": [u for _, u in g.get("links", [])]}
                 for g in needs_you([f for f in fs if fix_class(f) == "only_you" and not in_q(f)], 5)]   # quarantine handles those; don't hand them back to the owner
-    rules_needed = [r for r in ("WT-A003", "WT-A005") if any(f["rule"] == r for f in fs)]
+    rules_needed = [r for r in ("ISR-A003", "ISR-A005") if any(f["rule"] == r for f in fs)]
     ch_skills, ch_other = changed_skills(fs)
     approving = getattr(args, "approve_platform", None) is not None or getattr(args, "platform_from", None) is not None
     if not (args.apply or args.upgrade or args.upgrade_projects or args.accept or args.revet or args.exception or args.quarantine or approving):

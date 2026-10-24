@@ -101,7 +101,7 @@ def cmd_show(args):
     for f in rows:
         print(f"{f['severity']} {f['rule']} [{label_of(f)}] {f['where']}\n  evidence: {mask_secrets(str(f.get('evidence') or ''))}")
         path, _, ln = f["where"].rpartition(":")
-        if args.rule in ("WT-T011", "WT-T011x", "WT-S001", "WT-S002", "WT-S003") or not ln.isdigit():
+        if args.rule in ("ISR-T011", "ISR-T011x", "ISR-S001", "ISR-S002", "ISR-S003") or not ln.isdigit():
             continue
         if path not in masked:
             masked[path] = mask_lines(read_text(path) or "")
@@ -122,7 +122,7 @@ def by_sev(fs):
 # Batch 5 (d1, decision 2, Oct 18): Grok Bot's own files (scope "platform") keep their severity, label and key inside, so a
 # vendor rug pull still alerts and stays Confirmed, but they are never one of the owner's problems: not in open_by_severity, not
 # in `new`, not in breakdown's Confirmed list, not in the report's counts or the dashboard's tiles. Each is one plain line in
-# "Platform notes" instead. Unverified platform files (WT-I001/I002/I011) are never platform scope and still count.
+# "Platform notes" instead. Unverified platform files (ISR-I001/I002/I011) are never platform scope and still count.
 # PR A, Codex round 1 (5, 7): a platform finding that counts (a real key outside Grok Bot's config: counts() keeps it) is the
 # owner's, with its own fix, in every channel; and only a place Watchtower itself vouches for (a platform root, Grok Bot's
 # config, its secret store, a system package, the platform's hook) makes a note. A plugin state/plugins.json files as "catalog"

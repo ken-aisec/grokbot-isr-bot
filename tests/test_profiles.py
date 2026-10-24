@@ -76,8 +76,8 @@ class Profiles(Box):
         profiles.strict_auto_review(self); self.scanners()
         r = self.everyday()
         fs = self.snap()["findings"]
-        self.assertFalse([f for f in fs if f["rule"].startswith("WT-A0")], [f["rule"] for f in fs])
-        self.assertFalse([f for f in fs if f["rule"] == "WT-T013" and f.get("class") != "tip"])
+        self.assertFalse([f for f in fs if f["rule"].startswith("ISR-A0")], [f["rule"] for f in fs])
+        self.assertFalse([f for f in fs if f["rule"] == "ISR-T013" and f.get("class") != "tip"])
 
     def test_emoji_and_non_english_names(self):
         ds = profiles.emoji_names(self); self.scanners()
@@ -90,4 +90,4 @@ class Profiles(Box):
         stage = os.path.join(self.tmp, "stage", "Bot"); os.makedirs(stage)
         open(os.path.join(stage, "routine-a.md"), "w").write("Never send without my approval. José reads it; Танго drafts.\n")
         code, o, _ = self.run_cmd("prepublish", stage, "--json")
-        self.assertEqual(sorted(f["evidence"] for f in json.loads(o)["findings"] if f["rule"] == "WT-PP08"), ["José", "Танго"])
+        self.assertEqual(sorted(f["evidence"] for f in json.loads(o)["findings"] if f["rule"] == "ISR-PP08"), ["José", "Танго"])

@@ -25,16 +25,16 @@ class ScannerUnusable(OSError):
 
 class ScannerUnreadable(ScannerUnusable):
     """Claude review 1 (4): the program couldn't be read or copied right now (too slow, out of memory or file descriptors,
-    sealing refused, no /proc). Not run and its last results are kept, but this is no verdict on its contents, so no WT-X005."""
+    sealing refused, no /proc). Not run and its last results are kept, but this is no verdict on its contents, so no ISR-X005."""
 
 
 class SealUnavailable(ScannerUnreadable):
     """Claude review 2 (1): the sealed copy couldn't be made (memfd, sealing, writing the copy or /proc). Nothing runs, but the
-    program file itself is still hashed once for a verdict, so a swapped copy is a WT-X005 even then."""
+    program file itself is still hashed once for a verdict, so a swapped copy is a ISR-X005 even then."""
 
 
 # Claude review 2 (1): every OSError was "unreadable", so a swapped copy chmod 0111 (or a link swapped in after the lstat) gave
-# EACCES or ELOOP at open, no WT-X005, every run. Only these say the computer is short of something; any other failure to open
+# EACCES or ELOOP at open, no ISR-X005, every run. Only these say the computer is short of something; any other failure to open
 # or read the program file comes from the file itself, so it isn't the copy Watchtower installed.
 _PRESSURE_ERRNOS = {errno.ENOMEM, errno.EMFILE, errno.ENFILE, errno.EAGAIN, errno.EINTR}
 
@@ -475,11 +475,11 @@ def _digest_problem(name, digest):
         return None
     want = _scanner_listed(name)
     if not want and scanner_list_changed():
-        return "changed", "Watchtower's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run"  # v0.7.4: the old name kept, this is WT-X005's evidence, part of the finding key
+        return "changed", "Watchtower's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run"  # v0.7.4: the old name kept, this is ISR-X005's evidence, part of the finding key
     if not want:
         return "unlisted", f"its checksum isn't in ISR Bot's list for this computer ({scanner_arch()}) yet"
     if digest not in want:
-        return "changed", "its program file isn't the one Watchtower installed"  # v0.7.4: the old name kept, this is WT-X005's evidence, part of the finding key
+        return "changed", "its program file isn't the one Watchtower installed"  # v0.7.4: the old name kept, this is ISR-X005's evidence, part of the finding key
     return None
 
 
@@ -633,7 +633,7 @@ def tool(name):
     at launch (run(), scanner_launch).
 
     Claude review 2 (3): only a refusal at launch was kept, so a swapped copy whose stage was skipped, put back before the end
-    of the run, read as verified at the last check: no WT-X005, and it counted as used. A copy found changed now stays changed
+    of the run, read as verified at the last check: no ISR-X005, and it counted as used. A copy found changed now stays changed
     for the rest of the run too, and any scanner with a problem this run is in SCANNERS_HELD (not counted as used)."""
     held = SCANNER_PROBLEMS.get(name, ())
     if len(held) == 3 or held[:1] == ("changed",):
@@ -675,7 +675,7 @@ def scanner_unavailable(name):
     kind, why = SCANNER_PROBLEMS.get(name, (None, ""))[:2]
     ran = scanner_ran_before(label)
     if kind == "changed":
-        line = f"{label} NOT run: {why}, so its checks weren't done this time and its last results are kept (WT-X005)."
+        line = f"{label} NOT run: {why}, so its checks weren't done this time and its last results are kept (ISR-X005)."
     elif kind == "unreadable":   # Claude review 1 (4): not checked, so kept and revet is blocked, but no verdict on the copy
         line = f"{label} NOT run: {why}, so its checks weren't done this time and its last results are kept."
     elif kind == "unlisted":
@@ -709,12 +709,12 @@ def engines_blocked():
 
 
 # Codex, batch 3 final review: codescan's optional semgrep, refused at launch (exit 126) or changed, still said "semgrep
-# found and used too" and raised nothing, because only SCANNER_NAMES could be a WT-X005. It is X005-eligible too.
+# found and used too" and raised nothing, because only SCANNER_NAMES could be a ISR-X005. It is X005-eligible too.
 X005_OPTIONAL = {"semgrep": "semgrep"}
 
 
 def scanner_x005():
-    """WT-X005, once per scanner whose copy isn't the one Watchtower installed."""
+    """ISR-X005, once per scanner whose copy isn't the one Watchtower installed."""
     out = []
     for name, problem in sorted(SCANNER_PROBLEMS.items()):
         kind, why = problem[:2]
@@ -723,7 +723,7 @@ def scanner_x005():
         label = SCANNER_NAMES.get(name) or X005_OPTIONAL[name]
         put_back = (f"Put it back with `bash {home()}/app/scripts/install.sh --scanners`." if name in SCANNER_NAMES else
                     f"install.sh doesn't install {label}: put back the copy scripts/scanner-bins.lock lists, or remove it from {scanner_bin()}.")
-        out.append(finding("WT-X005", f"ISR Bot's copy of {label} isn't the one it installed", "high", ["ASI04", "AST02"],
+        out.append(finding("ISR-X005", f"ISR Bot's copy of {label} isn't the one it installed", "high", ["ASI04", "AST02"],
                            os.path.join(scanner_bin(), name), why,
                            f"ISR Bot didn't run {label}: its program file isn't the one ISR Bot installed, so its checks weren't "
                            f"done this time and its last results are kept. {put_back} "

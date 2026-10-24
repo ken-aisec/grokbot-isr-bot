@@ -78,8 +78,8 @@ class RollCall(Base):
         self.assertNotIn("monthly roll-call", open(os.path.join(ROOT, "bot", "getting-started.md")).read())
 
     def test_roll_call_findings_never_move_the_score(self):
-        rc = wt.finding("WT-M010", "Memory", "high", ["ASI06"], "rollcall:Harbor:memory1", "x", "fix")
-        own = wt.finding("WT-K001", "Decoy read", "critical", ["X"], "/tmp/.x/y", "x", "fix")
+        rc = wt.finding("ISR-M010", "Memory", "high", ["ASI06"], "rollcall:Harbor:memory1", "x", "fix")
+        own = wt.finding("ISR-K001", "Decoy read", "critical", ["X"], "/tmp/.x/y", "x", "fix")
         self.assertEqual(wt.scored([rc, own]), [own])
         self.assertEqual(wt.score(wt.scored([rc])), (100, "A"))
 
@@ -106,7 +106,7 @@ class RestrictiveRules(Base):
                    "memories": ["Never send anything without the owner's yes.", "Always ask first before posting."]},
                   open(os.path.join(d, "careful.json"), "w"))
         fs, _ = wt.rollcall_findings(d)
-        self.assertNotIn("WT-M010", {f["rule"] for f in fs})
+        self.assertNotIn("ISR-M010", {f["rule"] for f in fs})
 
     def test_uninstall_never_suggests_removing_the_ask_first_rules(self):
         src = open(os.path.join(ROOT, "watchtower", "wt.py")).read()

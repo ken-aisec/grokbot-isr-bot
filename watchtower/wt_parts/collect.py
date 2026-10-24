@@ -250,7 +250,7 @@ KNOWN_CRED_FILES = {
 
 
 def cli_credentials(unknown=None):
-    """WT-S003 for each known CLI credential file there. `unknown` (a list) gets each one Watchtower couldn't look at (batch 6,
+    """ISR-S003 for each known CLI credential file there. `unknown` (a list) gets each one Watchtower couldn't look at (batch 6,
     KL5): the access map then never says there is no sign-in."""
     out = []
     for rel, what in KNOWN_CRED_FILES.items():
@@ -259,7 +259,7 @@ def cli_credentials(unknown=None):
         if st is None and unknown is not None:
             unknown.append(p)
         if st and stat.S_ISREG(st.st_mode):
-            out.append(finding("WT-S003", f"CLI credential on the shared computer: {what}", "high", ["ASI03", "AST06"], p, what,
+            out.append(finding("ISR-S003", f"CLI credential on the shared computer: {what}", "high", ["ASI03", "AST06"], p, what,
                                "Expected if a Bot uses this CLI, but every Bot (and anything injected into one) can use it. "
                                "Keep only the CLIs your Bots need, scope tokens to least privilege, and rotate them; sign out of unused ones."))
     return out

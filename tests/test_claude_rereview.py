@@ -1,4 +1,4 @@
-"""Claude's re-review of dev at 9698480 (Oct 11): WT-S005 A–C, WT-T017 D, lint E. Hosts and paths are made up."""
+"""Claude's re-review of dev at 9698480 (Oct 11): ISR-S005 A–C, ISR-T017 D, lint E. Hosts and paths are made up."""
 import json, os, sqlite3, sys, time, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -22,7 +22,7 @@ class S005LoggedInIsNotASession(Box):
         c.commit(); c.close()
 
     def s5(self):
-        return [f for f in self.snap()["findings"] if f["rule"] == "WT-S005"]
+        return [f for f in self.snap()["findings"] if f["rule"] == "ISR-S005"]
 
     def test_github_logged_in_alone_is_not_a_confirmed_sign_in(self):
         self.jar([("ads.example", "id", time.time() - 9000)]); self.skills(1); self.scanners(); self.audit()
@@ -61,7 +61,7 @@ class S005VisitThenSignIn(Box):
         c.commit(); c.close()
 
     def s5(self):
-        return [f for f in self.snap()["findings"] if f["rule"] == "WT-S005"]
+        return [f for f in self.snap()["findings"] if f["rule"] == "ISR-S005"]
 
     def test_notion_visit_then_sign_in_flips_to_confirmed(self):
         self.jar([("ads.example", "id", time.time() - 9000)]); self.skills(1); self.scanners(); self.audit()
@@ -95,7 +95,7 @@ class S005SessionNamePatterns(Box):
         c.commit(); c.close()
 
     def s5(self):
-        return [f for f in self.snap()["findings"] if f["rule"] == "WT-S005"]
+        return [f for f in self.snap()["findings"] if f["rule"] == "ISR-S005"]
 
     def test_dotted_and_ests_auth_names_count_as_sessions(self):
         for name in ("__Secure-next-auth.session-token", "ESTSAUTHPERSISTENT", "_gh_sess", "token_v2"):
@@ -150,14 +150,14 @@ class T017CommonSendForms(unittest.TestCase):
         for c in self.BAD:
             for wrap in (lambda x: x, lambda x: f"`{x}`", lambda x: f"```\n{x}\n```"):
                 t = PREFIX + wrap(c) + "\n"
-                fs = [f for f in wt.scan_text(t, "/ws/s/SKILL.md", rules) if f["rule"] == "WT-T017"]
+                fs = [f for f in wt.scan_text(t, "/ws/s/SKILL.md", rules) if f["rule"] == "ISR-T017"]
                 self.assertTrue(fs, c)
 
     def test_harmless_d_flags_and_get_queries_stay_quiet(self):
         rules = wt.load_rules()
         for b in self.BENIGN:
             t = "Keys live in ~/.ssh and ~/.aws/credentials; never read them.\n```\n" + b + "\n```\n"
-            self.assertFalse([f for f in wt.scan_text(t, "/ws/s/SKILL.md", rules) if f["rule"] == "WT-T017"], b)
+            self.assertFalse([f for f in wt.scan_text(t, "/ws/s/SKILL.md", rules) if f["rule"] == "ISR-T017"], b)
 
 
 class LintSlashJoinedActions(unittest.TestCase):
@@ -166,7 +166,7 @@ class LintSlashJoinedActions(unittest.TestCase):
     def test_pay_transfer_and_send_post_are_flagged(self):
         for t in ("Allow automatically pay/transfer", "Allow automatically send/post to anyone"):
             rs = {f["rule"] for f in wt.lint_auto_review(t, "s", check_missing=False)}
-            self.assertIn("WT-A002", rs, t)
+            self.assertIn("ISR-A002", rs, t)
 
     def test_real_paths_still_strip(self):
         self.assertEqual(

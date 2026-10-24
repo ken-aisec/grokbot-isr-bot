@@ -18,7 +18,7 @@ def audit(roots, exports, quick=False):
         places = not_scanned_places(inv["non_live_skills"], roots)
         shown = ", ".join(places[:6]) + (f", +{len(places) - 6} more" if len(places) > 6 else "")
         hint = "" if SCAN_EVERYTHING else "; say 'scan everything' to include them"
-        fs.append(finding("WT-I007", f"Not scanned: {len(places)} folder{'' if len(places) == 1 else 's'} ({shown}){hint}",
+        fs.append(finding("ISR-I007", f"Not scanned: {len(places)} folder{'' if len(places) == 1 else 's'} ({shown}){hint}",
                           "info", ["AST09"], "not-scanned",
                           f"{len(inv['non_live_skills'])} SKILL.md file(s) outside the places Grok Bot loads skills from "
                           "(archives, clones, other projects, tests, fixtures, quarantine). Keys are still checked there.",
@@ -43,7 +43,7 @@ def audit(roots, exports, quick=False):
                     batch = scan_text(t, p, rules, kind=kind)
                     if is_vendor_template_file(p):   # DQ-024: story text in a built-in deck template is not a hidden-action hit
                         for f in batch:
-                            if f["rule"] in ("WT-T008", "WT-T016"):   # story wording only; never exfil/pipe/override (R2)
+                            if f["rule"] in ("ISR-T008", "ISR-T016"):   # story wording only; never exfil/pipe/override (R2)
                                 f["severity"] = "info"
                                 f["title"] = f["title"] + " (example text in a built-in template)"
                     fs += scanned_from(batch, manifest[p])
@@ -55,7 +55,7 @@ def audit(roots, exports, quick=False):
             fs += scanned_from(scan_text(t, p, rules, kind="reference"), h)
             manifest[p] = h
             for ln, ev in mcp_unpinned(t):   # batch 6 (B8): every launcher alike, read from the server's command and args
-                fs.append(finding("WT-M001", "MCP server launched unpinned", "medium", ["AST02", "ASI04"],
+                fs.append(finding("ISR-M001", "MCP server launched unpinned", "medium", ["AST02", "ASI04"],
                                   f"{p}:{ln}", ev, "Pin an exact version (pkg@1.2.3) so an update can't change what runs."))
     if inv["platform_aliases"]:   # item 8 review 1: a platform name of a file already scanned is fingerprinted, never dropped
         scanned = {os.path.realpath(p) for p in manifest}
@@ -107,18 +107,18 @@ def audit(roots, exports, quick=False):
             if p in moved_to:
                 continue   # the same file under a new folder name (plugins are reinstalled under new folders after a restart)
             if p in base and base[p] != h and is_vendor(p):
-                fs.append(finding("WT-I001", "Built-in skill or plugin updated", "low", ["AST07"], p, f"sha256 {base[p][:12]}→{h[:12]}",
+                fs.append(finding("ISR-I001", "Built-in skill or plugin updated", "low", ["AST07"], p, f"sha256 {base[p][:12]}→{h[:12]}",
                                   "Usually the platform or a plugin update. The scanners re-check the new version; the fix re-approves it if clean."))
                 fs[-1]["refresh"] = platform_file(p)
             elif p in base and base[p] != h:
-                fs.append(finding("WT-I001", "Reviewed skill or plugin changed", "high", ["AST07"], p,
+                fs.append(finding("ISR-I001", "Reviewed skill or plugin changed", "high", ["AST07"], p,
                                   f"sha256 {base[p][:12]}→{h[:12]}",
                                   "Tell ISR Bot \"fix it\": it re-scans the skill with every engine and re-approves it if clean. `wt.py diff <skill>` shows what changed."))
             elif p not in base:
-                fs.append(finding("WT-I002", "New skill or plugin file", "low", ["AST09"], p, h[:12],
+                fs.append(finding("ISR-I002", "New skill or plugin file", "low", ["AST09"], p, h[:12],
                                   "Vet it (`wt vet`), then run `wt baseline` to accept it."))
                 fs[-1]["refresh"] = platform_file(p)
-                ck = plugin_file_key("WT-I002", p, h, versions)   # DQ-047: same bytes, same plugin version, new catalog folder
+                ck = plugin_file_key("ISR-I002", p, h, versions)   # DQ-047: same bytes, same plugin version, new catalog folder
                 if ck:
                     fs[-1]["key0"] = ck
         for p in base:
@@ -133,7 +133,7 @@ def audit(roots, exports, quick=False):
             if p not in manifest and not p.startswith("persist:") and not os.path.exists(p) and not is_live_skill_path(p):
                 continue   # item 8 dry run (Oct 13): gone from a place nothing loads (skill-hunt candidates, clones): not a live removal   # v0.7.1 item 1: still on disk, just outside the live scan (archive, clone, scope back to live-only)
             if p not in manifest and not p.startswith("persist:"):
-                fs.append(finding("WT-I003", "Skill or plugin file removed", "info", ["AST09"], p, "missing", "Confirm you removed it."))
+                fs.append(finding("ISR-I003", "Skill or plugin file removed", "info", ["AST09"], p, "missing", "Confirm you removed it."))
                 fs[-1]["refresh"] = platform_file(p)
     else:
         notes.append("No baseline yet: integrity drift starts next run.")
@@ -148,26 +148,26 @@ def audit(roots, exports, quick=False):
         notes.append(f"state/{OLD_PLATFORM_APPROVALS} is left from an earlier ISR Bot and is no longer read: platform files it listed are "
                      "alerts again unless the release list includes them. You can delete it.")
     for d, (n_done, n_all) in sorted(INCOMPLETE_SKILLS.items()):
-        fs.append(finding("WT-I006", "Skill too large to check completely", "info", ["AST07"], d, f"{n_done} of {n_all} files fingerprinted and scanned",
+        fs.append(finding("ISR-I006", "Skill too large to check completely", "info", ["AST07"], d, f"{n_done} of {n_all} files fingerprinted and scanned",
                           "Files past the limit are NOT checked for changes; ISR Bot can't re-approve this skill automatically. Trim it, or review changes by hand."))
     new_plugins = note_plugins(inv)
     synced = catalog_sync(new_plugins)
     for market, commit, names in synced:
-        fs.append(finding("WT-I005", "Platform catalog sync added plugins", "info", ["AST09"], f"plugins/cache/{market}",
+        fs.append(finding("ISR-I005", "Platform catalog sync added plugins", "info", ["AST09"], f"plugins/cache/{market}",
                           f"{len(names)} at catalog commit {commit[:12]}: {', '.join(names)}"[:200],
                           "The platform updated its public plugin catalog; nobody installed these. None of them adds hooks, scripts or a "
                           "program that runs on this computer. Their skills are still scanned like any other.", ident=f"{market}@{commit}"))
         for n in names:
             new_plugins.pop(n, None)
     for f in fs:   # F1: a change is a platform refresh only once the plugin list says whose plugin it is
-        if "refresh" in f and f["rule"] in ("WT-I001", "WT-I002", "WT-I003"):
+        if "refresh" in f and f["rule"] in ("ISR-I001", "ISR-I002", "ISR-I003"):
             f["refresh"] = platform_file(f["where"])
     for name, proots in sorted(new_plugins.items()):
         inside = lambda p: any(p == r or p.startswith(r + "/") for r in proots)
         n_files = sum(1 for p in manifest if inside(p))
         n_skills = sum(1 for p in inv["skills"] if inside(p))
-        fs = [f for f in fs if not (f["rule"] in ("WT-I001", "WT-I002") and inside(f["where"].split(":")[0]) and not f.get("unverified_platform"))]
-        fs.append(finding("WT-I004", "New plugin installed", "medium", ["AST02", "AST09"], proots[0], f"{name}: {n_files} files, {n_skills} skills",
+        fs = [f for f in fs if not (f["rule"] in ("ISR-I001", "ISR-I002") and inside(f["where"].split(":")[0]) and not f.get("unverified_platform"))]
+        fs.append(finding("ISR-I004", "New plugin installed", "medium", ["AST02", "AST09"], proots[0], f"{name}: {n_files} files, {n_skills} skills",
                           "A plugin's skills can't be vetted before it is installed, so they are checked now. Anything the scanners flag in it is "
                           "listed and counts until you decide. Tell ISR Bot \"fix it\" to keep it with one yes, or remove it in the app (Marketplace → Your plugins)."))
         rel = [sorted(os.path.relpath(p, r) for p in manifest if p == r or p.startswith(r + "/")) for r in proots]
@@ -176,7 +176,7 @@ def audit(roots, exports, quick=False):
             fs[-1]["key0"] = plugin_place_key(name, proots, rel)   # DQ-047: the same files in a new version folder, the old one gone
         if was:
             line = (f"Plugin {name} changed version folder ({', '.join(os.path.basename(r) for r in was[0])} → "
-                    f"{', '.join(os.path.basename(r) for r in was[1])}); it is still waiting for your decision (WT-I004).")
+                    f"{', '.join(os.path.basename(r) for r in was[1])}); it is still waiting for your decision (ISR-I004).")
             notes.append(line)
             version_changes.append(line)
 
@@ -188,7 +188,7 @@ def audit(roots, exports, quick=False):
     if old is not None:
         for k, v in snap.items():
             if persistence_changed(old, k, v):
-                fs.append(finding("WT-P001", "Persistence point changed", "medium", ["ASI10", "ASI05"], k,
+                fs.append(finding("ISR-P001", "Persistence point changed", "medium", ["ASI10", "ASI05"], k,
                                   str(v)[:120], "Check who added this cron entry, unit, or shell rc change; remove it if no Bot of yours needs it.",
                                   shown=str(v)))
     save_json(state_path("persistence.json"), persistence_stored(snap))
@@ -229,7 +229,7 @@ def audit(roots, exports, quick=False):
         hits = [(m, secret_at(t, m)[1]) for m in rule["rx"].finditer(t)]
         if hits:
             m, why = next((h for h in hits if not h[1]), hits[0])
-            f = finding("WT-S001", "Secret stored in a file on the shared computer", secret_severity(p, False), ["ASI03", "LLM02"],
+            f = finding("ISR-S001", "Secret stored in a file on the shared computer", secret_severity(p, False), ["ASI03", "LLM02"],
                         f"{p}:{line_of(t, m.start())}", f"{mask(m.group(0))} ({len(hits)} in file)",
                         "Every Bot can read this file. Revoke the key, delete the file, and use the secure secret request instead.", path=p)
             fs.append(annotate_example(f, why) if why else f)
@@ -269,12 +269,12 @@ def audit(roots, exports, quick=False):
     # get a Tip about the language, beside the medium, never instead of it
     seen, gaps = ask_first_state(entries, export_rules)
     if gaps:
-        fs.append(finding("WT-A003", {"absent": "Ask-first rules not found", "unread": "Ask-first rules don't say what they cover"}.get(
+        fs.append(finding("ISR-A003", {"absent": "Ask-first rules not found", "unread": "Ask-first rules don't say what they cover"}.get(
                               seen, "Ask-first rules don't cover everything"), "medium", ["ASI09"], "Auto-review rules", ", ".join(gaps),
                           "Rules saved only in the app can't be seen from the computer. Tell the Bot to add them and save a copy to "
                           "/workspace/watchtower/exports/auto-review.txt."))
     if seen == "unread":
-        fs.append(finding("WT-A003", "ISR Bot can't check your Ask-first rules if it doesn't read their language", "info",
+        fs.append(finding("ISR-A003", "ISR Bot can't check your Ask-first rules if it doesn't read their language", "info",
                           ["ASI09"], "Auto-review rules", ASK_UNREAD_EVIDENCE,
                           "ISR Bot reads Ask-first rules in English, Spanish, French, German, Portuguese, Italian, Russian, Chinese, "
                           "Japanese, Korean, Arabic, Greek and Hindi, and found none of their words in yours. The alert above stays "
@@ -282,7 +282,7 @@ def audit(roots, exports, quick=False):
         fs[-1]["ask_first_unread"] = True   # a Tip (ask_first_unread: this evidence only, so it never matches the medium)
 
     # 5b. tripwires and shell history (zero tokens)
-    fs += soft("hooks", ("WT-C005",), notes, [], hook_findings, roots, inv)
+    fs += soft("hooks", ("ISR-C005",), notes, [], hook_findings, roots, inv)
     USED_PATHS.clear()
     USED_PATHS.update(soft("project users", (), notes, set(), project_users, roots, inv, exports) or set())
     soft("decoys", (), notes, None, tend_canaries, notes)
@@ -303,16 +303,16 @@ def audit(roots, exports, quick=False):
         notes.append("Roll-call is off (opt-in): other Bots' memories and routines are not checked. Ask for a roll-call to run one with your yes.")
 
     # 6. second and third engines on the user's skills plus anything new or changed; secrets; packages
-    changed = {skill_root(f["where"].split(":")[0]) or os.path.dirname(f["where"].split(":")[0]) for f in fs if f["rule"] in ("WT-I001", "WT-I002")}
+    changed = {skill_root(f["where"].split(":")[0]) or os.path.dirname(f["where"].split(":")[0]) for f in fs if f["rule"] in ("ISR-I001", "ISR-I002")}
     user_dirs = [os.path.dirname(x) for x in inv["skills"] if skill_tier(x) == "user"]
     user_roots = sorted({x.split("/workflows/")[0] + "/workflows" for x in user_dirs if "/workflows/" in x})
     if not quick:
         # The quick scanners go first and the slow skill scanners last, each with only the time that is left.
-        fs += soft("gitleaks (keys in files)", ("WT-S002",), notes, [], gitleaks_findings, roots, notes)
-        fs += soft("pip-audit (installed Python packages)", ("WT-D001",), notes, [], package_findings, notes)
-        fs += soft("OSV-Scanner (project dependencies)", ("WT-D002",), notes, [], osv_findings, roots, notes)
-        fs += soft("Watchtower's own tools", ("WT-W001",), notes, [], self_findings, notes)
-        secret_paths = [f["where"].split(":")[0] for f in fs if f["rule"] in ("WT-S001", "WT-S002")]
+        fs += soft("gitleaks (keys in files)", ("ISR-S002",), notes, [], gitleaks_findings, roots, notes)
+        fs += soft("pip-audit (installed Python packages)", ("ISR-D001",), notes, [], package_findings, notes)
+        fs += soft("OSV-Scanner (project dependencies)", ("ISR-D002",), notes, [], osv_findings, roots, notes)
+        fs += soft("Watchtower's own tools", ("ISR-W001",), notes, [], self_findings, notes)
+        secret_paths = [f["where"].split(":")[0] for f in fs if f["rule"] in ("ISR-S001", "ISR-S002")]
         ks = soft("TruffleHog (which keys still work)", (), notes, None, trufflehog_status, secret_paths, notes)
         if ks is None or "TruffleHog (which keys still work)" in STAGE_FAILED:
             old = load_json(state_path("key_status.json"), {}) or {}
@@ -320,7 +320,7 @@ def audit(roots, exports, quick=False):
         else:
             fs = apply_key_status(fs, ks, ran=bool(tool("trufflehog")))
         other_dirs = sorted(os.path.dirname(x) for x in inv["skills"] if skill_tier(x) != "user")
-        fs += soft("SkillSpector and husk", ("WT-X001", "WT-X002", "WT-X003", "WT-X004"), notes, [], engine_findings,
+        fs += soft("SkillSpector and husk", ("ISR-X001", "ISR-X002", "ISR-X003", "ISR-X004"), notes, [], engine_findings,
                    user_dirs + sorted(changed) + other_dirs, fs, notes, user_roots, budget=max(0, min(ENGINE_BUDGET, time_left() - 20)))
         set_progress("finishing", 0, 0)
         rearm_canaries(within=roots)  # Watchtower's own scanners just read the files under roots; reset only those (batch 2, R2)

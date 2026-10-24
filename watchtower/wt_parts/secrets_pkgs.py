@@ -403,7 +403,7 @@ def gitleaks_findings(roots, notes):
             if os.path.abspath(str(leak.get("File") or "")) in decoys:
                 continue
             if is_platform_secret_store(str(leak.get("File") or "")):
-                continue                                  # Decision, Oct 13: the platform's masked-secret store is one Platform note (WT-I009)
+                continue                                  # Decision, Oct 13: the platform's masked-secret store is one Platform note (ISR-I009)
             if in_toolchain_tree(str(leak.get("File") or "")):
                 skipped_tool += 1
                 continue                                  # item 8 dry run: test vectors in a language toolchain or package store                                  # Watchtower's own decoys (their names are this install's, not in this config)
@@ -432,7 +432,7 @@ def gitleaks_findings(roots, notes):
                 # these folders come and go, so the finding keeps one name (ident) while its evidence changes
                 locs = [f"{os.path.relpath(l.get('File') or d, d)}:{l.get('StartLine')}" for l in leaks]
                 at = ", ".join(locs[:3]) + (f" and {len(locs) - 3} more" if len(locs) > 3 else "")
-                out.append(_note_examples(finding("WT-S002", f"gitleaks: secrets in {len(files)} {'file' if len(files) == 1 else 'files'} under {os.path.basename(d)}", sev,
+                out.append(_note_examples(finding("ISR-S002", f"gitleaks: secrets in {len(files)} {'file' if len(files) == 1 else 'files'} under {os.path.basename(d)}", sev,
                                                   ["ASI03", "LLM02"], d, f"{len(leaks)} hit(s): {', '.join(kinds)[:60]} at {at}", why, source="gitleaks",
                                                   ident="gitleaks:" + ",".join(kinds)), leaks, examples))
                 # b8i4 fix round 2 (Codex 4): every file it stands for, by path (its `where` is their folder), so a platform update
@@ -442,7 +442,7 @@ def gitleaks_findings(roots, notes):
         for fpath, leaks in per_file.items():
             kinds = sorted({l.get("RuleID", "secret") for l in leaks})
             generic = all(k.startswith("generic") for k in kinds)
-            out.append(_note_examples(finding("WT-S002", "gitleaks: secrets in file", secret_severity(fpath or "", generic), ["ASI03", "LLM02"],
+            out.append(_note_examples(finding("ISR-S002", "gitleaks: secrets in file", secret_severity(fpath or "", generic), ["ASI03", "LLM02"],
                                               f"{fpath}:{leaks[0].get('StartLine')}", f"{len(leaks)} hit(s): {', '.join(kinds)[:100]}",
                                               "Check whether these are live credentials. Revoke live ones, then delete or scrub the file.", source="gitleaks",
                                               path=fpath if isinstance(fpath, str) and fpath.startswith("/") else None), leaks, examples))
@@ -584,12 +584,12 @@ def package_findings(notes):
         fixes = sorted({fv for v in vulns for fv in v.get("fix_versions", [])}, key=vtuple)
         ids = list(dict.fromkeys(v.get("id", "") for v in vulns))
         if str(d.get("name", "")).lower() not in mine:      # came with the computer: the platform's to update, not the user's
-            out.append(finding("WT-D001", f"Built-in Python package {d.get('name')} {d.get('version')} has known holes", "low", ["ASI04", "AST02"],
+            out.append(finding("ISR-D001", f"Built-in Python package {d.get('name')} {d.get('version')} has known holes", "low", ["ASI04", "AST02"],
                                f"system python package {d.get('name')}", f"{len(ids)} known: {', '.join(ids[:4])}{'…' if len(ids) > 4 else ''}",
                                "It came with the computer and every Bot shares it. The platform's updates fix it; ISR Bot doesn't touch system packages.",
                                source="pip-audit", ident=f"{d.get('name')} {d.get('version')}"))
             continue
-        out.append(finding("WT-D001", f"Vulnerable package {d.get('name')} {d.get('version')}", "high", ["ASI04", "AST02"],
+        out.append(finding("ISR-D001", f"Vulnerable package {d.get('name')} {d.get('version')}", "high", ["ASI04", "AST02"],
                            f"python package {d.get('name')}", f"{len(ids)} known: {', '.join(ids[:4])}{'…' if len(ids) > 4 else ''}",
                            f"Upgrade to {fixes[-1]} or later." if fixes else "No fixed version yet; remove it if nothing needs it.",
                            source="pip-audit"))
@@ -611,14 +611,14 @@ def self_findings(notes):
     update_notes(notes)
     if not py:
         # Codex, batch 3 round 1: a missing or refused scanner Python returned here with the stage marked finished, so last
-        # run's WT-W001 lines read as fixed. When there is a Python that isn't trusted, or there were W001 results to keep,
+        # run's ISR-W001 lines read as fixed. When there is a Python that isn't trusted, or there were W001 results to keep,
         # this is "not checked", never "clean". A computer that never had the scanners stays a plain skip, as before.
-        if os.path.lexists(os.path.join(scanner_bin(), "python")) or carry(("WT-W001",)):
+        if os.path.lexists(os.path.join(scanner_bin(), "python")) or carry(("ISR-W001",)):
             fail_note(notes, "ISR Bot's own tools were NOT checked for known holes this run (its scanner Python is missing or "
                              "isn't the computer's own); the last results are kept.")
         return out
     if not os.path.isfile(os.path.join(os.path.dirname(os.path.dirname(py)), "LOCKED")):
-        out.append(finding("WT-W002", "ISR Bot's scanners were installed without the checksum lock", "low", ["ASI04", "AST02"], "watchtower scanners",
+        out.append(finding("ISR-W002", "ISR Bot's scanners were installed without the checksum lock", "low", ["ASI04", "AST02"], "watchtower scanners",
                            "no LOCKED marker", "Run `bash /workspace/watchtower/app/scripts/install.sh --scanners` again; it installs only from the lock, and stops and says why if this computer's Python doesn't fit it."))
     if not exe:
         if scanner_unavailable("pip-audit")[0]:   # batch 3: pip-audit's own line says why; this stage's last results are kept too
@@ -643,7 +643,7 @@ def self_findings(notes):
     for d in deps:
         if d.get("vulns"):
             ids = list(dict.fromkeys(v.get("id", "") for v in d["vulns"]))
-            out.append(finding("WT-W001", f"ISR Bot's own tool needs an update: {d.get('name')} {d.get('version')}", "low", ["ASI04", "AST02"],
+            out.append(finding("ISR-W001", f"ISR Bot's own tool needs an update: {d.get('name')} {d.get('version')}", "low", ["ASI04", "AST02"],
                                "watchtower scanners", f"{len(ids)} known: {', '.join(ids[:3])}",
                                "Update ISR Bot: each release carries newer pinned scanners. This package lives only in ISR Bot's own folder.", source="pip-audit"))
     return out

@@ -8,24 +8,24 @@ SCORE_CAP = {"critical": 50, "high": 25, "medium": 12, "low": 3}      # per seve
 # changed, a provider said a key works, two engines agree, a setting is on). "Pattern" rules match wording or a key-shaped
 # string, or are one engine alone: often right, sometimes fine. A pattern finding is at most medium unless something backs it up.
 EVIDENCE_RULES = frozenset((
-    "WT-A001", "WT-A002", "WT-A003", "WT-A004", "WT-A005", "WT-C001", "WT-C003", "WT-C004", "WT-C005",
-    "WT-D001", "WT-D002", "WT-I001", "WT-I002", "WT-I003", "WT-I004", "WT-I005", "WT-I006", "WT-I010", "WT-I011",
+    "ISR-A001", "ISR-A002", "ISR-A003", "ISR-A004", "ISR-A005", "ISR-C001", "ISR-C003", "ISR-C004", "ISR-C005",
+    "ISR-D001", "ISR-D002", "ISR-I001", "ISR-I002", "ISR-I003", "ISR-I004", "ISR-I005", "ISR-I006", "ISR-I010", "ISR-I011",
     # Shell history: commands that actually ran on this computer, not wording (decision, 2026-10-10). H007 is a file-mode fact.
-    "WT-H001", "WT-H002", "WT-H003", "WT-H004", "WT-H005", "WT-H006", "WT-H007", "WT-H008", "WT-H009",
-    "WT-K001", "WT-K002", "WT-K003", "WT-K004", "WT-K005", "WT-K006", "WT-M001", "WT-P001", "WT-R010",
-    "WT-S003", "WT-S004", "WT-S005", "WT-W001", "WT-W002", "WT-X003", "WT-X004",
-    "WT-X005"))   # batch 3 (R7): Watchtower's copy of a scanner isn't the one it installed
+    "ISR-H001", "ISR-H002", "ISR-H003", "ISR-H004", "ISR-H005", "ISR-H006", "ISR-H007", "ISR-H008", "ISR-H009",
+    "ISR-K001", "ISR-K002", "ISR-K003", "ISR-K004", "ISR-K005", "ISR-K006", "ISR-M001", "ISR-P001", "ISR-R010",
+    "ISR-S003", "ISR-S004", "ISR-S005", "ISR-W001", "ISR-W002", "ISR-X003", "ISR-X004",
+    "ISR-X005"))   # batch 3 (R7): Watchtower's copy of a scanner isn't the one it installed
 HISTORY_SHRANK = "Shell history shrank since last check"
 NEW_SIGN_IN = "New sign-in in the shared browser"
 CONFIRMED, MAYBE_FINE = "Confirmed", "Worth a look (might be fine)"
 # v0.6.8 (decision, Oct 10, after Cloudflare's MIT-licensed security-audit skill): a "Worth a look" finding carries no severity and
 # never moves the score; best-practice checks are Tips, also without severity or score.
-TIP_RULES = frozenset(("WT-R002", "WT-R003"))   # pattern-class best practice only; no evidence rule is moved
-SCOPE_RULES = frozenset(("WT-I007", "WT-I008"))   # v0.7.1 items 1 and 6: "Not scanned" and "Platform refresh" summaries are tips
+TIP_RULES = frozenset(("ISR-R002", "ISR-R003"))   # pattern-class best practice only; no evidence rule is moved
+SCOPE_RULES = frozenset(("ISR-I007", "ISR-I008"))   # v0.7.1 items 1 and 6: "Not scanned" and "Platform refresh" summaries are tips
 TIP = "Tip"
-# Batch 6 (B3, decision 8): a setting that is already safe, said as a Tip (no severity, never scored, never new). WT-C002
-# ("Ask every time" for running commands on this computer) left EVIDENCE_RULES for it; "Always allow" (WT-C001) stays critical.
-SETTING_TIPS = frozenset(("WT-C002",))
+# Batch 6 (B3, decision 8): a setting that is already safe, said as a Tip (no severity, never scored, never new). ISR-C002
+# ("Ask every time" for running commands on this computer) left EVIDENCE_RULES for it; "Always allow" (ISR-C001) stays critical.
+SETTING_TIPS = frozenset(("ISR-C002",))
 VERB_AREA = (("sending email or messages", r"(?i)^(send|sends|sending|email|emails|message|messages|reply|replies|dm)$"),
              ("publishing or posting", r"(?i)^(post|posts|publish|publishes|tweet|tweets)$"),
              ("purchases or payments", r"(?i)^(buy|buys|pay|pays|purchase|purchases|transfer|transfers|submit|submits)$"),
@@ -34,9 +34,9 @@ VERB_AREA = (("sending email or messages", r"(?i)^(send|sends|sending|email|emai
 
 def is_evidence(f):
     """A key TruffleHog's provider check says works is a fact, whatever rule found the string."""
-    if f["rule"] == "WT-S005":
+    if f["rule"] == "ISR-S005":
         return f.get("title") == NEW_SIGN_IN   # proven by a session cookie; new cookies alone are worth a look
-    return f["rule"] in EVIDENCE_RULES or (f["rule"] in ("WT-S001", "WT-S002") and f.get("title") == KEY_LIVE)
+    return f["rule"] in EVIDENCE_RULES or (f["rule"] in ("ISR-S001", "ISR-S002") and f.get("title") == KEY_LIVE)
 
 
 def _place(f):
@@ -53,13 +53,13 @@ def _place(f):
     return re.sub(r":\d+$", "", w)
 
 
-PLACE_WHOLE = ("WT-X", "WT-I", "WT-D", "WT-K")   # where is a folder or a whole file: no line to take off
-PLACE_WHOLE_RULES = frozenset(("WT-S003", "WT-S004", "WT-S005", "WT-T001r", "WT-R002", "WT-R003", "WT-H006", "WT-P001"))
+PLACE_WHOLE = ("ISR-X", "ISR-I", "ISR-D", "ISR-K")   # where is a folder or a whole file: no line to take off
+PLACE_WHOLE_RULES = frozenset(("ISR-S003", "ISR-S004", "ISR-S005", "ISR-T001r", "ISR-R002", "ISR-R003", "ISR-H006", "ISR-P001"))
 
 
 def _corrob_sig(g):
     """Everything corroborated() reads about a finding. Findings that share it give the same answer (Codex, batch 4 round 2)."""
-    return (g["rule"], g.get("title") if g["rule"] in ("WT-S001", "WT-S002", "WT-S005") else None, _place(g),
+    return (g["rule"], g.get("title") if g["rule"] in ("ISR-S001", "ISR-S002", "ISR-S005") else None, _place(g),
             g.get("source", "watchtower"), g["severity"], g.get("severity_was"), bool(g.get("guarded")), tuple(sorted(g.get("kinds") or ())))
 
 
@@ -72,19 +72,19 @@ def _skill_of(f):
     return (skill_root(p) if p.startswith("/") and os.path.exists(p) else None) or p
 
 
-NO_OPINION = frozenset(("WT-X004", "WT-R010"))   # "couldn't finish" / "didn't parse": facts about the run, not the content
+NO_OPINION = frozenset(("ISR-X004", "ISR-R010"))   # "couldn't finish" / "didn't parse": facts about the run, not the content
 
 # v0.7.1 precision item 2 (decision, Oct 12): Confirmed means dangerous and reachable. Two votes count only when they are about the
 # same file and the same kind of risk; a wording hit alone is never Confirmed, it needs a behavior signal in the same file.
-RISK_KIND = {"WT-T004": "credential", "WT-T011": "credential", "WT-T011x": "credential", "WT-S001": "credential", "WT-S002": "credential", "WT-K003": "credential",
-             "WT-T005": "exfil", "WT-T017": "exfil", "WT-T006": "pipe", "WT-T006k": "pipe", "WT-T002": "obfuscation",
-             "WT-T003": "obfuscation", "WT-T012": "exec", "WT-T008": "secrecy", "WT-T016": "secrecy", "WT-T001": "override",
-             "WT-T007": "override", "WT-T018": "exfil"}
-WORDING_RULES = frozenset(("WT-T001", "WT-T007", "WT-T008", "WT-T014", "WT-T016"))   # T014 "every email": item 8 dry run, Oct 13                          # what a skill says
-BEHAVIOR_RULES = frozenset(("WT-T002", "WT-T003", "WT-T004", "WT-T005", "WT-T006", "WT-T012", "WT-T017", "WT-T018"))   # what it does
-WORDING_BACKERS = BEHAVIOR_RULES | {"WT-T013"}
-WEBHOOK_PAIR = {"WT-T018": "WT-T004", "WT-T004": "WT-T018"}   # batch 4: the one pair that confirms a chat webhook (see corroborated)
-DRIFT_RULES = frozenset(("WT-I001", "WT-I002"))   # a live file that changed or appeared: a fact about reach, never about wording   # an email or post sent with no approval line is a send, even without curl
+RISK_KIND = {"ISR-T004": "credential", "ISR-T011": "credential", "ISR-T011x": "credential", "ISR-S001": "credential", "ISR-S002": "credential", "ISR-K003": "credential",
+             "ISR-T005": "exfil", "ISR-T017": "exfil", "ISR-T006": "pipe", "ISR-T006k": "pipe", "ISR-T002": "obfuscation",
+             "ISR-T003": "obfuscation", "ISR-T012": "exec", "ISR-T008": "secrecy", "ISR-T016": "secrecy", "ISR-T001": "override",
+             "ISR-T007": "override", "ISR-T018": "exfil"}
+WORDING_RULES = frozenset(("ISR-T001", "ISR-T007", "ISR-T008", "ISR-T014", "ISR-T016"))   # T014 "every email": item 8 dry run, Oct 13                          # what a skill says
+BEHAVIOR_RULES = frozenset(("ISR-T002", "ISR-T003", "ISR-T004", "ISR-T005", "ISR-T006", "ISR-T012", "ISR-T017", "ISR-T018"))   # what it does
+WORDING_BACKERS = BEHAVIOR_RULES | {"ISR-T013"}
+WEBHOOK_PAIR = {"ISR-T018": "ISR-T004", "ISR-T004": "ISR-T018"}   # batch 4: the one pair that confirms a chat webhook (see corroborated)
+DRIFT_RULES = frozenset(("ISR-I001", "ISR-I002"))   # a live file that changed or appeared: a fact about reach, never about wording   # an email or post sent with no approval line is a send, even without curl
 ENGINE_KIND_WORDS = (("credential", r"cred|secret|token|passw|api[ _-]?key|ssh|aws|keychain|cookie"),
                      ("exfil", r"exfil|upload|leak|send|webhook|network|outbound|data[ _-]?theft|post\b"),
                      ("pipe", r"pipe|curl|wget|remote[ _-]?(code|script)|download"),
@@ -129,11 +129,11 @@ def engine_kinds(texts):
     return {k for k, rx in ENGINE_KIND_WORDS if re.search(rx, t)}
 
 
-RULE_ALIAS = {"WT-T011x": "WT-T011"}   # batch 6 fix round 3: WT-T011's example-looking hits are WT-T011 to every rule here
+RULE_ALIAS = {"ISR-T011x": "ISR-T011"}   # batch 6 fix round 3: ISR-T011's example-looking hits are ISR-T011 to every rule here
 
 
 def same_rule(g, f):
-    """True when g and f are hits of one rule (WT-T011x counted as WT-T011)."""
+    """True when g and f are hits of one rule (ISR-T011x counted as ISR-T011)."""
     return RULE_ALIAS.get(g["rule"], g["rule"]) == RULE_ALIAS.get(f["rule"], f["rule"])
 
 
@@ -147,7 +147,7 @@ CORROB_INDEX = True   # batch 5 (c5): False makes corroborated() read every find
 class CorrobIndex:
     """Batch 5 (Codex medium, c5): which findings could back up a finding, found without reading all of them. Every branch of
     corroborated() needs g at the same place, at a place that covers it or that it covers (_covers), or a skill folder related
-    the same way (WT-I004, the drift rules and the folder verdicts included), so candidates() is a superset of every g that can
+    the same way (ISR-I004, the drift rules and the folder verdicts included), so candidates() is a superset of every g that can
     answer yes, and the loop over it gives the same answer as the loop over all. Places and skills are looked up with their
     trailing / taken off (_covers ignores it): the same one, each ancestor (cut at a /) and, by a sorted list, every
     descendant. _skill_of (a filesystem look) runs once per finding, and only once a skill is asked about."""
@@ -157,7 +157,7 @@ class CorrobIndex:
         self.findings, self.skill_of, by_place, self.i004 = findings, {}, {}, []
         for g in findings:
             by_place.setdefault(_place(g).rstrip("/"), []).append(g)
-            if g["rule"] == "WT-I004":
+            if g["rule"] == "ISR-I004":
                 self.i004.append(g)
         self.by = [(by_place, sorted(by_place)), None]
 
@@ -181,7 +181,7 @@ class CorrobIndex:
         return out
 
     def candidates(self, here, skill=None):
-        """Every finding at a place related to `here` or (unless None) whose skill is related to `skill`, and every WT-I004."""
+        """Every finding at a place related to `here` or (unless None) whose skill is related to `skill`, and every ISR-I004."""
         seen, out = set(), []
         for g in self._related(0, here) + (self._related(1, skill) if skill is not None else []) + self.i004:
             if id(g) not in seen:
@@ -205,12 +205,12 @@ def corroborated(f, findings, index=None):
     - a behavior hit has a scanner's verdict on its skill folder that names the same kind of risk ("husk found something
       somewhere in the folder" is not a vote; SkillSpector's "Exfil" backs up a send to an outside address);
     - a rule with no kind of risk keeps the v0.6.8 test: evidence or another engine at the same place;
-    - a behavior hit in a skill that changed after approval (WT-I001/I002) is backed up by the change; wording is not;
-    - anything inside a new plugin the owner hasn't kept yet (WT-I004) counts until they decide, as before.
-    A WT-S005 cookie-only note stays Worth a look even when a real sign-in is at the same shared-browser place.
+    - a behavior hit in a skill that changed after approval (ISR-I001/I002) is backed up by the change; wording is not;
+    - anything inside a new plugin the owner hasn't kept yet (ISR-I004) counts until they decide, as before.
+    A ISR-S005 cookie-only note stays Worth a look even when a real sign-in is at the same shared-browser place.
     Batch 6 fix round 3 (Codex 1, 2): an example-looking secret is read like any other (its note changes nothing here), and
-    WT-T011x is WT-T011 (same_rule)."""
-    if f["rule"] == "WT-S005" and f.get("title") != NEW_SIGN_IN:
+    ISR-T011x is ISR-T011 (same_rule)."""
+    if f["rule"] == "ISR-S005" and f.get("title") != NEW_SIGN_IN:
         return False
     here, src, skill = _place(f), f.get("source", "watchtower"), (index.skill(f) if index is not None else _skill_of(f))
     skill_of = index.skill if index is not None else _skill_of
@@ -222,7 +222,7 @@ def corroborated(f, findings, index=None):
         pair, full = WEBHOOK_PAIR[f["rule"]], lambda g: SEV_ORDER.index(g.get("severity_was") or g["severity"]) <= SEV_ORDER.index("medium")
         if full(f) and any(g["rule"] == pair and not g.get("guarded") and _place(g) == here and full(g) for g in findings):
             return True
-        if f["rule"] == "WT-T018":
+        if f["rule"] == "ISR-T018":
             return False   # nothing else confirms one: an engine's "webhook", a change or a folder verdict is the owner's own chat
     fk = kinds_of(f)
     for g in findings:
@@ -230,7 +230,7 @@ def corroborated(f, findings, index=None):
             continue                            # a scanner that didn't finish says nothing about the content (DQ-014); defensive text backs up nothing
         gp, gk = _place(g), kinds_of(g)
         other = is_evidence(g) or g.get("source", "watchtower") != src
-        if g["rule"] == "WT-I004" and _covers(gp, here):
+        if g["rule"] == "ISR-I004" and _covers(gp, here):
             return True                          # a new plugin nobody has vetted: what the scanners flag in it counts until the owner decides
         if f["rule"] in WORDING_RULES and not fk:   # T014 has no kind: wording still needs a behavior signal in the same file
             if gp == here and g["rule"] in WORDING_BACKERS:
@@ -259,17 +259,17 @@ def corroborated(f, findings, index=None):
 
 
 def ask_first_covered(findings):
-    """The Ask-first areas the account's own rules cover, judged from a full run's findings: every area a WT-A003 doesn't name
-    as missing. Only a full audit can say this (it always reports WT-A003 when rules are missing or unseen)."""
-    a3 = [f for f in findings if f["rule"] == "WT-A003"]
+    """The Ask-first areas the account's own rules cover, judged from a full run's findings: every area a ISR-A003 doesn't name
+    as missing. Only a full audit can say this (it always reports ISR-A003 when rules are missing or unseen)."""
+    a3 = [f for f in findings if f["rule"] == "ISR-A003"]
     gaps = " ".join(f.get("evidence", "") for f in a3).lower()
     return {w for w, _ in ASK_AREAS if w not in gaps}
 
 
 def covered_by_ask_first(f, covered):
-    """A missing approval line (WT-T013, WT-PP07) is a tip, not a finding, when the account's Ask-first rules already make every
+    """A missing approval line (ISR-T013, ISR-PP07) is a tip, not a finding, when the account's Ask-first rules already make every
     Bot ask before that kind of action."""
-    if f["rule"] not in ("WT-T013",) or not covered:
+    if f["rule"] not in ("ISR-T013",) or not covered:
         return False
     verb = (f.get("evidence") or "").strip().split(" ")[0]
     area = next((w for w, rx in VERB_AREA if re.match(rx, verb)), None)
@@ -283,9 +283,9 @@ def _no_severity(f, cls, label):
 
 
 # v0.7.1 precision item 3 (decision, Oct 12): evidence rules split the fact from the severity. The fact stays listed; the severity
-# is only kept when the thing is reachable. WT-S004 (DQ-026: high only with a session cookie for a sensitive site) and WT-A001
+# is only kept when the thing is reachable. ISR-S004 (DQ-026: high only with a session cookie for a sensitive site) and ISR-A001
 # (DQ-027: critical only when broader than one pinned address) already do this where they are made; FACT_ONLY holds the rest.
-FACT_NOTE = {"WT-D002": ("in a project nothing on this computer loads",
+FACT_NOTE = {"ISR-D002": ("in a project nothing on this computer loads",
                          "Nothing Grok Bot loads uses this project, so it isn't scored. If you still run or deploy it, update the package "
                          "there (`wt.py fix` offers the upgrade).")}
 
@@ -363,7 +363,7 @@ def package_reachable(f):
     return False
 
 
-FACT_ONLY = {"WT-D002": package_reachable}
+FACT_ONLY = {"ISR-D002": package_reachable}
 
 
 def split_facts(fs):
@@ -379,7 +379,7 @@ def split_facts(fs):
 def plain_cookie_jar(f):
     """DQ-026 intent (item 8 dry run, Oct 13): a shared cookie jar with no sign-in on a sensitive site is advice, not a Confirmed
     medium. It stays listed as a Tip; one session cookie for a sensitive site makes it the high Confirmed finding again."""
-    return f["rule"] == "WT-S004" and str(f.get("evidence", "")).endswith("sensitive: none")
+    return f["rule"] == "ISR-S004" and str(f.get("evidence", "")).endswith("sensitive: none")
 
 
 def label_findings(findings, covered=None):
@@ -412,7 +412,7 @@ def label_findings(findings, covered=None):
             f["class"], f["label"] = "evidence", CONFIRMED
         elif backed(f):
             f["class"], f["label"] = "corroborated", CONFIRMED
-            if f["rule"] == "WT-T018" and f["severity"] != "critical":   # batch 4: a credential read sent to a chat webhook is how token stealers work
+            if f["rule"] == "ISR-T018" and f["severity"] != "critical":   # batch 4: a credential read sent to a chat webhook is how token stealers work
                 f["severity_raised_from"], f["severity"] = f["severity"], "critical"
         else:
             _no_severity(f, "pattern", MAYBE_FINE)
@@ -430,10 +430,10 @@ ALSO_MAX = 12
 def _groupable(f):
     w = f.get("where") or ""
     return (f.get("class") in GROUP_CLASSES and w.startswith("/") and f["rule"] not in SECRET_RULES
-            and not f["rule"].startswith(("WT-K", "WT-I", "WT-X")))
+            and not f["rule"].startswith(("ISR-K", "ISR-I", "ISR-X")))
 
 
-ROLLCALL_GROUPED = frozenset(("WT-L001", "WT-M010"))
+ROLLCALL_GROUPED = frozenset(("ISR-L001", "ISR-M010"))
 
 
 def _rollcall_group(f):
@@ -489,7 +489,7 @@ CHANGED_GROUP_MIN = 2
 def _changed_high(f):
     # the owner's own skills only: a platform or built-in change keeps its own line (dry run 53e1836: a Grok Bot built-in
     # led the group, so the owner's changes went unscored)
-    return (f.get("rule") == "WT-I001" and f.get("severity") == "high" and not f.get("refresh") and f.get("scope") not in ("platform", "builtin")
+    return (f.get("rule") == "ISR-I001" and f.get("severity") == "high" and not f.get("refresh") and f.get("scope") not in ("platform", "builtin")
             and not f.get("unverified_platform"))   # item 8: a platform change without provenance keeps its own line and title
 
 
@@ -628,7 +628,7 @@ def vet_verdict(labelled):
         return "Do not install"
     if (any(f.get("label") == CONFIRMED and f["severity"] == "high" for f in live) or any(warned_danger(f) for f in labelled)
             or any(f.get("class") == "pattern" and raw(f) in ("critical", "high") for f in live)
-            or any(f["rule"] == "WT-T018" for f in live)):
+            or any(f["rule"] == "ISR-T018" for f in live)):
         return "Install with changes"
     return "Install"
 

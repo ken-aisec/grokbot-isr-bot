@@ -3,8 +3,8 @@
 1, 2: an example-looking or checksum-framed secret lowers nothing. It keeps its rule's severity, title, counting and
 Confirmed/Worth-a-look rules, backs up and is backed up like any other hit, and is dismissed only as any other is; the check only
 adds a note to its fix ("This looks like an example or checksum value (…); if it is real, rotate it.") and keeps it out of the
-fix plan's automatic clearing and revoke links. WT-T011x stays only so a placeholder never raises WT-T011 itself (the pre-batch
-test_placeholder_keys_ignored); every table reads it as WT-T011. 3: key structures are read before any size (SEC1 on any curve,
+fix plan's automatic clearing and revoke links. ISR-T011x stays only so a placeholder never raises ISR-T011 itself (the pre-batch
+test_placeholder_keys_ignored); every table reads it as ISR-T011. 3: key structures are read before any size (SEC1 on any curve,
 with or without its public point); a short or unreadable block is a key. 4, 5: one armor reading for masking and the example
 check: a BEGIN marker with a label of any length, an END only as a whole line with the same label (never a Comment: header), and
 a block with no such END hidden to the end of the text. 6: escaped line breaks read one backslash run at a time. 7: a file's line
@@ -67,7 +67,7 @@ def bits_of(raw):
 
 
 def t011(text):
-    return [f for f in wt.scan_text(text, "/s/SKILL.md", wt.load_rules()) if f["rule"].startswith("WT-T011")]
+    return [f for f in wt.scan_text(text, "/s/SKILL.md", wt.load_rules()) if f["rule"].startswith("ISR-T011")]
 
 
 def approved_copy(test, name, text):
@@ -86,7 +86,7 @@ def approved_copy(test, name, text):
 # ---------------------------------------------------------------- 1, 2: example-looking hits lower nothing
 class ExamplesLowerNothing(_Keys):
     def s002(self, fs, p):
-        return [f for f in self.keys(fs, p) if f["rule"] == "WT-S002"]
+        return [f for f in self.keys(fs, p) if f["rule"] == "ISR-S002"]
 
     def ordinary(self, line, secret):
         p = self.put("projects/app/settings.conf", line + "\n")
@@ -159,7 +159,7 @@ class ExamplesLowerNothing(_Keys):
         self.assertIn(NOTE, dead["fix"])
 
     def test_a_live_key_loses_its_note(self):   # guard (new): the provider's answer decides
-        f = wt.annotate_example(wt.finding("WT-S002", "gitleaks: secrets in file", "critical", [], "/w/k.md:3", "1 hit(s): github-pat", "x",
+        f = wt.annotate_example(wt.finding("ISR-S002", "gitleaks: secrets in file", "critical", [], "/w/k.md:3", "1 hit(s): github-pat", "x",
                                            source="gitleaks"), "FAKE or placeholder text")
         out = wt.apply_key_status([f], {"/w/k.md": [{"status": "live", "detector": "Github", "line": 3}]}, ran=True)[0]
         self.assertEqual((out["severity"], out["title"], "example" in out), ("critical", wt.KEY_LIVE, False))
@@ -167,21 +167,21 @@ class ExamplesLowerNothing(_Keys):
 
 
 class ExamplesInWatchtowersRules(unittest.TestCase):
-    def test_t011_examples_keep_t011s_severity(self):   # replay 1 (b621cf4: WT-T011x low, "Looks like an example")
+    def test_t011_examples_keep_t011s_severity(self):   # replay 1 (b621cf4: ISR-T011x low, "Looks like an example")
         for v in ("ghp_FAKE" + "x9" * 16, "AKIAFAKE" + "Q7" * 6, "sk-proj-EXAMPLEKEY1234567890abcdefgh"):
             got = t011(f"Use {v} here.\n")
-            self.assertEqual([(f["rule"], f["title"], f["severity"]) for f in got], [("WT-T011x", "Secret or key in text", "critical")], v)
+            self.assertEqual([(f["rule"], f["title"], f["severity"]) for f in got], [("ISR-T011x", "Secret or key in text", "critical")], v)
             self.assertIn(NOTE, got[0]["fix"])
 
     def test_an_example_backs_up_and_is_backed_up(self):   # replay 1 (b621cf4: an example backed nothing and nothing backed it)
         ex = [f for f in t011("Use ghp_FAKE" + "x9" * 16 + " here.\n")][0]
         ex = dict(ex, where="/w/a.md:2")
-        other = wt.finding("WT-S002", "gitleaks: secrets in file", "critical", ["ASI03"], "/w/a.md:2", "1 hit(s): github-pat", "f", source="gitleaks")
+        other = wt.finding("ISR-S002", "gitleaks: secrets in file", "critical", ["ASI03"], "/w/a.md:2", "1 hit(s): github-pat", "f", source="gitleaks")
         self.assertEqual([f["class"] for f in wt.label_findings([ex, other])], ["corroborated", "corroborated"])
 
     def test_t011x_is_t011_to_every_table(self):   # guard (new)
         ex = dict(t011("Use ghp_FAKE" + "x9" * 16 + " here.\n")[0], where="/w/a.md:2")
-        real = wt.finding("WT-T011", "Secret or key in text", "critical", ["AST04"], "/w/a.md:5", "ghp_…", "f")
+        real = wt.finding("ISR-T011", "Secret or key in text", "critical", ["AST04"], "/w/a.md:5", "ghp_…", "f")
         self.assertEqual(wt.kinds_of(ex), {"credential"})
         self.assertTrue(wt.same_rule(ex, real))
         self.assertEqual([f["class"] for f in wt.label_findings([ex, real])], ["pattern", "pattern"])   # one rule: no second vote
@@ -189,7 +189,7 @@ class ExamplesInWatchtowersRules(unittest.TestCase):
 
     def test_a_placeholder_never_raises_t011_itself(self):   # guard: the pre-batch test_placeholder_keys_ignored's line
         for k in ("sk-ant-api03-your-key-here-xxxxxxxxxxxxxxxx", "ghp_" + "a" * 36, "sk-proj-EXAMPLEKEY1234567890abcdefgh"):
-            self.assertEqual({f["rule"] for f in t011(f"key={k}")}, {"WT-T011x"}, k)
+            self.assertEqual({f["rule"] for f in t011(f"key={k}")}, {"ISR-T011x"}, k)
 
     def test_nothing_is_dropped_on_a_reference(self):   # guard: a $VAR is noted, never left out (owner decision: may be dropped; kept, safe)
         self.assertEqual(wt.secret_kind("${API_TOKEN}"), ("example", "an environment variable name"))
@@ -197,11 +197,11 @@ class ExamplesInWatchtowersRules(unittest.TestCase):
 
 # ---------------------------------------------------------------- 3: key structures before any size
 class KeyStructures(unittest.TestCase):
-    def test_compact_ec_keys_are_real(self):   # replay 3 (b621cf4: under 64 base64 characters, so an example, WT-T011x low)
+    def test_compact_ec_keys_are_real(self):   # replay 3 (b621cf4: under 64 base64 characters, so an example, ISR-T011x low)
         for name, raw in (("P-224", sec1(P224_N, P224_OID, 28)), ("P-160", sec1(P160_N, P160_OID, 21))):
             block = pem("EC ", raw)
             self.assertLess(len(base64.b64encode(raw).rstrip(b"=")), 64, name)
-            self.assertEqual([(f["rule"], f["severity"]) for f in t011("Key:\n" + block)], [("WT-T011", "critical")], name)
+            self.assertEqual([(f["rule"], f["severity"]) for f in t011("Key:\n" + block)], [("ISR-T011", "critical")], name)
             self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real", name)
 
     def test_openssl_reads_the_p224_key(self):   # guard: the replay's key is a valid key (when openssl is here to say)
@@ -237,11 +237,11 @@ class KeyStructures(unittest.TestCase):
     def test_a_long_body_that_is_no_key_is_still_noted(self):   # guard (new: b621cf4 lowered it): what B5 still says, as a note only
         block = pem("RSA ", public_key_packet(300))   # batch 7a fix round 1: a whole public-key packet
         got = t011("Key:\n" + block)
-        # batch 7d (B): a public-key packet may hold a private key's bytes: WT-T011 (was WT-T011x), no note (was noted)
-        self.assertEqual([(f["rule"], f["severity"]) for f in got], [("WT-T011", "critical")])
+        # batch 7d (B): a public-key packet may hold a private key's bytes: ISR-T011 (was ISR-T011x), no note (was noted)
+        self.assertEqual([(f["rule"], f["severity"]) for f in got], [("ISR-T011", "critical")])
         self.assertNotIn("(a key block that isn't a real key)", got[0]["fix"])
         got = t011("Key:\n" + pem("RSA ", fake_text_body(300)))   # batch 7d: a FAKE-text body is what the note is for
-        self.assertEqual([(f["rule"], f["severity"]) for f in got], [("WT-T011x", "critical")])
+        self.assertEqual([(f["rule"], f["severity"]) for f in got], [("ISR-T011x", "critical")])
         self.assertIn("(a key block that isn't a real key)", got[0]["fix"])
 
 
@@ -268,7 +268,7 @@ class ArmorBoundaries(Box):
         for bit in bits_of(raw):
             self.assertNotIn(bit, doc["files"]["server.pem"])
             self.assertNotIn(bit, wt.mask_secrets("Key:\n" + block))
-        self.assertEqual([(f["rule"], f["severity"]) for f in t011("Key:\n" + block)], [("WT-T011", "critical")])
+        self.assertEqual([(f["rule"], f["severity"]) for f in t011("Key:\n" + block)], [("ISR-T011", "critical")])
 
     def test_an_end_with_another_label_hides_to_the_end(self):   # guard (new)
         raw = rsa_der()
@@ -313,7 +313,7 @@ class ArmorBoundaries(Box):
 CHILD_BACKSLASH = ("import sys, time\nsys.path.insert(0, {wt_dir!r})\nimport wt\nrules = wt.load_rules()\n"
                    "text = ('-----BEGIN PRIVATE KEY-----\\n' + '\\\\' * 16000 + '\\n-----END PRIVATE KEY-----\\n') * 16\n"
                    "assert len(text) > 256000\nt = time.perf_counter()\nfs = wt.scan_text(text, '/s/SKILL.md', rules)\n"
-                   "print(len([f for f in fs if f['rule'] == 'WT-T011']), time.perf_counter() - t)\n")
+                   "print(len([f for f in fs if f['rule'] == 'ISR-T011']), time.perf_counter() - t)\n")
 CHILD_HITS = ("import os, sys, time, secrets, string\nsys.path.insert(0, {wt_dir!r})\nimport wt\n"
               "p = sys.argv[1]\nalnum = string.ascii_letters + string.digits\nlines, leaks = [], []\n"
               "for i in range(16000):\n"

@@ -441,11 +441,11 @@ def _ax_where_path(f):
 
 
 def _ax_seed_findings(fs):
-    """The sensitive domains this run's WT-S004 findings name from the cookie seed, or None with no such finding. Only for a map
+    """The sensitive domains this run's ISR-S004 findings name from the cookie seed, or None with no such finding. Only for a map
     built from an audit's own findings when the audit didn't pass its seed look (_ax_seed_now); never from the last audit's file."""
     seed = None
     for f in fs:
-        if f.get("rule") == "WT-S004":
+        if f.get("rule") == "ISR-S004":
             m = re.search(r"sensitive:\s*(.*)$", str(f.get("evidence") or ""))
             val = m.group(1).strip() if m else ""
             seed = (seed or []) + ([] if val.lower() in ("", "none", "-") else [h for h in (_ax_host_of(x) for x in val.split(",")) if h and "." in h])
@@ -602,11 +602,11 @@ def _ax_auto_allow(bases):
         if not re.search(r"(?i)allow\s+automatically", plain):
             continue
         rules_ = {f["rule"] for f in lint_auto_review([raw], p, check_missing=False)}
-        if "WT-A001" in rules_:
+        if "ISR-A001" in rules_:
             area = "everything"
-        elif "WT-A002" in rules_:
+        elif "ISR-A002" in rules_:
             area = next((a for a, rx in _AX_AREA_RX if rx.search(plain)), "sends")
-        elif "WT-A004" in rules_:
+        elif "ISR-A004" in rules_:
             area = "installs"
         else:
             area = "runs code" if _AX_RUNS.search(plain) else "other"
@@ -644,11 +644,11 @@ def _ax_plugins(plugin_files):
 def _ax_webhooks(fs):
     out, seen = [], set()
     for f in fs:
-        if f.get("rule") not in ("WT-T018", "WT-T005"):
+        if f.get("rule") not in ("ISR-T018", "ISR-T005"):
             continue
         ev = str(f.get("evidence") or "")
         service = next((s for s, rx in ACCESS_CHAT if rx.search(ev)), None)
-        if service is None or (f["rule"] == "WT-T005" and not CHAT_IN_T005.search(ev)):
+        if service is None or (f["rule"] == "ISR-T005" and not CHAT_IN_T005.search(ev)):
             continue
         w = str(f.get("where") or "")
         path = _ax_where_path(f)
@@ -783,7 +783,7 @@ def _ax_cli(fs):
     h = os.path.expanduser("~").rstrip("/") + "/"
     cli = []
     for f in fs:
-        if f.get("rule") == "WT-S003":
+        if f.get("rule") == "ISR-S003":
             p = _ax_where_path(f)
             tool_ = KNOWN_CRED_FILES.get(p[len(h):]) if p.startswith(h) else None
             if not any(c["file"] == short_path(p) for c in cli):
@@ -794,7 +794,7 @@ def _ax_cli(fs):
 def _ax_platform_logins(fs):
     plat = []
     for f in fs:
-        if f.get("rule") == "WT-I009":
+        if f.get("rule") == "ISR-I009":
             what = ("Grok CLI sign-in (the platform's own)" if str(f.get("title", "")).startswith("Grok CLI sign-in")
                     else "the platform's secret store (values you saved through the secure secret request)")
             if what not in plat:
@@ -824,7 +824,7 @@ def _ax_map(fs, roots, mcp_paths, plugin_files, jar, seed, scheduled, checked, i
               "auto_review": (settings or {}).get("auto_review"), "mcp": _ax_mcp(mcp_paths, bases), "plugins": _ax_plugins(plugin_files),
               "webhooks": webhooks, "webhook_count": len(webhooks), "webhook_services": sorted({w["service"] for w in webhooks}),
               "scheduled": scheduled, "hooks": hooks,
-              "key_files": len({_ax_where_path(f) for f in fs if f.get("rule") in ("WT-S001", "WT-S002") and f.get("severity") == "critical"})}
+              "key_files": len({_ax_where_path(f) for f in fs if f.get("rule") in ("ISR-S001", "ISR-S002") and f.get("severity") == "critical"})}
     unknown = ["connectors", "routines_on_box", "secrets_content"] + (["approvals"] if settings is None else [])
     return access_record({"v": 1, "at": now(), "shared": shared, "bots": bots,
                           "bots_no_detail": no_detail, "bots_silent": silent, "rollcall": rc, "unknown": unknown})
@@ -907,7 +907,7 @@ def access_map_now():
     looks = {p: _look(p) for p in places}   # batch 6 (KL5): a store or sign-in file Watchtower couldn't look at is unknown
     stores = [p for p in places if looks[p]]
     cli_unknown = [p for p in places if looks[p] is None]
-    fs = ([f for f in last if f.get("rule") in ("WT-T018", "WT-T005", "WT-S001", "WT-S002")] + cli_credentials(cli_unknown)
+    fs = ([f for f in last if f.get("rule") in ("ISR-T018", "ISR-T005", "ISR-S001", "ISR-S002")] + cli_credentials(cli_unknown)
           + [platform_secret_store_note(p) for p in stores])
     jar, jar_ok = _ax_jar_now()
     seed, seed_ok = _ax_seed_now(roots)

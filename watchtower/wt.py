@@ -40,7 +40,7 @@ SKIP_PREFIXES = ("scoped_dir", ".org.chromium", "tmp")
 SKIP_PATH_PARTS = ("/go/pkg/", "/pkg/mod/", "/.local/go/", "/.config/google-chrome", "/.config/chromium", "/chrome-profile/", "/.m2/", "/.gradle/", "/dist-packages/", "/.bun/install/", "/.local/share/pnpm/")
 TEXT_EXT = {".md", ".txt", ".json", ".jsonl", ".ndjson", ".log", ".yaml", ".yml", ".toml", ".py", ".sh", ".js", ".ts", ".env", ".cfg", ".ini", ".pem", ""}
 # (batch 6, B5: .pem, so a key file is read on a rules-only install too; .key stays out, it is often binary or a Keynote file)
-SECRET_RULE = "WT-T011"
+SECRET_RULE = "ISR-T011"
 
 
 # >>> wt_parts loader (reassembly drops this block)
@@ -194,10 +194,10 @@ def save_delta(new, fixed):
 
 
 def scanner_alerts(snap):
-    """Claude review 2 (5): every open WT-X005 in its own list, which fit() never trims (like daily's decoys). Findings sort by
+    """Claude review 2 (5): every open ISR-X005 in its own list, which fit() never trims (like daily's decoys). Findings sort by
     severity, then rule, so ten new critical or high findings pushed a swapped scanner's high X005 out of `new` and `top_fixes`;
     from the next day it wasn't new, and daily never showed it again."""
-    return [compact(f) for f in snap.get("findings", []) if f.get("rule") == "WT-X005"]
+    return [compact(f) for f in snap.get("findings", []) if f.get("rule") == "ISR-X005"]
 
 
 def score_change(snap, new):
@@ -293,8 +293,8 @@ def platform_open(snap):
                                       for f in fs[:PLATFORM_OPEN_SHOWN]],
            "next": f"Still open from any earlier day too: files in the platform's own folders that ISR Bot's release list ({PLATFORM_LOCK_REL}) "
                    "doesn't include. Don't use them until someone has looked. Nothing on this computer approves them: remove any the owner "
-                   "didn't expect; a real vendor update clears when an ISR Bot release lists it. `wt.py show WT-I002 --limit 100000` and "
-                   "`wt.py show WT-I001 --limit 100000` list every one."}
+                   "didn't expect; a real vendor update clears when an ISR Bot release lists it. `wt.py show ISR-I002 --limit 100000` and "
+                   "`wt.py show ISR-I001 --limit 100000` list every one."}
     if len(fs) > PLATFORM_OPEN_SHOWN:
         out["more"] = len(fs) - PLATFORM_OPEN_SHOWN
     return out
@@ -333,7 +333,7 @@ def cmd_daily(args):
     if moved:
         out["plugin_version_changes"] = moved
     out.update(score_change(snap, new))
-    decoys = [compact(f) for f in new if f["rule"].startswith("WT-K")]
+    decoys = [compact(f) for f in new if f["rule"].startswith("ISR-K")]
     if decoys:
         out["decoys"] = decoys      # always shown, whatever else is new
     if pending:   # PR A, Codex round 2 (6): first, never cut short: what earlier runs couldn't name
@@ -342,7 +342,7 @@ def cmd_daily(args):
     # NO_CHANGES). Codex round 1 (10): critical and high ones first, and any left out are counted in `more`, with the command.
     note_fs = [f for f in new if platform_scope(f)] + [f for f in snap["findings"] if f.get("unverified_platform")]
     notes = platform_notes(note_fs, 5)
-    rest = [f for f in new if not f["rule"].startswith("WT-K") and not platform_scope(f)]
+    rest = [f for f in new if not f["rule"].startswith("ISR-K") and not platform_scope(f)]
     out["new"] = [dict(compact(f), key=f["key"]) if f.get("class") == "pattern" else compact(f) for f in rest][:10]
     if len(rest) > 10:
         out["more_new"] = f"{len(rest) - 10} more new findings not shown, none more severe than {rest[10]['severity']}. `wt.py breakdown` lists everything."
@@ -380,7 +380,7 @@ PENDING_SHOWN = 10   # PR A, Codex round 2 (6): earlier critical or high finding
 def is_alert(f, snap):
     """A finding the daily routine must name: an owner's critical or high one, or a platform note Watchtower would call critical or
     high. Decoys and scanner alerts are always shown whole, and an unlisted platform file is said every day while it is open."""
-    if f["rule"].startswith("WT-K") or f["rule"] == "WT-X005" or f.get("unverified_platform") or f.get("guarded"):
+    if f["rule"].startswith("ISR-K") or f["rule"] == "ISR-X005" or f.get("unverified_platform") or f.get("guarded"):
         return False
     if platform_scope(f):
         unlisted = {g["where"].split(":")[0] for g in snap.get("findings", []) if g.get("unverified_platform")}
@@ -470,13 +470,13 @@ def cmd_breakdown(args):
         r = rows.setdefault((f["severity"], f["rule"], f["title"]), {"n": 0, "dirs": {}})
         r["n"] += 1
         w = f["where"].split(":")[0]
-        d = w if (f["rule"] == "WT-S002" and "files under" in f["title"]) else os.path.dirname(w)
+        d = w if (f["rule"] == "ISR-S002" and "files under" in f["title"]) else os.path.dirname(w)
         top = "/".join(d.split("/")[:5])
         if f["where"].startswith("rollcall:"):
             top = "Bot " + f["where"].split(":")[1]
         elif not top:
             top = f["where"][:40]
-        elif f["rule"] in ("WT-X001", "WT-X002", "WT-X003", "WT-X004", "WT-I004"):
+        elif f["rule"] in ("ISR-X001", "ISR-X002", "ISR-X003", "ISR-X004", "ISR-I004"):
             top = "/".join(d.split("/")[:5]) + "/…/" + os.path.basename(w) if d.count("/") > 5 else w
         r["dirs"][top] = r["dirs"].get(top, 0) + 1
     # DQ-025: full list of open findings by severity (audit JSON may truncate `new`; this does not).
@@ -550,18 +550,18 @@ def cmd_codescan(args):
             if cid == "A06" and not p.endswith("requirements.txt"):
                 continue
             for m in re.finditer(rx, t):
-                out.append(finding(f"WT-W{cid}", f"OWASP {cid}:2021 {title}", sev, [f"{cid}:2021"], f"{p}:{line_of(t, m.start())}",
+                out.append(finding(f"ISR-W{cid}", f"OWASP {cid}:2021 {title}", sev, [f"{cid}:2021"], f"{p}:{line_of(t, m.start())}",
                                    m.group(0).strip()[:120], CODE_FIX[cid]))
         for m in secret["rx"].finditer(t):
             why = secret_at(t, m)[1]   # batch 6 (B5): the shared content check; fix round 3: an example-looking one gets a note only
-            f = finding("WT-WA07s", "OWASP A07:2021 Hard-coded secret", "critical", ["A07:2021"], f"{p}:{line_of(t, m.start())}",
+            f = finding("ISR-WA07s", "OWASP A07:2021 Hard-coded secret", "critical", ["A07:2021"], f"{p}:{line_of(t, m.start())}",
                         mask(m.group(0)), "Move it to an environment variable or secret store and revoke the exposed one.")
             out.append(annotate_example(f, why) if why else f)
     semgrep = tool("semgrep")
     note = "ISR Bot patterns only (semgrep isn't one of ISR Bot's checked scanners)"
     # Codex, batch 3 final review: a semgrep refused at launch (exit 126), failed (non-zero exit, time out) or with no results
     # in its output still said "semgrep found and used too". It is "used" only after a clean exit with a results list;
-    # anything else is "not checked" (its findings, if any, are still listed) and a refused or changed copy is a WT-X005.
+    # anything else is "not checked" (its findings, if any, are still listed) and a refused or changed copy is a ISR-X005.
     gap = f"semgrep NOT run: {SCANNER_PROBLEMS['semgrep'][1]}" if SCANNER_PROBLEMS.get("semgrep", (None,))[0] in ("changed", "unreadable") else None
     if semgrep:
         # Claude review 1 (7): semgrep sends usage metrics by default when its rules come from its registry; EGRESS says none.
@@ -582,7 +582,7 @@ def cmd_codescan(args):
             errors = [e for e in errors if not any(e is w for w in partial)]
         for r in results if isinstance(results, list) else []:
             if isinstance(r, dict):
-                out.append(finding("WT-WSG", f"semgrep: {r.get('check_id', '').split('.')[-1]}", (r.get("extra", {}).get("severity") or "medium").lower().replace("error", "high").replace("warning", "medium").replace("info", "low"),
+                out.append(finding("ISR-WSG", f"semgrep: {r.get('check_id', '').split('.')[-1]}", (r.get("extra", {}).get("severity") or "medium").lower().replace("error", "high").replace("warning", "medium").replace("info", "low"),
                                    ["OWASP"], f"{r.get('path')}:{r.get('start', {}).get('line')}", r.get("extra", {}).get("message", "")[:120],
                                    "See the semgrep rule for the fix.", source="semgrep"))
         refused = SCANNER_PROBLEMS.get("semgrep", ())
@@ -604,7 +604,7 @@ def cmd_codescan(args):
         note = f"ISR Bot patterns only: {gap}, so its checks weren't done this time"
     x005 = scanner_x005()
     out = sort_findings(dedupe(out + x005))
-    # Claude review 1 (5): criticals sort first and fit() trims the findings list, so a swapped semgrep's WT-X005 could be cut
+    # Claude review 1 (5): criticals sort first and fit() trims the findings list, so a swapped semgrep's ISR-X005 could be cut
     # from the handoff. It is also given in its own list, which is never trimmed (like daily's decoys).
     print(fit({"files": len(files), "engine": note, **({"not_checked_this_run": [gap]} if gap else {}),
                **({"scanner_alerts": [compact(f) for f in x005]} if x005 else {}),

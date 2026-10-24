@@ -37,7 +37,7 @@ def is_document_blob(b64):
     return head.lstrip().startswith(FILE_MAGIC)
 
 
-# Batch 6 (B5, DQ-043/044): one content check for every secret hit (WT-T011, WT-S001 and each gitleaks hit), on the secret value
+# Batch 6 (B5, DQ-043/044): one content check for every secret hit (ISR-T011, ISR-S001 and each gitleaks hit), on the secret value
 # only, never its line or its file's name. Fix round 3 (Codex 1, 2; the owner's rule): a value that looks like an example (FAKE or
 # placeholder text, an environment-variable reference, a key block whose body isn't a key, a checksum by its line's format) can
 # still be a working credential, and anyone can write one that way, so the check lowers nothing: the hit keeps its rule's
@@ -49,10 +49,10 @@ ENV_REF = re.compile(r"\$[A-Za-z_]\w*|\$\{[A-Za-z_]\w*\}|\$\{\{\s*(?:secrets|env
 PEM_HEAD = re.compile(r"-----BEGIN ")   # fix round 3 (Codex 5): a key block's label is read by armor_blocks, any length
 EXAMPLE_WHY = {"placeholder": "FAKE or placeholder text", "env": "an environment variable name", "pem": "a key block that isn't a real key",
                "digest": "a file's checksum"}
-# WT-T011's example-looking hits keep their own id, as at round 2, only so a placeholder never raises WT-T011 itself (the pre-batch
-# test_placeholder_keys_ignored); every table that names WT-T011 (RISK_KIND, vet_verdict, the brief, prepublish) names it too, and
+# ISR-T011's example-looking hits keep their own id, as at round 2, only so a placeholder never raises ISR-T011 itself (the pre-batch
+# test_placeholder_keys_ignored); every table that names ISR-T011 (RISK_KIND, vet_verdict, the brief, prepublish) names it too, and
 # corroborated() reads the two as one rule, so nothing else differs
-EXAMPLE_T011 = "WT-T011x"
+EXAMPLE_T011 = "ISR-T011x"
 EXAMPLE_NOTE = "This looks like an example or checksum value ({why}); if it is real, rotate it."
 
 
@@ -515,7 +515,7 @@ def secret_at(text, m):
 # never dropped. For the dangerous rules below (credential path, exfiltration host, pipe-to-shell, upload) a guard can only lower
 # the match to medium, and vet never says Install over it. Only prose outside the command vouches for it: text in a code span or
 # a command's arguments is never read, and any doubt (a cap, an unclosed backtick, shell text in the prose) means no guard.
-GUARD_CODE_RULES = frozenset(("WT-T004", "WT-T005", "WT-T006", "WT-T017", "WT-T018"))
+GUARD_CODE_RULES = frozenset(("ISR-T004", "ISR-T005", "ISR-T006", "ISR-T017", "ISR-T018"))
 GUARD_FUNCTION = frozenset("a an the any your my its this that it them to from into as of or nor ever just blindly".split())
 CLAUSE_END = re.compile(r"\.\s|\n|[:;!?](?=\s|$)|\s[-–—]{1,2}\s")
 GUARD_TOKEN = re.compile(r",|[^\s,]+")
@@ -568,7 +568,7 @@ def _negated(clause, rules):
 
 
 def _negated_example_list(text, m, walk, after, span, rules):
-    """b8i3 (WT-T004 only): "Do not inspect … with broad commands such as `env`, bare `set`, or `printenv`, and do not echo the
+    """b8i3 (ISR-T004 only): "Do not inspect … with broad commands such as `env`, bare `set`, or `printenv`, and do not echo the
     value." The walk stops at the comma after a code span, so `such` is never reached. The match is negated only when it closes a
     "such as" list of code spans (at most 8) in a clause that opens with the negation, the prose after its span is plain, and its
     sentence (spans masked) ends with no condition word in it or opening the next one. Any doubt means False.
@@ -894,7 +894,7 @@ def _wording_guard(text, m, rules, prev_end):
 # are removed: an override that names a config file or a reviewer's output (T001), an env file copied into another (T004), and
 # (round 2, H2) "Do not debug with `env`, `printenv` …", whose negation a trailing "unless …" makes conditional. Those false
 # alarms are open (docs/KNOWN-LIMITS.md, B7).
-# b8i3: a negated "such as" list of code spans is read as negated (WT-T004 only); the "with" list and anything conditional stay open.
+# b8i3: a negated "such as" list of code spans is read as negated (ISR-T004 only); the "with" list and anything conditional stay open.
 
 
 def in_warning(text, m, rules, rule_id, prev_end=None):
@@ -909,7 +909,7 @@ def in_warning(text, m, rules, rule_id, prev_end=None):
     walk, after, span, quoted = u
     if quoted:
         return "quoted"
-    if _negated(walk, rules) or (rule_id == "WT-T004" and _negated_example_list(text, m, walk, after, span, rules)):
+    if _negated(walk, rules) or (rule_id == "ISR-T004" and _negated_example_list(text, m, walk, after, span, rules)):
         return "negated"
     if _listed(text, m, prev_end):
         return "list"
@@ -936,7 +936,7 @@ def guard_record(f, reason, danger=False):
 
 
 def sends_data(ev):
-    """WT-T017: the curl/wget segment itself (up to a pipe, ;, && or ||) carries a data flag.
+    """ISR-T017: the curl/wget segment itself (up to a pipe, ;, && or ||) carries a data flag.
     -G/--get is harmless only when the data is not a file (@) or a command substitution. Batch 6 PR3 exempted a command whose
     data, headers, method and URL were all literal; Codex round 2 (H1) removed it: curl and wget read a config file the
     command never names (~/.curlrc, .wgetrc: a credential header, an upload), so no visible command proves what is sent. The
@@ -957,7 +957,7 @@ def sends_data(ev):
 
 
 # b8i3: `printenv NAME` prints one variable. It is a credential read only when the name is secret-shaped; a bare printenv, a
-# $name, an option, several names or more words after it stay WT-T004. Only redirects may follow the name, then the command ends.
+# $name, an option, several names or more words after it stay ISR-T004. Only redirects may follow the name, then the command ends.
 # Fix round 1: the name, bare or quoted, is a plain variable name (a quoted one may end in one "(x86)"), so "--" and "-0" are
 # options; after it a linear scan (no regex repetition, so no backtracking) allows only blanks, plain redirects (2>/dev/null,
 # >>log) and the command's end. Anything glued to the name or a target ($, \, (, a quote, a backtick that opens a substitution:
@@ -995,7 +995,7 @@ def _opens_line(text, s, a):
 
 
 def one_plain_variable(text, m):
-    """WT-T004: the match is `printenv` of one named variable that isn't secret-shaped (`printenv HOME`)."""
+    """ISR-T004: the match is `printenv` of one named variable that isn't secret-shaped (`printenv HOME`)."""
     s = m.start()
     if m.group(0) != "printenv":
         return False
@@ -1027,7 +1027,7 @@ def one_plain_variable(text, m):
         i, done = r.end(), r.re is PRINTENV_TRUE
 
 
-# b8i3 fix round 2 (Codex 1, 4; fail closed, no shell reading): WT-T004's `cat` alternative stays 63714e4's (\bcat\s+\S*\.env\b:
+# b8i3 fix round 2 (Codex 1, 4; fail closed, no shell reading): ISR-T004's `cat` alternative stays 63714e4's (\bcat\s+\S*\.env\b:
 # the same evidence, keys and dismissals for every input), and a match is dropped only when its whole line, from `cat` to the
 # end, is a plain read of env-variant files: lowercase `cat` opening its line (_opens_line), one or more plain operands, at most
 # one plain redirect (> or >>, a blank before it, then one plain target), blanks, and an optional `# comment` after a blank.
@@ -1049,7 +1049,7 @@ def _env_variant(path, target=False):
 
 
 def env_variant_cat(text, m):
-    """WT-T004: the match is a `cat` line that reads only env-variant files (cat .env.custom.bak >> .env.local)."""
+    """ISR-T004: the match is a `cat` line that reads only env-variant files (cat .env.custom.bak >> .env.local)."""
     s = m.start()
     if not text.startswith("cat", s):
         return False
@@ -1071,9 +1071,9 @@ def env_variant_cat(text, m):
     return line[g - 1] in " \t" and r is not None and _env_variant(r.group("target"), target=True)
 
 
-# Codex, batch 4 round 1: a chat webhook is WT-T018 only when the URL's own host is exactly the chat service's, with its webhook
+# Codex, batch 4 round 1: a chat webhook is ISR-T018 only when the URL's own host is exactly the chat service's, with its webhook
 # path. evil-discord.com/api/webhooks/…, https://collector.example/discord.com/api/webhooks/…, a user@ or a port in front of the
-# host: not the service, so Slack and Discord lookalikes stay the critical WT-T005 they were on 857ab38.
+# host: not the service, so Slack and Discord lookalikes stay the critical ISR-T005 they were on 857ab38.
 CHAT_HOOKS = ((re.compile(r"hooks\.slack\.com"), re.compile(r"/(services|workflows|triggers)/")),
               (re.compile(r"discord(app)?\.com"), re.compile(r"/api/webhooks/")),
               (re.compile(r"[a-z0-9-]+\.webhook\.office\.com"), re.compile(r"/")),
@@ -1261,11 +1261,11 @@ def _region(text, start, end):
     return r
 
 
-# Batch 7b part 1: a Slack/Discord webhook URL (the one WT-T005's pattern also covers) is the medium WT-T018 only when the whole
+# Batch 7b part 1: a Slack/Discord webhook URL (the one ISR-T005's pattern also covers) is the medium ISR-T018 only when the whole
 # document passes a simple allowlist: the URL is one plain string literal written directly as the first argument of a recognised
 # requests/httpx/axios send or the single URL of a plain curl/wget line, with none of the "doubt" constructs below anywhere in
-# the document's code. Otherwise it is the critical WT-T005. No destination is ever "proven"; a name, lookup, default, str() or
-# url= all give WT-T005 (the old proof machinery is gone, docs/KNOWN-LIMITS.md). Every per-document result is memoized.
+# the document's code. Otherwise it is the critical ISR-T005. No destination is ever "proven"; a name, lookup, default, str() or
+# url= all give ISR-T005 (the old proof machinery is gone, docs/KNOWN-LIMITS.md). Every per-document result is memoized.
 _INDENT_LINE = re.compile(r"(?m)^(?: {4,}|\t)")
 _HTML_TAG = re.compile(r"(?i)<(?:pre|code)")
 _HTML_CODE = re.compile(r"(?i)<(pre|code)(?![\w-])")
@@ -1330,7 +1330,7 @@ def _prose_regions(text, lo, hi, out):
             out.append((start, end))
 
 
-# What makes a document's code doubtful, so every chat webhook in it is the critical WT-T005 (items 1, 2 and 6). The raw regexes
+# What makes a document's code doubtful, so every chat webhook in it is the critical ISR-T005 (items 1, 2 and 6). The raw regexes
 # run over every region, comments and strings included, so a tokenizer or language disagreement can hide nothing.
 _DOUBT_N = re.compile(r"[^\x00-\x7f]|[\x0b\x0c]|\r(?!\n)")   # any non-ASCII character (D2); any lone \r, \f or \v
 _DOUBT_WORDS = ("exec", "eval", "compile", "globals", "locals", "vars", "getattr", "setattr", "delattr", "builtins",
@@ -1419,7 +1419,7 @@ def _imports_ok(text, s, e):
 
 
 def _code_doubt(text):
-    """True when any code region of `text` holds a doubt construct, so no chat webhook in it can be WT-T018. The word and shell
+    """True when any code region of `text` holds a doubt construct, so no chat webhook in it can be ISR-T018. The word and shell
     checks also read each region with its backslash-newline joins removed (fix round 1, item 4: `al\\⏎ias` is `alias`). Read
     once per text. Batch 7d (C1): an opening <pre> or <code> tag with attributes anywhere in the text is doubt too."""
     memo = _memo(text)
@@ -1438,7 +1438,7 @@ def _code_doubt(text):
 
 
 # curl/wget option tables: only these are accepted on a plain curl/wget line. Anything else (-x, --proxy, --resolve, --connect-to,
-# -K, --url, -k, $OPTS) makes the line not a plain send, so the URL stays WT-T005.
+# -K, --url, -k, $OPTS) makes the line not a plain send, so the URL stays ISR-T005.
 _CURL_WGET = re.compile(r"[ \t]*(?:\$[ \t]+)?(?:curl|wget)(?=[ \t]|$)")
 _CURL_NOVAL = frozenset(("--silent", "--show-error", "--fail", "--fail-with-body", "--location", "--include", "--verbose",
                          "--compressed"))
@@ -1775,8 +1775,8 @@ def _literal_send(text, a, b, quoted):
 
 
 def chat_webhook(text, m):
-    """True when the match is a real chat webhook (CHAT_HOOKS) that should stay the medium WT-T018. Its host, port and userinfo
-    must be exactly the service's (D1 keeps the hosts WT-T005's pattern doesn't cover whatever the send form); for a Slack
+    """True when the match is a real chat webhook (CHAT_HOOKS) that should stay the medium ISR-T018. Its host, port and userinfo
+    must be exactly the service's (D1 keeps the hosts ISR-T005's pattern doesn't cover whatever the send form); for a Slack
     services or Discord webhooks URL, the whole document must also pass the batch 7b allowlist (no doubt, one literal send)."""
     import urllib.parse
     st = m.start()
@@ -1801,11 +1801,11 @@ def chat_webhook(text, m):
     if not any(h.fullmatch(host) and p.match(u.path) for h, p in CHAT_HOOKS):
         return False
     if not CHAT_IN_T005.match(text, m.start()):
-        return True   # D1: WT-T005's pattern doesn't cover this host (Teams, Google Chat, Telegram, Slack workflows)
+        return True   # D1: ISR-T005's pattern doesn't cover this host (Teams, Google Chat, Telegram, Slack workflows)
     return not _code_doubt(text) and _literal_send(text, a, b, quoted)
 
 
-REF_RULES = ("WT-T001", "WT-T002", "WT-T004", "WT-T005", "WT-T006", "WT-T007", "WT-T008", "WT-T018")
+REF_RULES = ("ISR-T001", "ISR-T002", "ISR-T004", "ISR-T005", "ISR-T006", "ISR-T007", "ISR-T008", "ISR-T018")
 REF_WORDS = re.compile(r"(?i)((prompt[- ]injection|injection|attack|dangerous[- ]code)\s+(patterns?|examples?|signatures?|detection|techniques?)"
                        r"|\bevil\.com\b|\battacker\b|detection\s+rules?|red[- ]team)")
 
@@ -1848,14 +1848,14 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None)
     guarded = set(rules.get("guarded_rules", []))
     is_ref = attack_reference(text, rules, where)
     if is_ref:
-        out.append(finding("WT-T001r", "Describes injection patterns (reference or detector)", "info", ["AST05"], where,
+        out.append(finding("ISR-T001r", "Describes injection patterns (reference or detector)", "info", ["AST05"], where,
                            "pattern list", "No action. Listed so you know this file contains attack examples."))
     for rule in rules["rules"]:
         # Vendor/platform: critical rules, hidden Unicode, and high/critical behavior (credential read, send-out, pipe).
         # High wording and medium behavior (e.g. eval) stay off so fiction and noise in shipped plugins do not pile up;
         # a built-in that turns malicious still trips T004/T017 (Claude v0.7.1 F4).
-        # Codex, batch 4 round 2: WT-T018 too. A real chat webhook is no longer the critical WT-T005, so it must not vanish here.
-        if kind == "vendor" and rule["severity"] != "critical" and rule["id"] not in ("WT-T002", "WT-T018"):
+        # Codex, batch 4 round 2: ISR-T018 too. A real chat webhook is no longer the critical ISR-T005, so it must not vanish here.
+        if kind == "vendor" and rule["severity"] != "critical" and rule["id"] not in ("ISR-T002", "ISR-T018"):
             if not (rule["id"] in BEHAVIOR_RULES and rule["severity"] in ("critical", "high")):
                 continue
         prev_end, seen = None, 0
@@ -1866,13 +1866,13 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None)
                     if stop is not None:
                         stop.append(where)
                     break
-            if rule["id"] == "WT-T018" and not chat_webhook(text, m):
+            if rule["id"] == "ISR-T018" and not chat_webhook(text, m):
                 continue   # a lookalike or nested host: not a chat service's webhook (a Slack or Discord one stays T005)
-            if rule["id"] == "WT-T005" and CHAT_IN_T005.fullmatch(m.group(0)) and chat_webhook(text, m):
-                continue   # the owner's own chat webhook is WT-T018, not an exfiltration host
-            if rule["id"] == "WT-T004" and one_plain_variable(text, m):
+            if rule["id"] == "ISR-T005" and CHAT_IN_T005.fullmatch(m.group(0)) and chat_webhook(text, m):
+                continue   # the owner's own chat webhook is ISR-T018, not an exfiltration host
+            if rule["id"] == "ISR-T004" and one_plain_variable(text, m):
                 continue   # b8i3: `printenv HOME` prints one plain variable, not the environment
-            if rule["id"] == "WT-T004" and env_variant_cat(text, m):
+            if rule["id"] == "ISR-T004" and env_variant_cat(text, m):
                 continue   # b8i3 fix round 2: a plain `cat .env.local` line reads no file named exactly .env
             if is_ref and rule["id"] in REF_RULES and (rule["id"] not in GUARD_CODE_RULES or ref_line(text, m)):
                 if limit is not None and len(out) >= limit and (rule["id"], "ref") in kinds:
@@ -1881,42 +1881,42 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None)
                     continue
                 kinds.add((rule["id"], "ref"))
                 out.append(finding(rule["id"], rule["title"] + " (in an attack-pattern reference)", "low", rule["owasp"],
-                                   f"{where}:{line_of(text, m.start())}", f"U+{ord(m.group(0)):04X}" if rule["id"] == "WT-T002" else m.group(0)[:140],
+                                   f"{where}:{line_of(text, m.start())}", f"U+{ord(m.group(0)):04X}" if rule["id"] == "ISR-T002" else m.group(0)[:140],
                                    "Documentation or detector text. Confirm the file is what it claims to be.",
-                                   shown=None if rule["id"] == "WT-T002" else mask(m.group(0)) if rule["id"] == SECRET_RULE else m.group(0)))
-                if rule["id"] == "WT-T002":
+                                   shown=None if rule["id"] == "ISR-T002" else mask(m.group(0)) if rule["id"] == SECRET_RULE else m.group(0)))
+                if rule["id"] == "ISR-T002":
                     break
                 continue
-            if rule["id"] == "WT-T017" and not sends_data(text[m.start():m.start() + 400]):
+            if rule["id"] == "ISR-T017" and not sends_data(text[m.start():m.start() + 400]):
                 continue   # look past the short regex match so -G with @ or $(...) still counts; later | tr -d stays out
-            if rule["id"] == "WT-T016" and not rules["write_verbs"].search(sentence_of(text, m)):
+            if rule["id"] == "ISR-T016" and not rules["write_verbs"].search(sentence_of(text, m)):
                 continue   # "failed silently", "quietly refresh the cache": quiet wording only matters next to an outward action
             # batch 6 (B5): the value judged on itself, never the line or the file name; fix round 3: an example-looking one only
-            # gets a note (annotate_example), and is WT-T011x only so a placeholder never raises WT-T011 itself
+            # gets a note (annotate_example), and is ISR-T011x only so a placeholder never raises ISR-T011 itself
             example = secret_at(text, m)[1] if rule["id"] == SECRET_RULE else ""
-            if rule["id"] == "WT-T003" and is_document_blob(m.group(0)):
+            if rule["id"] == "ISR-T003" and is_document_blob(m.group(0)):
                 continue
             ev = m.group(0)
-            installer = rule["id"] == "WT-T006" and known_installer(ev)
+            installer = rule["id"] == "ISR-T006" and known_installer(ev)
             reason = in_warning(text, m, rules, rule["id"], prev_end) if rule["id"] in guarded else ""
             if reason:
                 prev_end = m.end()
-            sig = ("WT-T006k" if installer else rule["id"], bool(reason), bool(example))   # severity follows from these
+            sig = ("ISR-T006k" if installer else rule["id"], bool(reason), bool(example))   # severity follows from these
             if limit is not None and len(out) >= limit and sig in kinds:
                 if cut is not None:
                     cut.append(where)   # a repeat of a kind already kept: read, not stored
                 continue
             kinds.add(sig)
             if installer:
-                f = finding("WT-T006k", "Known installer piped to shell", "medium" if kind != "vendor" else "low",
+                f = finding("ISR-T006k", "Known installer piped to shell", "medium" if kind != "vendor" else "low",
                             ["ASI05", "AST02"], f"{where}:{line_of(text, m.start())}", ev[:140],
                             "A well-known installer, but still unpinned. Prefer a package manager or a pinned, checksummed download.", shown=ev)
             else:
                 if rule["id"] == SECRET_RULE:
                     ev = mask(ev)
-                elif rule["id"] == "WT-T002":
+                elif rule["id"] == "ISR-T002":
                     ev = f"U+{ord(ev):04X}"
-                elif rule["id"] == "WT-T003":
+                elif rule["id"] == "ISR-T003":
                     ev = ev[:24] + f"… ({len(m.group(0))} chars)"
                 f = finding(EXAMPLE_T011 if example else rule["id"], rule["title"], rule["severity"], rule["owasp"],
                             f"{where}:{line_of(text, m.start())}", ev, rule["fix"])
@@ -1925,7 +1925,7 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None)
             if reason:   # batch 2 (R1): downgraded to a record, never dropped
                 f = guard_record(f, reason, danger=rule["id"] in GUARD_CODE_RULES)
             out.append(f)
-            if rule["id"] in ("WT-T002",):
+            if rule["id"] in ("ISR-T002",):
                 break  # one per file is enough for invisible chars
     writes = first_action(text, rules["write_verbs"])
     approved = has_approval(text, rules)
@@ -1933,17 +1933,17 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None)
         strong = first_action(text, STRONG_VERBS)
         sev = ("medium" if strong else "low") if kind == "skill" else ("high" if strong else "medium")
         writes = strong or writes
-        out.append(finding("WT-T013", "External action with no approval line", sev, ["ASI02", "AST03", "LLM06"],
+        out.append(finding("ISR-T013", "External action with no approval line", sev, ["ASI02", "AST03", "LLM06"],
                            f"{where}:{line_of(text, writes.start())}", writes.group(0),
                            "Add to the description or routine: never send, post, buy, publish or delete without my approval."))
     if kind in ("routine", "template"):
         if rules["schedule_terms"].search(text) and not rules["nodata_terms"].search(text):
-            out.append(finding("WT-R002", "Routine has no failure or no-data rule", "medium", ["ASI08"], where,
+            out.append(finding("ISR-R002", "Routine has no failure or no-data rule", "medium", ["ASI08"], where,
                                "no 'if the source is unavailable' clause",
                                "Add: if a source is unavailable, report the failure instead of using old data; if nothing changed, send nothing."))
         hf = rules["high_freq"].search(text)
         if hf:
-            out.append(finding("WT-R003", "High-frequency schedule", "low", ["ASI08"], where, hf.group(0),
+            out.append(finding("ISR-R003", "High-frequency schedule", "low", ["ASI08"], where, hf.group(0),
                                "Hourly routines burn the weekly allowance; prefer daily or an event trigger."))
     return dedupe(out)
 

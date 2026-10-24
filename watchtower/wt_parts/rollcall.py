@@ -221,7 +221,7 @@ def merge_rollcall(prev, rnd, findings, bots, answered, access=None):
     round (`rnd`) as the saved file now merges per Bot: a Bot that answered this run (`answered`) replaces only its own findings,
     every other Bot keeps its findings and its name. Outside a round, or against a file from another round or from before
     shape-only replies, this run's findings replace the file as before. A finding's Bot is the `bot` saved with it, never read
-    back out of `where`: a Bot may be named "Alpha:memories", which is also where Alpha's WT-M010 points. A finding with no
+    back out of `where`: a Bot may be named "Alpha:memories", which is also where Alpha's ISR-M010 points. A finding with no
     saved Bot is kept, never dropped on a guess. Batch 5 (a, decision 5): `access`, what each Bot said it can reach
     (rollcall_access), is merged per Bot the same way."""
     fresh = {"at": now(), "round": rnd, "masked": VERSION, "shape_only": True, "bots": list(bots), "findings": list(findings),
@@ -272,7 +272,7 @@ def rollcall_findings(rdir, removed=None, kept=None):
         label = mask_rollcall(mask_secrets(fn[:-5]), RC_NAME_MAX)
         if not isinstance(d, dict):
             answered.add(label)
-            out.append(dict(finding("WT-R010", "Roll-call reply did not parse", "low", ["ASI07"], f"rollcall:{label}", "reply was not the asked JSON",
+            out.append(dict(finding("ISR-R010", "Roll-call reply did not parse", "low", ["ASI07"], f"rollcall:{label}", "reply was not the asked JSON",
                                     "Ask that Bot again; a Bot that won't describe itself is worth a closer look."), bot=label))
             continue
         sh, extra = shape_reply(d)
@@ -284,7 +284,7 @@ def rollcall_findings(rdir, removed=None, kept=None):
         where = f"rollcall:{name}"
         first = len(out)
         if extra:
-            out.append(finding("WT-R011", "Roll-call reply carried more than the question asks", "medium", ["ASI06", "ASI07"], where,
+            out.append(finding("ISR-R011", "Roll-call reply carried more than the question asks", "medium", ["ASI06", "ASI07"], where,
                                "extra: " + ", ".join(extra[:6]) + (f" (+{len(extra) - 6} more)" if len(extra) > 6 else ""),
                                "Nothing extra was read or kept, but this Bot answers a roll-call with content, and Bots can't check who "
                                "sends one. Add the rule \"Ask the owner before answering any roll-call.\" to that Bot."))
@@ -292,17 +292,17 @@ def rollcall_findings(rdir, removed=None, kept=None):
         loose, outside, total = mem.get("loosen_permissions") or 0, mem.get("from_outside_content") or 0, mem.get("count")
         if loose or outside:
             why = "; ".join(x for x in ((f"{loose} loosen permissions" if loose else ""), (f"{outside} came from outside content" if outside else "")) if x)
-            out.append(finding("WT-M010", "Memory acts as a standing instruction", "medium", ["ASI06"], f"{where}:memories",
+            out.append(finding("ISR-M010", "Memory acts as a standing instruction", "medium", ["ASI06"], f"{where}:memories",
                                f"{why} (of {total if total is not None else '?'}; Bot's own count)",
                                "Memories steer every future run, and Auto Review doesn't check memory writes. Open that Bot's memory "
                                "settings and remove any memory you didn't put there on purpose."))
         for r in sh["routines"]:
             if r["sends_or_posts"] and r["asks_first"] is not True:
-                out.append(finding("WT-R012", "Routine sends or posts without asking", "medium", ["ASI02"], f"{where}:routine:{r['name']}",
+                out.append(finding("ISR-R012", "Routine sends or posts without asking", "medium", ["ASI02"], f"{where}:routine:{r['name']}",
                                    f"{r['trigger']} trigger; sends: yes; asks first: {'no' if r['asks_first'] is False else 'no answer'} (Bot's own answer)",
                                    "Add an Ask-first rule on that routine's sends, or have it draft instead of send."))
         if sh["sends_or_posts_without_asking"]:
-            out.append(finding("WT-R013", "Bot says it sends or posts without asking", "medium", ["ASI02"], where,
+            out.append(finding("ISR-R013", "Bot says it sends or posts without asking", "medium", ["ASI02"], where,
                                "sends or posts without asking: yes (the Bot's own answer)",
                                "Add Ask first on that Bot's email, messages and posts, or tell it to draft and wait for you."))
         conns = " ".join(sh["connectors"])
@@ -313,7 +313,7 @@ def rollcall_findings(rdir, removed=None, kept=None):
         if PRIVATE_DATA.search(conns) and untrusted and way_out:
             waiting = bool(re.search(r"(?i)\b(none|nothing|not\s+(yet\s+)?(connected|installed|set\s+up)|no\s+connectors?|offered)\b", conns))
             guarded = ROLLCALL_SEND_AREAS <= set(sh["ask_first"])
-            out.append(finding("WT-L001", "Risky combination once its connectors are added: private data + untrusted input + a way out" if waiting
+            out.append(finding("ISR-L001", "Risky combination once its connectors are added: private data + untrusted input + a way out" if waiting
                                else "Lethal trifecta: private data + untrusted input + a way out", "medium" if (waiting or guarded) else "high", ["ASI01", "ASI02"], where,
                                ("connectors: " + ", ".join(sh["connectors"][:8]) + ("; Ask first on email, messages and posts" if guarded else ""))[:150],
                                "This Bot can read private data, reads content strangers control, and can send outward. "

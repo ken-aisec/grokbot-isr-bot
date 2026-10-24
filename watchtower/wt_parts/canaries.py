@@ -254,7 +254,7 @@ def link_target(p):
 
 
 def decoy_link_finding(name, p, why):
-    return finding("WT-K006", "A link was put where a decoy goes", "high", ["ASI10", "ASI05"], p, f"{name}: {why}"[:160],
+    return finding("ISR-K006", "A link was put where a decoy goes", "high", ["ASI10", "ASI05"], p, f"{name}: {why}"[:160],
                    "ISR Bot refused to write the decoy, because writing through that link would have changed the file it points to. "
                    "Something put the link there on purpose. Tell ISR Bot \"incident check\"; once you know what did it, remove the link and plant the decoys again.",
                    ident=f"{name}|{p}")
@@ -262,7 +262,7 @@ def decoy_link_finding(name, p, why):
 
 def plant_canaries(only=None, token_file=None, refused=None):
     """Write the decoys that aren't there. Returns the names planted. A decoy whose place holds a link is not written: it is
-    recorded as an event (WT-K006) and, when `refused` is a list, added to it."""
+    recorded as an event (ISR-K006) and, when `refused` is a list, added to it."""
     import secrets as _s
     reg = load_json(state_path("canaries.json"), {}) or {}
     planted, bad = [], []
@@ -437,7 +437,7 @@ def decoy_untouched(v, st):
 
 def decoy_rewritten(v, st):
     """True when the file was rewritten after this registry planted it AND is still armed (unread since that write: atime is
-    the re-arm value mtime - 1 day). A file read after the rewrite is still a read (WT-K001), so no read is ever hidden."""
+    the re-arm value mtime - 1 day). A file read after the rewrite is still a read (ISR-K001), so no read is ever hidden."""
     planted = v.get("mtime", v.get("planted_ts"))
     if not isinstance(planted, (int, float)) or st.st_mtime <= planted + 5:
         return False
@@ -458,7 +458,7 @@ def canary_findings(record=True):
             continue                                      # never stat or touch through it
         if not os.path.exists(p):
             seen = f"; it had been read at {v['read_at'][11:16]} UTC before it disappeared" if v.get("read_at") else ""
-            out.append(finding("WT-K002", "Canary file deleted or moved", "high", ["ASI10"], p, name + seen,
+            out.append(finding("ISR-K002", "Canary file deleted or moved", "high", ["ASI10"], p, name + seen,
                                "Something removed a decoy" + (" after reading it" if seen else "") + ". It has not been put back, so the evidence stays. "
                                "Check recent routine runs, then re-plant with `wt.py canary plant`."))
             continue
@@ -466,7 +466,7 @@ def canary_findings(record=True):
         if decoy_rewritten(v, st):
             # DQ-041 (Oct 14 replay): the file here was written after this registry planted it, so its atime says nothing
             # about a read of *our* decoy (a dry run with a copied registry and its own /tmp re-planted it). Never silent:
-            out.append(finding("WT-K007", "Decoy file rewritten since it was planted", "high", ["ASI10"], p,
+            out.append(finding("ISR-K007", "Decoy file rewritten since it was planted", "high", ["ASI10"], p,
                                f"{name}: written {dt.datetime.fromtimestamp(st.st_mtime, dt.timezone.utc).isoformat(timespec='minutes')}, "
                                f"planted {str(v.get('planted', ''))[:16]}",
                                "The decoy on disk is not the one ISR Bot recorded: something rewrote it, or this state was copied from "
@@ -486,25 +486,25 @@ def canary_findings(record=True):
         own = lambda t: any(a - 2 <= t <= b + 5 for a, b in runs)
         backup = len(reads) >= 2 and not forged and all(witness_proves(reg[n], t) for n, _, t in reads)
         if backup:
-            f = finding("WT-K004", "Several decoys were read by the platform's backup", "low", ["ASI03"], places,
+            f = finding("ISR-K004", "Several decoys were read by the platform's backup", "low", ["ASI03"], places,
                         f"{len(reads)} of {len(reg)} decoys within {int(max(times) - min(times))}s at {when(min(times))} ({each})",
                         "The file next to each decoy that only a privileged reader can open was read with it: the platform's file backup. "
                         "It is listed once and updated each time. If it lines up with something you didn't expect, tell ISR Bot \"incident check\".")
             f["key"] = BULK_KEY                           # one line that is updated, not a new finding every time the backup runs
             out.append(f)
         elif all(own(t) for t in times):
-            out.append(finding("WT-K005", "Decoys were read while an ISR Bot run was recorded", "high", ["ASI03", "ASI10"], places,
+            out.append(finding("ISR-K005", "Decoys were read while an ISR Bot run was recorded", "high", ["ASI03", "ASI10"], places,
                                f"{len(reads)} decoy(s) at {when(min(times))}, during a recorded Watchtower run ({each})",   # v0.7.4: the old name kept, the evidence is part of the finding key
                                "The run record can be written by any Bot, so it doesn't prove the read was ISR Bot's, and the backup's proof "
                                "is missing. Tell ISR Bot \"incident check\"."))
         elif len(reads) >= 2 and max(times) - min(times) <= 180:
-            out.append(finding("WT-K004", "Several decoys were read together", "high", ["ASI03", "ASI10"], places,
+            out.append(finding("ISR-K004", "Several decoys were read together", "high", ["ASI03", "ASI10"], places,
                                f"{len(reads)} of {len(reg)} decoys within {int(max(times) - min(times))}s at {when(min(times))} ({each})",
                                "Something read several decoys at once, and nothing shows it was the platform's backup. A Bot searching every "
                                "file does this. Tell ISR Bot \"incident check\"."))
         else:
             for name, p, t in reads:
-                out.append(finding("WT-K001", "Something opened a decoy file", "critical", ["ASI03", "ASI10"], p, f"{name} read at {when(t)}",
+                out.append(finding("ISR-K001", "Something opened a decoy file", "critical", ["ASI03", "ASI10"], p, f"{name} read at {when(t)}",
                                    "Nothing legitimate needs this file, and nothing else was searched with it. "
                                    "Find which Bot or routine ran then (Agent Computer view, run history) and tell ISR Bot \"incident check\"."))
     if not record:
@@ -574,7 +574,7 @@ def cmd_events(args):
         save_json(state_path("events.json"), keep)
         snap = load_json(state_path("last_findings.json"), None)
         if snap:
-            snap["findings"] = [f for f in snap["findings"] if not (args.rule is None and f["rule"].startswith(("WT-H", "WT-K"))) and f["rule"] != args.rule]
+            snap["findings"] = [f for f in snap["findings"] if not (args.rule is None and f["rule"].startswith(("ISR-H", "ISR-K"))) and f["rule"] != args.rule]
             save_json(state_path("last_findings.json"), snap)
         ledger({"event": "events-clear", "rule": args.rule or "all", "removed": len(store) - len(keep)})
         print(f"Cleared {len(store) - len(keep)} event(s).")
@@ -621,6 +621,6 @@ def canary_copies(text, path):
     reg = load_json(state_path("canaries.json"), {})
     for name, v in reg.items():
         if v.get("token") and v["token"] in text and os.path.expanduser(v["path"]) != path:
-            return finding("WT-K003", "Canary value copied into another file", "critical", ["ASI03", "ASI04"], path, name,
+            return finding("ISR-K003", "Canary value copied into another file", "critical", ["ASI03", "ASI04"], path, name,
                            "A decoy's contents turned up somewhere else: something read it and wrote it out. Tell ISR Bot \"incident check\".")
     return None

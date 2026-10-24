@@ -1,6 +1,6 @@
 """Item 8 redesign (roadmap row 8 / R3): platform trust from vendor provenance.
 
-A lone file planted under a platform root (~/.grok/bundled/skills/helper/SKILL.md) was a low WT-I002, folded into the "Platform
+A lone file planted under a platform root (~/.grok/bundled/skills/helper/SKILL.md) was a low ISR-I002, folded into the "Platform
 refresh" Tip and rolled into the baseline at the next full audit. The first attempt (dd27c42, harden/item8-wip) trusted ctime
 grouping, file counts and state the Bot can write; Codex left four highs open (ctime, cross-root moves, engine bytes, the plan).
 
@@ -73,10 +73,10 @@ class _Platform(Box):
         return [f for f in self.snap()["findings"] if f["where"] == path]
 
     def counted_high(self, path):
-        return [f for f in self.at(path) if f["rule"] in ("WT-I001", "WT-I002") and f["severity"] == "high" and wt.counts(f)]
+        return [f for f in self.at(path) if f["rule"] in ("ISR-I001", "ISR-I002") and f["severity"] == "high" and wt.counts(f)]
 
     def tip(self):
-        return [f for f in self.snap()["findings"] if f["rule"] == "WT-I008"]
+        return [f for f in self.snap()["findings"] if f["rule"] == "ISR-I008"]
 
     def preview(self):
         return json.loads(self.run_cmd("fix", "--roots", *self.roots)[1])
@@ -190,7 +190,7 @@ class CrossRootMoves(_Platform):
         new = os.path.join(self.home, "sand-data", "workflows", "renamed", "SKILL.md")
         put(new, body)
         self.audit()
-        self.assertFalse([f for f in self.at(new) if f["rule"] == "WT-I002"])
+        self.assertFalse([f for f in self.at(new) if f["rule"] == "ISR-I002"])
 
 
 SWAP_ENGINE = ('#!/usr/bin/env python3\nimport json, os, sys\na = sys.argv[1:]; stage = a[1]; out = a[a.index("--output") + 1]\n'
@@ -272,7 +272,7 @@ class PlanCantWiden(_Platform):
         snap = self.snap()
         fa = next(f for f in snap["findings"] if f["where"] == a)
         snap["findings"].append(dict(fa, where=b, key="0" * 16))
-        tip = wt.finding("WT-I008", "Platform refresh: 1 of Grok Bot's own files changed (other)", "info", ["AST07"], "platform-refresh", "", "")
+        tip = wt.finding("ISR-I008", "Platform refresh: 1 of Grok Bot's own files changed (other)", "info", ["AST07"], "platform-refresh", "", "")
         tip["platform_files"] = [b]
         snap["findings"].append(tip)
         wt.save_json(wt.state_path("last_findings.json"), snap)
@@ -324,7 +324,7 @@ class PlanCantWiden(_Platform):
         add(a, "Changed after the yes.\n")
         self.assertNotEqual(self.daily(), "NO_CHANGES")
         x = self.counted_high(a)
-        self.assertEqual([f["rule"] for f in x], ["WT-I002"])
+        self.assertEqual([f["rule"] for f in x], ["ISR-I002"])
         self.assertIn("Grok Bot's release list doesn't include it", x[0]["title"])
 
     def test_4_a_file_the_rules_flag_is_never_offered(self):
@@ -406,12 +406,12 @@ class Dq042WithoutProvenance(Box):
         put(md, dq042.LEARN_V2)
         r = self.audit()
         fs = self.snap()["findings"]
-        x = [f for f in fs if f["where"] == md and f["rule"] == "WT-I001"]
+        x = [f for f in fs if f["where"] == md and f["rule"] == "ISR-I001"]
         self.assertEqual([(f["severity"], wt.counts(f)) for f in x if f["severity"] == "high" or wt.counts(f)], [])
         self.assertNotIn(md, [f["where"] for f in r["new"]])
         self.assertEqual(wt.load_baseline()[0][md], sha(md))
         self.assertNotIn(d, wt.changed_skills(fs)[0])                           # never re-approved through the engines
-        v = [f for f in fs if f["rule"] == "WT-X003" and f["where"] == d]
+        v = [f for f in fs if f["rule"] == "ISR-X003" and f["where"] == d]
         self.assertEqual([(f["severity"], f["label"]) for f in v], [("info", wt.PLATFORM)])
 
 
@@ -427,7 +427,7 @@ class SubstringBypass(Box):
         add(a, "One more line.\n"); add(b, "One more line.\n")
         r = self.audit()
         self.assertFalse([n for n in r["notes"] if "accepted automatically" in n], r["notes"])
-        changed = {f["where"] for f in self.snap()["findings"] if f["rule"] == "WT-I001" and f["severity"] == "high"}
+        changed = {f["where"] for f in self.snap()["findings"] if f["rule"] == "ISR-I001" and f["severity"] == "high"}
         self.assertEqual(changed, {a, b})
         for p in (a, b):
             self.assertFalse(wt.builtin({"where": p}))
@@ -446,7 +446,7 @@ class OutsideTheHomeFolders(Box):
         put(p, '{\n "url": "https://gw.internal.example",\n "token": "ghp_' + fake_key(36) + '"\n}\n')
         self.assertFalse(wt.platform_file({"where": p + ":3"}))
         self.audit()
-        s = [f for f in self.snap()["findings"] if f["rule"] in ("WT-S001", "WT-S002") and f["where"].startswith(p)]
+        s = [f for f in self.snap()["findings"] if f["rule"] in ("ISR-S001", "ISR-S002") and f["where"].startswith(p)]
         self.assertTrue(s)
         self.assertEqual((s[0].get("severity_was", s[0]["severity"]), s[0]["title"]), ("critical", "Secret stored in a file on the shared computer"), s[0])
         self.assertNotEqual(s[0].get("scope"), "platform")
@@ -456,7 +456,7 @@ class OutsideTheHomeFolders(Box):
         """Contrast: passes on base too."""
         p = os.path.join(self.home, "sand-data", "gateway.json")
         put(p, '{\n "url": "https://gw.internal.example",\n "token": "Ya2u' + "Q7xLp3ZtV9" * 4 + '"\n}\n')
-        f = wt.finding("WT-S001", "x", "critical", ["ASI03"], p + ":3", "e", "f")
+        f = wt.finding("ISR-S001", "x", "critical", ["ASI03"], p + ":3", "e", "f")
         self.assertTrue(wt.platform_file(f))
         self.assertFalse(wt.counts(f))
         self.assertTrue(wt.platform_file({"where": "/home/box/sand-data/teach-queue-key.json:3"}))
@@ -503,7 +503,7 @@ class ColonNames(Box):
         w = p + ":1"
         self.assertFalse(wt.is_platform_config(w))
         self.assertFalse(wt.platform_file({"where": w}))
-        f = wt.finding("WT-S001", "Secret stored in a file on the shared computer", "critical", ["ASI03"], w, "x", "y")
+        f = wt.finding("ISR-S001", "Secret stored in a file on the shared computer", "critical", ["ASI03"], w, "x", "y")
         self.assertTrue(wt.counts(f))
         self.assertEqual(wt.platform_owned([f])[0]["severity"], "critical")
         store = os.path.join(self.home, wt.PLATFORM_SECRET_STORE[0])
@@ -531,7 +531,7 @@ class LiteralPath(Box):
         put(lit, '"token": "ghp_' + fake_key(36) + '"\n')
         self.scanners(gitleaks=LEAKS % [lit])
         self.audit()
-        s = [f for f in self.snap()["findings"] if f["rule"] == "WT-S002" and f["where"] == lit + ":1"]
+        s = [f for f in self.snap()["findings"] if f["rule"] == "ISR-S002" and f["where"] == lit + ":1"]
         self.assertEqual(len(s), 1)
         sev = s[0]["severity"]
         self.assertTrue(wt.counts(s[0]))
@@ -540,7 +540,7 @@ class LiteralPath(Box):
         self.assertEqual(wt.platform_owned([dict(s[0])])[0]["severity"], sev)
         self.scanners(gitleaks=CRASH)                                           # gitleaks fails next run: its last results are kept
         self.audit()
-        kept = [f for f in self.snap()["findings"] if f["rule"] == "WT-S002" and f["where"] == lit + ":1"]
+        kept = [f for f in self.snap()["findings"] if f["rule"] == "ISR-S002" and f["where"] == lit + ":1"]
         self.assertEqual([(f["severity"], wt.counts(f)) for f in kept], [(sev, True)])
 
 

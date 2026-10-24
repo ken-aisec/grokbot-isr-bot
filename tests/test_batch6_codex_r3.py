@@ -24,11 +24,11 @@ def evidence(text):
 
 
 class NestedLaunchers(unittest.TestCase):
-    def test_codex_nested_npx_is_unpinned(self):   # replay (2e84db6: no WT-M001)
+    def test_codex_nested_npx_is_unpinned(self):   # replay (2e84db6: no ISR-M001)
         self.assertEqual(evidence(servers(("npm", "exec", "--package=npm@11.21.0", "--", "npx", "-y", "mutable"))),
                          ["npx mutable (no version)"])
 
-    def test_other_nested_launches_are_unpinned(self):   # replay (2e84db6: no WT-M001 for each)
+    def test_other_nested_launches_are_unpinned(self):   # replay (2e84db6: no ISR-M001 for each)
         for cmd, want in ((("npx", "-y", "npm@11.21.0", "exec", "mutable"), ["npm exec mutable (no version)"]),
                           (("npx", "--package", "pnpm@9.1.0", "pnpm", "dlx", "mutable"), ["pnpm dlx mutable (no version)"]),
                           (("bunx", "--package", "tool@1.0.0", "env", "A=1", "uvx", "mutable"), ["uvx mutable (no version)"]),
@@ -50,7 +50,7 @@ class NestedLaunchers(unittest.TestCase):
                     ("uvx", "--from", "pkg==1.2.3", "pkg-server", "--flag"), ("npm", "run", "start"), ("node", "server.js")):
             self.assertEqual(evidence(servers(cmd)), [], cmd)
 
-    def test_deep_nesting_is_bounded(self):   # replay (2e84db6: no WT-M001; a chain is read to a limit, then "couldn't read the launch")
+    def test_deep_nesting_is_bounded(self):   # replay (2e84db6: no ISR-M001; a chain is read to a limit, then "couldn't read the launch")
         got = evidence(servers(("npx",) + ("-y", "npx@10.0.0") * 5000 + ("mutable",)))
         self.assertEqual(len(got), 1, got)
         self.assertIn("couldn't read the launch", got[0])
@@ -95,7 +95,7 @@ class LinearScans(unittest.TestCase):
                 "    go = lambda t: sorted({f['rule'] for f in wt.scan_text(t, '/s/SKILL.md', wt.load_rules(), limit=200)})")
         got = timed(body, 49000, 490000)
         self.assertLinear(got, "unterminated string")
-        self.assertTrue("WT-T005" in got[2] or "WT-T018" in got[2], got[2])   # the webhook is still reported
+        self.assertTrue("ISR-T005" in got[2] or "ISR-T018" in got[2], got[2])   # the webhook is still reported
 
     def test_the_same_keys_as_before(self):   # guard (the linear scan finds what the regex scan found)
         t = '{"a": "x", "command": "npx", "b": "\\"command\\": 1", ' + '"x": "abc\n", "command": "uvx"'

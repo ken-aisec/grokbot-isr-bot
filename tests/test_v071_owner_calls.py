@@ -1,4 +1,4 @@
-"""Two v0.7.1 owner calls (Oct 14): exact accepted WT-A002 lines; changed skills grouped into one WT-I001."""
+"""Two v0.7.1 owner calls (Oct 14): exact accepted ISR-A002 lines; changed skills grouped into one ISR-I001."""
 import json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, ROOT, wt
@@ -10,14 +10,14 @@ HOOK_ALLOW_B = ("HTTP POST to https://reply-hook.example.invalid/api/hook only (
 
 def lint(*allow):
     t = "\n".join(f"Allow automatically: {a}" for a in allow)
-    return [f for f in wt.lint_auto_review(t, "settings.json", check_missing=False) if f["rule"] == "WT-A002"]
+    return [f for f in wt.lint_auto_review(t, "settings.json", check_missing=False) if f["rule"] == "ISR-A002"]
 
 
 class AcceptedExactAutoAllow(Box):
     # Hardening batch 1 (R8, Oct 16): nothing ships; the owner's box holds the two lines in its state list after the owner's yes (`auto-allow keep`).
     def setUp(self):
         super().setUp()
-        wt.save_json(wt.state_path("accepted_auto_allow.json"), [{"rule": "WT-A002", "sha256": wt.auto_allow_fingerprint(f"Allow automatically: {a}"),
+        wt.save_json(wt.state_path("accepted_auto_allow.json"), [{"rule": "ISR-A002", "sha256": wt.auto_allow_fingerprint(f"Allow automatically: {a}"),
                                                                  "label": "reply hook", "accepted": "owner"} for a in (HOOK_ALLOW_A, HOOK_ALLOW_B)])
 
     def test_shipped_list_is_empty_and_the_box_list_holds_exactly_the_two_bridge_lines(self):
@@ -70,8 +70,8 @@ class AcceptedExactAutoAllow(Box):
         finally:
             os.environ.pop("WATCHTOWER_SETTINGS", None)
         s = self.snap()
-        live = [f for f in s["findings"] if f["rule"] == "WT-A002"]
-        sup = [f for f in s["suppressed"] if f["rule"] == "WT-A002"]
+        live = [f for f in s["findings"] if f["rule"] == "ISR-A002"]
+        sup = [f for f in s["suppressed"] if f["rule"] == "ISR-A002"]
         self.assertEqual(len(live), 1); self.assertIn("Send email", live[0]["evidence"]); self.assertEqual(live[0]["severity"], "critical")
         self.assertEqual(len(sup), 1); self.assertIn("reply-hook.example.invalid", sup[0]["evidence"])
 
@@ -84,9 +84,9 @@ class ChangedSkillsGrouped(Box):
             open(os.path.join(d, "SKILL.md"), "a").write("One more line.\n")
         self.audit()
         snap = self.snap()
-        fs = [f for f in wt.shown(snap["findings"]) if f["rule"] == "WT-I001"]
+        fs = [f for f in wt.shown(snap["findings"]) if f["rule"] == "ISR-I001"]
         self.assertEqual(len(fs), 1, [(f["where"], f["title"]) for f in fs])
-        self.assertEqual(len([f for f in wt.scored(snap["findings"]) if f["rule"] == "WT-I001"]), 1)   # scored once, not 9 times
+        self.assertEqual(len([f for f in wt.scored(snap["findings"]) if f["rule"] == "ISR-I001"]), 1)   # scored once, not 9 times
         g = fs[0]
         self.assertEqual(g["severity"], "high")
         self.assertEqual(g["title"], "9 reviewed skills changed")
@@ -103,14 +103,14 @@ class ChangedSkillsGrouped(Box):
         self.run_cmd("baseline", "--roots", *self.roots)
         open(os.path.join(ds[0], "SKILL.md"), "a").write("One more line.\n")
         self.audit()
-        fs = [f for f in self.snap()["findings"] if f["rule"] == "WT-I001"]
+        fs = [f for f in self.snap()["findings"] if f["rule"] == "ISR-I001"]
         self.assertEqual(len(fs), 1); self.assertIn(ds[0], fs[0]["where"]); self.assertFalse(fs[0].get("members"))
 
 
 class GroupNeverHidesOwnerChanges(unittest.TestCase):
     # main-box dry run on 53e1836: a platform built-in (unscored) led the group and the owner's 4 changed skills went unscored
     def test_platform_change_stays_out_of_the_group(self):
-        F = lambda w, scope=None: dict(wt.finding("WT-I001", "Reviewed skill or plugin changed", "high", ["AST07"], w, "sha256 a→b", "fix"),
+        F = lambda w, scope=None: dict(wt.finding("ISR-I001", "Reviewed skill or plugin changed", "high", ["AST07"], w, "sha256 a→b", "fix"),
                                        **({"scope": scope} if scope else {}))
         fs = [F("/home/box/.grok/bundled/skills/learn/SKILL.md", "platform")] + [F(f"/home/box/sand-data/workflows/s{i}/SKILL.md") for i in range(4)]
         fs = wt.group_changed_skills(fs)

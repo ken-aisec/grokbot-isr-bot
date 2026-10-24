@@ -56,7 +56,7 @@ def gitleaks_calls(pre=None, post=None):
 # ---------------------------------------------------------------- 1-4: example-looking hits are listed, never left out
 class ExamplesAreListed(_Keys):
     def mine(self, fs, p):
-        return [f for f in self.keys(fs, p) if f["rule"] == "WT-S002"]
+        return [f for f in self.keys(fs, p) if f["rule"] == "ISR-S002"]
 
     def test_a_pat_in_a_later_piece_of_a_long_line(self):   # replay 1 (de3b328: the FAKE at byte 0 was judged, the PAT dropped)
         pat, fake = gl_key(0)
@@ -115,7 +115,7 @@ class ExamplesAreListed(_Keys):
             for j in range(2 if i == 0 else 1):
                 self.leak(p, f"ghp_FAKE{i}{j}" + "y8" * 15, rule="github-pat")
         fs, notes = self.scan()
-        got = [f for f in self.keys(fs, self.skill) if f["rule"] == "WT-S002"]
+        got = [f for f in self.keys(fs, self.skill) if f["rule"] == "ISR-S002"]
         self.assertEqual([(f["where"], raw_sev(f)) for f in got], [(os.path.join(self.home, d), "critical")])
         self.assertEqual(got[0]["evidence"], "6 hit(s): github-pat at fake0.md:1, fake0.md:2, fake1.md:1 and 3 more")
         self.assertIn(NOTE, got[0]["fix"])
@@ -134,7 +134,7 @@ class ExamplesAreListed(_Keys):
         self.assertNotIn("fix it", wt.plain(mine[0])["how"])
 
     def test_a_live_key_where_an_example_was_read_is_critical(self):   # guard (new): the provider's answer decides
-        f = wt.annotate_example(wt.finding("WT-S002", "gitleaks: secrets in file", "critical", [], "/w/k.md:3", "1 hit(s): github-pat", "x",
+        f = wt.annotate_example(wt.finding("ISR-S002", "gitleaks: secrets in file", "critical", [], "/w/k.md:3", "1 hit(s): github-pat", "x",
                                            source="gitleaks"), "FAKE or placeholder text")
         live = {"/w/k.md": [{"status": "live", "detector": "Github", "line": 3}]}
         dead = {"/w/k.md": [{"status": "dead", "detector": "Github", "line": 3}]}
@@ -148,22 +148,22 @@ class ExamplesInWatchtowersRules(unittest.TestCase):
     def test_t011_examples_are_noted(self):   # replay 3 (de3b328: no T011 at all)
         rules = wt.load_rules()
         for v in ("ghp_FAKE" + "x9" * 16, "AKIAFAKE" + "Q7" * 6, "sk-proj-EXAMPLEKEY1234567890abcdefgh"):
-            got = [f for f in wt.scan_text(f"Use {v} here.\n", "/s/SKILL.md", rules) if f["rule"].startswith("WT-T011")]
-            # its own rule id beside WT-T011, so a placeholder never raises WT-T011 (test_watchtower's test_placeholder_keys_ignored);
-            # round 3 (Codex 1): WT-T011's title and severity, with the note
-            self.assertEqual([(f["rule"], f["title"], f["severity"]) for f in got], [("WT-T011x", "Secret or key in text", "critical")], v)
+            got = [f for f in wt.scan_text(f"Use {v} here.\n", "/s/SKILL.md", rules) if f["rule"].startswith("ISR-T011")]
+            # its own rule id beside ISR-T011, so a placeholder never raises ISR-T011 (test_watchtower's test_placeholder_keys_ignored);
+            # round 3 (Codex 1): ISR-T011's title and severity, with the note
+            self.assertEqual([(f["rule"], f["title"], f["severity"]) for f in got], [("ISR-T011x", "Secret or key in text", "critical")], v)
 
     def test_a_real_t011_beside_an_example_one(self):   # replay 3 (de3b328: the example one left out): each its own severity
         real = "ghp_" + token("", 36)
         got = sorted((f["rule"], f["severity"], f["title"]) for f in wt.scan_text(f"a ghp_FAKE{'x9' * 16}\nb {real}\n", "/s/SKILL.md", wt.load_rules())
-                     if f["rule"].startswith("WT-T011"))
-        self.assertEqual(got, [("WT-T011", "critical", "Secret or key in text"), ("WT-T011x", "critical", "Secret or key in text")])
+                     if f["rule"].startswith("ISR-T011"))
+        self.assertEqual(got, [("ISR-T011", "critical", "Secret or key in text"), ("ISR-T011x", "critical", "Secret or key in text")])
 
     def test_an_example_backs_up_and_is_backed_up(self):   # guard (new: de3b328 has no example_finding)
         # round 3 (Codex 1): two engines at one place agree, whether or not one value looks like an example
-        fs = wt.label_findings([wt.annotate_example(wt.finding("WT-S001", "Secret stored in a file on the shared computer", "critical", [],
+        fs = wt.label_findings([wt.annotate_example(wt.finding("ISR-S001", "Secret stored in a file on the shared computer", "critical", [],
                                                                "/w/a.md:2", "x", ""), "FAKE or placeholder text"),
-                                wt.finding("WT-T011", "Secret or key in text", "critical", ["AST04"], "/w/a.md:2", "y", "f", source="other")])
+                                wt.finding("ISR-T011", "Secret or key in text", "critical", ["AST04"], "/w/a.md:2", "y", "f", source="other")])
         self.assertEqual([f["class"] for f in fs], ["corroborated", "corroborated"])
 
 
@@ -179,14 +179,14 @@ class GitleaksPrivateFiles(_Keys):
         p = self.real_hit()
         with gitleaks_calls(post=lambda cmd: open(wt.state_path("gitleaks.json"), "w").write("[]")):
             fs, notes = self.scan()
-        self.assertTrue([f for f in self.keys(fs, p) if f["rule"] == "WT-S002"], notes)
+        self.assertTrue([f for f in self.keys(fs, p) if f["rule"] == "ISR-S002"], notes)
 
     def test_a_config_replaced_in_state_is_never_given_to_gitleaks(self):   # replay 2 (de3b328: a planted allowlist hid it)
         p = self.real_hit()
         plant = "[extend]\nuseDefault = true\n\n[[allowlists]]\ndescription = \"planted\"\npaths = [\n  '''.*''',\n]\n"
         with gitleaks_calls(pre=lambda cmd: open(wt.state_path("gitleaks.toml"), "w").write(plant)):
             fs, notes = self.scan()
-        self.assertTrue([f for f in self.keys(fs, p) if f["rule"] == "WT-S002"], notes)
+        self.assertTrue([f for f in self.keys(fs, p) if f["rule"] == "ISR-S002"], notes)
         self.assertEqual(open(wt.state_path("gitleaks.toml")).read(), plant)   # the owner's copy is only a copy
 
     def test_a_linked_report_is_a_failure_not_an_empty_answer(self):   # guard (new)
@@ -267,7 +267,7 @@ class KeyBlockLines(unittest.TestCase):
         block[1] += ' # ""'
         text = "\n".join(block)
         self.assertEqual(wt.secret_kind(text.split("\n")[0], tail=text[text.index("\n"):])[0], "real")
-        got = [f for f in wt.scan_text("Key:\n" + text, "/s/SKILL.md", wt.load_rules()) if f["rule"] == "WT-T011"]
+        got = [f for f in wt.scan_text("Key:\n" + text, "/s/SKILL.md", wt.load_rules()) if f["rule"] == "ISR-T011"]
         self.assertEqual([f["severity"] for f in got], ["critical"])
 
     def test_other_framings_of_a_real_key(self):   # guard: a bare one, in JSON, in code, after junk lines
@@ -302,52 +302,52 @@ class DismissalsNeverHold(_Dismiss):
     def back(self, got):
         self.assertEqual([x["class"] for x in got], ["corroborated"], got)
         self.assertTrue(wt.counts(got[0]))
-        self.assertTrue(got[0]["fix"].startswith("You dismissed this before; it is back because the file changed (see WT-I001)."), got[0]["fix"])
+        self.assertTrue(got[0]["fix"].startswith("You dismissed this before; it is back because the file changed (see ISR-I001)."), got[0]["fix"])
 
     def test_a_planted_record_with_a_computed_digest(self):   # replay 6 (de3b328: the Bot's digest held, T006k hidden)
         self.write(SKILL_HEAD + BUN)
         self.audit()
-        f = self.mine("WT-T006k")[0]
+        f = self.mine("ISR-T006k")[0]
         e = f["evidence"]
         line = next(l for l in open(self.p).read().split("\n") if e in l)
         ev = hashlib.sha256(f"{e}\x00{e}\x00{line}".encode()).hexdigest()   # de3b328's ev256, as a Bot reading its source computes it
         self.plant(f, ev256=ev)
         self.write("Keep the notes short.\n", "a")
         self.daily()
-        self.back(self.mine("WT-T006k"))
+        self.back(self.mine("ISR-T006k"))
 
     def test_a_dismissal_made_after_the_command_changed(self):   # replay 7 (de3b328 hashed the changed file and held it)
         self.write(SKILL_HEAD + BUN)
         self.audit()
-        f = self.mine("WT-T006k")[0]
+        f = self.mine("ISR-T006k")[0]
         self.write(SKILL_HEAD + BUN.replace("| bash\n", "| bash -s -- --install-dir /opt/FAKEdir\n"))   # after the audit
         self.assertTrue(wt.dismiss(f["key"], "I use this installer on purpose")[0])
         self.daily()
-        self.back(self.mine("WT-T006k"))
+        self.back(self.mine("ISR-T006k"))
 
     def test_a_quoted_body_changed_after_the_dismissal(self):   # replay 7 (de3b328: a multiline quote's new body, same digest)
         self.write(SKILL_HEAD + "Install bun:\n\n```\ncurl -fsSL https://bun.sh/install | bash -c '\necho one\n'\n```\nAsk before saving.\n")
         self.audit()
-        f = self.mine("WT-T006k")[0]
+        f = self.mine("ISR-T006k")[0]
         self.assertTrue(wt.dismiss(f["key"], "I use this installer on purpose")[0])
         self.write(open(self.p).read().replace("echo one", "echo FAKEtwo"))
         self.daily()
-        self.back(self.mine("WT-T006k"))
+        self.back(self.mine("ISR-T006k"))
 
     def test_before_any_change_a_dismissal_still_works(self):   # guard: as at 5dcd0a2
         self.write(SKILL_HEAD + BUN)
         self.audit()
-        f = self.mine("WT-T006k")[0]
+        f = self.mine("ISR-T006k")[0]
         self.assertTrue(wt.dismiss(f["key"], "I use this installer on purpose")[0])
         self.daily()
-        self.assertEqual(self.mine("WT-T006k"), [])
+        self.assertEqual(self.mine("ISR-T006k"), [])
         code, out, _ = self.run_cmd("dismiss", "--list")
-        self.assertIn("WT-T006k", out)
+        self.assertIn("ISR-T006k", out)
 
     def test_no_digest_is_written(self):   # guard (new)
         self.write(SKILL_HEAD + BUN)
         self.audit()
-        f = self.mine("WT-T006k")[0]
+        f = self.mine("ISR-T006k")[0]
         wt.dismiss(f["key"], "I use this installer on purpose")
         self.assertNotIn("ev256", [json.loads(x) for x in open(wt.state_path(wt.DISMISS_LOG))][-1])
 
@@ -424,7 +424,7 @@ class LinearTime(unittest.TestCase):
         t = time.perf_counter()
         fs = wt.scan_text("---\nname: x\ndescription: y\n---\n```\n" + body + "```\n", "/s/SKILL.md", wt.load_rules())
         self.assertLess(time.perf_counter() - t, 8.0)
-        self.assertEqual(len([f for f in fs if f["rule"] in ("WT-T006", "WT-T006k")]), 12_800)
+        self.assertEqual(len([f for f in fs if f["rule"] in ("ISR-T006", "ISR-T006k")]), 12_800)
         self.assertFalse([f for f in fs if "ev256" in f])
 
 

@@ -23,7 +23,7 @@ def unread(label, at):
 
 
 class CodexRound4(unittest.TestCase):
-    def test_the_five_codex_examples(self):   # replay (a3e535e: no WT-M001 for each)
+    def test_the_five_codex_examples(self):   # replay (a3e535e: no ISR-M001 for each)
         for cmd, want in ((PIN + ("env", "sh", "-c", '"npx" -y mutable'), [unread("sh", 'sh -c "npx" -y mutable')]),
                           (PIN + ("env", "yarn", "dlx", "mutable"), [unread("yarn", "yarn")]),
                           (PIN + ("env", "pipx", "run", "mutable"), [unread("pipx", "pipx")]),
@@ -57,7 +57,7 @@ class Wrappers(unittest.TestCase):
 
 
 class Shells(unittest.TestCase):
-    def test_a_shell_is_never_read(self):   # replay (a3e535e: no WT-M001 for each)
+    def test_a_shell_is_never_read(self):   # replay (a3e535e: no ISR-M001 for each)
         for cmd, want in ((("bash", "-c", "x=np; ${x}x -y mutable"), unread("bash", "bash -c x=np; ${x}x -y mutable")),
                           (("bash", "start.sh"), unread("bash", "bash start.sh")),
                           (("env", "bash", "start.sh"), unread("bash", "bash start.sh")),
@@ -68,7 +68,7 @@ class Shells(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 self.assertEqual(evidence(servers(cmd)), [want])
 
-    def test_every_recognised_shell_direct_and_wrapped(self):   # replay (a3e535e: no WT-M001 for each)
+    def test_every_recognised_shell_direct_and_wrapped(self):   # replay (a3e535e: no ISR-M001 for each)
         for shell, label in (("sh", "sh"), ("bash", "bash"), ("dash", "dash"), ("zsh", "zsh"), ("ksh", "ksh"), ("mksh", "mksh"),
                              ("ash", "ash"), ("fish", "fish"), ("rbash", "rbash"), ("/bin/sh", "sh"), ("busybox sh", "busybox"),
                              ("cmd", "cmd"), ("cmd.exe", "cmd"), ("powershell", "powershell"), ("pwsh", "pwsh")):
@@ -79,7 +79,7 @@ class Shells(unittest.TestCase):
 
 
 class QuotedNames(unittest.TestCase):
-    def test_quoted_launcher_names_are_seen(self):   # replay (a3e535e: no WT-M001 for each)
+    def test_quoted_launcher_names_are_seen(self):   # replay (a3e535e: no ISR-M001 for each)
         for cmd, want in ((("xargs", "sh", "-c", '"npx" mutable'), unread("xargs", "sh")),
                           (("xargs", '"npx"', "-y", "mutable"), unread("xargs", '"npx"')),
                           (("xargs", "C:\\tools\\npx.cmd", "mutable"), unread("xargs", "C:\\tools\\npx.cmd")),
@@ -94,7 +94,7 @@ class QuotedNames(unittest.TestCase):
 
 
 class OtherWrappers(unittest.TestCase):
-    def test_wrapper_names_expansions_and_argument_files_are_unread(self):   # replay (a3e535e: no WT-M001 for each)
+    def test_wrapper_names_expansions_and_argument_files_are_unread(self):   # replay (a3e535e: no ISR-M001 for each)
         for cmd, want in ((("nohup", "env", "-S", "tool"), unread("nohup", "env")),
                           (("sudo", "timeout", "30", "tool"), unread("sudo", "timeout")),
                           (("setsid", "nice", "tool"), unread("setsid", "nice")),
@@ -168,7 +168,7 @@ class NeverCleared(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 self.assertEqual(evidence(servers(cmd)), [want])
 
-    def test_more_unread_commands_behind_wrappers(self):   # replay (a3e535e: no WT-M001 for each)
+    def test_more_unread_commands_behind_wrappers(self):   # replay (a3e535e: no ISR-M001 for each)
         for cmd, want in ((PIN + ("env", "npm", "install"), unread("npm", "npm")),
                           (("npx", "-y", "timeout@1.0.0", "30", "sh", "-c", "x"), unread("timeout", "30")),
                           (("npx", "-y", "env@1.0.0", "node", "server.js"), unread("env", "node"))):
@@ -177,7 +177,7 @@ class NeverCleared(unittest.TestCase):
 
 
 class WindowsPaths(unittest.TestCase):
-    def test_a_windows_path_names_the_command_where_it_stands(self):   # replay (a3e535e: no WT-M001 for each)
+    def test_a_windows_path_names_the_command_where_it_stands(self):   # replay (a3e535e: no ISR-M001 for each)
         for cmd, want in ((("C:\\tools\\npx.cmd", "-y", "mutable"), "npx mutable (no version)"),
                           (("timeout", "30", "C:\\tools\\npx.cmd", "-y", "mutable"), "npx mutable (no version)"),
                           (PIN + ("C:\\tools\\npx.cmd", "-y", "mutable"), "npx mutable (no version)"),
@@ -228,14 +228,14 @@ class Linear(unittest.TestCase):
 
 
 class Audit(Box):
-    def test_codex_example_is_a_wt_m001_in_the_audit(self):   # replay (a3e535e: no WT-M001)
+    def test_codex_example_is_a_isr_m001_in_the_audit(self):   # replay (a3e535e: no ISR-M001)
         d = os.path.join(self.home, "x")
         os.makedirs(d)
         with open(os.path.join(d, "mcp.json"), "w") as f:
             f.write(servers(PIN + ("env", "sh", "-c", '"npx" -y mutable')))
         self.audit("--budget", "0")
         snap = self.snap()
-        fs = [f for k in ("findings", "suppressed") for f in snap.get(k) or [] if f.get("rule") == "WT-M001"]
+        fs = [f for k in ("findings", "suppressed") for f in snap.get(k) or [] if f.get("rule") == "ISR-M001"]
         self.assertEqual([(f["evidence"], f["fix"]) for f in fs],
                          [(unread("sh", 'sh -c "npx" -y mutable'), "Pin an exact version (pkg@1.2.3) so an update can't change what runs.")])
 

@@ -1,14 +1,14 @@
 # Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
 # ---------------------------------------------------------------- pre-publish check (before Share → Create template)
 PREPUB_RULES = [
-    ("WT-PP01", "Email address", "medium", r"[\w.+-]+@[\w-]+\.[\w.-]+"),
-    ("WT-PP02", "Phone number", "medium", r"(?<!\d)(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}(?!\d)"),
-    ("WT-PP03", "Private network address or internal host", "high",
+    ("ISR-PP01", "Email address", "medium", r"[\w.+-]+@[\w-]+\.[\w.-]+"),
+    ("ISR-PP02", "Phone number", "medium", r"(?<!\d)(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}(?!\d)"),
+    ("ISR-PP03", "Private network address or internal host", "high",
      r"\b(10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|[\w-]+\.(internal|local|corp|lan))\b"),
-    ("WT-PP04", "Link to a private doc, drive or workspace", "high",
+    ("ISR-PP04", "Link to a private doc, drive or workspace", "high",
      r"(docs\.google\.com/\S+|drive\.google\.com/\S+|notion\.so/\S+|[\w-]+\.slack\.com/\S+|airtable\.com/\S+|app\.hubspot\.com/\S+|1[\w-]{30,}\b)"),
-    ("WT-PP05", "Path that only exists on your computer", "medium", r"(/home/box/\S+|/workspace/\S+|/Users/\w+/\S+)"),
-    ("WT-PP06", "Depends on something templates don't carry", "medium",
+    ("ISR-PP05", "Path that only exists on your computer", "medium", r"(/home/box/\S+|/workspace/\S+|/Users/\w+/\S+)"),
+    ("ISR-PP06", "Depends on something templates don't carry", "medium",
      r"(?i)\b(mcp server|custom mcp|run (the|this|my) script|\.py\b|\.sh\b|my local|localhost:\d+)"),
 ]
 
@@ -67,19 +67,19 @@ def prepublish_extra(where, t, names):
     out = []
     for n in names:   # DQ-015
         for m in re.finditer(r"(?<![\w-])" + re.escape(n) + r"(?![\w-])", t):
-            out.append(finding("WT-PP08", "Owner or Bot name", "high", ["AST04", "LLM02"], f"{where}:{line_of(t, m.start())}", n,
+            out.append(finding("ISR-PP08", "Owner or Bot name", "high", ["AST04", "LLM02"], f"{where}:{line_of(t, m.start())}", n,
                                "Replace the name with 'the owner' or 'another Bot': a template ships to strangers."))
     old = {os.path.basename(x) for x in OLD_CANARY_PATHS + PUBLISHED_CANARY_PATHS} | set(OLD_CANARY_PATHS + PUBLISHED_CANARY_PATHS)
     for x in sorted(old):   # DQ-016: never print the location itself
         i = t.find(x)
         if i != -1:
-            out.append(finding("WT-PP10", "Names a decoy location from an older release", "high", ["AST04"], f"{where}:{line_of(t, i)}",
+            out.append(finding("ISR-PP10", "Names a decoy location from an older release", "high", ["AST04"], f"{where}:{line_of(t, i)}",
                                "an old fixed decoy location (not shown)", "Refresh this text from the current release; decoys now have random names."))
             break
     if "getting-started" in os.path.basename(where):
         cur = read_text(os.path.join(SELF_ROOT, "bot", "getting-started.md"))
         if cur is not None and _body(t) != _body(cur):
-            out.append(finding("WT-PP09", "Getting-started is older than this ISR Bot", "high", ["AST04"], where, "differs from app/bot/getting-started.md",
+            out.append(finding("ISR-PP09", "Getting-started is older than this ISR Bot", "high", ["AST04"], where, "differs from app/bot/getting-started.md",
                                "Replace the saved getting-started skill's body with /workspace/watchtower/app/bot/getting-started.md, then run prepublish again."))
     return out
 
@@ -97,25 +97,25 @@ def cmd_prepublish(args):
         texts = [(p, t or "", h) for p, (t, h) in ((p, read_once(p)) for p in paths)]
     fs, own = [], own_release_digests()
     for where, t, digest in texts:
-        fs += [f for f in scan_text(t, where, rules, kind="template")   # batch 6 fix round 3: WT-T011x is WT-T011 (an example-looking one)
-               if f["rule"] in ("WT-T011", "WT-T011x", "WT-T013", "WT-T007", "WT-T008", "WT-T005", "WT-T006", "WT-T018")]
+        fs += [f for f in scan_text(t, where, rules, kind="template")   # batch 6 fix round 3: ISR-T011x is ISR-T011 (an example-looking one)
+               if f["rule"] in ("ISR-T011", "ISR-T011x", "ISR-T013", "ISR-T007", "ISR-T008", "ISR-T005", "ISR-T006", "ISR-T018")]
         for rid, title, sev, rx in PREPUB_RULES:
             for m in re.finditer(rx, t):
                 ev = m.group(0)
-                if rid == "WT-PP01" and re.search(r"(?i)(example\.(com|org)|noreply|no-reply)", ev):
+                if rid == "ISR-PP01" and re.search(r"(?i)(example\.(com|org)|noreply|no-reply)", ev):
                     continue
-                if rid == "WT-PP05" and "/workspace/watchtower" in ev:
+                if rid == "ISR-PP05" and "/workspace/watchtower" in ev:
                     continue
-                if rid == "WT-PP06":   # Watchtower's own script is installed by its setup skill from a pinned release, so it does travel
+                if rid == "ISR-PP06":   # Watchtower's own script is installed by its setup skill from a pinned release, so it does travel
                     line = t[t.rfind("\n", 0, m.start()) + 1:(t.find("\n", m.end()) if t.find("\n", m.end()) != -1 else len(t))]
                     if re.search(r"(wt\.py|/workspace/watchtower/|install\.sh)", line):
                         continue
-                fs.append(finding(rid, title, sev, ["AST04", "LLM02"], f"{where}:{line_of(t, m.start())}", mask(ev) if rid in ("WT-PP01", "WT-PP02") else ev[:120],
+                fs.append(finding(rid, title, sev, ["AST04", "LLM02"], f"{where}:{line_of(t, m.start())}", mask(ev) if rid in ("ISR-PP01", "ISR-PP02") else ev[:120],
                                   "Remove or generalize it before you create the template: anything in a description, skill or routine ships to every installer.",
-                                  shown=None if rid in ("WT-PP01", "WT-PP02") else ev))
+                                  shown=None if rid in ("ISR-PP01", "ISR-PP02") else ev))
         fs += prepublish_extra(where, t, [n for n in names if not (n.lower() == "isr bot" and digest in own)])
         if not has_approval(t, rules) and rules["write_verbs"].search(t):
-            fs.append(finding("WT-PP07", "No approval boundary", "high", ["ASI02"], where, "no approval line",
+            fs.append(finding("ISR-PP07", "No approval boundary", "high", ["ASI02"], where, "no approval line",
                               "Add: never send, post, buy, publish, delete, or change settings without my approval."))
     fs = sort_findings(dedupe(fs))
     blocking = [f for f in fs if f["severity"] in ("critical", "high")]

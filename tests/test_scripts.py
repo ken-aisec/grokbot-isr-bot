@@ -129,7 +129,7 @@ class InstallScanners(unittest.TestCase):
         self.assertIn("only when each matches scripts/scanner-bins.lock", r.stdout)
 
     def test_claude1_a_repointed_scanner_python_is_replaced(self):
-        """Claude review 1 (6): `python3 -m venv` leaves an existing scanners/bin/python* link alone, so the reinstall WT-X005
+        """Claude review 1 (6): `python3 -m venv` leaves an existing scanners/bin/python* link alone, so the reinstall ISR-X005
         asks for kept a re-pointed Python (and install's own pip ran through it)."""
         sb = os.path.join(self.wt, "scanners", "bin"); os.makedirs(sb)
         evil = os.path.join(self.tmp, "evil-python"); stub(self.tmp, "evil-python", "exit 0\n")
@@ -143,7 +143,7 @@ class InstallScanners(unittest.TestCase):
 
     def test_claude2_a_swapped_entry_point_and_a_planted_pip_are_replaced(self):
         """Claude review 2 (4): `python3 -m venv` on an existing environment leaves bin/pip and the entry points alone (ensurepip
-        and pip skip what is already installed), so the reinstall WT-X005 asks for kept a swapped skillspector, and a planted pip
+        and pip skip what is already installed), so the reinstall ISR-X005 asks for kept a swapped skillspector, and a planted pip
         ran and could print the success line and touch LOCKED. The venv here is real; only pip's "already installed" is a stand-in."""
         stub(self.bin, "python3", f'if [[ "$1" == "-m" && "$2" == "venv" ]]; then {REAL_PY} -m venv --without-pip "$3" || exit 1; '
                                   f'[[ -e "$3/bin/pip" ]] || {{ cp "{self.tmp}/pip.body" "$3/bin/pip"; sed -i "1i #!/bin/bash" "$3/bin/pip"; chmod +x "$3/bin/pip"; }}; '

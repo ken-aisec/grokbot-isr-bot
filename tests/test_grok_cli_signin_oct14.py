@@ -1,4 +1,4 @@
-"""Decision, Oct 14: ~/.grok/auth.json (the Grok CLI sign-in file) is expected: one WT-I009 Platform note, never read, never scored.
+"""Decision, Oct 14: ~/.grok/auth.json (the Grok CLI sign-in file) is expected: one ISR-I009 Platform note, never read, never scored.
 Only that exact path. A key anywhere else, including other files under ~/.grok, still counts. Replays, anonymized."""
 import base64, json, os, sys, unittest
 
@@ -47,16 +47,16 @@ class GrokCliSignIn(Box):
         self.audit()
         fs = self.snap()["findings"]
         mine = [f for f in fs if self.auth == f["where"].split(":")[0]]
-        self.assertEqual([f["rule"] for f in mine], ["WT-I009"], mine)
-        s2 = [f for f in fs if f["rule"] == "WT-S002" and other in f["where"] + f.get("evidence", "")]
-        self.assertTrue(s2 and all(f["severity"] == "critical" and wt.counts(f) for f in s2), [f for f in fs if f["rule"].startswith("WT-S")])
+        self.assertEqual([f["rule"] for f in mine], ["ISR-I009"], mine)
+        s2 = [f for f in fs if f["rule"] == "ISR-S002" and other in f["where"] + f.get("evidence", "")]
+        self.assertTrue(s2 and all(f["severity"] == "critical" and wt.counts(f) for f in s2), [f for f in fs if f["rule"].startswith("ISR-S")])
         self.assertNotIn(JWT[:30], json.dumps(self.snap()))
 
     def test_sign_in_file_is_a_platform_note_without_the_value(self):
         write(self.auth, json.dumps({"access_token": JWT, "api_key": KEY}), 0o600)
         self.audit()
         fs = [f for f in self.snap()["findings"] if self.auth in f["where"]]
-        self.assertEqual([f["rule"] for f in fs], ["WT-I009"], fs)
+        self.assertEqual([f["rule"] for f in fs], ["ISR-I009"], fs)
         self.assertEqual(fs[0]["label"], wt.PLATFORM)
         self.assertIn("Grok CLI", fs[0]["title"])
         self.assertFalse(wt.counts(fs[0]))

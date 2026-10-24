@@ -454,7 +454,7 @@ class SubstKind(unittest.TestCase):
             self.refused(pre, pre.replace("Watchtower", "ISR Bot"))
             self.assertTrue(gs.subst_change(pre, "# ISR Bot report\n" + k + "\n", self.NAME), k)
 
-    def test_wt_x005_fix_prose_renamed_its_evidence_kept_is_taken(self):   # the kept why is also said inside the renamed fix text
+    def test_isr_x005_fix_prose_renamed_its_evidence_kept_is_taken(self):   # the kept why is also said inside the renamed fix text
         ev = "its program file isn't the one Watchtower installed"
         pre = f'"evidence": "{ev}",\n"fix": "Watchtower didn\'t run gitleaks: {ev}, so its checks weren\'t done."\n'
         post = pre.replace("Watchtower didn't run gitleaks: its program file isn't the one Watchtower installed",
@@ -507,7 +507,7 @@ class SubstKind(unittest.TestCase):
     @staticmethod
     def doc(**fields):
         import json
-        return json.dumps({"findings": [dict({"rule": "WT-X005", "severity": "high"}, **fields)]}, indent=1) + "\n"
+        return json.dumps({"findings": [dict({"rule": "ISR-X005", "severity": "high"}, **fields)]}, indent=1) + "\n"
 
     def renamed(self, fields, which):
         new = lambda v: [new(x) for x in v] if isinstance(v, list) else v.replace("Watchtower", "ISR Bot")
@@ -545,7 +545,7 @@ class SubstKind(unittest.TestCase):
         self.refused(self.doc(**fields), self.renamed(fields, ("title", "fix", "where")))
         self.refused(self.doc(**fields), self.renamed(fields, ("title", "fix", "evidence")))
 
-    def test_wt_x005_sentence_renamed_in_fix_is_taken_in_evidence_refused(self):   # replay (d7758f6: both taken)
+    def test_isr_x005_sentence_renamed_in_fix_is_taken_in_evidence_refused(self):   # replay (d7758f6: both taken)
         fields = {"evidence": f"Watchtower {self.X005}", "fix": f"Watchtower {self.X005}, so its checks weren't done."}
         self.assertTrue(gs.subst_change(self.doc(**fields), self.renamed(fields, ("fix",)), self.NAME))
         self.refused(self.doc(**fields), self.renamed(fields, ("evidence",)))
@@ -564,7 +564,7 @@ class SubstKind(unittest.TestCase):
 
     def test_real_display_outputs_are_still_taken(self):   # guard: the shapes v0.7.4's own JSON outputs print
         import json
-        audit = {"status": "ok", "new": [{"rule": "WT-X004", "title": "A scanner couldn't get through a skill", "where": "/s",
+        audit = {"status": "ok", "new": [{"rule": "ISR-X004", "title": "A scanner couldn't get through a skill", "where": "/s",
                                           "evidence": "husk timed out", "fix": "Nothing to do; Watchtower retries it in a week."}],
                  "notes": ["gitleaks not installed: secrets checked with Watchtower's rules only."],
                  "platform_notes": {"count": 9, "lines": ["Grok Bot's own folder: Not on Watchtower's release list."],

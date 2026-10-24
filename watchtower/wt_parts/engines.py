@@ -31,9 +31,9 @@ def carry(rules):
 
 
 def kept_line(f):
-    """A scanner line kept from the last run wasn't refreshed by this one. A WT-X003 kept that way may lack a kind (one written
+    """A scanner line kept from the last run wasn't refreshed by this one. A ISR-X003 kept that way may lack a kind (one written
     before DQ-042 read only four summaries), so it is never filed under Platform until a scan refreshes it (Codex, DQ-042 round 3)."""
-    if f.get("rule") == "WT-X003":
+    if f.get("rule") == "ISR-X003":
         f["kinds_incomplete"] = True
     return f
 
@@ -251,9 +251,9 @@ X003_PAIRS = (("SkillSpector", "husk"), ("SkillSpector", "Watchtower"), ("husk",
 def engine_evidence(rule, s_, hk, engines=()):
     """The evidence an engine finding (X001, X002, X003) is made with: one place, so its stored key can be made the same way."""
     detail = "; ".join(s_.get("top", [])[:2])
-    if rule == "WT-X003":
+    if rule == "ISR-X003":
         return (" + ".join(engines) + (f"; {detail}" if detail else ""))[:150]
-    if rule == "WT-X001":
+    if rule == "ISR-X001":
         return f"risk {s_.get('score')}; {detail}"[:150]
     return str(hk[0])[:150] if hk else ""
 
@@ -275,9 +275,9 @@ def engine_entry_masked(d, e):
         s_ = ss or {}
         kept = [i for i, m in enumerate(hk or ()) if husk_messages_that_count(d, [m])]
         hk_kept = [hk[i] for i in kept]
-        keys = {"for": d, "WT-X001": finding_key("WT-X001", d, engine_evidence("WT-X001", s_, None)),
-                "WT-X002": finding_key("WT-X002", d, engine_evidence("WT-X002", s_, hk_kept))}
-        keys.update((" + ".join(p), finding_key("WT-X003", d, engine_evidence("WT-X003", s_, None, p))) for p in X003_PAIRS)
+        keys = {"for": d, "ISR-X001": finding_key("ISR-X001", d, engine_evidence("ISR-X001", s_, None)),
+                "ISR-X002": finding_key("ISR-X002", d, engine_evidence("ISR-X002", s_, hk_kept))}
+        keys.update((" + ".join(p), finding_key("ISR-X003", d, engine_evidence("ISR-X003", s_, None, p))) for p in X003_PAIRS)
         meta = {"keys": keys, "hk_keep": kept, "hk_kinds": sorted(engine_kinds(hk_kept))}
         if ss is not None and "kinds" not in ss:
             meta["top_kinds"] = sorted(engine_kinds(ss.get("top", [])))
@@ -443,7 +443,7 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
         if e_.get("hash") != hashes[d] or not (e_.get("stuck") or entry_engines(e_)):
             continue
         if e_.get("stuck"):
-            out.append(finding("WT-X004", "A scanner couldn't finish this skill", "low", ["AST08"], d,
+            out.append(finding("ISR-X004", "A scanner couldn't finish this skill", "low", ["AST08"], d,
                                f"{e_['stuck']} gave no answer in time", "ISR Bot's own rules still checked it. ISR Bot tries the scanner again in a week, or sooner if the skill changes. "
                                "Big or unusual files are the usual cause.", source="engines"))
             if not e_.get("hk"):
@@ -467,8 +467,8 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
             agree += [("Watchtower", wt_k & (ss_k | hk_k))] if agree else []
         engines = [n for n, _ in agree]
         if len(engines) >= 2:
-            x = finding("WT-X003", "Corroborated by multiple engines", "critical" if tier == "user" else "high",
-                        ["AST01", "AST08"], d, engine_evidence("WT-X003", s_, hk, engines),
+            x = finding("ISR-X003", "Corroborated by multiple engines", "critical" if tier == "user" else "high",
+                        ["AST01", "AST08"], d, engine_evidence("ISR-X003", s_, hk, engines),
                         "Two independent engines agree. Disable this skill until you've read the flagged lines.", source="engines")
             x["key"] = raw_keys.get(" + ".join(engines), x["key"])
             x["kinds"] = sorted(agree[-1][1] if engines[-1] == "Watchtower" else ss_k | hk_k)
@@ -476,16 +476,16 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
                 x["kinds_incomplete"] = True                  # ran out), or husk's words missing, may lack a kind: never filed under Platform
             out.append(x)
         elif ss_flag:
-            x = finding("WT-X001", "SkillSpector: do not install", "high" if tier == "user" else "low", ["AST01", "AST08"], d,
-                        engine_evidence("WT-X001", s_, hk),
+            x = finding("ISR-X001", "SkillSpector: do not install", "high" if tier == "user" else "low", ["AST01", "AST08"], d,
+                        engine_evidence("ISR-X001", s_, hk),
                         "Run `skillspector scan <folder>` for the exact lines; one engine alone can be wrong.", source="skillspector")
-            x["key"] = raw_keys.get("WT-X001", x["key"])
+            x["key"] = raw_keys.get("ISR-X001", x["key"])
             x["kinds"] = sorted(ss_k)
             out.append(x)
         elif hk_flag:
-            x = finding("WT-X002", "husk flagged this skill", "medium" if tier == "user" else "low", ["AST01", "AST05"], d,
-                        engine_evidence("WT-X002", s_, hk), "Run `husk package <folder>` for details; one engine alone can be wrong.", source="husk")
-            x["key"] = raw_keys.get("WT-X002", x["key"])
+            x = finding("ISR-X002", "husk flagged this skill", "medium" if tier == "user" else "low", ["AST01", "AST05"], d,
+                        engine_evidence("ISR-X002", s_, hk), "Run `husk package <folder>` for details; one engine alone can be wrong.", source="husk")
+            x["key"] = raw_keys.get("ISR-X002", x["key"])
             x["kinds"] = sorted(hk_k)
             out.append(x)
     if installed:

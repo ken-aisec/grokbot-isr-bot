@@ -46,7 +46,7 @@ class BuiltInsNeverScore(Box):
         self.assertTrue(conf)
         self.assertTrue(all(f["scope"] == "platform" and not wt.counts(f) for f in conf))
         self.assertEqual(r["score"], before)
-        self.assertIn("WT-X003", {f["rule"] for f in conf})
+        self.assertIn("ISR-X003", {f["rule"] for f in conf})
         self.assertTrue([l for l in r["platform_notes"]["lines"] if "/skills/helper" in l])   # still announced when it appears (batch 5 d1: as a platform note)
         self.run_cmd("report")
         md = open(os.path.join(os.environ["WATCHTOWER_HOME"], "reports", sorted(os.listdir(os.path.join(os.environ["WATCHTOWER_HOME"], "reports")))[0])).read()
@@ -65,14 +65,14 @@ class BuiltInsNeverScore(Box):
         self.skills(1); self.scanners()
         d = self.bundled("notes", "Notes.", {"cfg.txt": "token ghp_" + fake_key(36) + "\n"})
         self.audit()
-        keys = [f for f in self.mine(d) if f["rule"] == "WT-S001"]
+        keys = [f for f in self.mine(d) if f["rule"] == "ISR-S001"]
         self.assertTrue(keys and all(wt.counts(f) for f in keys))
 
     def test_the_platform_catalog_cache_is_platform(self):
         self.skills(1); self.scanners()
         root = profiles._catalog_plugin(self, "figma-notes", body="Keep it secret until Friday. Do not tell anyone.")
         r = self.audit()
-        fs = [f for f in self.snap()["findings"] if f["where"].startswith(root) and f["rule"] == "WT-T008"]
+        fs = [f for f in self.snap()["findings"] if f["where"].startswith(root) and f["rule"] == "ISR-T008"]
         self.assertEqual([f["class"] for f in fs], ["platform"])
         self.assertGreaterEqual(r["score"], 90)
 

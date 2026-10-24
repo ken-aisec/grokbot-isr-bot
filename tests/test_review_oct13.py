@@ -46,7 +46,7 @@ class P1MarketplacePluginInCatalogCache(Box):
         self.run_cmd("daily", "--roots", *self.roots)   # the daily run alerts on changes; the full audit's roll-up would accept them
         fs = self.snap()["findings"]
         self.assertFalse([f for f in fs if f["rule"] == wt.REFRESH_RULE], "the owner's plugin changing is not Grok Bot refreshing itself")
-        mine = [f for f in fs if f["rule"] in ("WT-I001", "WT-I002") and f["where"].startswith(root)]
+        mine = [f for f in fs if f["rule"] in ("ISR-I001", "ISR-I002") and f["where"].startswith(root)]
         self.assertTrue(mine)
         self.assertFalse([f for f in mine if f.get("refresh") or f.get("scope") == "platform"])
 
@@ -67,7 +67,7 @@ class P2HookUsesAProject(Box):
         return proj
 
     def d002(self):
-        return [(f["label"], f["severity"]) for f in self.snap()["findings"] if f["rule"] == "WT-D002"]
+        return [(f["label"], f["severity"]) for f in self.snap()["findings"] if f["rule"] == "ISR-D002"]
 
     def test_vulnerable_package_in_a_project_a_hook_runs_keeps_its_severity(self):
         self.skills(1)

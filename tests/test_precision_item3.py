@@ -1,7 +1,7 @@
 """v0.7.1 precision pass, item 3: evidence rules split the fact from the severity.
 
 The fact stays listed; the severity is kept only when the thing is reachable. Oct 12 main box: a cloned old-site repo with an
-old leftpad was a Confirmed high (WT-D002) though nothing on the computer loads that project.
+old leftpad was a Confirmed high (ISR-D002) though nothing on the computer loads that project.
 """
 import json, os, sys, unittest
 
@@ -18,7 +18,7 @@ class PackageFacts(Box):
         self.scanners(osv_scanner="#!/bin/sh\ncat <<'EOF'\n" + osv + "\nEOF\n")
 
     def d2(self):
-        return [f for f in self.snap()["findings"] if f["rule"] == "WT-D002"]
+        return [f for f in self.snap()["findings"] if f["rule"] == "ISR-D002"]
 
     def test_an_old_package_in_a_cloned_project_is_a_tip_not_a_confirmed_high(self):
         self.skills(1); self.osv_at(os.path.join(self.ws, "projects", "old-site"))
@@ -39,7 +39,7 @@ class PackageFacts(Box):
         before = self.audit()["score"]
         self.scanners(osv_scanner="#!/bin/sh\necho '{\"results\": []}'\n")
         r = self.audit()
-        self.assertIn("WT-D002", {f["rule"] for f in r["fixed"]})
+        self.assertIn("ISR-D002", {f["rule"] for f in r["fixed"]})
         self.assertGreater(r["score"], before)
 
     def test_the_daily_check_keeps_the_tip_quiet(self):

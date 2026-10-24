@@ -1,6 +1,6 @@
 """DQ-048 (2026-10-23, Watchtower daily watch): a vendor platform update dropped the installed v0.7.3's daily score 85 -> 21.
 
-The real run (`wt.py daily`, v0.7.3, 6:02 AM ET): 62 high WT-I001/WT-I002 `platform_unverified` files, all routine vendor
+The real run (`wt.py daily`, v0.7.3, 6:02 AM ET): 62 high ISR-I001/ISR-I002 `platform_unverified` files, all routine vendor
 updates: Grok Bot's managed skills under sand-data/ and agent-data/managed-skills/skills/* (e.g. sign-in/SKILL.md sha256
 329d4f59c94d -> 29439432e18b, routines/SKILL.md 9da244f643c6 -> 31dc58ae4565) and agent-data/managed-skills/cache.json,
 .grok/bundled/skills/learn/* and .grok/bundled/manifest.json, Codex's .codex/skills/.system/openai-docs/*; the same day the

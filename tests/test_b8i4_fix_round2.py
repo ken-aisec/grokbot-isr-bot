@@ -7,10 +7,10 @@
    it is settled and before it rolls (platform_still_bound).
 3. A metadata JSON file's string values were read as instructions only when they had a blank in them: "eval\\u0028payload\\u0029"
    (eval(payload) once decoded) passed. Every decoded string value is read now.
-4. gitleaks's grouped WT-S002 (four or more files in one folder) names the folder, and only exact file paths held a candidate,
+4. gitleaks's grouped ISR-S002 (four or more files in one folder) names the folder, and only exact file paths held a candidate,
    so the files' updates were quiet and rolled in. A grouped finding keeps its files (`affected_files`), and settlement, daily's
    carried lines and the roll use them.
-5. Daily said NO_CHANGES over an open WT-X005 (a scanner that isn't the copy Watchtower installed) once nothing else was open.
+5. Daily said NO_CHANGES over an open ISR-X005 (a scanner that isn't the copy Watchtower installed) once nothing else was open.
    Fix round 3 undid this change (the owner's decision, Oct 23): daily on a box with a missing scanner prints what f7c28e6 printed,
    and DailyScannerAlerts asserts that now.
 
@@ -140,12 +140,12 @@ class EscapedMetadata(_Middle):
         return p, v1
 
     def assert_held(self, p, v1):
-        x = [f for f in self.counted_high(p) if f["rule"] == "WT-I001"]
+        x = [f for f in self.counted_high(p) if f["rule"] == "ISR-I001"]
         self.assertEqual(len(x), 1, [(f["rule"], f["severity"], f["where"]) for f in self.snap()["findings"]])
         self.assertEqual(wt.load_baseline()[0][p], v1)
 
     def test_an_escaped_call_without_a_blank_is_held(self):
-        """R: an existing cache.json updated to {"body":"eval\\u0028payload\\u0029"}: WT-I001 high, and the baseline keeps the
+        """R: an existing cache.json updated to {"body":"eval\\u0028payload\\u0029"}: ISR-I001 high, and the baseline keeps the
         old bytes (47d3aba: quiet, rolled in)."""
         self.assert_held(*self.cache("eval\\u0028payload\\u0029"))
 
@@ -169,7 +169,7 @@ class EscapedMetadata(_Middle):
 
 
 class GroupedSecrets(_Middle):
-    """Codex 4: gitleaks's WT-S002 for four or more files in one folder names the folder, not the files."""
+    """Codex 4: gitleaks's ISR-S002 for four or more files in one folder names the folder, not the files."""
 
     def files(self, needle):
         ps = [os.path.join(self.home, ".grok", "bundled", f"{n}.json") for n in ("a", "b", "c", "d")]
@@ -179,7 +179,7 @@ class GroupedSecrets(_Middle):
 
     def group(self):
         d = os.path.join(self.home, ".grok", "bundled")
-        return [f for f in self.snap()["findings"] if f["rule"] == "WT-S002" and f["where"] == d]
+        return [f for f in self.snap()["findings"] if f["rule"] == "ISR-S002" and f["where"] == d]
 
     def assert_held(self, ps, old):
         base = wt.load_baseline()[0]
@@ -189,7 +189,7 @@ class GroupedSecrets(_Middle):
 
     def test_grouped_hits_hold_every_file(self):
         """R: four changed, baselined JSON files directly under .grok/bundled, each with a generic gitleaks hit (one grouped
-        medium WT-S002 on the folder): four counted highs and the old baseline hashes (47d3aba: four quiet updates, rolled in)."""
+        medium ISR-S002 on the folder): four counted highs and the old baseline hashes (47d3aba: four quiet updates, rolled in)."""
         ps = self.files("none")
         profiles.vendor_release(self, *ps)
         self.start()
@@ -231,7 +231,7 @@ class GroupedSecrets(_Middle):
 
 
 class DailyScannerAlerts(_Middle):
-    """Codex 5: an open WT-X005 vanished from daily once no platform hold kept daily from its quiet answer."""
+    """Codex 5: an open ISR-X005 vanished from daily once no platform hold kept daily from its quiet answer."""
 
     def swap_gitleaks(self):
         p = os.path.join(os.environ["WATCHTOWER_HOME"], "scanners", "bin", "gitleaks")
@@ -243,17 +243,17 @@ class DailyScannerAlerts(_Middle):
 
     def test_an_open_scanner_alert_is_said_beside_a_quiet_platform_update(self):
         """G (changed in fix round 3, the owner's decision of Oct 23: daily on a box with a missing scanner prints what f7c28e6
-        printed, no full alert): a swapped gitleaks (WT-X005, new the first day, in scanner_alerts), then alpha's clean update
-        (quiet): the next daily is f7c28e6's SCANNERS_MISSING line, which says how to put the scanner back, and the WT-X005 stays
+        printed, no full alert): a swapped gitleaks (ISR-X005, new the first day, in scanner_alerts), then alpha's clean update
+        (quiet): the next daily is f7c28e6's SCANNERS_MISSING line, which says how to put the scanner back, and the ISR-X005 stays
         open in the findings."""
         self.start()
         self.swap_gitleaks()
-        self.assertIn(("WT-X005", "gitleaks"), self.alerts(self.daily()))
+        self.assertIn(("ISR-X005", "gitleaks"), self.alerts(self.daily()))
         add(self.md("alpha"), "One more line.\n")
         out = self.daily()
         self.assertEqual(out, "SCANNERS_MISSING gitleaks: run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, "
                               "then `wt.py daily` again")
-        self.assertEqual([os.path.basename(f["where"]) for f in self.snap()["findings"] if f["rule"] == "WT-X005"], ["gitleaks"])
+        self.assertEqual([os.path.basename(f["where"]) for f in self.snap()["findings"] if f["rule"] == "ISR-X005"], ["gitleaks"])
         self.assertEqual(self.counted_high(self.md("alpha")), [])
         self.assertEqual(self.unverified(), [])
 

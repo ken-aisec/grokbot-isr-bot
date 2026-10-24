@@ -1,5 +1,5 @@
-"""Batch 6 PR1, B3 (decision 8): "Ask every time" for running commands on this computer is a safe setting, so WT-C002 is a
-Tip (no severity, never scored, never new), not a counted low. "Always allow" stays the critical WT-C001.
+"""Batch 6 PR1, B3 (decision 8): "Ask every time" for running commands on this computer is a safe setting, so ISR-C002 is a
+Tip (no severity, never scored, never new), not a counted low. "Always allow" stays the critical ISR-C001.
 
 Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's watchtower/ sources, this file in place);
 "guard" ones keep what must not change. The settings file is written into a temp box."""
@@ -23,7 +23,7 @@ class AskEveryTime(Box):
 
     def test_it_is_a_tip(self):   # replay (5dcd0a2: [LOW] Confirmed)
         f = wt.label_findings(wt.lint_settings({"local_execution": "ask"}, "settings"))
-        self.assertEqual([(x["rule"], x["class"], x["label"], x["severity"]) for x in f], [("WT-C002", "tip", wt.TIP, "info")])
+        self.assertEqual([(x["rule"], x["class"], x["label"], x["severity"]) for x in f], [("ISR-C002", "tip", wt.TIP, "info")])
         self.assertEqual((f[0]["title"], f[0]["fix"]), (TITLE, FIX))
         self.assertEqual(wt.score(f), (100, "A"))
         self.assertEqual(wt.status_of(f), wt.ALL_GOOD)
@@ -40,11 +40,11 @@ class AskEveryTime(Box):
         self.settings("ask")
         out = self.run_cmd("daily", "--roots", *self.roots)[1].strip()
         new = [] if out.startswith("NO_CHANGES") else json.loads(out).get("new", [])
-        self.assertFalse([f for f in new if f["rule"] == "WT-C002"], out)
+        self.assertFalse([f for f in new if f["rule"] == "ISR-C002"], out)
 
     def test_always_allow_stays_critical(self):   # guard
         f = wt.label_findings(wt.lint_settings({"local_execution": "always"}, "settings"))
-        self.assertEqual([(x["rule"], x["severity"], x["label"]) for x in f], [("WT-C001", "critical", wt.CONFIRMED)])
+        self.assertEqual([(x["rule"], x["severity"], x["label"]) for x in f], [("ISR-C001", "critical", wt.CONFIRMED)])
         self.settings("allow")
         r = self.audit()
         self.assertEqual(r["open_by_severity"]["critical"], 1)
@@ -56,7 +56,7 @@ class AskEveryTime(Box):
 
     def test_auto_review_off_stays_high(self):   # guard
         f = wt.label_findings(wt.lint_settings({"local_execution": "ask", "auto_review": False}, "settings"))
-        self.assertEqual([(x["severity"], x["label"]) for x in f if x["rule"] == "WT-C003"], [("high", wt.CONFIRMED)])
+        self.assertEqual([(x["severity"], x["label"]) for x in f if x["rule"] == "ISR-C003"], [("high", wt.CONFIRMED)])
 
 
 if __name__ == "__main__":

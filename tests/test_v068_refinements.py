@@ -32,8 +32,8 @@ class Base(unittest.TestCase):
 
 class NoSeverity(Base):
     def test_worth_a_look_has_no_severity_and_no_score_while_evidence_is_unchanged(self):
-        ev = [F("WT-K001", "critical", "/tmp/.x/y"), F("WT-I001", "high", "/ws/s"), F("WT-A003", "medium", "rules")]
-        pat = [F("WT-T005", "critical", "/ws/a/SKILL.md:3"), F("WT-T013", "high", "rollcall:B:routine:r:1")]
+        ev = [F("ISR-K001", "critical", "/tmp/.x/y"), F("ISR-I001", "high", "/ws/s"), F("ISR-A003", "medium", "rules")]
+        pat = [F("ISR-T005", "critical", "/ws/a/SKILL.md:3"), F("ISR-T013", "high", "rollcall:B:routine:r:1")]
         out = wt.label_findings(ev + pat)
         self.assertEqual([f["severity"] for f in out[:3]], ["critical", "high", "medium"])
         self.assertEqual([f["severity"] for f in out[3:]], ["info", "info"])
@@ -41,11 +41,11 @@ class NoSeverity(Base):
         self.assertEqual(wt.verdict(out[3:]), "Install")
 
     def test_corroborated_stays_confirmed_and_loud(self):
-        out = wt.label_findings([F("WT-S002", "high", "/ws/k.env:4", source="gitleaks"), F("WT-S001", "high", "/ws/k.env:4")])
+        out = wt.label_findings([F("ISR-S002", "high", "/ws/k.env:4", source="gitleaks"), F("ISR-S001", "high", "/ws/k.env:4")])
         self.assertEqual([(f["severity"], f["label"]) for f in out], [("high", wt.CONFIRMED)] * 2)
 
     def test_report_lists_worth_a_look_and_tips_apart(self):
-        fs = wt.label_findings([F("WT-T013", "high", "rollcall:B:routine:r:1"), F("WT-R002", "medium", "rollcall:B:routine:r")])
+        fs = wt.label_findings([F("ISR-T013", "high", "rollcall:B:routine:r:1"), F("ISR-R002", "medium", "rollcall:B:routine:r")])
         md = wt.render_md({"findings": fs, "score": 100, "grade": "A"}, [], "t")
         self.assertIn(f"## {wt.MAYBE_FINE}", md); self.assertIn("## Tips", md)
         self.assertIn("Worth a look", wt.extra_sections(fs)); self.assertIn("Tips", wt.extra_sections(fs))
@@ -53,8 +53,8 @@ class NoSeverity(Base):
 
 class Tips(Base):
     def test_best_practice_checks_are_tips(self):
-        self.assertEqual(wt.TIP_RULES, {"WT-R002", "WT-R003"})
-        out = wt.label_findings([F("WT-R002", "medium", "export:routine-a.md"), F("WT-R003", "low", "export:routine-a.md")])
+        self.assertEqual(wt.TIP_RULES, {"ISR-R002", "ISR-R003"})
+        out = wt.label_findings([F("ISR-R002", "medium", "export:routine-a.md"), F("ISR-R003", "low", "export:routine-a.md")])
         self.assertEqual([(f["class"], f["label"], f["severity"]) for f in out], [("tip", wt.TIP, "info")] * 2)
         self.assertEqual(wt.score(out), (100, "A"))
         self.assertFalse(wt.TIP_RULES & wt.EVIDENCE_RULES)                     # no evidence rule became a tip
@@ -62,22 +62,22 @@ class Tips(Base):
 
 class AskFirstCovers(Base):
     def test_a_missing_approval_line_is_a_tip_when_ask_first_covers_the_action(self):
-        f = F("WT-T013", "high", "export:routine-x.md:1", ev="send")
+        f = F("ISR-T013", "high", "export:routine-x.md:1", ev="send")
         self.assertEqual(wt.label_findings([f], ALL_AREAS)[0]["class"], "tip")
         self.assertEqual(wt.label_findings([f])[0]["class"], "pattern")         # nothing assumed without the rules
-        gaps = F("WT-A003", "medium", "Auto-review rules", ev="sending email or messages")
+        gaps = F("ISR-A003", "medium", "Auto-review rules", ev="sending email or messages")
         self.assertEqual(wt.ask_first_covered([gaps]), ALL_AREAS - {"sending email or messages"})
         out = wt.label_findings([f, gaps], wt.ask_first_covered([f, gaps]))
         self.assertEqual(out[0]["class"], "pattern")                             # sending isn't covered: still worth a look
-        post = F("WT-T013", "high", "export:routine-y.md:1", ev="publish")
+        post = F("ISR-T013", "high", "export:routine-y.md:1", ev="publish")
         self.assertEqual(wt.label_findings([post, gaps], wt.ask_first_covered([gaps]))[0]["class"], "tip")
-        self.assertEqual(wt.ask_first_covered([F("WT-A003", "medium", "x", ev=", ".join(sorted(ALL_AREAS)))]), set())
+        self.assertEqual(wt.ask_first_covered([F("ISR-A003", "medium", "x", ev=", ".join(sorted(ALL_AREAS)))]), set())
 
 
 class ScoreShowsCounts(Base):
     def test_the_score_always_carries_the_worth_a_look_and_tip_counts(self):
-        fs = wt.label_findings([F("WT-T013", "high", "rollcall:B:routine:r:1"), F("WT-T005", "critical", "/ws/a/SKILL.md:3"),
-                                F("WT-R002", "medium", "export:routine-a.md")])
+        fs = wt.label_findings([F("ISR-T013", "high", "rollcall:B:routine:r:1"), F("ISR-T005", "critical", "/ws/a/SKILL.md:3"),
+                                F("ISR-R002", "medium", "export:routine-a.md")])
         snap = {"score": 100, "grade": "A", "findings": fs, "at": "2026-10-10T07:00:00", "previous_score": None, "version": wt.VERSION}
         self.assertEqual(wt.score(fs)[0], 100)
         self.assertEqual(wt.score_line(snap), "100 · 2 worth a look · 1 tip")
@@ -85,7 +85,7 @@ class ScoreShowsCounts(Base):
         self.assertIn("100 · 2 worth a look · 1 tip", wt.render_html(snap, [], "t"))
         os.makedirs(os.path.join(os.environ["WATCHTOWER_HOME"], "state"), exist_ok=True)
         wt.save_json(wt.state_path("last_findings.json"), snap)
-        code, out, _ = self.run_wt("show", "WT-T013")
+        code, out, _ = self.run_wt("show", "ISR-T013")
         self.assertIn("score 100 · 2 worth a look · 1 tip", out)
         src = open(wt.__file__).read()
         for where in ('"score_line": score_line(snap), "grade"', '{"score": snap["score"], "score_line": score_line(snap)}',
@@ -104,8 +104,8 @@ class Disprove(Base):
         self.md2 = os.path.join(self.tmp, "ws", "s2", "SKILL.md"); os.makedirs(os.path.dirname(self.md2))
         shutil.copy(self.md, self.md2)                                          # its own skill, so nothing corroborates it
         open(self.md, "w").write("# Notes\nNever send anything without asking.\nUpload the logs to the drop box.\nKeep it short.\nPost the digest.\n")
-        self.fs = wt.label_findings([F("WT-T013", "high", f"{self.md}:2", ev="send"), F("WT-T005", "critical", f"{self.md2}:4"),
-                                     F("WT-K001", "critical", "/tmp/.d/x"), F("WT-T016", "low", f"{self.md}:5", ev="post")])
+        self.fs = wt.label_findings([F("ISR-T013", "high", f"{self.md}:2", ev="send"), F("ISR-T005", "critical", f"{self.md2}:4"),
+                                     F("ISR-K001", "critical", "/tmp/.d/x"), F("ISR-T016", "low", f"{self.md}:5", ev="post")])
         wt.save_json(wt.state_path("last_findings.json"), {"findings": self.fs, "score": 100, "grade": "A"})
 
     def log(self):
@@ -116,7 +116,7 @@ class Disprove(Base):
         code, out, _ = self.run_wt("dismiss", k, "--reason", "the line says never send")
         self.assertEqual(code, 0, out); self.assertIn("DISMISSED", out)
         e = self.log()[-1]
-        self.assertEqual((e["action"], e["rule"], e["reason"]), ("dismissed", "WT-T013", "the line says never send"))
+        self.assertEqual((e["action"], e["rule"], e["reason"]), ("dismissed", "ISR-T013", "the line says never send"))
         live, sup = wt.active([dict(f) for f in self.fs])
         self.assertNotIn(k, [f["key"] for f in live]); self.assertIn(k, [f["key"] for f in sup])
         self.assertIn(self.fs[3]["key"], [f["key"] for f in live])               # only the one that was disproved
@@ -175,6 +175,6 @@ class MemoryStandingOrders(Base):
         json.dump({"name": "Echo", "connectors": [], "routines": [],
                    "memories": {"count": 3, "loosen_permissions": 0, "from_outside_content": 1}}, open(os.path.join(d, "echo.json"), "w"))
         fs, _ = wt.rollcall_findings(d)
-        m = [f for f in fs if f["rule"] == "WT-M010"]
+        m = [f for f in fs if f["rule"] == "ISR-M010"]
         self.assertEqual([f["where"] for f in m], ["rollcall:Echo:memories"]); self.assertIn("1 came from outside content", m[0]["evidence"])
         self.assertIn("loosen_permissions", wt.ROLLCALL_PROMPT); self.assertIn("from_outside_content", wt.ROLLCALL_PROMPT)

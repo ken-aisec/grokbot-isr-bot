@@ -275,7 +275,7 @@ class DQ022_023StillGreen(Box):
         open(js, "w").write("// pitch\nconst beat = 'The hero secretly trains at night';\n")
         self.scanners()
         r = self.audit()
-        t008 = [f for f in self.snap()["findings"] if f["rule"] == "WT-T008" and "tv_series_pitch_deck" in f["where"]]
+        t008 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-T008" and "tv_series_pitch_deck" in f["where"]]
         self.assertTrue(t008)
         self.assertTrue(all(f["severity"] == "info" for f in t008), t008)
         self.assertFalse(any(wt.counts(f) for f in t008))

@@ -6,7 +6,7 @@ def PLATFORM_SKILL_DIRS():
 
 def quarantinable(f):
     """The skill folder a finding lets the fix take out of use, or None: the owner's own skills with a critical finding, and
-    (DQ-021) a skill copy in the workspace that two engines agree is dangerous (WT-X003). Plugins and built-in skills are removed
+    (DQ-021) a skill copy in the workspace that two engines agree is dangerous (ISR-X003). Plugins and built-in skills are removed
     in the app, not here."""
     w = f["where"].split(":")[0]
     d = skill_root(w) if os.path.exists(w) else None
@@ -14,7 +14,7 @@ def quarantinable(f):
         return None
     if f["severity"] == "critical" and skill_tier(d + "/") == "user":
         return os.path.normpath(d)
-    if f["rule"] == "WT-X003" and owned_path(d, "workspace-skill", log=False):
+    if f["rule"] == "ISR-X003" and owned_path(d, "workspace-skill", log=False):
         return os.path.normpath(d)
     return None
 

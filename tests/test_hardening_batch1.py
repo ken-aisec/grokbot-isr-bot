@@ -44,25 +44,25 @@ class NoShippedAutoAllow(Batch):
 
     def test_fresh_box_accepts_no_bridge_line(self):   # replay
         self.settings(HOOK_ALLOW_A, HOOK_ALLOW_B); self.skills(1); self.audit()
-        live = self.rule("WT-A002")
+        live = self.rule("ISR-A002")
         self.assertEqual(len(live), 2, live)
         self.assertTrue(all(f["severity"] == "critical" and not f.get("accepted_exact") for f in live))
-        self.assertEqual(self.rule("WT-A002", "suppressed"), [])
+        self.assertEqual(self.rule("ISR-A002", "suppressed"), [])
 
     def test_line_in_the_state_list_is_still_accepted_exactly(self):   # guard
-        wt.save_json(wt.state_path("accepted_auto_allow.json"), [{"rule": "WT-A002", "sha256": fp(OTHER), "label": "team list"}])
+        wt.save_json(wt.state_path("accepted_auto_allow.json"), [{"rule": "ISR-A002", "sha256": fp(OTHER), "label": "team list"}])
         self.settings(OTHER, "Send email to anyone"); self.skills(1); self.audit()
-        self.assertEqual([f["evidence"] for f in self.rule("WT-A002")], ["Allow automatically: Send email to anyone"])
-        self.assertEqual([f["evidence"] for f in self.rule("WT-A002", "suppressed")], [f"Allow automatically: {OTHER}"])
+        self.assertEqual([f["evidence"] for f in self.rule("ISR-A002")], ["Allow automatically: Send email to anyone"])
+        self.assertEqual([f["evidence"] for f in self.rule("ISR-A002", "suppressed")], [f"Allow automatically: {OTHER}"])
 
     def test_upgrade_shows_the_earlier_lines_and_keeps_them_only_after_the_owners_yes(self):   # replay
         p = self.settings(HOOK_ALLOW_A, HOOK_ALLOW_B); self.skills(1)
-        old = [dict(wt.finding("WT-A002", "Auto-allow on a consequential action", "critical", ["ASI02", "ASI09"], f"{p}:{i}",
+        old = [dict(wt.finding("ISR-A002", "Auto-allow on a consequential action", "critical", ["ASI02", "ASI09"], f"{p}:{i}",
                                f"Allow automatically: {b}", "Change it to Ask first."), accepted_exact={"sha256": fp(b), "label": "reply hook"})
                for i, b in ((1, HOOK_ALLOW_A), (2, HOOK_ALLOW_B))]
         wt.save_json(wt.state_path("last_findings.json"), {"at": wt.now(), "version": "0.7.1", "score": 90, "findings": [], "suppressed": old})
         self.audit()                                                                 # the first run after the upgrade
-        live = self.rule("WT-A002")
+        live = self.rule("ISR-A002")
         self.assertEqual(len(live), 2, live)                                         # shown, critical, and counted
         for f in live:
             self.assertEqual(f["severity"], "critical")
@@ -82,11 +82,11 @@ class NoShippedAutoAllow(Batch):
         self.assertEqual(sorted(e["sha256"] for e in kept), sorted([fp(HOOK_ALLOW_A), fp(HOOK_ALLOW_B)]))
         self.assertTrue(any(e.get("event") == "auto-allow-keep" for e in self.ledger()))
         self.audit()
-        self.assertEqual(self.rule("WT-A002"), [])
-        self.assertEqual(len(self.rule("WT-A002", "suppressed")), 2)                 # listed under accepted risks
+        self.assertEqual(self.rule("ISR-A002"), [])
+        self.assertEqual(len(self.rule("ISR-A002", "suppressed")), 2)                 # listed under accepted risks
         self.settings(HOOK_ALLOW_A + "/*", HOOK_ALLOW_B)                                       # an edited line is a new line
         self.audit()
-        self.assertEqual([f["evidence"] for f in self.rule("WT-A002")], [f"Allow automatically: {HOOK_ALLOW_A}/*"])
+        self.assertEqual([f["evidence"] for f in self.rule("ISR-A002")], [f"Allow automatically: {HOOK_ALLOW_A}/*"])
 
     def test_an_unknown_or_stale_id_writes_nothing(self):   # replay
         self.settings(HOOK_ALLOW_A); self.skills(1); self.audit()
@@ -110,21 +110,21 @@ class AcceptLockdown(Batch):
     def test_accept_refuses_a_decoy_alarm(self):   # replay
         self.skills(1); self.run_cmd("canary", "plant"); self.audit()
         self.read_decoy(); self.audit()
-        self.assertTrue(self.rule("WT-K001"))
-        code, o, _ = self.run_cmd("accept", "WT-K001", "/", "--reason", "x")
+        self.assertTrue(self.rule("ISR-K001"))
+        code, o, _ = self.run_cmd("accept", "ISR-K001", "/", "--reason", "x")
         self.assertEqual(code, 1, o)
         self.assertIn("NOT ACCEPTED", o); self.assertIn("incident check", o)
         self.assertFalse(os.path.exists(self.sup_path()))
         self.audit()
-        self.assertTrue(self.rule("WT-K001"))
-        self.assertFalse(self.rule("WT-K001", "suppressed"))
+        self.assertTrue(self.rule("ISR-K001"))
+        self.assertFalse(self.rule("ISR-K001", "suppressed"))
 
     def test_a_stored_slash_entry_never_hides_a_decoy_read(self):   # replay
-        wt.save_json(self.sup_path(), [{"rule": "WT-K001", "match": "/", "reason": "x", "expires": "2999-01-01"}])
+        wt.save_json(self.sup_path(), [{"rule": "ISR-K001", "match": "/", "reason": "x", "expires": "2999-01-01"}])
         self.skills(1); self.run_cmd("canary", "plant"); self.audit()
         self.read_decoy(); self.audit()
-        self.assertTrue(self.rule("WT-K001"))
-        self.assertFalse(self.rule("WT-K001", "suppressed"))
+        self.assertTrue(self.rule("ISR-K001"))
+        self.assertFalse(self.rule("ISR-K001", "suppressed"))
         code, o, _ = self.run_cmd("accept", "--list")
         self.assertIn("ignored", o)
 
@@ -142,19 +142,19 @@ class AcceptLockdown(Batch):
     def test_evidence_and_corroborated_findings_are_refused(self):   # replay
         F = wt.finding
         skill = self.skills(1)[0]
-        self.refused(F("WT-X003", "Two scanners agree", "critical", ["AST01"], skill, "SkillSpector + husk", "f"), "skill000")
-        self.refused(F("WT-S002", wt.KEY_LIVE, "critical", ["ASI03"], "/home/box/notes/keys.txt:3", "sk-…a1b2", "f"), "/home/box/notes/keys.txt")
-        o = self.refused(F("WT-A002", "Auto-allow on a consequential action", "critical", ["ASI02"], "settings.json:3",
+        self.refused(F("ISR-X003", "Two scanners agree", "critical", ["AST01"], skill, "SkillSpector + husk", "f"), "skill000")
+        self.refused(F("ISR-S002", wt.KEY_LIVE, "critical", ["ASI03"], "/home/box/notes/keys.txt:3", "sk-…a1b2", "f"), "/home/box/notes/keys.txt")
+        o = self.refused(F("ISR-A002", "Auto-allow on a consequential action", "critical", ["ASI02"], "settings.json:3",
                            "Allow automatically: Send email to anyone", "f"), "settings.json:3")
         self.assertIn("auto-allow", o)
-        self.refused(F("WT-H003", "A command opened a remote shell", "critical", ["ASI05"], "/home/box/.bash_history:12", "bash -i", "f"),
+        self.refused(F("ISR-H003", "A command opened a remote shell", "critical", ["ASI05"], "/home/box/.bash_history:12", "bash -i", "f"),
                      "/home/box/.bash_history")
-        self.assertTrue(wt.accept_refused({"rule": "WT-T004", "title": "x", "class": "corroborated"}))   # two votes, one risk
+        self.assertTrue(wt.accept_refused({"rule": "ISR-T004", "title": "x", "class": "corroborated"}))   # two votes, one risk
 
     def test_a_key_accepted_while_unconfirmed_comes_back_once_it_works(self):   # replay
-        maybe = wt.finding("WT-S001", wt.KEY_MAYBE, "medium", ["ASI03"], "/home/box/notes/keys.txt:3", "sk-…a1b2", "f")
+        maybe = wt.finding("ISR-S001", wt.KEY_MAYBE, "medium", ["ASI03"], "/home/box/notes/keys.txt:3", "sk-…a1b2", "f")
         wt.save_json(wt.state_path("last_findings.json"), {"findings": wt.label_findings([maybe]), "suppressed": []})
-        code, o, _ = self.run_cmd("accept", "WT-S001", "/home/box/notes/keys.txt", "--reason", "a test key")
+        code, o, _ = self.run_cmd("accept", "ISR-S001", "/home/box/notes/keys.txt", "--reason", "a test key")
         self.assertEqual(code, 0, o)
         self.assertEqual(wt.active(wt.label_findings([maybe]))[0], [])
         live = dict(maybe, title=wt.KEY_LIVE, severity="critical")
@@ -162,10 +162,10 @@ class AcceptLockdown(Batch):
 
     def test_whole_names_only(self):   # replay
         skill = self.skills(1)[0]
-        x = wt.finding("WT-X001", "SkillSpector: do not install", "high", ["AST01"], "/w/slide-deck-2", "risk 100", "f")
-        d = wt.finding("WT-D002", "Vulnerable package leftpad 1.0.0", "high", ["ASI04"], "/ws/app/package-lock.json", "GHSA-demo", "f")
+        x = wt.finding("ISR-X001", "SkillSpector: do not install", "high", ["AST01"], "/w/slide-deck-2", "risk 100", "f")
+        d = wt.finding("ISR-D002", "Vulnerable package leftpad 1.0.0", "high", ["ASI04"], "/ws/app/package-lock.json", "GHSA-demo", "f")
         d_fact = dict(d, title="Vulnerable package leftpad 1.0.0 (nothing on this computer loads it)")
-        t = wt.finding("WT-T013", "Sends without asking", "medium", ["ASI09"], os.path.join(skill, "SKILL.md") + ":6", "send", "f")
+        t = wt.finding("ISR-T013", "Sends without asking", "medium", ["ASI09"], os.path.join(skill, "SKILL.md") + ":6", "send", "f")
         for f, match, hidden in ((x, "slide", False), (x, "/w", False), (x, "deck-2", False), (d, "leftpad 1", False), (d, "leftpad", False),
                                  (t, "skill00", False), (t, os.path.dirname(skill), False),
                                  (x, "slide-deck-2", True), (x, "/w/slide-deck-2", True), (d, "leftpad 1.0.0", True), (d_fact, "leftpad 1.0.0", True),
@@ -176,10 +176,10 @@ class AcceptLockdown(Batch):
                 self.assertEqual(bool(wt.is_accepted(f, sup, "2026-10-16")), hidden)
 
     def test_a_bulk_accept_of_one_bots_line_does_not_cover_another_bot(self):   # replay
-        a = wt.finding("WT-T013", "Sends without asking", "medium", ["ASI09"], "rollcall:BotA:routine:digest:1", "sends", "f")
-        b = wt.finding("WT-T013", "Sends without asking", "medium", ["ASI09"], "rollcall:BotB:routine:digest:1", "sends", "f")
+        a = wt.finding("ISR-T013", "Sends without asking", "medium", ["ASI09"], "rollcall:BotA:routine:digest:1", "sends", "f")
+        b = wt.finding("ISR-T013", "Sends without asking", "medium", ["ASI09"], "rollcall:BotB:routine:digest:1", "sends", "f")
         wt.save_json(wt.state_path("last_findings.json"), {"findings": wt.label_findings([a]), "suppressed": []})
-        n, _, _ = wt.accept_current(["WT-T013"], "reviewed by owner")
+        n, _, _ = wt.accept_current(["ISR-T013"], "reviewed by owner")
         self.assertEqual(n, 1)
         live, acc = wt.active(wt.label_findings([a, b]))
         self.assertEqual([f["where"] for f in live], [b["where"]])
@@ -208,11 +208,11 @@ class AcceptLockdown(Batch):
         self.assertEqual(code, 1, o); self.assertIn("NOT SAVED", o)
         self.assertEqual(open(wt.state_path("baseline.json")).read(), before)
         self.audit()
-        self.assertTrue(self.rule("WT-I001"))
+        self.assertTrue(self.rule("ISR-I001"))
         code, o, _ = self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         self.assertEqual(code, 0, o)
         self.audit()
-        self.assertFalse(self.rule("WT-I001"))
+        self.assertFalse(self.rule("ISR-I001"))
 
     def test_the_first_baseline_needs_no_flag(self):   # guard
         self.skills(1)
@@ -225,14 +225,14 @@ class AcceptLockdown(Batch):
         ex = os.path.join(self.tmp, "exports"); os.makedirs(ex)
         json.dump({"local_execution": "never", "auto_review": True, "unused_connectors": ["Dropbox"]}, open(os.path.join(ex, "settings.json"), "w"))
         self.audit("--exports", ex)
-        conn = self.rule("WT-C004")
+        conn = self.rule("ISR-C004")
         self.assertTrue(conn)
         for f in conn:
-            code, o, e = self.run_cmd("accept", "WT-C004", f["where"], "--reason", "connectors I keep on purpose")
+            code, o, e = self.run_cmd("accept", "ISR-C004", f["where"], "--reason", "connectors I keep on purpose")
             self.assertEqual(code, 0, o + e)
         self.audit("--exports", ex)
-        self.assertFalse(self.rule("WT-C004"))
-        self.assertTrue(self.rule("WT-C004", "suppressed"))
+        self.assertFalse(self.rule("ISR-C004"))
+        self.assertTrue(self.rule("ISR-C004", "suppressed"))
 
 
 # ---------------------------------------------------------------- item 3 (R4)
@@ -243,7 +243,7 @@ class BaselineReset(Batch):
         return ds
 
     def i010(self, findings=None):
-        return [f for f in (self.snap()["findings"] if findings is None else findings) if f["rule"] == "WT-I010"]
+        return [f for f in (self.snap()["findings"] if findings is None else findings) if f["rule"] == "ISR-I010"]
 
     def fifo_in_place_of(self, path):
         """A FIFO where the baseline was. A version that opens it without O_NONBLOCK waits for a writer; this one feeds every
@@ -313,11 +313,11 @@ class BaselineReset(Batch):
         open(wt.state_path("baseline.json"), "w").close()
         code, o, _ = self.run_cmd("daily", "--roots", *self.roots)
         self.assertEqual(code, 0)
-        self.assertIn("WT-I010", [f["rule"] for f in json.loads(o)["new"]], o)
+        self.assertIn("ISR-I010", [f["rule"] for f in json.loads(o)["new"]], o)
 
     def test_revet_after_a_reset_writes_no_baseline(self):   # replay
         self.changed_after_first_run(); self.audit()
-        self.assertTrue(self.rule("WT-I001"))
+        self.assertTrue(self.rule("ISR-I001"))
         os.remove(wt.state_path("baseline.json"))
         code, o, _ = self.run_cmd("fix", "--revet", "--only", "skill000", "--roots", *self.roots)
         self.assertEqual(code, 0, o)
@@ -337,7 +337,7 @@ class BaselineReset(Batch):
         open(wt.state_path("baseline.json"), "w").close()
         self.audit()
         f = self.i010()[0]
-        code, o, _ = self.run_cmd("accept", "WT-I010", f["where"], "--reason", "x")
+        code, o, _ = self.run_cmd("accept", "ISR-I010", f["where"], "--reason", "x")
         self.assertEqual(code, 1, o)
         self.assertIn("NOT ACCEPTED", o)
         self.audit()
@@ -373,7 +373,7 @@ class BaselineReset(Batch):
                 os.remove(bp)
             self.audit()
             code, o, _ = self.run_cmd("daily", "--roots", *self.roots)
-            self.assertNotIn("WT-I010", o)
+            self.assertNotIn("ISR-I010", o)
             self.assertEqual(self.i010(), [], reset)
 
 
@@ -389,11 +389,11 @@ class RoundOne(Batch):
         code, o, _ = self.run_cmd("daily", "--roots", os.path.join(self.tmp, "nonexistent"))
         self.assertEqual(code, 0, o)
         self.assertNotIn("NO_CHANGES", o)                                            # never a quiet fresh start
-        self.assertIn("WT-I010", [f["rule"] for f in json.loads(o)["new"]], o)
+        self.assertIn("ISR-I010", [f["rule"] for f in json.loads(o)["new"]], o)
         self.assertFalse(os.path.lexists(wt.state_path("baseline.json")))         # the empty scan was not saved
         self.assertFalse(os.path.lexists(wt.state_path("baseline_meta.json")))    # nor recorded as "it held nothing"
         self.audit()                                                                 # the next normal audit approves nothing
-        self.assertEqual(len([f for f in self.snap()["findings"] if f["rule"] == "WT-I010"]), 1)
+        self.assertEqual(len([f for f in self.snap()["findings"] if f["rule"] == "ISR-I010"]), 1)
         self.assertFalse(os.path.lexists(wt.state_path("baseline.json")))
         self.assertEqual(wt.load_approved(ds[0])["hash"], copy)
 
@@ -402,7 +402,7 @@ class RoundOne(Batch):
         os.remove(wt.state_path("baseline.json"))
         self.run_cmd("daily", "--roots", os.path.join(self.tmp, "nonexistent"))
         self.audit()
-        self.assertEqual(len(self.rule("WT-I010")), 1)
+        self.assertEqual(len(self.rule("ISR-I010")), 1)
         self.assertFalse(os.path.lexists(wt.state_path("baseline.json")))
 
     def test_auto_allow_shows_the_whole_line_it_would_keep(self):   # replay (P1: no cut-off before `keep`)
@@ -425,9 +425,9 @@ class RoundOne(Batch):
     def test_a_colon_in_a_path_is_part_of_the_name(self):   # replay (P2: stored entries match the whole path)
         evil = self.colon_skill("slide:evil")
         w = os.path.dirname(evil)
-        x = wt.finding("WT-X001", "SkillSpector: do not install", "high", ["AST01"], evil, "risk 100", "f")
-        t = wt.finding("WT-T013", "Sends without asking", "medium", ["ASI09"], os.path.join(evil, "SKILL.md") + ":6", "send", "f")
-        root = wt.finding("WT-X001", "SkillSpector: do not install", "high", ["AST01"], "/:evil", "risk 100", "f")
+        x = wt.finding("ISR-X001", "SkillSpector: do not install", "high", ["AST01"], evil, "risk 100", "f")
+        t = wt.finding("ISR-T013", "Sends without asking", "medium", ["ASI09"], os.path.join(evil, "SKILL.md") + ":6", "send", "f")
+        root = wt.finding("ISR-X001", "SkillSpector: do not install", "high", ["AST01"], "/:evil", "risk 100", "f")
         for f, match, hidden in ((x, os.path.join(w, "slide"), False), (x, "slide", False), (t, os.path.join(w, "slide"), False),
                                  (t, "slide", False), (root, "/", False),
                                  (x, evil, True), (x, "slide:evil", True), (t, "slide:evil", True), (t, os.path.join(evil, "SKILL.md"), True),
@@ -439,10 +439,10 @@ class RoundOne(Batch):
 
     def test_a_bulk_accept_keeps_the_colon(self):   # replay (P2: bulk acceptance stores the whole path)
         evil, plain_ = self.colon_skill("slide:evil"), self.colon_skill("slide")
-        a = wt.finding("WT-X001", "SkillSpector: do not install", "high", ["AST01"], evil, "risk 100", "f")
-        b = wt.finding("WT-X001", "SkillSpector: do not install", "high", ["AST01"], plain_, "risk 100", "f")
+        a = wt.finding("ISR-X001", "SkillSpector: do not install", "high", ["AST01"], evil, "risk 100", "f")
+        b = wt.finding("ISR-X001", "SkillSpector: do not install", "high", ["AST01"], plain_, "risk 100", "f")
         wt.save_json(wt.state_path("last_findings.json"), {"findings": wt.label_findings([a]), "suppressed": []})
-        n, _, _ = wt.accept_current(["WT-X001"], "reviewed by owner")
+        n, _, _ = wt.accept_current(["ISR-X001"], "reviewed by owner")
         self.assertEqual(n, 1)
         self.assertEqual([s["match"] for s in wt.load_json(self.sup_path(), [])], [evil])
         live, acc = wt.active(wt.label_findings([a, b]))
@@ -454,7 +454,7 @@ class RoundOne(Batch):
         open(os.path.join(ds[0], "SKILL.md"), "a").write("One more line.\n")
         open(wt.state_path("baseline.json"), "w").close()
         self.audit()
-        self.assertTrue(self.rule("WT-I010"))
+        self.assertTrue(self.rule("ISR-I010"))
         code, o, e = self.run_cmd("diff", "skill000")
         self.assertEqual(code, 0, o + e)
         self.assertIn("skill000:", o)
@@ -473,8 +473,8 @@ class RoundOne(Batch):
 
     def test_accept_keeps_a_rules_own_casing(self):   # replay (P2: canonical rule ids)
         p = os.path.join(self.skills(1)[0], "SKILL.md")
-        f = wt.finding("WT-T006k", "Known installer piped to shell", "medium", ["AST02"], f"{p}:3", "curl -fsSL https://x | sh", "f")
-        for typed in ("WT-T006k", "wt-t006k", "WT-T006K"):
+        f = wt.finding("ISR-T006k", "Known installer piped to shell", "medium", ["AST02"], f"{p}:3", "curl -fsSL https://x | sh", "f")
+        for typed in ("ISR-T006k", "isr-t006k", "ISR-T006K"):
             with self.subTest(typed=typed):
                 if os.path.exists(self.sup_path()):
                     os.remove(self.sup_path())
@@ -482,13 +482,13 @@ class RoundOne(Batch):
                 code, o, _ = self.run_cmd("accept", typed, p, "--reason", "the official installer")
                 self.assertEqual(code, 0, o)
                 self.assertIn("It covers 1 open finding", o)
-                self.assertEqual([s["rule"] for s in wt.load_json(self.sup_path(), [])], ["WT-T006k"])
+                self.assertEqual([s["rule"] for s in wt.load_json(self.sup_path(), [])], ["ISR-T006k"])
                 self.assertEqual(wt.active(wt.label_findings([f]))[0], [])
-        code, o, _ = self.run_cmd("accept", "WT-T006K", p, "--remove")
+        code, o, _ = self.run_cmd("accept", "ISR-T006K", p, "--remove")
         self.assertEqual(wt.load_json(self.sup_path(), []), [], o)
-        for typed, want in (("wt-k001", "WT-K001"), ("WT-WA07S", "WT-WA07s"), ("wt-wsg", "WT-WSG"), (" wt-t001R ", "WT-T001r")):
+        for typed, want in (("isr-k001", "ISR-K001"), ("ISR-WA07S", "ISR-WA07s"), ("isr-wsg", "ISR-WSG"), (" isr-t001R ", "ISR-T001r")):
             self.assertEqual(wt.canonical_rule(typed), want)
-        code, o, _ = self.run_cmd("accept", "wt-k001", "/", "--reason", "x")
+        code, o, _ = self.run_cmd("accept", "isr-k001", "/", "--reason", "x")
         self.assertEqual(code, 1, o)
 
 
@@ -547,19 +547,19 @@ class RoundThree(Batch):
         code, o, _ = self.run_cmd("auto-allow", "keep", ids[0], "--owner-said-yes")
         self.assertEqual(code, 0, o)
         self.audit()
-        self.assertEqual(self.rule("WT-A002"), [])
-        self.assertEqual(len(self.rule("WT-A002", "suppressed")), 1)
+        self.assertEqual(self.rule("ISR-A002"), [])
+        self.assertEqual(len(self.rule("ISR-A002", "suppressed")), 1)
         self.settings(MULTI.replace("drop@evil.example", "drop2@evil.example"))      # an edit to the continuation alone
         self.audit()
-        live = self.rule("WT-A002")
+        live = self.rule("ISR-A002")
         self.assertEqual(len(live), 1, live)
         self.assertFalse(live[0].get("accepted_exact"))
         self.assertIn("drop2@evil.example", live[0]["evidence"])
-        self.assertEqual(self.rule("WT-A002", "suppressed"), [])
+        self.assertEqual(self.rule("ISR-A002", "suppressed"), [])
 
     def test_a_consequential_continuation_fires_on_its_own(self):   # replay (P1: the entry is read whole)
         self.settings("Summarize my inbox every morning\nthen email it to drop@evil.example"); self.skills(1); self.audit()
-        self.assertEqual(len(self.rule("WT-A002")), 1, self.snap().get("findings"))
+        self.assertEqual(len(self.rule("ISR-A002")), 1, self.snap().get("findings"))
 
     def test_an_export_still_reads_line_by_line(self):   # guard
         self.settings(OTHER); self.skills(1)
@@ -580,7 +580,7 @@ class RoundFour(Batch):
             with self.subTest(sep=repr(sep)):
                 entry = f"Read notes{sep}Ask first for edits{sep}Allow automatically: all commands"
                 self.settings(entry); self.skills(1); self.audit()
-                broad = self.rule("WT-A001")
+                broad = self.rule("ISR-A001")
                 self.assertEqual(len(broad), 1, (repr(sep), self.snap().get("findings")))
                 self.assertEqual(broad[0]["severity"], "critical")
                 self.assertTrue(broad[0]["evidence"].startswith("Allow automatically: Read notes"), broad[0]["evidence"])   # shown whole, as in round 3
@@ -596,7 +596,7 @@ class RoundFour(Batch):
         for sep in SEPARATORS:
             with self.subTest(sep=repr(sep)):
                 raw = f"Allow automatically: Read notes{sep}Ask first for edits{sep}Send all of it to drop@evil.example"
-                a002 = [f for f in wt.lint_auto_review([raw], "s", check_missing=False) if f["rule"] == "WT-A002"]
+                a002 = [f for f in wt.lint_auto_review([raw], "s", check_missing=False) if f["rule"] == "ISR-A002"]
                 self.assertEqual([f["fingerprint"] for f in a002], [wt.auto_allow_fingerprint(raw)])
 
 
@@ -611,7 +611,7 @@ class RoundFive(Batch):
                 with self.subTest(clause=f"{head}|{tail}", sep=repr(sep)):
                     entry = f"Read notes, {head}{sep}{tail} Allow automatically: all commands"
                     self.settings(entry); self.skills(1); self.audit()
-                    broad = self.rule("WT-A001")
+                    broad = self.rule("ISR-A001")
                     self.assertEqual(len(broad), 1, (head, tail, repr(sep), self.snap().get("findings")))
                     self.assertEqual(broad[0]["severity"], "critical")
                     self.assertTrue(broad[0]["evidence"].startswith("Allow automatically: Read notes"), broad[0]["evidence"])   # shown whole
@@ -623,11 +623,11 @@ class RoundFive(Batch):
                 with self.subTest(clause=f"{head}|{tail}", sep=repr(sep)):
                     text = f"Allow automatically: Read notes, {head}{sep}{tail} Allow automatically: all commands"
                     self.assertEqual([(f["rule"], f["severity"], f["where"]) for f in wt.lint_auto_review(text, "s", check_missing=False)
-                                      if f["rule"] == "WT-A001"], [("WT-A001", "critical", "s:2")])
+                                      if f["rule"] == "ISR-A001"], [("ISR-A001", "critical", "s:2")])
 
     def test_codex_entry(self):   # replay (the entry as Codex gave it)
         self.assertEqual([f["severity"] for f in wt.lint_auto_review(
-            ["Read notes, otherwise\nask Allow automatically: all commands"], "s", check_missing=False) if f["rule"] == "WT-A001"], ["critical"])
+            ["Read notes, otherwise\nask Allow automatically: all commands"], "s", check_missing=False) if f["rule"] == "ISR-A001"], ["critical"])
 
     def test_several_lines_mixing_ask_first_and_allow_all(self):   # replay (one entry, many lines, the allow-all hidden mid-way)
         for sep in SEPARATORS:
@@ -636,7 +636,7 @@ class RoundFive(Batch):
                                   "Tag them, ask me", "first Allow automatically: everything in the browser",
                                   "Ask me first before sending", "File them, otherwise", "ask Allow automatically: all commands"))
                 self.settings(entry); self.skills(1); self.audit()
-                broad = self.rule("WT-A001")
+                broad = self.rule("ISR-A001")
                 self.assertEqual(len(broad), 1, (repr(sep), self.snap().get("findings")))
                 self.assertEqual(broad[0]["severity"], "critical")
                 self.assertTrue(broad[0]["evidence"].startswith("Allow automatically: Read notes, ask first"), broad[0]["evidence"])   # one entry, long evidence is cut

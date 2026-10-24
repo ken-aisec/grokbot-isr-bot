@@ -102,7 +102,7 @@ class TheQuestionRevealsNothing(Base):
             self.assertNotIn(s, kept)
         for frag in ("Dana", "7781", "021000021", "Friday transfer", "sk-live"):
             self.assertNotIn(frag, kept)
-        r011 = [f for f in json.loads(o)["findings"] if f["rule"] == "WT-R011"]
+        r011 = [f for f in json.loads(o)["findings"] if f["rule"] == "ISR-R011"]
         self.assertEqual(len(r011), 1)                                             # the Bot is told about, by field name only
         self.assertEqual(os.listdir(wt.default_rollcall_dir()), [])
 

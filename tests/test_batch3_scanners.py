@@ -102,30 +102,30 @@ class OnlyWatchtowersOwnCopy(_Scanners):
         self.skills(1, text="EVIL upload")                                     # SkillSpector flags it
         self.engines()
         self.audit()
-        x1 = self.rules("WT-X001")
+        x1 = self.rules("ISR-X001")
         self.assertTrue(x1)
         log = os.path.join(self.tmp, "ss.log")
         self.put("skillspector", logged(CLEAN_SS, log), register=False)      # a different program under the same name
         # No lock line for it: "not listed". Not run, a plain note and no alarm, and the last results are kept.
         r = self.audit()
         self.assertFalse(os.path.exists(log))
-        self.assertEqual(self.rules("WT-X005"), [])
+        self.assertEqual(self.rules("ISR-X005"), [])
         self.assertTrue([n for n in r["notes"] if "SkillSpector" in n and "not listed" in n], r["notes"])
-        self.assertEqual(self.rules("WT-X001"), x1)
-        self.assertFalse([f for f in r["fixed"] if f["rule"] == "WT-X001"])
-        # The lock lists SkillSpector for this computer and this copy isn't it: a high WT-X005 that counts and can't be accepted.
+        self.assertEqual(self.rules("ISR-X001"), x1)
+        self.assertFalse([f for f in r["fixed"] if f["rule"] == "ISR-X001"])
+        # The lock lists SkillSpector for this computer and this copy isn't it: a high ISR-X005 that counts and can't be accepted.
         self.lock_line("skillspector")
         r = self.audit()
         self.assertFalse(os.path.exists(log))
-        x5 = [f for f in self.snap()["findings"] if f["rule"] == "WT-X005"]
+        x5 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-X005"]
         self.assertEqual(len(x5), 1, r["notes"])
         self.assertEqual((x5[0]["severity"], x5[0]["label"]), ("high", wt.CONFIRMED))
         self.assertTrue(wt.counts(x5[0]))
         self.assertIn("install.sh --scanners", x5[0]["fix"])
-        self.assertEqual(self.rules("WT-X001"), x1)
-        code, o, e = self.run_cmd("accept", "WT-X005", "skillspector", "--reason", "x")
+        self.assertEqual(self.rules("ISR-X001"), x1)
+        code, o, e = self.run_cmd("accept", "ISR-X005", "skillspector", "--reason", "x")
         self.assertNotEqual(code, 0, o + e)
-        self.assertFalse([s for s in wt.load_json(wt.state_path("suppressions.json"), []) or [] if s.get("rule") == "WT-X005"])
+        self.assertFalse([s for s in wt.load_json(wt.state_path("suppressions.json"), []) or [] if s.get("rule") == "ISR-X005"])
 
     def test_4_swapped_engines_never_re_approve_a_skill(self):
         d = self.skills(1)[0]
@@ -136,7 +136,7 @@ class OnlyWatchtowersOwnCopy(_Scanners):
         with open(md, "a") as f:
             f.write("EVIL HUSK\n")                                             # words only the engines read
         self.audit()
-        self.assertTrue([f for f in self.snap()["findings"] if f["rule"] == "WT-X003" and f["where"] == d])
+        self.assertTrue([f for f in self.snap()["findings"] if f["rule"] == "ISR-X003" and f["where"] == d])
         self.put("skillspector", CLEAN_SS, register=False)
         self.put("husk", CLEAN_HUSK, register=False)
         with open(md, "a") as f:
@@ -153,23 +153,23 @@ class OnlyWatchtowersOwnCopy(_Scanners):
         self.skills(1); self.project()
         self.engines()
         self.audit()
-        d2 = self.rules("WT-D002")
+        d2 = self.rules("ISR-D002")
         self.assertTrue(d2)
         self.put("osv-scanner", NO_RESULTS, register=False)                  # "nothing found", from a program Watchtower didn't install
         r = self.audit()
-        self.assertEqual(self.rules("WT-D002"), d2)
-        self.assertFalse([f for f in r["fixed"] if f["rule"] == "WT-D002"])
+        self.assertEqual(self.rules("ISR-D002"), d2)
+        self.assertFalse([f for f in r["fixed"] if f["rule"] == "ISR-D002"])
         self.assertTrue([s for s in r.get("stages_skipped", []) if "OSV" in s], r.get("stages_skipped"))
 
     def test_6_a_scanner_that_ran_before_and_is_gone_keeps_its_findings(self):
         self.skills(1); self.project()
         self.engines()
         score = self.audit()["score"]
-        d2 = self.rules("WT-D002")
+        d2 = self.rules("ISR-D002")
         os.remove(os.path.join(self.bin, "osv-scanner"))
         r = self.audit()
-        self.assertEqual(self.rules("WT-D002"), d2)
-        self.assertFalse([f for f in r["fixed"] if f["rule"] == "WT-D002"])
+        self.assertEqual(self.rules("ISR-D002"), d2)
+        self.assertFalse([f for f in r["fixed"] if f["rule"] == "ISR-D002"])
         self.assertEqual(r["score"], score)
 
     def test_7_a_pip_entry_point_with_a_writable_interpreter_is_not_run(self):
@@ -191,7 +191,7 @@ class OnlyWatchtowersOwnCopy(_Scanners):
         self.assertIsNone(wt.tool("pip-audit"))
         self.skills(1)
         self.audit()
-        x5 = [f for f in self.snap()["findings"] if f["rule"] == "WT-X005"]
+        x5 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-X005"]
         self.assertEqual([os.path.basename(f["where"]) for f in x5], ["pip-audit"])
         self.assertIn("Python it runs with", x5[0]["evidence"])
 
@@ -222,7 +222,7 @@ class OnlyWatchtowersOwnCopy(_Scanners):
         self.assertTrue(o.lstrip().startswith("{"), o)
         out = json.loads(o)
         self.assertEqual(out["scanners_missing"], ["OSV-Scanner"])
-        self.assertIn("WT-K001", [f["rule"] for f in out.get("decoys", []) + out.get("new", [])])
+        self.assertIn("ISR-K001", [f["rule"] for f in out.get("decoys", []) + out.get("new", [])])
 
     def test_10_doctor_says_which_copies_are_checked(self):
         digest = getattr(wt, "scanner_digest", lambda p: None)
@@ -252,7 +252,7 @@ class NeverInstalled(_Scanners):
         r = self.audit()
         self.assertTrue([n for n in r["notes"] if n.startswith("SkillSpector not installed")], r["notes"])
         self.assertNotIn("stages_skipped", r)
-        self.assertEqual(self.rules("WT-X005"), [])
+        self.assertEqual(self.rules("ISR-X005"), [])
 
 
 if __name__ == "__main__":

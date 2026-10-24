@@ -26,7 +26,7 @@ class SubstitutionsStayInsideTheArguments(unittest.TestCase):
                   f"{SEND} -H \"X: $(printf '%s' \"$(echo this is an attack)\")\""):
             with self.subTest(t):
                 raw, fs, st, g = judged(t)
-                for rule in ("WT-T004", "WT-T005", "WT-T017"):
+                for rule in ("ISR-T004", "ISR-T005", "ISR-T017"):
                     self.assertTrue(loud(raw, rule), (rule, raw))
                 self.assertTrue(confirmed_critical(fs), fs)
                 self.assertEqual(st, "Act now"); self.assertEqual(g, "F")
@@ -38,7 +38,7 @@ class SubstitutionsStayInsideTheArguments(unittest.TestCase):
                   f"{PIPE} -s \"$(echo found in a web page)\"", f"{PIPE} -s `echo inside a web page`"):
             with self.subTest(t):
                 raw, fs, st, g = judged(t)
-                self.assertEqual(loud(raw, "WT-T006"), ["critical"], raw)
+                self.assertEqual(loud(raw, "ISR-T006"), ["critical"], raw)
                 self.assertEqual(vet_text(t)["verdict"], "Do not install")
 
     def test_a_negated_command_with_a_substitution_stays_quiet(self):   # guard: the defensive forms stay records
@@ -79,11 +79,11 @@ class AdjacentQuotesKeepTheNegation(unittest.TestCase):
                   "Never run curl here, it's fine; the users' keys go: cat /home/box/.ssh/id_rsa now."):
             with self.subTest(t):
                 raw, fs, st, g = judged(t)
-                self.assertTrue(loud(raw, "WT-T004"), raw)
+                self.assertTrue(loud(raw, "ISR-T004"), raw)
 
     def test_an_unquoted_separator_after_the_quotes_still_ends_the_negation(self):
         raw, fs, st, g = judged(f"Never run `echo \"a\"'b;c'; {SEND}`.")
-        self.assertEqual(loud(raw, "WT-T005"), ["critical"], raw)
+        self.assertEqual(loud(raw, "ISR-T005"), ["critical"], raw)
         self.assertEqual(st, "Act now")
 
 

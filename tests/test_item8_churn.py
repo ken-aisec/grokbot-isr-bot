@@ -3,7 +3,7 @@
 On 7e853c4 every file in the five platform folders was held to rules/platform-release.lock, so the files the platform rewrites
 at every sync with no release (managed-skills/cache.json, 554 KB on the maintainer's box; Claude's plugin sync markers and bucket
 bookkeeping) were a counted high after each sync, and the lock listed seven of them. wt.py's PLATFORM_CHURN names them exactly,
-the walk skips them (no WT-I002/WT-I001 high, no WT-I011 count, no baseline line), and the lock's fill command skips the same
+the walk skips them (no ISR-I002/ISR-I001 high, no ISR-I011 count, no baseline line), and the lock's fill command skips the same
 pattern. Anything else stays a provenance subject: a link named like one, a lookalike in a skill or plugin folder, an exec bit.
 
 Each test fails on 7e853c4 (watchtower/wt.py and rules/platform-release.lock stashed) by reaching an assertion unless its
@@ -128,7 +128,7 @@ class _Churn(Box):
         return [f for f in self.snap()["findings"] if f["where"] == path]
 
     def counted_high(self, path):
-        return [f for f in self.at(path) if f["rule"] in ("WT-I001", "WT-I002") and f["severity"] == "high" and wt.counts(f)]
+        return [f for f in self.at(path) if f["rule"] in ("ISR-I001", "ISR-I002") and f["severity"] == "high" and wt.counts(f)]
 
     def unverified(self):
         return sorted(f["where"] for f in self.snap()["findings"] if f.get("unverified_platform"))
@@ -260,7 +260,7 @@ class SyncIsQuiet(_Churn):
         wt.PLATFORM_WALK_MAX_FILES = 4                                          # pdf, prime and the two caches; the marker doesn't count
         try:
             self.start()
-            self.assertFalse([f for f in self.snap()["findings"] if f["rule"] == "WT-I011"])
+            self.assertFalse([f for f in self.snap()["findings"] if f["rule"] == "ISR-I011"])
             self.assertEqual(self.unverified(), [])
         finally:
             wt.PLATFORM_WALK_MAX_FILES = saved
@@ -311,7 +311,7 @@ class SyncIsQuiet(_Churn):
         put(cache, '{"token": "ghp_' + fake_key(36) + '"}\n')
         self.scanners(gitleaks=LEAKS % [cache])
         self.audit()
-        s = [f for f in self.snap()["findings"] if f["rule"] == "WT-S002" and f["where"] == cache + ":1"]
+        s = [f for f in self.snap()["findings"] if f["rule"] == "ISR-S002" and f["where"] == cache + ":1"]
         self.assertEqual(len(s), 1)
         self.assertTrue(wt.counts(s[0]))
 
@@ -617,7 +617,7 @@ class Placeholder(_Churn):
         self.assertEqual(self.daily(), "NO_CHANGES")
         self.assertEqual(self.counted_high(p), [])
         self.assertNotIn(p, self.unverified())
-        tip = [f for f in self.snap()["findings"] if f["rule"] == "WT-I008"]
+        tip = [f for f in self.snap()["findings"] if f["rule"] == "ISR-I008"]
         self.assertIn(os.path.relpath(p, self.home), tip[0]["files"])
 
     def test_placeholder_changed_bytes_flagged_is_high(self):

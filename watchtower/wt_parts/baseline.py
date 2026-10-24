@@ -43,7 +43,7 @@ def ran_before():
 def load_baseline():
     """(baseline, status, why). status "ok": a baseline to compare with. "first": nothing approved yet (the first run ever, or a
     box whose meta file says the baseline held nothing): take one. "reset" (R4, Oct 16): Watchtower ran here before and its
-    baseline is now missing, empty or unreadable: an alarm (WT-I010), never a quiet fresh start. An empty baseline counts as
+    baseline is now missing, empty or unreadable: an alarm (ISR-I010), never a quiet fresh start. An empty baseline counts as
     "nothing approved" only on a record a past run wrote, never on what the current scan sees: `daily --roots /nonexistent`
     finds nothing, and once that empty scan is saved as the baseline the next audit approves everything (Codex, round 1)."""
     path = state_path("baseline.json")
@@ -92,7 +92,7 @@ def baseline_reset_finding(why):
     m = load_json_regular(state_path(BASELINE_META), None)
     held = (f" (it held {m['files']} files on {m['at'][:10]})" if isinstance(m, dict) and isinstance(m.get("files"), int)
             and isinstance(m.get("at"), str) else "")
-    return finding("WT-I010", "ISR Bot's memory was reset", "high", ["AST07"], "state/baseline.json",
+    return finding("ISR-I010", "ISR Bot's memory was reset", "high", ["AST07"], "state/baseline.json",
                    f"baseline.json {RESET_WHY.get(why, why)}{held}",
                    "Something emptied, damaged or deleted the file where ISR Bot remembers the skills you approved, so it can't tell "
                    "whether any of them changed. It has not approved anything on its own. `wt.py diff <skill>` still compares a skill with "
@@ -115,13 +115,13 @@ def roll_builtin(fs, meta, notes):
         return fs
     flagged, flagged_votes = set(), set()
     for f in fs:
-        if f["rule"].startswith("WT-I") or f["severity"] not in ("critical", "high", "medium"):
+        if f["rule"].startswith("ISR-I") or f["severity"] not in ("critical", "high", "medium"):
             continue
         w = f["where"].split(":")[0]
         # b8i4: a wording-only vote on a platform skill (DQ-042) doesn't hold back a middle-path update: settle_platform_updates
         # already let it through. A listed update still waits for it, as before.
-        (flagged_votes if f["rule"] == "WT-X003" and unconfirmed_platform_vote(f, fs) else flagged).update({w, skill_root(w) or w})
-        # fix round 2 (Codex 4): a grouped finding (gitleaks's WT-S002 on a folder) holds every file it stands for
+        (flagged_votes if f["rule"] == "ISR-X003" and unconfirmed_platform_vote(f, fs) else flagged).update({w, skill_root(w) or w})
+        # fix round 2 (Codex 4): a grouped finding (gitleaks's ISR-S002 on a folder) holds every file it stands for
         for q in f.get("affected_files") or []:
             if isinstance(q, str):
                 flagged.update({q, skill_root(q) or q})
@@ -150,10 +150,10 @@ def roll_builtin(fs, meta, notes):
             moved.append(f)
             continue
         # item 8 (R3): a platform change the vendor release list doesn't include waits for a release that lists it, never rolls
-        if f["rule"] in ("WT-I001", "WT-I002", "WT-I003") and builtin(f) and not f.get("unverified_platform"):
+        if f["rule"] in ("ISR-I001", "ISR-I002", "ISR-I003") and builtin(f) and not f.get("unverified_platform"):
             if not (mid and blocked) and all(passes(q, mid) for q in places):
                 for q in places:
-                    if f["rule"] == "WT-I003":
+                    if f["rule"] == "ISR-I003":
                         base.pop(q, None)
                     elif q in meta["manifest"]:
                         base[q] = meta["manifest"][q]
@@ -173,20 +173,20 @@ def roll_builtin(fs, meta, notes):
 def is_accepted(f, sup, today):
     if f.get("unverified_platform"):
         return False   # Codex, item 8 review 1: before every branch, key matches included; only a release that lists it clears one
-    if f.get("rule") == "WT-A002" and f.get("accepted_exact"):
+    if f.get("rule") == "ISR-A002" and f.get("accepted_exact"):
         return True   # exact owner-accepted line (state/accepted_auto_allow.json); severity untouched
     names = refused = None
     for s_ in sup:
         if s_.get("expires", "9999") < today:
             continue
         if s_.get("kind") == EXC_KIND:        # named skill only, and only while its files are exactly what the owner confirmed
-            if f["rule"] == "WT-X003" and os.path.normpath(f["where"]) == s_.get("where") and skill_dir_hash(f["where"]) == s_.get("hash"):
+            if f["rule"] == "ISR-X003" and os.path.normpath(f["where"]) == s_.get("where") and skill_dir_hash(f["where"]) == s_.get("hash"):
                 return s_
             continue
         if s_.get("key") and s_["key"] in (f["key"], f.get("key0")):
             return True
         # rule + whole name survives rescans that change a finding's evidence (and so its key). R2/R10 (Oct 16): never a part of a
-        # name, and never a finding `accept` refuses, so an entry an earlier version stored (`accept WT-K001 /`) no longer applies.
+        # name, and never a finding `accept` refuses, so an entry an earlier version stored (`accept ISR-K001 /`) no longer applies.
         if s_.get("rule") == f["rule"] and s_.get("match") and isinstance(s_["match"], str):
             if refused is None:
                 refused = bool(accept_refused(f))
@@ -208,7 +208,7 @@ def set_aside_dismissed(findings):
     accepted risk is left for active() (it shows under accepted risks, not as dismissed).
     Fix round 2 (Codex 6, 7; the owner's rule): a dismissal sets aside only a Worth-a-look finding, as at 5dcd0a2. state/dismissed.jsonl
     can be written by a Bot, and a Bot can compute any digest, so no record holds a finding something backs up: one dismissed
-    before and backed up now (most often by a change to its file, WT-I001/I002) counts again, and its fix says so (DQ-045, a
+    before and backed up now (most often by a change to its file, ISR-I001/I002) counts again, and its fix says so (DQ-045, a
     dismissal that survives an unrelated edit, needs a dismissal authority a Bot can't write: not done, see KNOWN-LIMITS)."""
     sup = load_json(state_path("suppressions.json"), [])
     today = dt.date.today().isoformat()
@@ -249,13 +249,13 @@ def active(findings):
 
 
 def canonical_rule(s):
-    """A rule id as Watchtower writes it, whatever its case: WT- and the letters upper, a suffix after the number lower
-    (WT-T006k, WT-T001r, WT-WA07s). Uppercasing it all stored WT-T006K, which matches nothing (Codex, round 1)."""
+    """A rule id as Watchtower writes it, whatever its case: the prefix and the letters upper, a suffix after the number lower
+    (ISR-T006k, ISR-T001r, ISR-WA07s). Uppercasing it all stored ISR-T006K, which matches nothing (Codex, round 1)."""
     s = str(s or "").strip()
-    m = re.fullmatch(r"(?i)wt-([a-z]+)(\d*)([a-z]*)", s)
+    m = re.fullmatch(r"(?i)isr-([a-z]+)(\d*)([a-z]*)", s)
     if not m:
         return s.upper()
-    return f"WT-{m.group(1).upper()}{m.group(2)}{m.group(3).lower()}"
+    return f"ISR-{m.group(1).upper()}{m.group(2)}{m.group(3).lower()}"
 
 
 def cmd_accept(args):
@@ -393,7 +393,7 @@ def run_audit_locked(args, quick):
     if quick:  # the daily run skips the slow engines; keep their last results instead of calling them fixed
         prev_snap = load_json(state_path("last_findings.json"), {"findings": []})
         have = keys_of(fs)
-        rescanned = {f["where"] for f in fs if f["rule"].startswith("WT-X")} | ENGINE_CURRENT   # these have an up-to-date answer, flagged or clean
+        rescanned = {f["where"] for f in fs if f["rule"].startswith("ISR-X")} | ENGINE_CURRENT   # these have an up-to-date answer, flagged or clean
         for f in prev_snap.get("findings", []):
             if f["rule"] in SLOW_RULES and not known(f, have) and f["where"] not in rescanned:
                 fs.append(kept_line(f))
@@ -414,7 +414,7 @@ def run_audit_locked(args, quick):
             f["scope"] = "platform"
         elif builtin(f):
             f["scope"] = "builtin"
-        elif in_pending_plugin(f["where"]) and f["rule"] in ("WT-X001", "WT-X002", "WT-T006k") and f["severity"] == "low":
+        elif in_pending_plugin(f["where"]) and f["rule"] in ("ISR-X001", "ISR-X002", "ISR-T006k") and f["severity"] == "low":
             f["severity"] = "medium"   # one scanner flagging a skill in a plugin nobody has reviewed yet is worth a look
     # Label before platform-refresh summary so a built-in that turns Confirmed critical/high alerts (Claude v0.7.1 F4).
     fs = label_findings(fs, ask_first_covered(fs))
@@ -437,9 +437,9 @@ def run_audit_locked(args, quick):
         if not os.path.lexists(state_path(BASELINE_META)):   # an install from before the meta file: remember it ran
             save_baseline_meta(len(load_baseline()[0]))
         if not quick:   # skills approved before copies were kept: keep one now, but only while they still match what was approved
-            drifted = {skill_root(f["where"].split(":")[0]) for f in expand_groups(fs) if f["rule"] in ("WT-I001", "WT-I002", "WT-I003")}
+            drifted = {skill_root(f["where"].split(":")[0]) for f in expand_groups(fs) if f["rule"] in ("ISR-I001", "ISR-I002", "ISR-I003")}
             save_approved_all([d for d in meta.get("skill_dirs", []) if os.path.normpath(d) not in drifted and not os.path.exists(approved_path(d))])
-    # "reset": nothing is saved or approved; WT-I010 stays open every run until the owner's yes (`wt.py baseline --owner-said-yes`)
+    # "reset": nothing is saved or approved; ISR-I010 stays open every run until the owner's yes (`wt.py baseline --owner-said-yes`)
     snapshot = {"at": now(), "version": VERSION, "status": status_of(scored(live)), "score": s, "grade": g, "previous_score": prev.get("score"), "findings": live, "suppressed": suppressed,
                 "scanners_missing": meta.get("scanners_missing", []), "stages_skipped": list(STAGE_FAILED),
                 "inventory": meta["inventory"], "notes": meta["notes"]}
@@ -499,7 +499,7 @@ def load_history():
     return rows
 
 
-SLOW_RULES = ("WT-X001", "WT-X002", "WT-X003", "WT-S002", "WT-D001", "WT-D002")
+SLOW_RULES = ("ISR-X001", "ISR-X002", "ISR-X003", "ISR-S002", "ISR-D001", "ISR-D002")
 
 
 def compact(f):

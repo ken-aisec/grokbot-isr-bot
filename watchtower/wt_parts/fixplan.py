@@ -26,45 +26,45 @@ REVOKE = [  # gitleaks rule prefix → where the owner turns that key off
 
 # rule → (plain title, why it matters, how to fix, who fixes it: "auto" = the fix handles it)
 PLAIN = {
-    "WT-S001": ("Keys left in files", "Every Bot can read them and use them.", "Revoke the key at its provider, then delete the file.", "you"),
-    "WT-S002": ("Keys left in files", "Every Bot can read them and use them.", "Revoke the key at its provider; ISR Bot clears the copies.", "you"),
-    "WT-S003": ("A command-line login is stored on the Bot computer", "Any Bot can act as you with it.", "Tell ISR Bot \"fix it\": one yes keeps it, or sign out of that tool.", "you"),
-    "WT-S004": ("The shared browser is logged in to sensitive sites", "Every Bot uses the same logins.", "In the Bot browser, sign out of sites no Bot needs.", "you"),
-    "WT-A001": ("An auto-approve rule is too broad", "Bots can act without asking.", "Settings → General → Auto-review: change it to Ask first.", "you"),
-    "WT-A002": ("Sending or buying is auto-approved", "A tricked Bot could act on it.", "Settings → General → Auto-review: change it to Ask first.", "you"),
-    "WT-A003": ("Bots don't ask before sending or buying", "One bad web page could make a Bot act.", "Settings → General → Auto-review: add Ask-first rules.", "you"),
-    "WT-A004": ("Bots can create automations without asking", "A trick could keep running on a schedule.", "Settings → General → Auto-review: change it to Ask first.", "you"),
-    "WT-A005": ("No approval rules at all", "Nothing stops a Bot from acting.", "Settings → General → Auto-review: add Ask-first rules.", "you"),
-    "WT-C001": ("Bots can run code on your own computer", "Not just the cloud computer.", "Settings → General → Bot → Local Computer: Never allow.", "you"),
-    "WT-C003": ("Auto-review is off", "Nothing checks Bot actions.", "Settings → General → Auto-review: turn it on.", "you"),
-    # Hooks have their own ID. They first shared WT-C004 with "Connector installed but unused", so a connector finding was described
-    # as a hook and accepting one accepted the other. WT-C004 has no entry here, as in v0.6.6: it shows its own title and fix.
-    "WT-C005": ("A hook runs a script from a shared temp folder", "Any Bot could plant that script.", "Check what added the hook; report the platform's own to the platform.", "you"),
-    "WT-X001": ("A skill looks risky to the scanner", "It may read secrets or run outside code.", "Tell ISR Bot \"fix it\" and say yes for the ones that are yours.", "you"),
-    "WT-X002": ("A skill looks risky to the scanner", "It may hide what it does.", "Tell ISR Bot \"fix it\" and say yes for the ones that are yours.", "you"),
-    "WT-X003": ("Two scanners agree a skill is dangerous", "This is rarely a false alarm.", "Tell ISR Bot \"fix it\": one yes moves it out of use, and nothing is deleted. If it is a security tool of yours, the fix can keep it for 30 days.", "you"),
-    "WT-W001": ("ISR Bot's own tools need an update", "They live only in ISR Bot's folder.", "Tell ISR Bot \"update yourself\".", "auto"),
-    "WT-X004": ("A scanner couldn't get through a skill", "ISR Bot's own rules still checked it.", "Nothing to do; ISR Bot retries it in a week.", "auto"),
-    "WT-X005": ("One of ISR Bot's scanners was swapped", "ISR Bot didn't run it, so its checks weren't done.",
+    "ISR-S001": ("Keys left in files", "Every Bot can read them and use them.", "Revoke the key at its provider, then delete the file.", "you"),
+    "ISR-S002": ("Keys left in files", "Every Bot can read them and use them.", "Revoke the key at its provider; ISR Bot clears the copies.", "you"),
+    "ISR-S003": ("A command-line login is stored on the Bot computer", "Any Bot can act as you with it.", "Tell ISR Bot \"fix it\": one yes keeps it, or sign out of that tool.", "you"),
+    "ISR-S004": ("The shared browser is logged in to sensitive sites", "Every Bot uses the same logins.", "In the Bot browser, sign out of sites no Bot needs.", "you"),
+    "ISR-A001": ("An auto-approve rule is too broad", "Bots can act without asking.", "Settings → General → Auto-review: change it to Ask first.", "you"),
+    "ISR-A002": ("Sending or buying is auto-approved", "A tricked Bot could act on it.", "Settings → General → Auto-review: change it to Ask first.", "you"),
+    "ISR-A003": ("Bots don't ask before sending or buying", "One bad web page could make a Bot act.", "Settings → General → Auto-review: add Ask-first rules.", "you"),
+    "ISR-A004": ("Bots can create automations without asking", "A trick could keep running on a schedule.", "Settings → General → Auto-review: change it to Ask first.", "you"),
+    "ISR-A005": ("No approval rules at all", "Nothing stops a Bot from acting.", "Settings → General → Auto-review: add Ask-first rules.", "you"),
+    "ISR-C001": ("Bots can run code on your own computer", "Not just the cloud computer.", "Settings → General → Bot → Local Computer: Never allow.", "you"),
+    "ISR-C003": ("Auto-review is off", "Nothing checks Bot actions.", "Settings → General → Auto-review: turn it on.", "you"),
+    # Hooks have their own ID. They first shared ISR-C004 with "Connector installed but unused", so a connector finding was described
+    # as a hook and accepting one accepted the other. ISR-C004 has no entry here, as in v0.6.6: it shows its own title and fix.
+    "ISR-C005": ("A hook runs a script from a shared temp folder", "Any Bot could plant that script.", "Check what added the hook; report the platform's own to the platform.", "you"),
+    "ISR-X001": ("A skill looks risky to the scanner", "It may read secrets or run outside code.", "Tell ISR Bot \"fix it\" and say yes for the ones that are yours.", "you"),
+    "ISR-X002": ("A skill looks risky to the scanner", "It may hide what it does.", "Tell ISR Bot \"fix it\" and say yes for the ones that are yours.", "you"),
+    "ISR-X003": ("Two scanners agree a skill is dangerous", "This is rarely a false alarm.", "Tell ISR Bot \"fix it\": one yes moves it out of use, and nothing is deleted. If it is a security tool of yours, the fix can keep it for 30 days.", "you"),
+    "ISR-W001": ("ISR Bot's own tools need an update", "They live only in ISR Bot's folder.", "Tell ISR Bot \"update yourself\".", "auto"),
+    "ISR-X004": ("A scanner couldn't get through a skill", "ISR Bot's own rules still checked it.", "Nothing to do; ISR Bot retries it in a week.", "auto"),
+    "ISR-X005": ("One of ISR Bot's scanners was swapped", "ISR Bot didn't run it, so its checks weren't done.",
                 "Reinstall the scanners (install.sh --scanners). If it comes back, tell the owner: something is changing ISR Bot's files.", "you"),
-    "WT-I004": ("A new plugin was installed", "It brought its own skills, and nothing could vet them before it arrived.",
+    "ISR-I004": ("A new plugin was installed", "It brought its own skills, and nothing could vet them before it arrived.",
                 "Tell ISR Bot \"fix it\": one yes keeps it. If you didn't want it, remove it in the app.", "you"),
-    "WT-I001": ("A skill you approved has changed", "Someone or something edited it.", "Tell ISR Bot \"fix it\": it re-scans it with every engine and re-approves it if clean.", "you"),
-    "WT-I010": ("ISR Bot's memory was reset", "It can no longer tell whether a skill you approved has changed.",
+    "ISR-I001": ("A skill you approved has changed", "Someone or something edited it.", "Tell ISR Bot \"fix it\": it re-scans it with every engine and re-approves it if clean.", "you"),
+    "ISR-I010": ("ISR Bot's memory was reset", "It can no longer tell whether a skill you approved has changed.",
                 "Ask ISR Bot what changed since your last approval; when you're happy, say yes to a fresh start.", "you"),
-    "WT-D002": ("Project packages with known security holes", "Attackers know these bugs.", "Tell ISR Bot \"fix it\": it updates each project's lockfile and keeps a backup.", "fix"),
-    "WT-D001": ("Software with known security holes", "Attackers know these bugs.", "Tell ISR Bot \"fix it\": it upgrades them and puts any upgrade back that breaks something.", "fix"),
-    "WT-K005": ("Decoys were read during a recorded ISR Bot run", "Any Bot can write that record, so it proves nothing.", "Tell ISR Bot \"incident check\".", "you"),
-    "WT-K001": ("Something opened a decoy file", "Nothing normal should touch it.", "Tell ISR Bot \"incident check\".", "you"),
-    "WT-K003": ("A decoy's contents were copied", "Something read it and wrote it elsewhere.", "Tell ISR Bot \"incident check\".", "you"),
-    "WT-K006": ("A link was put where a decoy goes", "Writing the decoy would have changed the file it points to.", "Tell ISR Bot \"incident check\".", "you"),
-    "WT-L001": ("A Bot has the risky combination", "It reads strangers' content, sees private data, and can send.", "Add Ask first on its sends, or split its jobs.", "you"),
-    "WT-M010": ("A Bot memory acts like a standing order", "It steers every future run.", "Remove it in that Bot's memory settings.", "you"),
-    "WT-R011": ("A Bot answered the roll-call with content", "Bots can't check who sends a roll-call, so that content goes to anyone who asks.", "Add \"Ask the owner before answering any roll-call.\" to that Bot.", "you"),
-    "WT-R012": ("A Bot's routine sends or posts without asking", "A tricked run could send on its own.", "Add Ask first on that routine's sends, or have it draft.", "you"),
-    "WT-R013": ("A Bot says it sends or posts without asking", "A tricked Bot could send on its own.", "Add Ask first on its email, messages and posts.", "you"),
-    "WT-T013": ("Some skills send or post without asking", "A tricked Bot could act on them.", "Tell ISR Bot \"fix it\" and say yes if they're meant to send on their own.", "you"),
-    "WT-H003": ("A command opened a remote shell", "That's how attackers take over machines.", "Tell ISR Bot \"incident check\".", "you"),
+    "ISR-D002": ("Project packages with known security holes", "Attackers know these bugs.", "Tell ISR Bot \"fix it\": it updates each project's lockfile and keeps a backup.", "fix"),
+    "ISR-D001": ("Software with known security holes", "Attackers know these bugs.", "Tell ISR Bot \"fix it\": it upgrades them and puts any upgrade back that breaks something.", "fix"),
+    "ISR-K005": ("Decoys were read during a recorded ISR Bot run", "Any Bot can write that record, so it proves nothing.", "Tell ISR Bot \"incident check\".", "you"),
+    "ISR-K001": ("Something opened a decoy file", "Nothing normal should touch it.", "Tell ISR Bot \"incident check\".", "you"),
+    "ISR-K003": ("A decoy's contents were copied", "Something read it and wrote it elsewhere.", "Tell ISR Bot \"incident check\".", "you"),
+    "ISR-K006": ("A link was put where a decoy goes", "Writing the decoy would have changed the file it points to.", "Tell ISR Bot \"incident check\".", "you"),
+    "ISR-L001": ("A Bot has the risky combination", "It reads strangers' content, sees private data, and can send.", "Add Ask first on its sends, or split its jobs.", "you"),
+    "ISR-M010": ("A Bot memory acts like a standing order", "It steers every future run.", "Remove it in that Bot's memory settings.", "you"),
+    "ISR-R011": ("A Bot answered the roll-call with content", "Bots can't check who sends a roll-call, so that content goes to anyone who asks.", "Add \"Ask the owner before answering any roll-call.\" to that Bot.", "you"),
+    "ISR-R012": ("A Bot's routine sends or posts without asking", "A tricked run could send on its own.", "Add Ask first on that routine's sends, or have it draft.", "you"),
+    "ISR-R013": ("A Bot says it sends or posts without asking", "A tricked Bot could send on its own.", "Add Ask first on its email, messages and posts.", "you"),
+    "ISR-T013": ("Some skills send or post without asking", "A tricked Bot could act on them.", "Tell ISR Bot \"fix it\" and say yes if they're meant to send on their own.", "you"),
+    "ISR-H003": ("A command opened a remote shell", "That's how attackers take over machines.", "Tell ISR Bot \"incident check\".", "you"),
 }
 
 
@@ -104,7 +104,7 @@ def plain(f):
 def revoke_targets(findings):
     kinds = set()
     for f in findings:
-        if f["rule"] in ("WT-S001", "WT-S002") and f["severity"] in ("critical", "high") and not f.get("example"):   # batch 6 r3: checked, not revoked
+        if f["rule"] in ("ISR-S001", "ISR-S002") and f["severity"] in ("critical", "high") and not f.get("example"):   # batch 6 r3: checked, not revoked
             kinds |= {k.strip().lower() for k in re.split(r"[,:]", f["evidence"].split("hit(s):")[-1])}
             kinds |= {w.lower() for w in re.findall(r"(AKIA|ASIA|ghp_|xox|sq0|sk-ant|sk-proj|AIza)", f["evidence"])}
     hits = []
@@ -317,9 +317,9 @@ def needs_you(findings, limit=None):
     key_files = (load_json(state_path("key_status.json"), {}) or {}).get("files", {})
     live = live_key_links(key_files)
     keys = live or revoke_targets(findings)
-    pkgs = sorted({re.sub(r"^Vulnerable package ", "", f["title"]).split(" ")[0] for f in findings if f["rule"] == "WT-D001"})
+    pkgs = sorted({re.sub(r"^Vulnerable package ", "", f["title"]).split(" ")[0] for f in findings if f["rule"] == "ISR-D001"})
     for g in items:
-        if "WT-D001" in g["rules"] and pkgs:
+        if "ISR-D001" in g["rules"] and pkgs:
             g["how"] = "Tell ISR Bot \"fix it\": it upgrades " + ", ".join(pkgs) + " and puts any upgrade back that breaks something."
     for g in items:
         cls = {fix_class(f) for f in g["findings"]}
@@ -327,7 +327,7 @@ def needs_you(findings, limit=None):
         g["label"] = CONFIRMED if any(label_of(f) == CONFIRMED for f in g["findings"]) else MAYBE_FINE
         g["rules"] = sorted(g["rules"])
         g["can_accept"] = all(accept_refused(f) is None for f in g["findings"])   # batch 1's gate (built on acceptable())
-        g["decoy"] = any(f["rule"].startswith("WT-K") for f in g["findings"])
+        g["decoy"] = any(f["rule"].startswith("ISR-K") for f in g["findings"])
         g["rows"] = [item_row(f, key_files) for f in sorted(g.pop("findings"), key=lambda f: SEV_ORDER.index(f["severity"]))]
         if g["title"] == "Keys that still work are sitting in files" and live:
             g["how"] = "Turn these off at the provider: " + ", ".join(n for n, _ in live) + ". Then tell ISR Bot \"fix it\" to clear every copy."
@@ -414,10 +414,10 @@ def cap_playbook_keys(findings, status):
     """A key-shaped string in a built-in site playbook is a site's public client key in the platform's own instructions;
     every new account has them. gitleaks alone keeps it at low. If a second engine agrees (TruffleHog found a key in that
     file, or Watchtower's own key rule flagged it), it keeps the severity it was given."""
-    own = {f["where"].split(":")[0] for f in findings if f["rule"] == "WT-S001"}
+    own = {f["where"].split(":")[0] for f in findings if f["rule"] == "ISR-S001"}
     out = []
     for f in findings:
-        if f["rule"] == "WT-S002" and f.get("source") == "gitleaks" and f["severity"] != "low":
+        if f["rule"] == "ISR-S002" and f.get("source") == "gitleaks" and f["severity"] != "low":
             p = f["where"].split(":")[0]
             if builtin_site_playbook(p) and not (status or {}).get(os.path.abspath(p)) and p not in own:
                 f = dict(f, severity="low", fix="A site playbook the platform ships to every account. Only one scanner matched a pattern here; "
@@ -442,7 +442,7 @@ def key_status_severity(findings, status, ran=None):
         return findings
     out = []
     for f in findings:
-        if f["rule"] in ("WT-S001", "WT-S002"):
+        if f["rule"] in ("ISR-S001", "ISR-S002"):
             p, _, ln = f["where"].partition(":")
             keys = [k for fp, ks in status.items() if fp == p or fp.startswith(p.rstrip("/") + "/") for k in ks]
             if ln.split(":")[0].isdigit():      # R06: a verdict counts only for the key on this finding's own line
@@ -534,7 +534,7 @@ def osv_findings(roots, notes):
     for (eco, name, ver), d in sorted(pkgs.items(), key=lambda kv: str(kv[0])):
         dirs = sorted(d["dirs"])
         ids = sorted(d["ids"])
-        out.append(finding("WT-D002", f"Vulnerable package {name} {ver}", "high" if d["sev"] >= 7 else "medium", ["ASI04", "AST02"], dirs[0],
+        out.append(finding("ISR-D002", f"Vulnerable package {name} {ver}", "high" if d["sev"] >= 7 else "medium", ["ASI04", "AST02"], dirs[0],
                            f"{eco}: {len(ids)} known: {', '.join(ids[:3])}" + (f" · used in {len(dirs)} projects" if len(dirs) > 1 else ""),
                            "Update it in that project (npm update, go get -u, or your package manager), then re-run the audit.", source="osv-scanner",
                            ident=f"{eco} {name} {ver} {'high' if d['sev'] >= 7 else 'medium'}"))
@@ -550,7 +550,7 @@ def scrub_targets_from_findings():
     snap = load_json(state_path("last_findings.json"), {"findings": []})
     files = set()
     for f in snap.get("findings", []):
-        if f["rule"] not in ("WT-S001", "WT-S002") or f.get("example"):   # batch 6 fix round 3: an example-looking one is checked, never cleared
+        if f["rule"] not in ("ISR-S001", "ISR-S002") or f.get("example"):   # batch 6 fix round 3: an example-looking one is checked, never cleared
             continue
         p = f["where"].split(":")[0]
         cands = [p] if os.path.isfile(p) else ([os.path.join(dp, fn) for dp, _, fns in os.walk(p) for fn in fns] if os.path.isdir(p) else [])
@@ -568,17 +568,17 @@ def short_path(p):
 def item_row(f, key_files=None):
     """One drill-down row: a name a person recognizes, the reason, and where."""
     w = f["where"].split(":")[0]
-    if f["rule"] == "WT-I004":
+    if f["rule"] == "ISR-I004":
         return {"name": f["evidence"].split(":")[0], "reason": f["evidence"], "where": short_path(w), "rule": f["rule"], "severity": f["severity"]}
-    if f["rule"].startswith("WT-X") or f["rule"] in ("WT-T012", "WT-T013", "WT-T014", "WT-T006k", "WT-I001"):
+    if f["rule"].startswith("ISR-X") or f["rule"] in ("ISR-T012", "ISR-T013", "ISR-T014", "ISR-T006k", "ISR-I001"):
         parts = [x for x in w.split("/") if x]
         name = next((parts[i + 1] for i, x in enumerate(parts[:-1]) if x in ("workflows", "skills", "plugins", "managed-skills")), os.path.basename(w))
         if name in ("SKILL.md",) and len(parts) > 1:
             name = parts[-2]
         reason = f["evidence"]
-    elif f["rule"] in ("WT-D001", "WT-D002"):
+    elif f["rule"] in ("ISR-D001", "ISR-D002"):
         name, reason = f["title"].replace("Vulnerable package ", ""), f["evidence"]
-    elif f["rule"] in ("WT-S001", "WT-S002"):
+    elif f["rule"] in ("ISR-S001", "ISR-S002"):
         name = os.path.basename(w.rstrip("/")) or w
         keys = [k for fp, ks in (key_files or {}).items() if fp == w or fp.startswith(w.rstrip("/") + "/") for k in ks]
         if keys:
@@ -607,29 +607,29 @@ def live_key_links(key_files):
 
 
 # ---------------------------------------------------------------- v0.5: one yes, then everything
-ACCEPTABLE_RULES = ("WT-I004", "WT-X001", "WT-X002", "WT-T012", "WT-T013", "WT-T014", "WT-T006k", "WT-S003", "WT-D001", "WT-D002")
+ACCEPTABLE_RULES = ("ISR-I004", "ISR-X001", "ISR-X002", "ISR-T012", "ISR-T013", "ISR-T014", "ISR-T006k", "ISR-S003", "ISR-D001", "ISR-D002")
 
 
 def acceptable(f):
     """Findings a person can reasonably accept as fine on purpose. Never: two engines agreeing a skill is dangerous,
     a decoy being touched, a working key, a memory acting as an order, a remote shell."""
-    return f["rule"] in ACCEPTABLE_RULES or (f["rule"] in ("WT-S001", "WT-S002") and f["title"] in (KEY_MAYBE, KEY_UNSURE))
+    return f["rule"] in ACCEPTABLE_RULES or (f["rule"] in ("ISR-S001", "ISR-S002") and f["title"] in (KEY_MAYBE, KEY_UNSURE))
 
 
 # Hardening batch 1 (R2/R10, Oct 16): the one-at-a-time `accept` follows the same line as the fix. A decoy alarm, or something
 # Watchtower saw happen or two checks agree on, can't be marked as fine. An unused connector stays acceptable (decision D2): the
 # owner keeps one on purpose, and nobody gains anything from it being accepted.
-ACCEPT_ONE_ALSO = frozenset(("WT-C004",))
+ACCEPT_ONE_ALSO = frozenset(("ISR-C004",))
 
 
 def refusal(rule, title=""):
-    if rule.startswith("WT-K"):
+    if rule.startswith("ISR-K"):
         return (f"{rule} is a decoy alarm. A decoy is a file nothing legitimate opens, so this can't be marked as fine. "
                 "Tell ISR Bot \"incident check\".")
     what = f" ({title})" if title else ""
     out = (f"{rule}{what} is something ISR Bot saw happen, or two checks agree on, so it can't be marked as fine. "
            f"`wt.py show {rule}` shows where.")
-    if rule == "WT-A002":
+    if rule == "ISR-A002":
         out += " To keep one exact Allow-automatically line, use `wt.py auto-allow`."
     return out
 
@@ -640,7 +640,7 @@ def accept_refused(f):
         v = platform_vendor(f.get("where", ""))
         return (f"{f['rule']} is a file in {v}'s own folder that {v}'s release list doesn't include, so it can't be marked as fine. "
                 "Nothing on this computer approves it: only an ISR Bot release that lists it clears it. If you didn't expect it, remove it.")
-    if f["rule"].startswith("WT-K"):
+    if f["rule"].startswith("ISR-K"):
         return refusal(f["rule"])
     if not acceptable(f) and f["rule"] not in ACCEPT_ONE_ALSO and (is_evidence(f) or f.get("class") == "corroborated"):
         return refusal(f["rule"], (PLAIN_BY_TITLE.get(f.get("title")) or PLAIN.get(f["rule"]) or (f.get("title") or "",))[0])
@@ -649,18 +649,18 @@ def accept_refused(f):
 
 def accept_rule_refused(rule):
     """The same, when only the rule is known: every finding under it is refused."""
-    if rule.startswith("WT-K") or rule in EVIDENCE_RULES - set(ACCEPTABLE_RULES) - ACCEPT_ONE_ALSO:
+    if rule.startswith("ISR-K") or rule in EVIDENCE_RULES - set(ACCEPTABLE_RULES) - ACCEPT_ONE_ALSO:
         return refusal(rule, (PLAIN.get(rule) or ("",))[0])
     return None
 
 
 def accept_place(f):
     """The file, folder or label an accepted risk names, whole. Unlike _place, a colon inside a path stays (only a trailing
-    ":line" or ":line:col" goes), and a scanner's skill folder (WT-X*) is kept verbatim, so /w/slide:evil is never /w/slide and
+    ":line" or ":line:col" goes), and a scanner's skill folder (ISR-X*) is kept verbatim, so /w/slide:evil is never /w/slide and
     /:evil is never / (Codex, round 1)."""
     w = str(f.get("where") or "")
     if w.startswith("/"):
-        return _path_part(w, line=not f["rule"].startswith("WT-X"))
+        return _path_part(w, line=not f["rule"].startswith("ISR-X"))
     return re.sub(r":\d+$", "", w)
 
 
@@ -669,13 +669,13 @@ def accept_names(f):
     folder's name, and for a package its name and version. Never a part of one, so "/" or "slide" names nothing."""
     p = accept_place(f)
     names = {f.get("where") or "", p}
-    if f["rule"].startswith("WT-X") and p.startswith("/"):
+    if f["rule"].startswith("ISR-X") and p.startswith("/"):
         names.add(skill_name(p))                       # their `where` is the skill folder
     elif p.startswith("/"):
         root = skill_root(p)
         if root:
             names.add(skill_name(root))
-    if f["rule"] in ("WT-D001", "WT-D002"):
+    if f["rule"] in ("ISR-D001", "ISR-D002"):
         names.add(f.get("title") or "")
         m = re.match(r"Vulnerable package (\S+) (\S+)", f.get("title") or "")
         if m:
@@ -695,22 +695,22 @@ def upgrade_tried():
 def fix_class(f):
     if f.get("unverified_platform"):   # item 8 (R3): only a release that lists it clears one (`wt.py fix` lists them: platform_unverified)
         return "platform"
-    if f["rule"] in ("WT-D001", "WT-D002"):
+    if f["rule"] in ("ISR-D001", "ISR-D002"):
         t = upgrade_tried()
-        if (f["rule"] == "WT-D002" and t["npm"]) or (f["rule"] == "WT-D001" and any(f["title"].startswith(f"Vulnerable package {n} ") for n in t["pip"])):
+        if (f["rule"] == "ISR-D002" and t["npm"]) or (f["rule"] == "ISR-D001" and any(f["title"].startswith(f"Vulnerable package {n} ") for n in t["pip"])):
             return "decision"
         return "upgrade"
-    if f["rule"] in ("WT-A003", "WT-A005"):
+    if f["rule"] in ("ISR-A003", "ISR-A005"):
         return "ask_first"
     if f["title"] == KEY_DEAD and not f.get("example"):   # batch 6 fix round 3: an example-looking one is checked, never cleared
         return "auto"
-    if f["rule"] == "WT-I001" and (f.get("members") or skill_root(f["where"].split(":")[0])):
+    if f["rule"] == "ISR-I001" and (f.get("members") or skill_root(f["where"].split(":")[0])):
         return "revet"
     return "decision" if acceptable(f) else "only_you"
 
 
 def accept_match(f):
-    if f["rule"] in ("WT-D001", "WT-D002"):
+    if f["rule"] in ("ISR-D001", "ISR-D002"):
         return f["title"]                      # one package and version, so a new one still shows up
     return accept_place(f)                     # one skill, file, login or Bot, not the whole folder or every roll-call Bot
 
@@ -735,7 +735,7 @@ def accept_current(rules, reason, days=90, skip=()):
             continue   # Worth-a-look lines are shown too (no severity); otherwise the owner is only shown the medium-and-up decisions, so a low line is never swept in with them
         if any(x and x.lower() in f"{f['where']} {f['title']}".lower() for x in skip):
             continue   # the owner said to leave this one open
-        if f["rule"] == "WT-I004":
+        if f["rule"] == "ISR-I004":
             added += len(keep_plugin(w))   # kept for good, not for 90 days: an update to it is then an ordinary plugin update
             continue
         m = accept_match(f)

@@ -1,7 +1,7 @@
 """DQ-046(b) (decision, Oct 20: "Trust the new version and add it to the approved list"): Grok Bot's sign-in skill changed from
 sha256 329d4f59 to b06512e7 on the live boxes (sand-data and agent-data, identical). The line the owner read on Oct 18 (old line 12) is
 byte-identical and is now line 11, so the release lock lists the new bytes at both paths and rules/platform-reviewed.json has
-the same two checked findings (WT-T008, WT-T004) for them at line 11. The 329d4f59 lines and entries stay: boxes not yet updated
+the same two checked findings (ISR-T008, ISR-T004) for them at line 11. The 329d4f59 lines and entries stay: boxes not yet updated
 still have those bytes. Exact bytes only, as before: no change to the matching (sha256 + rule + line).
 
 Tests marked "replay" fail on c1bf625 on their assertion (measured with c1bf625's rules/ restored, this file in place); "guard"
@@ -39,9 +39,9 @@ class ShippedLists(unittest.TestCase):
             self.assertIn(f"{OLD}  {rel}", lock, rel)                     # boxes not yet updated keep theirs
         new, old = shipped_entries(NEW), shipped_entries(OLD)
         self.assertEqual(sorted((e["rule"], e["line"], tuple(e["paths"])) for e in new),
-                         [("WT-T004", 11, (REL, AGENT_REL)), ("WT-T008", 11, (REL, AGENT_REL))])
+                         [("ISR-T004", 11, (REL, AGENT_REL)), ("ISR-T008", 11, (REL, AGENT_REL))])
         self.assertEqual({e["rule"]: e["note"] for e in new}, {e["rule"]: e["note"] for e in old})   # the same two notes
-        self.assertEqual(sorted((e["rule"], e["line"]) for e in old), [("WT-T004", 12), ("WT-T008", 12)])
+        self.assertEqual(sorted((e["rule"], e["line"]) for e in old), [("ISR-T004", 12), ("ISR-T008", 12)])
         self.assertEqual(hashlib.sha256((LINE12 + "\n").encode()).hexdigest(), NEW_LINE11)   # line 11 is the line the owner read
 
     def test_the_synthetic_copy_has_the_reviewed_line_at_line_11(self):   # guard (this file's own fixture)
@@ -59,10 +59,10 @@ class NewVersion(_SignIn):
                            + [dict(e, sha256=sha(SIGNIN11)) for e in shipped_entries(NEW)])
 
     def checks(self, p):
-        return {f["rule"]: f for f in self.mine(p) if f["rule"] in ("WT-T008", "WT-T004") and not f.get("guarded")}
+        return {f["rule"]: f for f in self.mine(p) if f["rule"] in ("ISR-T008", "ISR-T004") and not f.get("guarded")}
 
     def counted_change(self, p):
-        return [f for f in self.mine(p) if f["rule"] in ("WT-I001", "WT-I002") and f["severity"] == "high" and wt.counts(f)]
+        return [f for f in self.mine(p) if f["rule"] in ("ISR-I001", "ISR-I002") and f["severity"] == "high" and wt.counts(f)]
 
     def test_the_vendor_update_is_a_checked_platform_note_only(self):   # replay (c1bf625: both Confirmed, not checked)
         ps = [self.put(rel, SIGNIN) for rel in (REL, AGENT_REL)]
@@ -73,7 +73,7 @@ class NewVersion(_SignIn):
         for p in ps:
             got = self.checks(p)
             self.assertEqual({(k, f["label"], f["severity"], f["where"].rsplit(":", 1)[1]) for k, f in got.items()},
-                             {("WT-T008", wt.REVIEWED_LABEL, "info", "11"), ("WT-T004", wt.REVIEWED_LABEL, "info", "11")}, p)
+                             {("ISR-T008", wt.REVIEWED_LABEL, "info", "11"), ("ISR-T004", wt.REVIEWED_LABEL, "info", "11")}, p)
             self.assertFalse([f for f in self.mine(p) if wt.counts(f)], p)
             self.assertFalse(self.counted_change(p), p)
             self.assertFalse([f for f in r["new"] if p in f["where"]], p)
@@ -81,14 +81,14 @@ class NewVersion(_SignIn):
         self.assertEqual(r["status"], wt.ALL_GOOD)
 
     def tampered_counts(self, p, text, line):
-        """Not the reviewed bytes, so not on the release list: the change is the file's own counted high WT-I001, and its
-        WT-T008/WT-T004 are not checked notes: they keep their severity as Confirmed platform findings (batch 5 d1)."""
+        """Not the reviewed bytes, so not on the release list: the change is the file's own counted high ISR-I001, and its
+        ISR-T008/ISR-T004 are not checked notes: they keep their severity as Confirmed platform findings (batch 5 d1)."""
         self.put(REL, text, listed=False)
         r = self.audit_json()
         got = self.checks(p)
         self.assertEqual({(k, f["label"], f["severity"], f["where"]) for k, f in got.items()},
-                         {("WT-T008", wt.CONFIRMED, "critical", f"{p}:{line}"), ("WT-T004", wt.CONFIRMED, "high", f"{p}:{line}")})
-        self.assertEqual([f["rule"] for f in self.counted_change(p)], ["WT-I001"])
+                         {("ISR-T008", wt.CONFIRMED, "critical", f"{p}:{line}"), ("ISR-T004", wt.CONFIRMED, "high", f"{p}:{line}")})
+        self.assertEqual([f["rule"] for f in self.counted_change(p)], ["ISR-I001"])
         self.assertGreaterEqual(r["open_by_severity"]["high"], 1)
         self.assertNotEqual(r["status"], wt.ALL_GOOD)
 

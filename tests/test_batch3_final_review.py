@@ -22,7 +22,7 @@ def script(path, body):
 
 class SemgrepInCodescan(_Scanners):
     """A semgrep that was refused at launch, changed, failed or printed no results said "semgrep found and used too", and a
-    swapped copy raised nothing (only SCANNER_NAMES could be a WT-X005)."""
+    swapped copy raised nothing (only SCANNER_NAMES could be a ISR-X005)."""
 
     def setUp(self):
         super().setUp()
@@ -43,7 +43,7 @@ class SemgrepInCodescan(_Scanners):
         return json.loads(o)
 
     def x005(self, r):
-        return [f for f in r["findings"] if f["rule"] == "WT-X005"]
+        return [f for f in r["findings"] if f["rule"] == "ISR-X005"]
 
     def test_a_semgrep_refused_at_launch_is_never_used_and_is_a_high_alert(self):
         log = os.path.join(self.tmp, "evil.log")
@@ -95,7 +95,7 @@ class SemgrepInCodescan(_Scanners):
         r = self.codescan()
         self.assertEqual(r["engine"], "semgrep found and used too")
         self.assertNotIn("not_checked_this_run", r)
-        self.assertTrue([f for f in r["findings"] if f["rule"] == "WT-WSG"])
+        self.assertTrue([f for f in r["findings"] if f["rule"] == "ISR-WSG"])
 
     def test_contrast_no_semgrep_is_a_plain_note(self):
         """Contrast: passes on dd27c42 too."""

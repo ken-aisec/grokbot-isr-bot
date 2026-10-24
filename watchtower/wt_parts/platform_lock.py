@@ -230,7 +230,7 @@ def _unverified_platform_finding(p, h, was=None):
            "ISR Bot can't approve it on this computer: it clears only when an ISR Bot release lists this exact file in its "
            "platform list. If you didn't expect it, remove it.")
     if PLATFORM_METADATA.fullmatch(os.path.basename(_path_part(p, line=False))):
-        f = finding("WT-I002" if was is None or was == h else "WT-I001",
+        f = finding("ISR-I002" if was is None or was == h else "ISR-I001",
                     f"ISR Bot's release list doesn't have {v}'s {'changed' if was is not None and was != h else 'new'} list of "
                     "what it loads yet", "high", ["AST07"] if was is not None and was != h else ["AST09", "AST07"], p,
                     f"sha256 {was[:12]}→{h[:12]}" if was is not None and was != h else f"sha256 {h[:12]}, not on the release list",
@@ -241,13 +241,13 @@ def _unverified_platform_finding(p, h, was=None):
         f["unverified_platform"] = True
         return f
     if was is None:
-        f = finding("WT-I002", f"A new file appeared in {v}'s own skill folder, and {v}'s release list doesn't include it", "high",
+        f = finding("ISR-I002", f"A new file appeared in {v}'s own skill folder, and {v}'s release list doesn't include it", "high",
                     ["AST09", "AST07"], p, h[:12], fix)
     elif was == h:   # Codex, item 8 review 2 (high 3): in baseline.json, which the Bot can write; a baseline line is never provenance
-        f = finding("WT-I002", f"On ISR Bot's list, but not on {v}'s release list: a file in {v}'s own skill folder", "high",
+        f = finding("ISR-I002", f"On ISR Bot's list, but not on {v}'s release list: a file in {v}'s own skill folder", "high",
                     ["AST09", "AST07"], p, f"sha256 {h[:12]}, not on the release list", fix)
     else:
-        f = finding("WT-I001", f"One of {v}'s own files changed, and the new version isn't on {v}'s release list", "high",
+        f = finding("ISR-I001", f"One of {v}'s own files changed, and the new version isn't on {v}'s release list", "high",
                     ["AST07"], p, f"sha256 {was[:12]}→{h[:12]}", fix)
     f["unverified_platform"] = True
     return f
@@ -357,7 +357,7 @@ def platform_update_candidates(unproven, manifest, base, short, established=Fals
     its real path (platform_skill_path: links in or out, lookalike folders and an owner's folder never are), whose real path is
     inside a platform folder where the home folder really has it (platform_real_roots: fix round 1, Codex 2), not itself a link
     (a folder above it may be one, inside the platform roots: agent-data linked to sand-data), fingerprinted as a
-    sha256, and not under a folder platform_inventory couldn't finish (WT-I011). Kinds: "update", the path is on the release
+    sha256, and not under a folder platform_inventory couldn't finish (ISR-I011). Kinds: "update", the path is on the release
     list (any hash, `<bucket>` lines included) or in the baseline; "new-skill", its skill folder (platform_skill_folder) has no
     path the baseline or the release list knows; "in-skill", it has. A loose file at no known path is no candidate. Fix round 1
     (Codex 1): "new-skill" and "in-skill" only in an update run (`established`: a baseline to compare with), and never for a file
@@ -459,18 +459,18 @@ def platform_full_verdict(p, t, rules):
     """Fix round 1 (Codex 4): the rules that hit at medium or above in the text t of the platform file p, read as the owner's own
     file would be (the whole rule set: a SKILL.md as a skill, anything else as a reference file; never the reduced vendor set),
     with DQ-024's template exception kept (story wording in a built-in deck template is info). A metadata JSON file
-    (PLATFORM_METADATA) also has each of its text values read as skill text (WT-T013 included): that is what the platform loads as
-    a skill's instructions. Returns platform_scan_verdict's (rules, not plain text); "WT-JSON" stands for metadata that isn't JSON."""
+    (PLATFORM_METADATA) also has each of its text values read as skill text (ISR-T013 included): that is what the platform loads as
+    a skill's instructions. Returns platform_scan_verdict's (rules, not plain text); "ISR-JSON" stands for metadata that isn't JSON."""
     batch = scan_text(t, p, rules, kind="skill" if os.path.basename(p) == "SKILL.md" else "reference")
     if is_vendor_template_file(p):   # DQ-024, as the skill scan does
         for f in batch:
-            if f["rule"] in ("WT-T008", "WT-T016"):
+            if f["rule"] in ("ISR-T008", "ISR-T016"):
                 f["severity"] = "info"
     hit, binary = platform_scan_verdict(batch, t)
     if PLATFORM_METADATA.fullmatch(os.path.basename(p)):
         texts = _instruction_texts(t)
         if texts is None:
-            hit = sorted(set(hit) | {"WT-JSON"})
+            hit = sorted(set(hit) | {"ISR-JSON"})
         for s in texts or ():
             hit = sorted(set(hit) | set(platform_scan_verdict(scan_text(s, p, rules, kind="skill"), s)[0]))
     return hit, binary
@@ -478,7 +478,7 @@ def platform_full_verdict(p, t, rules):
 
 def finding_files(g):
     """Fix round 2 (Codex 4): every file a finding is about, with its rule: its own place, each file a grouped finding stands for
-    (gitleaks's WT-S002 on a folder keeps them in `affected_files`) and each finding folded into it (`also_flagged_by`)."""
+    (gitleaks's ISR-S002 on a folder keeps them in `affected_files`) and each finding folded into it (`also_flagged_by`)."""
     out = [(g.get("rule"), g.get("where"))] + [(g.get("rule"), q) for q in g.get("affected_files") or []]
     out += [(a.get("rule"), a.get("where")) for a in g.get("also_flagged_by") or [] if isinstance(a, dict)]
     return [(str(r or ""), _path_part(w)) for r, w in out if isinstance(w, str) and w.startswith("/")]
@@ -513,7 +513,7 @@ def flag_index(fs):
             continue
         keys = [(r, q, "") for r, q in finding_files(g)] + [(str(g.get("rule") or ""), d, os.sep) for d in coverage_gaps(g)]
         for r, q, tail in keys:
-            if r.startswith(("WT-I", "WT-X")):
+            if r.startswith(("ISR-I", "ISR-X")):
                 continue
             try:
                 rq = os.path.realpath(q)
@@ -526,8 +526,8 @@ def flag_index(fs):
 
 def _flagged_here(p, idx):
     """Fix round 1 (Codex 4): the rules of this run's other findings at medium or above on the file p (or its real path): an
-    unpinned MCP launcher (WT-M001), a key in it (WT-S001, gitleaks's WT-S002, carried from the last run when gitleaks failed),
-    and every other family. The scanners' folder votes (WT-X) are decided by _vote_why; integrity lines (WT-I) are this check's.
+    unpinned MCP launcher (ISR-M001), a key in it (ISR-S001, gitleaks's ISR-S002, carried from the last run when gitleaks failed),
+    and every other family. The scanners' folder votes (ISR-X) are decided by _vote_why; integrity lines (ISR-I) are this check's.
     Fix round 2 (Codex 4): `idx` is flag_index's, so a grouped finding holds every file it stands for. Fix round 3 (Codex 2): and
     one that doesn't name them all holds every file in a folder above p (or above its real path)."""
     try:
@@ -570,10 +570,10 @@ def _candidate_why(p, h, rules, idx):
 
 
 def _vote_why(p, d, fs):
-    """Why a scanner vote holds the candidate p (in skill folder d), or "": a WT-X003 on d or on a folder above p that isn't a
+    """Why a scanner vote holds the candidate p (in skill folder d), or "": a ISR-X003 on d or on a folder above p that isn't a
     wording-only vote on a platform skill (DQ-042: a dangerous kind, or an answer that may lack one, kinds_incomplete)."""
     for g in fs:
-        if g.get("rule") != "WT-X003":
+        if g.get("rule") != "ISR-X003":
             continue
         x = _path_part(g.get("where") or "", line=False)
         if not (p.startswith(x + os.sep) or (d and (d == x or d.startswith(x + os.sep)))):
@@ -590,10 +590,10 @@ def settle_platform_updates(fs, cands, manifest, base, rules):
     """b8i4: decide each candidate (platform_update_candidates) at the end of audit(), after the engines. One is held when
     Watchtower's whole rule set hits at medium or above in exactly the bytes it fingerprinted, read again here, or another finding
     of this run at medium or above is on it (_candidate_why, fix round 1), when it is over 1 MB, not plain text or unreadable,
-    or when a WT-X003 covers it that isn't a wording-only platform vote. A new skill folder is all or nothing; a new file in a
+    or when a ISR-X003 covers it that isn't a wording-only platform vote. A new skill folder is all or nothing; a new file in a
     known skill folder is quiet only beside an update of a file the baseline has in that folder that is quiet this run, with
     nothing in the folder held. A held one is a counted high (unverified_platform_finding, its fix starting with why) and its
-    refresh finding goes; a quiet one's refresh finding (the drift loop's low WT-I001/I002) gets `platform_update` and goes into
+    refresh finding goes; a quiet one's refresh finding (the drift loop's low ISR-I001/I002) gets `platform_update` and goes into
     the Platform refresh line, and roll_builtin rolls it on a full audit. A quiet file the baseline already has with these
     bytes, or a changed file at a release-list path seen on a first run, raises nothing."""
     if not cands:
@@ -619,7 +619,7 @@ def settle_platform_updates(fs, cands, manifest, base, rules):
     out = []
     for f in fs:
         w = f.get("where")
-        if f.get("rule") in ("WT-I001", "WT-I002") and "refresh" in f and w in cands:
+        if f.get("rule") in ("ISR-I001", "ISR-I002") and "refresh" in f and w in cands:
             if why[w]:
                 continue
             f["platform_update"] = True
@@ -629,13 +629,13 @@ def settle_platform_updates(fs, cands, manifest, base, rules):
 
 
 def hold_on_kept_votes(fs, manifest):
-    """b8i4, daily: a WT-X003 kept from the last run (kinds_incomplete: its answer may lack a kind) covering a quiet platform
+    """b8i4, daily: a ISR-X003 kept from the last run (kinds_incomplete: its answer may lack a kind) covering a quiet platform
     update turns it into a counted high until a full audit scans the folder again. The engines answer only in the audit, so this
     runs after daily keeps last run's scanner lines. Fix round 1 (Codex 4): so does a line kept from the last run at medium or
-    above on the file itself (gitleaks's WT-S002: daily doesn't run gitleaks)."""
+    above on the file itself (gitleaks's ISR-S002: daily doesn't run gitleaks)."""
     if not any(f.get("platform_update") for f in fs):
         return fs
-    kept = [_path_part(g.get("where") or "", line=False) for g in fs if g.get("rule") == "WT-X003" and g.get("kinds_incomplete")]
+    kept = [_path_part(g.get("where") or "", line=False) for g in fs if g.get("rule") == "ISR-X003" and g.get("kinds_incomplete")]
     base = load_baseline()[0]
     out, held, idx = [], {}, flag_index(fs)   # fix round 2 (Codex 4): a kept grouped line by every file it stands for
     for f in fs:
@@ -694,7 +694,7 @@ def merge_managed_mirrors(fs, manifest):
 
     sand, agent, was = {}, [], {}
     for f in fs:
-        if (f.get("rule") not in ("WT-I001", "WT-I002", "WT-I003") or not ("refresh" in f or f.get("unverified_platform"))
+        if (f.get("rule") not in ("ISR-I001", "ISR-I002", "ISR-I003") or not ("refresh" in f or f.get("unverified_platform"))
                 or f.get("platform_coverage")):
             continue
         w = str(f.get("where") or "")
@@ -704,8 +704,8 @@ def merge_managed_mirrors(fs, manifest):
             elif w.startswith(a + os.sep):
                 agent.append(((s, w[len(a) + 1:]) + sort_key(f), f))
 
-    def sha_of(f):   # a removed file (WT-I003) by the bytes the baseline had for it
-        if f["rule"] != "WT-I003":
+    def sha_of(f):   # a removed file (ISR-I003) by the bytes the baseline had for it
+        if f["rule"] != "ISR-I003":
             return manifest.get(f["where"])
         if "base" not in was:
             was["base"] = load_baseline()[0]
@@ -804,7 +804,7 @@ def _platform_reviewed_state():
     for n, e in enumerate(entries if isinstance(entries, list) else [], 1):
         ok = (isinstance(e, dict) and set(e) == {"paths", "sha256", "rule", "line", "note"} and isinstance(e["paths"], list) and e["paths"]
               and all(_plain_rel(r) for r in e["paths"]) and isinstance(e["sha256"], str) and re.fullmatch(r"[0-9a-f]{64}", e["sha256"])
-              and isinstance(e["rule"], str) and re.fullmatch(r"WT-[A-Z]\d{3}", e["rule"]) and type(e["line"]) is int and e["line"] >= 1
+              and isinstance(e["rule"], str) and re.fullmatch(r"ISR-[A-Z]\d{3}", e["rule"]) and type(e["line"]) is int and e["line"] >= 1
               and isinstance(e["note"], str) and 0 < len(e["note"]) <= 400 and not any(ord(c) < 32 for c in e["note"]))
         if not ok:
             out, why = [], f"entry {n} isn't {{paths, sha256, rule, line, note}} with plain platform paths"
@@ -847,7 +847,7 @@ def platform_reviewed(f, manifest, snap=None):
 # read strictly (a plain file of at most 1 MB, UTF-8 without a BOM, no duplicate keys, no NaN or Infinity, at most 64 deep); each
 # named value present must have exactly its type, or nothing is normalized; those values are dropped and the rest is written
 # compactly in its own key order. The release list then holds the sha256 of that canonical form for the path, like any other
-# line. Any other difference gives another digest, so it stays a counted WT-I001. The spec ships EMPTY: nothing is normalized until
+# line. Any other difference gives another digest, so it stays a counted ISR-I001. The spec ships EMPTY: nothing is normalized until
 # a spike (the maintainer's shape diff with scripts/platform-json-shape.py, then a check of the host loader) proves which fields are unused.
 PLATFORM_NORMALIZE_REL = "rules/platform-normalize.json"
 PLATFORM_NORMALIZE = os.path.join(HERE, "..", PLATFORM_NORMALIZE_REL)
@@ -1244,7 +1244,7 @@ def platform_churn_file(p):
 # into a link into Watchtower's quarantine (a "not live" skill), a folder link, a loose script outside any skill folder, or a file
 # under node_modules (which the walk skips) never reached the provenance check. Provenance has its own walk of each platform folder
 # inside the roots: no skip list, no live or quarantine test, every literal name kept (a file reached by two names is two entries),
-# folder links followed with a cycle check and limits. A folder it can't finish is a counted high (WT-I011), never a quiet gap.
+# folder links followed with a cycle check and limits. A folder it can't finish is a counted high (ISR-I011), never a quiet gap.
 PLATFORM_WALK_MAX_FILES = 20000
 PLATFORM_WALK_MAX_DEPTH = 32
 PLATFORM_WALK_MAX_LINKS = 1000   # folder links followed in one walk
@@ -1322,7 +1322,7 @@ def platform_inventory(roots):
 
 def platform_coverage_finding(d, why):
     v = platform_vendor(d)
-    f = finding("WT-I011", f"ISR Bot couldn't check all of {v}'s own skill folder", "high", ["AST07", "AST09"], d, why,
+    f = finding("ISR-I011", f"ISR Bot couldn't check all of {v}'s own skill folder", "high", ["AST07", "AST09"], d, why,
                 f"A file added or changed in the part it couldn't check would raise no alert. Look at this folder; when {v}'s folder "
                 "is back to a normal size and readable, the next audit checks it again.", ident=f"platform-coverage|{d}")
     f["unverified_platform"] = f["platform_coverage"] = True

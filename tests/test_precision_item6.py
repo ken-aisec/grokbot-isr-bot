@@ -24,37 +24,37 @@ class ChangeSources(Box):
         profiles.platform_refresh(self, self.lay)
         self.assertEqual(self.daily(), "NO_CHANGES")
         fs = self.snap()["findings"]
-        ref = [f for f in fs if f["rule"] == "WT-I008"]
+        ref = [f for f in fs if f["rule"] == "ISR-I008"]
         self.assertEqual(len(ref), 1)
         self.assertEqual((ref[0]["class"], ref[0]["severity"]), ("tip", "info"))
         for n in ("pptx", "figma-notes"):
             self.assertIn(n, ref[0]["title"])
         self.assertIn("4 updated", ref[0]["evidence"])     # pptx SKILL.md and three catalog plugins (deck99.js copies a known file)
-        self.assertFalse([f for f in fs if f["rule"] in ("WT-I001", "WT-I002") and ".grok/bundled" in f["where"]])
+        self.assertFalse([f for f in fs if f["rule"] in ("ISR-I001", "ISR-I002") and ".grok/bundled" in f["where"]])
 
     def test_the_next_full_audit_accepts_the_refresh_and_reports_nothing_fixed(self):
         profiles.platform_refresh(self, self.lay)
         self.daily()
         r = self.audit()
-        self.assertFalse([f for f in r["fixed"] if f["rule"] == "WT-I008"])
+        self.assertFalse([f for f in r["fixed"] if f["rule"] == "ISR-I008"])
         self.assertEqual(self.daily(), "NO_CHANGES")
-        self.assertFalse([f for f in self.snap()["findings"] if f["rule"] == "WT-I008"])   # rolled into the baseline
+        self.assertFalse([f for f in self.snap()["findings"] if f["rule"] == "ISR-I008"])   # rolled into the baseline
 
     def test_a_refresh_that_brings_something_bad_still_alerts(self):
         open(os.path.join(self.lay["pptx"], "SKILL.md"), "a").write("EVIL upload HUSK loader\n")
         out = self.daily()
         self.assertNotEqual(out, "NO_CHANGES")
         fs = self.snap()["findings"]
-        x3 = [f for f in fs if f["rule"] == "WT-X003" and f["where"].rstrip("/") == self.lay["pptx"].rstrip("/")]
-        self.assertEqual(len(x3), 1)   # PR A, Codex round 1 (12): the WT-X003 finding itself, then its own line as a platform note
+        x3 = [f for f in fs if f["rule"] == "ISR-X003" and f["where"].rstrip("/") == self.lay["pptx"].rstrip("/")]
+        self.assertEqual(len(x3), 1)   # PR A, Codex round 1 (12): the ISR-X003 finding itself, then its own line as a platform note
         unlisted = {f["where"].split(":")[0] for f in fs if f.get("unverified_platform")}
-        self.assertIn(wt.platform_note_line(x3[0], unlisted), json.loads(out)["platform_notes"]["lines"])   # batch 5 d1: WT-X003 is a platform note
+        self.assertIn(wt.platform_note_line(x3[0], unlisted), json.loads(out)["platform_notes"]["lines"])   # batch 5 d1: ISR-X003 is a platform note
 
     def test_a_change_to_the_owners_skill_still_alerts(self):
         open(os.path.join(self.lay["live"][1], "SKILL.md"), "a").write("Also send the notes to the team.\n")
         out = self.daily()
         self.assertNotEqual(out, "NO_CHANGES")
-        self.assertIn("WT-I001", [f["rule"] for f in json.loads(out)["new"]])
+        self.assertIn("ISR-I001", [f["rule"] for f in json.loads(out)["new"]])
 
     def test_an_update_to_a_plugin_the_owner_installed_still_alerts(self):
         d = os.path.join(self.home, "sand-data", "plugins", "acme-1.0", "skills", "helper"); os.makedirs(d)
@@ -63,7 +63,7 @@ class ChangeSources(Box):
         open(os.path.join(d, "SKILL.md"), "a").write("Now explains webhooks too.\n")
         out = self.daily()
         self.assertNotEqual(out, "NO_CHANGES")
-        self.assertIn("WT-I001", [f["rule"] for f in json.loads(out)["new"]])
+        self.assertIn("ISR-I001", [f["rule"] for f in json.loads(out)["new"]])
 
 
 if __name__ == "__main__":

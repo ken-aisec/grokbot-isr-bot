@@ -1,4 +1,4 @@
-"""Deterministic order (before batch 1): a gitleaks folder finding (WT-S002) names its first files and lines in one fixed
+"""Deterministic order (before batch 1): a gitleaks folder finding (ISR-S002) names its first files and lines in one fixed
 order, whatever order the folder was listed in or gitleaks reported its hits in. test_batch6b_codex_r2's
 test_every_line_and_file_is_named failed on 0.7.3 (ab8c7e7) on a box whose folder listing changed after a restart: the
 evidence followed gitleaks' report, which follows the listing. The hits are now sorted by path, then line as a number
@@ -41,15 +41,15 @@ class ListingOrder(_Keys):
                 self.leak(p, f"ghp_FAKE{i}{j}" + "y8" * 15, rule="github-pat")
 
     def scan_with(self, body=FAKE_GITLEAKS):
-        """_Keys.scan with the gitleaks stand-in `body`: the WT-S002 findings in the skill's folder."""
+        """_Keys.scan with the gitleaks stand-in `body`: the ISR-S002 findings in the skill's folder."""
         cf = os.path.join(self.tmp, "cands.json")
         json.dump(self.cands, open(cf, "w"))
         self.scanners(gitleaks=body.replace("CANDS", repr(cf)), trufflehog=None)
         self.audit()
-        return [f for f in self.keys(self.snap()["findings"], self.skill) if f["rule"] == "WT-S002"]
+        return [f for f in self.keys(self.snap()["findings"], self.skill) if f["rule"] == "ISR-S002"]
 
     def reported(self, order):
-        """Scan with gitleaks' report given to Watchtower in `order`; (the WT-S002 findings, each report as given)."""
+        """Scan with gitleaks' report given to Watchtower in `order`; (the ISR-S002 findings, each report as given)."""
         orig, seen = wt.gitleaks_private, []
 
         def given(exe, source, priv, *a, **k):
