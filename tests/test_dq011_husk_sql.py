@@ -6,7 +6,8 @@ Line 60 is a chat message; "update" is not SQL. The same skill's store.py really
 import json, os, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, SCANNERS, wt  # noqa: E402
+from test_boxes import Box, SCANNERS  # noqa: E402
+import isr  # noqa: E402
 
 WATCHLIST_60 = '        return f"📰 *topic-digest update: {topic}*\\n{new} new, {updated} updated"'
 MSG_RETURN = ("'scripts/watchlist.py': Line 60: an f-string containing a SQL keyword and an interpolated value is returned from a function "
@@ -42,7 +43,7 @@ class FakeHusk(Box):
     def test_a_chat_message_with_the_word_update_is_not_sql(self):
         d = self.skill("topic-digest", {"scripts/watchlist.py": self.watchlist()})
         self.scanners(husk=self.husk({"topic-digest": [MSG_RETURN]})); self.audit()
-        cache = wt.load_json(wt.state_path("engine_cache.json"), {})
+        cache = isr.load_json(isr.state_path("engine_cache.json"), {})
         self.assertEqual(cache[d]["hk"], [MSG_RETURN])          # husk really ran and said it; the answer is kept as husk gave it
         self.assertEqual(self.engine_rules(d), [])               # v0.6.7: ISR-X002 "husk flagged this skill"
 
@@ -68,9 +69,9 @@ class FakeHusk(Box):
         self.assertIn("ISR-X002", [r for r, _ in self.engine_rules(d)])
 
     def test_a_message_without_file_and_line_is_kept(self):
-        self.assertEqual(wt.husk_messages_that_count("/nowhere", ["obfuscated loader", "flagged (3 issues)"]),
+        self.assertEqual(isr.husk_messages_that_count("/nowhere", ["obfuscated loader", "flagged (3 issues)"]),
                          ["obfuscated loader", "flagged (3 issues)"])
-        self.assertEqual(wt.husk_messages_that_count("/nowhere", [MSG_RETURN]), [MSG_RETURN])   # can't read the line: keep it
+        self.assertEqual(isr.husk_messages_that_count("/nowhere", [MSG_RETURN]), [MSG_RETURN])   # can't read the line: keep it
 
 
 if __name__ == "__main__":

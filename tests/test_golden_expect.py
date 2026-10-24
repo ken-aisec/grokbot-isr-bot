@@ -596,7 +596,7 @@ class SubstKind(unittest.TestCase):
 class StepZero(unittest.TestCase):
     """Without --expect the byte comparison runs exactly as for the split; with it, only compile and loader checks."""
     def setUp(self):
-        self.tmp = tempfile.mkdtemp(prefix="wt-golden-expect-")
+        self.tmp = tempfile.mkdtemp(prefix="isr-bot-golden-expect-")
         self.addCleanup(shutil.rmtree, self.tmp, True)
         os.makedirs(os.path.join(self.tmp, "isr_bot", "isr_parts"))
         with open(os.path.join(self.tmp, "isr_bot", "isr.py"), "wb") as f:
@@ -639,7 +639,7 @@ class StepZero(unittest.TestCase):
 class Script(unittest.TestCase):
     """scripts/golden-check.sh from a copy with stub git and python3 (as test_golden_harness.H3)."""
     def setUp(self):
-        self.tmp = tempfile.mkdtemp(prefix="wt-golden-expect-sh-")
+        self.tmp = tempfile.mkdtemp(prefix="isr-bot-golden-expect-sh-")
         self.addCleanup(shutil.rmtree, self.tmp, True)
         for d in ("scripts", "bin"):
             os.makedirs(os.path.join(self.tmp, d))

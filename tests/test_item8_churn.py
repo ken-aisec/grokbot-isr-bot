@@ -30,7 +30,8 @@ lock stashed) by reaching an assertion.
 import hashlib, os, re, shlex, subprocess, sys, unittest, uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt  # noqa: E402
+from test_boxes import Box  # noqa: E402
+import isr  # noqa: E402
 from test_item8_provenance import CLEAN, LEAKS, put  # noqa: E402
 from test_isr_bot import fake_key  # noqa: E402
 import profiles  # noqa: E402
@@ -119,7 +120,7 @@ class _Churn(Box):
     def start(self):
         self.scanners()
         self.audit()
-        self.assertEqual(wt.load_baseline()[1], "ok")
+        self.assertEqual(isr.load_baseline()[1], "ok")
 
     def daily(self):
         return self.run_cmd("daily", "--roots", *self.roots)[1].strip()
@@ -128,7 +129,7 @@ class _Churn(Box):
         return [f for f in self.snap()["findings"] if f["where"] == path]
 
     def counted_high(self, path):
-        return [f for f in self.at(path) if f["rule"] in ("ISR-I001", "ISR-I002") and f["severity"] == "high" and wt.counts(f)]
+        return [f for f in self.at(path) if f["rule"] in ("ISR-I001", "ISR-I002") and f["severity"] == "high" and isr.counts(f)]
 
     def unverified(self):
         return sorted(f["where"] for f in self.snap()["findings"] if f.get("unverified_platform"))
@@ -170,7 +171,7 @@ class FillCommand(Box):
             listed = {l.split("  ", 1)[1] for l in f.read().splitlines() if l}
         self.assertEqual(listed, {rel for rel, keep in files.items() if keep})
         for rel, keep in files.items():                                         # the same answer as isr.py's rule, file by file
-            self.assertEqual(wt.platform_churn_file(os.path.join(self.home, rel)), not keep, rel)
+            self.assertEqual(isr.platform_churn_file(os.path.join(self.home, rel)), not keep, rel)
 
     def fill(self):
         out = os.path.join(self.tmp, "filled.lock")
@@ -180,7 +181,7 @@ class FillCommand(Box):
         with open(out) as f:
             return {l.split("  ", 1)[1] for l in f.read().splitlines() if l}
 
-    def test_a_the_fill_and_wt_agree_beside_a_skill_md_on_hardlinks_and_through_a_linked_folder(self):
+    def test_a_the_fill_and_isr_py_agree_beside_a_skill_md_on_hardlinks_and_through_a_linked_folder(self):
         """lock-trim round 1 (medium): 7d906ca's fill skipped a cache.json beside a SKILL.md that its isr.py kept (so no lock line
         could clear it), and its isr.py skipped hardlinked and linked-folder aliases. Fill and isr.py give one answer per file."""
         h = lambda rel: os.path.join(self.home, rel)
@@ -206,7 +207,7 @@ class FillCommand(Box):
         self.assertEqual(os.stat(h(f"{SYNCED}/.bucket-{BUCKET2}")).st_nlink, 2)
         self.assertEqual(self.fill(), {rel for rel, keep in files.items() if keep})
         for rel, keep in files.items():
-            self.assertEqual(wt.platform_churn_file(h(rel)), not keep, rel)
+            self.assertEqual(isr.platform_churn_file(h(rel)), not keep, rel)
 
     def test_b_the_header_rule_is_platform_churn(self):
         text = read_lock()
@@ -214,20 +215,20 @@ class FillCommand(Box):
         self.assertIsNotNone(rx, "no -regex in the fill command")
         self.assertIn("PLATFORM_CHURN", text)
         self.assertIn("! -perm /111", fill_command(text))
-        self.assertEqual(rx, wt.PLATFORM_CHURN.pattern)
+        self.assertEqual(rx, isr.PLATFORM_CHURN.pattern)
         for rel in CHURN + REMOVED:
-            self.assertTrue(re.fullmatch(rx, rel) and wt.platform_churn(rel), rel)
+            self.assertTrue(re.fullmatch(rx, rel) and isr.platform_churn(rel), rel)
         for rel in (".grok/bundled/manifest.json", "sand-data/managed-skills/pdf/cache.json", f"{SYNCED}/{BUCKET}/build/x.meta.json",
                     f"{SYNCED}/notabucket/manifest.json", f"{SYNCED}/.bucket-{BUCKET}/x", "sand-data/managed-skills/cache.json.py",
                     f"{SYNCED}/{BUCKET}/SKILL.md", "x/sand-data/managed-skills/cache.json"):
-            self.assertFalse(re.fullmatch(rx, rel) or wt.platform_churn(rel), rel)
+            self.assertFalse(re.fullmatch(rx, rel) or isr.platform_churn(rel), rel)
 
     def test_b_the_plugin_loaders_files_are_not_bookkeeping(self):
         """lock-trim round 1 (high): Claude's plugin loader reads a bucket's *.meta.json (installation_preference "required"
         enables a plugin the user disabled), manifest.json (name and generation pick the plugin folders) and .marketplaces.json."""
         rx = header_regex(read_lock())
         for rel in LOADER + tuple(RESTORED) + (f"{SYNCED}/{BUCKET}/x.meta.json",):
-            self.assertFalse(re.fullmatch(rx, rel) or wt.platform_churn(rel), rel)
+            self.assertFalse(re.fullmatch(rx, rel) or isr.platform_churn(rel), rel)
 
 
 class SyncIsQuiet(_Churn):
@@ -256,20 +257,20 @@ class SyncIsQuiet(_Churn):
             self.assertEqual(self.at(p), [], p)
 
     def test_c_bookkeeping_is_not_counted_in_the_walk_limit(self):
-        saved = wt.PLATFORM_WALK_MAX_FILES
-        wt.PLATFORM_WALK_MAX_FILES = 4                                          # pdf, prime and the two caches; the marker doesn't count
+        saved = isr.PLATFORM_WALK_MAX_FILES
+        isr.PLATFORM_WALK_MAX_FILES = 4                                          # pdf, prime and the two caches; the marker doesn't count
         try:
             self.start()
             self.assertFalse([f for f in self.snap()["findings"] if f["rule"] == "ISR-I011"])
             self.assertEqual(self.unverified(), [])
         finally:
-            wt.PLATFORM_WALK_MAX_FILES = saved
+            isr.PLATFORM_WALK_MAX_FILES = saved
 
     def test_c_an_older_baselines_bookkeeping_lines_raise_nothing(self):
         self.start()
-        base = wt.load_baseline()[0]
+        base = isr.load_baseline()[0]
         base.update({p: "0" * 64 for p in self.churn})                          # as a baseline written before the rule held them
-        wt.save_json(wt.state_path("baseline.json"), base)
+        isr.save_json(isr.state_path("baseline.json"), base)
         self.audit()
         for p in self.churn:
             self.assertEqual(self.at(p), [], p)
@@ -280,7 +281,7 @@ class SyncIsQuiet(_Churn):
         self.sync(2)
         out = self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")[1]
         self.assertNotIn("Not approved by this", out)
-        self.assertFalse(set(self.churn) & set(wt.load_baseline()[0]))
+        self.assertFalse(set(self.churn) & set(isr.load_baseline()[0]))
 
     def test_c_a_rewritten_plugin_meta_manifest_or_marketplaces_file_is_the_quiet_line(self):
         """lock-trim round 1 (high): the plugin's own files unchanged and listed, only what the loader reads beside them changed.
@@ -301,7 +302,7 @@ class SyncIsQuiet(_Churn):
         self.assertEqual(self.unverified(), [])
         for p in loader:
             self.assertEqual(self.counted_high(p), [], p)
-            self.assertFalse(wt.platform_churn_file(p), p)
+            self.assertFalse(isr.platform_churn_file(p), p)
         for p in self.churn:                                                    # the bookkeeping stays quiet
             self.assertEqual(self.at(p), [], p)
 
@@ -313,7 +314,7 @@ class SyncIsQuiet(_Churn):
         self.audit()
         s = [f for f in self.snap()["findings"] if f["rule"] == "ISR-S002" and f["where"] == cache + ":1"]
         self.assertEqual(len(s), 1)
-        self.assertTrue(wt.counts(s[0]))
+        self.assertTrue(isr.counts(s[0]))
 
 
 class Lookalikes(_Churn):
@@ -324,7 +325,7 @@ class Lookalikes(_Churn):
         self.assertNotEqual(self.daily(), "NO_CHANGES")
         self.assertEqual(len(self.counted_high(loud)), 1, loud)
         self.assertEqual(self.unverified(), [loud])
-        self.assertFalse(wt.platform_churn_file(loud))
+        self.assertFalse(isr.platform_churn_file(loud))
 
     def test_d_a_link_named_cache_json_leading_to_a_skill_file_is_not_bookkeeping(self):
         self.start()
@@ -365,7 +366,7 @@ class Lookalikes(_Churn):
         self.assertEqual(self.daily(), "NO_CHANGES")
         self.assertEqual(self.at(self.caches[1]), [])
         self.assertEqual(self.unverified(), [])
-        self.assertFalse(wt.platform_churn_file(self.caches[1]))
+        self.assertFalse(isr.platform_churn_file(self.caches[1]))
         self.assertEqual(self.counted_high(md), [])
 
     def test_d_a_cache_json_hardlinked_to_the_other_cache_is_not_bookkeeping(self):
@@ -378,7 +379,7 @@ class Lookalikes(_Churn):
         self.assertEqual(self.unverified(), sorted(two))
         for p in two:
             self.assertEqual(len(self.counted_high(p)), 1, p)
-            self.assertFalse(wt.platform_churn_file(p), p)
+            self.assertFalse(isr.platform_churn_file(p), p)
         for p in self.caches:                                                   # listed, unchanged
             self.assertEqual(self.at(p), [], p)
 
@@ -397,11 +398,11 @@ class Lookalikes(_Churn):
         self.audit()
         self.assertEqual(self.counted_high(self.caches[1]), [])
         self.assertNotIn(self.caches[1], self.unverified())
-        self.assertFalse(wt.platform_churn_file(self.caches[1]))
+        self.assertFalse(isr.platform_churn_file(self.caches[1]))
         self.assertEqual(self.counted_high(self.caches[0]), [])
-        self.assertFalse(wt.platform_churn_file(self.caches[0]))
+        self.assertFalse(isr.platform_churn_file(self.caches[0]))
         self.assertEqual(self.at(self.churn[0]), [])
-        self.assertTrue(wt.platform_churn_file(self.churn[0]))
+        self.assertTrue(isr.platform_churn_file(self.churn[0]))
 
     def test_d_a_bucket_folder_linked_from_outside_the_home_folder_is_not_bookkeeping(self):
         outside = os.path.join(self.tmp, "elsewhere", BUCKET)
@@ -415,7 +416,7 @@ class Lookalikes(_Churn):
         m = os.path.join(bucket, "manifest.json")
         self.assertEqual(self.at(self.churn[0]), [])
         self.assertEqual(len(self.counted_high(m)), 1)
-        self.assertFalse(wt.platform_churn_file(m))
+        self.assertFalse(isr.platform_churn_file(m))
 
 
 class CacheIsProvenance(_Churn):
@@ -426,10 +427,10 @@ class CacheIsProvenance(_Churn):
     def test_f_the_managed_skills_caches_are_not_bookkeeping(self):
         rx = header_regex(read_lock())
         for rel in CACHES:
-            self.assertFalse(re.fullmatch(rx, rel) or wt.platform_churn(rel), rel)
+            self.assertFalse(re.fullmatch(rx, rel) or isr.platform_churn(rel), rel)
         for p in self.caches:
-            self.assertFalse(wt.platform_churn_file(p), p)
-        self.assertTrue(wt.platform_churn_file(self.churn[0]))                 # the marker still is
+            self.assertFalse(isr.platform_churn_file(p), p)
+        self.assertTrue(isr.platform_churn_file(self.churn[0]))                 # the marker still is
 
     def test_f_a_rewritten_cache_is_the_quiet_line_with_its_skill_md_unchanged(self):
         self.start()
@@ -468,20 +469,20 @@ class FillClears(Box):
         rels = self.build(home)
         lines = run_fill(self, home, self.platform_lock)
         listed = {rel for rel, _ in lines}
-        self.assertEqual(wt.platform_lock_problem(), "")
+        self.assertEqual(isr.platform_lock_problem(), "")
         for rel in sorted(rels, key=lambda r: "/.bucket-" not in r):            # the marker first: the one bookkeeping file
-            self.assertEqual(rel in listed, not wt.platform_churn_file(os.path.join(home, rel)), rel)
+            self.assertEqual(rel in listed, not isr.platform_churn_file(os.path.join(home, rel)), rel)
         for rel in CACHES:                                                      # the canonical cache and its alias
             self.assertIn(rel, listed)
         for rel, h in lines:
             p = os.path.join(home, rel)
             for q in (p, os.path.realpath(p)) if real_too else (p,):
-                self.assertTrue(wt.platform_listed(q, h), q)
-        walked = wt.platform_inventory([home])[0]
+                self.assertTrue(isr.platform_listed(q, h), q)
+        walked = isr.platform_inventory([home])[0]
         self.assertTrue(walked)
         for p in walked:
             with open(p, "rb") as f:
-                self.assertTrue(wt.platform_listed(p, hashlib.sha256(f.read()).hexdigest()), p)
+                self.assertTrue(isr.platform_listed(p, hashlib.sha256(f.read()).hexdigest()), p)
         self.assertNotIn(os.path.join(home, f"{SYNCED}/.bucket-{BUCKET}"), walked)
         return listed
 
@@ -499,27 +500,27 @@ class FillClears(Box):
         os.environ["HOME"] = nested                                            # Box.tearDown puts HOME back
         listed = self.check(nested, real_too=False)
         self.assertNotIn(f"{SYNCED}/.bucket-{BUCKET}", listed)
-        self.assertTrue(wt.platform_churn_file(os.path.join(nested, f"{SYNCED}/.bucket-{BUCKET}")))
-        self.assertTrue(wt.platform_churn_file(os.path.join(self.home, f"{SYNCED}/.bucket-{BUCKET}")))
+        self.assertTrue(isr.platform_churn_file(os.path.join(nested, f"{SYNCED}/.bucket-{BUCKET}")))
+        self.assertTrue(isr.platform_churn_file(os.path.join(self.home, f"{SYNCED}/.bucket-{BUCKET}")))
 
     def test_g_a_home_folder_inside_the_box_home_gets_one_answer(self):
-        """Codex's case: HOME=<box>/nested-home, a plain folder, with wt.BOX_HOME at <box> (the second home base). bda2790 has no
+        """Codex's case: HOME=<box>/nested-home, a plain folder, with isr.BOX_HOME at <box> (the second home base). bda2790 has no
         BOX_HOME to point at a test folder, so there this fails only at the caches (the round 2 high);
         test_g_a_home_folder_linked_inside_itself reaches the nested-home disagreement there."""
-        saved = getattr(wt, "BOX_HOME", None)
+        saved = getattr(isr, "BOX_HOME", None)
         nested = os.path.join(self.home, "nested-home")
         os.makedirs(nested)
-        wt.BOX_HOME = self.home
+        isr.BOX_HOME = self.home
         os.environ["HOME"] = nested                                            # Box.tearDown puts HOME back
         try:
             listed = self.check(nested)
             self.assertNotIn(f"{SYNCED}/.bucket-{BUCKET}", listed)
-            self.assertTrue(wt.platform_churn_file(os.path.join(nested, f"{SYNCED}/.bucket-{BUCKET}")))
+            self.assertTrue(isr.platform_churn_file(os.path.join(nested, f"{SYNCED}/.bucket-{BUCKET}")))
         finally:
             if saved is None:
-                vars(wt).pop("BOX_HOME", None)
+                vars(isr).pop("BOX_HOME", None)
             else:
-                wt.BOX_HOME = saved
+                isr.BOX_HOME = saved
 
 
 class Lock(unittest.TestCase):
@@ -532,7 +533,7 @@ class Lock(unittest.TestCase):
         rels = self.entries()
         self.assertTrue(rels)
         self.assertFalse(set(REMOVED) & set(rels))
-        self.assertEqual([r for r in rels if wt.platform_churn(r)], [])
+        self.assertEqual([r for r in rels if isr.platform_churn(r)], [])
         self.assertIn(".grok/bundled/manifest.json", rels)                     # release content stays listed
 
     def test_e_the_lock_lists_both_managed_skills_caches(self):
@@ -570,7 +571,7 @@ class Lock(unittest.TestCase):
         text = read_lock()
         self.assertFalse(re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", text))
         rels = self.entries()
-        self.assertFalse([r for r in rels if re.match(rf"{re.escape(SYNCED)}/{wt._SYNC_BUCKET}/", r)])
+        self.assertFalse([r for r in rels if re.match(rf"{re.escape(SYNCED)}/{isr._SYNC_BUCKET}/", r)])
         synced = [r for r in rels if r.startswith(f"{SYNCED}/")]
         self.assertEqual(len([r for r in synced if r.startswith(f"{SYNCED}/<bucket>/")]), 13)
         self.assertEqual([r for r in synced if r not in RESTORED and not r.startswith(f"{SYNCED}/<bucket>/cowork-plugin-management/")], [])
@@ -588,17 +589,17 @@ class Placeholder(_Churn):
         p = self.bucket2("manifest.json")
         put(p, '{"name": "cowork-plugin-management", "generation": 1}\n')
         with open(self.platform_lock, "a") as f:
-            f.write(f"{wt.sha256_file(p)}  {SYNCED}/<bucket>/manifest.json\n")
+            f.write(f"{isr.sha256_file(p)}  {SYNCED}/<bucket>/manifest.json\n")
         return p
 
     def test_placeholder_matches_any_bucket_pair(self):
         """b8i4: f7c28e6 reads `<bucket>` as a folder name, so the file in a fresh bucket isn't listed."""
         p = self.listed_manifest()
-        self.assertEqual(wt.platform_lock_problem(), "")
-        self.assertTrue(wt.platform_listed(p, wt.sha256_file(p)))
+        self.assertEqual(isr.platform_lock_problem(), "")
+        self.assertTrue(isr.platform_listed(p, isr.sha256_file(p)))
         self.start()
         self.assertEqual(self.at(p), [])
-        self.assertEqual(wt.load_baseline()[0].get(p), wt.sha256_file(p))
+        self.assertEqual(isr.load_baseline()[0].get(p), isr.sha256_file(p))
 
     def test_placeholder_other_file_is_high(self):
         self.listed_manifest()
@@ -607,7 +608,7 @@ class Placeholder(_Churn):
         put(run, "echo hi\n")
         self.audit()
         self.assertEqual(len(self.counted_high(run)), 1)
-        self.assertNotIn(run, wt.load_baseline()[0])
+        self.assertNotIn(run, isr.load_baseline()[0])
 
     def test_placeholder_changed_bytes_get_middle_path(self):
         """b8i4: a clean rewrite at a `<bucket>` path is the quiet line (f7c28e6: a counted high)."""
@@ -631,8 +632,8 @@ class Placeholder(_Churn):
         p = self.h(f"{SYNCED}/not-a-bucket/manifest.json")
         put(p, '{"name": "cowork-plugin-management", "generation": 1}\n')
         with open(self.platform_lock, "a") as f:
-            f.write(f"{wt.sha256_file(p)}  {SYNCED}/<bucket>/manifest.json\n")
-        self.assertFalse(wt.platform_listed(p, wt.sha256_file(p)))
+            f.write(f"{isr.sha256_file(p)}  {SYNCED}/<bucket>/manifest.json\n")
+        self.assertFalse(isr.platform_listed(p, isr.sha256_file(p)))
         self.start()
         self.assertEqual(len(self.counted_high(p)), 1)
 
@@ -641,7 +642,7 @@ class Placeholder(_Churn):
         h = "0" * 64
         for rel in (".grok/bundled/<bucket>/SKILL.md", f"{SYNCED}/<Bucket>/manifest.json", f"{SYNCED}/x/<bucket>/y",
                     f"{SYNCED}/<bucket>", f"{SYNCED}/<bucket>/a<b>/c"):
-            lock, why, _ = wt._parse_platform_lock(f"{h}  {rel}\n".encode())
+            lock, why, _ = isr._parse_platform_lock(f"{h}  {rel}\n".encode())
             self.assertIn("line 1", why, rel)
             self.assertEqual(lock, {}, rel)
 

@@ -14,7 +14,7 @@ W = os.path.join(ROOT, "isr_bot")
 ISR_PY = os.path.join(W, "isr.py")
 PARTS = os.path.join(W, "isr_parts")
 sys.path.insert(0, W)
-import isr as wt  # noqa: E402
+import isr  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from golden_split import BANNER, CALL, lines_of, read  # noqa: E402  (the reassembly the golden check uses)
 from golden_split import reassemble as _reassemble  # noqa: E402
@@ -109,10 +109,10 @@ HAS_PARTS = bool(part_calls())
 
 class _Tmp(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.mkdtemp(prefix="wt-split-guard-")
+        self.tmp = tempfile.mkdtemp(prefix="isr-bot-split-guard-")
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        self.home = os.path.join(self.tmp, "wt")
-        for d in ("home", "decoys", "t", "wt"):
+        self.home = os.path.join(self.tmp, "isr_home")
+        for d in ("home", "decoys", "t", "isr_home"):
             os.makedirs(os.path.join(self.tmp, d), exist_ok=True)
         # built from scratch, so no PYTHONDONTWRITEBYTECODE from the suite's own environment
         self.env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": os.path.join(self.tmp, "home"), "ISR_BOT_HOME": self.home,
@@ -147,10 +147,10 @@ class _Tmp(unittest.TestCase):
 
 
 class G01SharedGlobals(unittest.TestCase):
-    def test_every_function_runs_in_wt_namespace(self):
-        """D1: a monkeypatch of wt.X, `wt.X = ...` and `global X` reach every caller only while every function and method from
-        isr.py and its parts has vars(wt) as its globals."""
-        g = vars(wt)
+    def test_every_function_runs_in_isr_py_namespace(self):
+        """D1: a monkeypatch of isr.X, `isr.X = ...` and `global X` reach every caller only while every function and method from
+        isr.py and its parts has vars(isr) as its globals."""
+        g = vars(isr)
         files = {os.path.realpath(ISR_PY)} | {os.path.realpath(os.path.join(PARTS, n + ".py")) for n in part_files()}
         seen = {}
         for name, v in list(g.items()):
@@ -163,7 +163,7 @@ class G01SharedGlobals(unittest.TestCase):
         for n in part_files():
             p = os.path.join(PARTS, n + ".py")
             if any(isinstance(s, (ast.FunctionDef, ast.ClassDef)) for s in ast.parse(read(p)).body):
-                self.assertTrue(seen.get(os.path.realpath(p)), f"no function of {n}.py is in wt's namespace")
+                self.assertTrue(seen.get(os.path.realpath(p)), f"no function of {n}.py is in isr.py's namespace")
         self.assertTrue(seen.get(os.path.realpath(ISR_PY)))
 
 
@@ -183,7 +183,7 @@ class G02PartsList(unittest.TestCase):
         self.assertEqual(len(anywhere), len(calls))
         spy = ("import builtins, collections, json, sys\nseen = collections.Counter(); real = builtins.compile\n"
                "def spy(src, fn, *a, **k):\n    seen[fn] += 1\n    return real(src, fn, *a, **k)\n"
-               "builtins.compile = spy\nsys.path.insert(0, sys.argv[1])\nimport isr as wt\nbuiltins.compile = real\n"
+               "builtins.compile = spy\nsys.path.insert(0, sys.argv[1])\nimport isr\nbuiltins.compile = real\n"
                "print(json.dumps(seen))\n")
         p = subprocess.run([sys.executable, "-I", "-B", "-c", spy, W], capture_output=True, text=True, timeout=60)
         self.assertEqual(p.returncode, 0, p.stderr)
@@ -242,7 +242,7 @@ class G04HeaderNames(unittest.TestCase):
             r = subprocess.run([sys.executable, "-I", "-", p], input=walker, capture_output=True, text=True, timeout=30)
             self.assertEqual(r.stdout.strip(), "0", f"publish.sh counts VERSION in {n}.py")
         r = subprocess.run([sys.executable, "-I", "-", ISR_PY], input=walker, capture_output=True, text=True, timeout=30)
-        self.assertEqual(r.stdout.strip(), f"1 {wt.VERSION}")
+        self.assertEqual(r.stdout.strip(), f"1 {isr.VERSION}")
 
 
 class G05DefinitionOrder(unittest.TestCase):
@@ -273,10 +273,10 @@ class G06SourceChecksOnEveryPart(unittest.TestCase):
 
 class G07Paths(unittest.TestCase):
     def test_paths_resolve_to_the_checkouts_own_files(self):
-        probe = ("import json, os, sys\nsys.path.insert(0, sys.argv[1])\nimport isr as wt\n"
-                 "print(json.dumps({k: os.path.realpath(v) for k, v in {'file': wt.__file__, 'here': wt.HERE, 'root': wt.SELF_ROOT,"
-                 " 'rules': wt.RULES_PATH, 'platform': wt.PLATFORM_LOCK, 'scanners': wt.SCANNER_LOCK, 'feeds': wt.FEEDS_PATH,"
-                 " 'reader': os.path.join(wt.HERE, '..', wt.LOCK_READER_REL), 'parts': wt._ISR_PARTS}.items()}))\n")
+        probe = ("import json, os, sys\nsys.path.insert(0, sys.argv[1])\nimport isr\n"
+                 "print(json.dumps({k: os.path.realpath(v) for k, v in {'file': isr.__file__, 'here': isr.HERE, 'root': isr.SELF_ROOT,"
+                 " 'rules': isr.RULES_PATH, 'platform': isr.PLATFORM_LOCK, 'scanners': isr.SCANNER_LOCK, 'feeds': isr.FEEDS_PATH,"
+                 " 'reader': os.path.join(isr.HERE, '..', isr.LOCK_READER_REL), 'parts': isr._ISR_PARTS}.items()}))\n")
         p = subprocess.run([sys.executable, "-I", "-B", "-c", probe, W], capture_output=True, text=True, timeout=60)
         self.assertEqual(p.returncode, 0, p.stderr)
         got = json.loads(p.stdout)
@@ -303,7 +303,7 @@ class G08HostileFolder(_Tmp):
                 f.write(plant)
         self.env["PYTHONPATH"] = cwd                                            # -I ignores it
         p = self.run_py(ISR_PY, "--version", cwd=cwd)
-        self.assertEqual((p.returncode, p.stdout, p.stderr), (0, wt.VERSION + "\n", ""))
+        self.assertEqual((p.returncode, p.stdout, p.stderr), (0, isr.VERSION + "\n", ""))
         p = self.run_py(ISR_PY, "vet", os.path.join(ROOT, "tests", "fixtures", "clean", "meeting-notes", "SKILL.md"), "--json", cwd=cwd)
         self.assertNotIn("Traceback", p.stderr)
         json.loads(p.stdout)
@@ -319,7 +319,7 @@ class G09InstalledCopy(_Tmp):
             self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
             self.assertNotIn("SELF-CHECK FAILED", p.stdout + p.stderr)
             p = self.run_py(os.path.join(app, "isr_bot", "isr.py"), "--version", isolated=isolated)
-            self.assertEqual((p.returncode, p.stdout), (0, wt.VERSION + "\n"))
+            self.assertEqual((p.returncode, p.stdout), (0, isr.VERSION + "\n"))
         self.assertEqual(self.caches(app), [])
 
 
@@ -333,7 +333,7 @@ class G10TamperedPart(_Tmp):
         p = self.run_py(os.path.join(app, "isr_bot", "isr.py"), "--version")
         self.assertEqual(p.returncode, 4, p.stdout)
         self.assertIn("SELF-CHECK FAILED", p.stdout); self.assertIn("1 problem (", p.stdout)
-        self.assertNotIn(wt.VERSION + "\n", p.stdout)
+        self.assertNotIn(isr.VERSION + "\n", p.stdout)
         p = self.run_py(os.path.join(app, "isr_bot", "isr.py"), "status")
         self.assertEqual(p.returncode, 4, p.stdout)
         self.assertIn(f"isr_bot/isr_parts/{n}.py changed since install", p.stdout)
@@ -405,7 +405,7 @@ class G12MissingOrOddPart(_Tmp):
                     with open(p, "wb") as f:
                         f.write(good)
             p2 = self.run_py(os.path.join(dev, "isr_bot", "isr.py"), "--version")
-            self.assertEqual(p2.stdout, wt.VERSION + "\n")
+            self.assertEqual(p2.stdout, isr.VERSION + "\n")
 
 
 @unittest.skipUnless(HAS_PARTS, "no parts yet")
@@ -438,7 +438,7 @@ class G14Reassembly(unittest.TestCase):
         names = set()
         for s in tree.body:
             names |= bound_names(s)
-        probe = "import json, sys\nsys.path.insert(0, sys.argv[1])\nimport isr as wt\nprint(json.dumps(sorted(vars(wt))))\n"
+        probe = "import json, sys\nsys.path.insert(0, sys.argv[1])\nimport isr\nprint(json.dumps(sorted(vars(isr))))\n"
         p = subprocess.run([sys.executable, "-I", "-B", "-c", probe, W], capture_output=True, text=True, timeout=60)
         self.assertEqual(p.returncode, 0, p.stderr)
         live = set(json.loads(p.stdout)) - DUNDERS
@@ -457,7 +457,7 @@ class G15DoctorFrames(unittest.TestCase):
                 '  File "/usr/lib/python3.13/json/__init__.py", line 293, in load\n    z()\n'
                 '  File "/home/box/acme-payroll/helper.py", line 7, in salaries\n    w()\n'
                 "RuntimeError: /home/box/acme-payroll/salaries-2026.csv\n")
-        d = wt.shareable_error(text)
+        d = isr.shareable_error(text)
         self.assertEqual(d["where"], ["isr.py line 120 in main", "isr_parts/engines.py line 5 in engine_findings"])
         self.assertEqual(d["error_type"], "RuntimeError")
         self.assertNotIn("acme-payroll", json.dumps(d))
@@ -469,21 +469,21 @@ class G15DoctorFrames(unittest.TestCase):
 
         def boom():
             raise RuntimeError("private /home/box/acme-payroll")
-        with mock.patch.object(wt, "home", boom):
+        with mock.patch.object(isr, "home", boom):
             try:
-                wt.state_path("x")
+                isr.state_path("x")
             except RuntimeError:
                 text = "2026-10-18T10:00:00 isr.py status (v0.7.1)\n" + traceback.format_exc()
         frame = [ln for ln in text.splitlines() if "isr_parts/state.py" in ln]
         self.assertEqual(len(frame), 1, text)
         n = re.search(r"line (\d+), in state_path", frame[0]).group(1)
-        self.assertEqual(wt.shareable_error(text)["where"], [f"isr_parts/state.py line {n} in state_path"])
+        self.assertEqual(isr.shareable_error(text)["where"], [f"isr_parts/state.py line {n} in state_path"])
 
 
 class G16NoModuleImport(unittest.TestCase):
     def test_parts_are_never_modules(self):
         self.assertEqual([m for m in sys.modules if "isr_parts" in m], [])
-        probe = ("import json, sys\nsys.path.insert(0, sys.argv[1])\nimport isr as wt\n"
+        probe = ("import json, sys\nsys.path.insert(0, sys.argv[1])\nimport isr\n"
                  "print(json.dumps([m for m in sys.modules if 'isr_parts' in m or m in sys.argv[2:]]))\n")
         p = subprocess.run([sys.executable, "-I", "-B", "-c", probe, W, *part_calls()], capture_output=True, text=True, timeout=60)
         self.assertEqual((p.returncode, json.loads(p.stdout or "null")), (0, []), p.stderr)

@@ -15,7 +15,8 @@ trim and the missing why_it_dropped seen in that run are logged as the next batc
 import json, os, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import wt  # noqa: E402
+import test_boxes  # noqa: E402
+import isr  # noqa: E402
 from test_item8_provenance import CLEAN, add, put  # noqa: E402
 from test_b8i4_middle_path import _Middle  # noqa: E402
 import profiles  # noqa: E402
@@ -82,7 +83,7 @@ class DQ048VendorPlatformUpdate(_Middle):
         for p in every:
             self.assertEqual(self.counted_high(p), [], p)
             self.assertNotIn(p, self.unverified(), p)
-        self.assertEqual(self.snap_counts()["high"], high0, [(f["rule"], f["where"]) for f in after["findings"] if f["severity"] == "high" and wt.counts(f)])
+        self.assertEqual(self.snap_counts()["high"], high0, [(f["rule"], f["where"]) for f in after["findings"] if f["severity"] == "high" and isr.counts(f)])
         if daily_out is not None:
             self.assertEqual((daily_out.get("platform_unverified") or {}).get("open", 0), 0, daily_out.get("platform_unverified"))
         self.assertGreaterEqual(after["score"], before["score"], (before["score"], after["score"]))

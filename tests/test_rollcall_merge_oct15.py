@@ -9,7 +9,7 @@ from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
-import isr as wt  # noqa: E402
+import isr  # noqa: E402
 
 warnings.simplefilter("ignore", ResourceWarning)
 
@@ -60,7 +60,7 @@ class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.env = {k: os.environ.get(k) for k in ("ISR_BOT_HOME", "ISR_BOT_DECOY_ROOT")}
-        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "wt")
+        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "isr_home")
         os.environ["ISR_BOT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
 
     def tearDown(self):
@@ -72,24 +72,24 @@ class Base(unittest.TestCase):
         """A new, empty Watchtower home for the next subtest (inside setUp's folder, so tearDown removes it)."""
         os.environ["ISR_BOT_HOME"] = tempfile.mkdtemp(dir=self.tmp)
 
-    def run_wt(self, *argv, stdin=None):
+    def run_isr(self, *argv, stdin=None):
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err), mock.patch.object(sys, "stdin", io.StringIO(stdin or "")):
-            code = wt.main(list(argv))
+            code = isr.main(list(argv))
         return code, out.getvalue(), err.getvalue()
 
     def save(self, bot, reply):
-        code, o, _ = self.run_wt("rollcall", "--save", bot, stdin=reply if isinstance(reply, str) else json.dumps(reply))
+        code, o, _ = self.run_isr("rollcall", "--save", bot, stdin=reply if isinstance(reply, str) else json.dumps(reply))
         self.assertEqual(code, 0, o)
 
     def run_rollcall(self):
-        code, o, e = self.run_wt("rollcall", "--owner-said-yes")
+        code, o, e = self.run_isr("rollcall", "--owner-said-yes")
         self.assertEqual(code, 0, o + e)
-        self.assertEqual(os.listdir(wt.default_rollcall_dir()), [])          # raw replies gone after every run
+        self.assertEqual(os.listdir(isr.default_rollcall_dir()), [])          # raw replies gone after every run
         return json.loads(o)
 
     def state(self):
-        return load(wt.state_path("rollcall_findings.json"))
+        return load(isr.state_path("rollcall_findings.json"))
 
     def by_bot(self, rc):
         out = {}
@@ -99,15 +99,15 @@ class Base(unittest.TestCase):
 
     def seed(self, opened, bots=("bot-a",), shape_only=True, round_=None):
         """A findings file and round as an earlier run in the round opened at `opened` would have left them."""
-        wt.save_json(wt.state_path("rollcall_round.json"), {"opened": opened})
-        fs = [wt.finding("ISR-R013", "Bot says it sends or posts without asking", "medium", ["ASI02"], f"rollcall:{b}",
+        isr.save_json(isr.state_path("rollcall_round.json"), {"opened": opened})
+        fs = [isr.finding("ISR-R013", "Bot says it sends or posts without asking", "medium", ["ASI02"], f"rollcall:{b}",
                          "sends or posts without asking: yes (the Bot's own answer)", "Add Ask first.") for b in bots]
-        rc = {"at": opened, "masked": wt.VERSION, "bots": list(bots), "findings": fs, "round": opened if round_ is None else round_}
+        rc = {"at": opened, "masked": isr.VERSION, "bots": list(bots), "findings": fs, "round": opened if round_ is None else round_}
         if shape_only:
             rc["shape_only"] = True
-        wt.save_json(wt.state_path("rollcall_findings.json"), rc)
+        isr.save_json(isr.state_path("rollcall_findings.json"), rc)
 
-    def everything_watchtower_kept(self):
+    def everything_isr_bot_kept(self):
         blob = []
         for root, _, files in os.walk(os.environ["ISR_BOT_HOME"]):
             for fn in files:
@@ -120,7 +120,7 @@ class Base(unittest.TestCase):
 
 class Oct15Replay(Base):
     def test_a_late_reply_keeps_the_other_nine_bots(self):
-        self.run_wt("rollcall", "--question")
+        self.run_isr("rollcall", "--question")
         for b in BOTS:
             self.save(b, first_answer(b))
         self.run_rollcall()
@@ -142,24 +142,24 @@ class Oct15Replay(Base):
         self.assertEqual(out["bots"], ["bot-f"])                               # the output still describes this run
         self.assertEqual(sorted(out["earlier_bots_kept"]), sorted(b for b in BOTS if b != "bot-f"))
         self.assertEqual(rc["shape_only"], True)
-        self.assertEqual(rc["masked"], wt.VERSION)
+        self.assertEqual(rc["masked"], isr.VERSION)
 
     def test_asking_a_slow_bot_again_stays_in_the_same_round(self):
-        self.run_wt("rollcall", "--question")
-        opened = load(wt.state_path("rollcall_round.json"))["opened"]
+        self.run_isr("rollcall", "--question")
+        opened = load(isr.state_path("rollcall_round.json"))["opened"]
         for b in ("bot-a", "bot-b"):
             self.save(b, first_answer(b))
         self.run_rollcall()
-        code, o, _ = self.run_wt("rollcall", "--question")                     # re-ask bot-f
-        self.assertEqual(o.strip(), wt.ROLLCALL_PROMPT)                         # still exactly the question
-        self.assertEqual(load(wt.state_path("rollcall_round.json"))["opened"], opened)
+        code, o, _ = self.run_isr("rollcall", "--question")                     # re-ask bot-f
+        self.assertEqual(o.strip(), isr.ROLLCALL_PROMPT)                         # still exactly the question
+        self.assertEqual(load(isr.state_path("rollcall_round.json"))["opened"], opened)
         self.save("bot-f", first_answer("bot-f"))
         self.run_rollcall()
         self.assertEqual(sorted(self.state()["bots"]), ["bot-a", "bot-b", "bot-f"])
         self.assertEqual(self.state()["round"], opened)
 
     def test_a_valid_late_reply_replaces_that_bots_unparsed_one(self):
-        self.run_wt("rollcall", "--question")
+        self.run_isr("rollcall", "--question")
         self.save("bot-a", first_answer("bot-a"))
         self.save("bot-f", "Sure! Here is everything about me ...")         # not the asked JSON: ISR-R010
         self.run_rollcall()
@@ -173,7 +173,7 @@ class Oct15Replay(Base):
 
 class RoundBoundaries(Base):
     def test_a_new_roll_call_starts_fresh(self):
-        self.seed(iso(wt.ROLLCALL_ROUND_DAYS + 1))                              # last month's round has closed
+        self.seed(iso(isr.ROLLCALL_ROUND_DAYS + 1))                              # last month's round has closed
         self.save("bot-f", first_answer("bot-f"))                           # opens a new round
         self.run_rollcall()
         rc = self.state()
@@ -182,7 +182,7 @@ class RoundBoundaries(Base):
         self.assertNotEqual(rc["round"], None)
 
     def test_a_late_reply_inside_the_round_merges(self):
-        self.seed(iso(wt.ROLLCALL_ROUND_DAYS - 1))
+        self.seed(iso(isr.ROLLCALL_ROUND_DAYS - 1))
         self.save("bot-f", first_answer("bot-f"))
         self.run_rollcall()
         self.assertEqual(sorted(self.state()["bots"]), ["bot-a", "bot-f"])
@@ -201,23 +201,23 @@ class RoundBoundaries(Base):
 
     def test_a_garbled_or_future_round_counts_as_none(self):
         for opened in ("not a time", iso(-2), "2026-10-15T10:00:00"):        # garbled, in the future, no time zone
-            wt.save_json(wt.state_path("rollcall_round.json"), {"opened": opened})
-            self.assertIsNone(wt.current_rollcall_round(), opened)
+            isr.save_json(isr.state_path("rollcall_round.json"), {"opened": opened})
+            self.assertIsNone(isr.current_rollcall_round(), opened)
 
     def test_without_a_round_a_second_run_replaces_as_before(self):
-        rdir = wt.ensure_rollcall_dir()                                         # replies put in by hand, as in DQ-018
+        rdir = isr.ensure_rollcall_dir()                                         # replies put in by hand, as in DQ-018
         for b in ("bot-a", "bot-d"):
             dump(first_answer(b), os.path.join(rdir, b.lower() + ".json"))
         self.run_rollcall()
         dump(first_answer("bot-d"), os.path.join(rdir, "bot-d.json"))
         out = self.run_rollcall()
-        self.assertFalse(os.path.exists(wt.state_path("rollcall_round.json")))
+        self.assertFalse(os.path.exists(isr.state_path("rollcall_round.json")))
         self.assertEqual(self.state()["bots"], ["bot-d"])
         self.assertEqual(self.state()["round"], None)
         self.assertEqual(out["earlier_bots_kept"], [])
 
     def test_a_pruned_bot_does_not_come_back(self):
-        self.run_wt("rollcall", "--question")
+        self.run_isr("rollcall", "--question")
         for b in ("bot-a", "bot-b", "bot-f"):
             self.save(b, first_answer(b))
         self.run_rollcall()
@@ -225,7 +225,7 @@ class RoundBoundaries(Base):
         rp = os.path.join(exp, "roster.json")
         dump([{"name": "bot-b", "kind": "bot"}, {"name": "bot-f", "kind": "bot"}], rp)
         os.utime(rp, (time.time() + 5, time.time() + 5))                       # saved after the roll-call: bot-a was removed
-        rc, gone = wt.prune_removed_bots(wt.load_json(wt.state_path("rollcall_findings.json"), {}))
+        rc, gone = isr.prune_removed_bots(isr.load_json(isr.state_path("rollcall_findings.json"), {}))
         self.assertEqual(gone, ["bot-a"])
         self.save("bot-f", answer("bot-f", routine="Invoice chaser"))
         out = self.run_rollcall()
@@ -237,7 +237,7 @@ class RoundBoundaries(Base):
 
 class NothingSecretIsKept(Base):
     def test_no_reply_text_survives_a_merge(self):
-        self.run_wt("rollcall", "--question")
+        self.run_isr("rollcall", "--question")
         dump = dict(first_answer("bot-a"), memories=list(SECRETS), notes=SECRETS[0],
                     connectors=["Gmail", SECRETS[2]], routines=[{"name": "Pay", "trigger": "schedule", "instructions": SECRETS[1]}])
         self.save("bot-a", dump)
@@ -246,7 +246,7 @@ class NothingSecretIsKept(Base):
         self.save("bot-f", first_answer("bot-f"))
         o2 = self.run_rollcall()
         self.assertEqual(sorted(self.state()["bots"]), ["bot-a", "bot-b", "bot-f"])
-        kept, said = self.everything_watchtower_kept(), json.dumps([o1, o2])
+        kept, said = self.everything_isr_bot_kept(), json.dumps([o1, o2])
         for s in SECRETS:
             for part in (s, s.split()[-1]):
                 self.assertNotIn(part, kept)
@@ -257,32 +257,32 @@ class TheFileIsWrittenSafely(Base):
     def test_the_findings_file_keeps_its_mode(self):
         for mode in (0o600, 0o640):
             self.seed(iso(1))
-            os.chmod(wt.state_path("rollcall_findings.json"), mode)
+            os.chmod(isr.state_path("rollcall_findings.json"), mode)
             self.save("bot-f", first_answer("bot-f"))
             self.run_rollcall()
-            p = wt.state_path("rollcall_findings.json")
+            p = isr.state_path("rollcall_findings.json")
             self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), mode)
             self.assertEqual(sorted(self.state()["bots"]), ["bot-a", "bot-f"])
             self.assertEqual([f for f in os.listdir(os.path.dirname(p)) if f.endswith(".tmp")], [])
 
     def test_a_failed_write_leaves_the_old_file_whole(self):
-        p = wt.state_path("rollcall_findings.json")
-        wt.save_json(p, {"bots": ["bot-a"], "findings": []})
+        p = isr.state_path("rollcall_findings.json")
+        isr.save_json(p, {"bots": ["bot-a"], "findings": []})
         before = raw(p)
-        with mock.patch.object(wt.json, "dump", side_effect=RuntimeError("disk full")):
+        with mock.patch.object(isr.json, "dump", side_effect=RuntimeError("disk full")):
             with self.assertRaises(RuntimeError):
-                wt.save_json_keep_mode(p, {"bots": ["bot-f"], "findings": []})
+                isr.save_json_keep_mode(p, {"bots": ["bot-f"], "findings": []})
         self.assertEqual(raw(p), before)
         self.assertEqual([f for f in os.listdir(os.path.dirname(p)) if f.endswith(".tmp")], [])
 
     def test_a_link_in_place_of_the_file_is_replaced_not_followed(self):
         opened = iso(1)
-        wt.save_json(wt.state_path("rollcall_round.json"), {"opened": opened})
+        isr.save_json(isr.state_path("rollcall_round.json"), {"opened": opened})
         elsewhere = os.path.join(self.tmp, "elsewhere.json")
-        planted = {"at": opened, "round": opened, "masked": wt.VERSION, "shape_only": True, "bots": ["Mallory"], "findings": []}
+        planted = {"at": opened, "round": opened, "masked": isr.VERSION, "shape_only": True, "bots": ["Mallory"], "findings": []}
         dump(planted, elsewhere)
         before = raw(elsewhere)
-        p = wt.state_path("rollcall_findings.json")
+        p = isr.state_path("rollcall_findings.json")
         os.symlink(elsewhere, p)
         self.save("bot-f", first_answer("bot-f"))
         self.run_rollcall()
@@ -294,28 +294,28 @@ class TheFileIsWrittenSafely(Base):
 class MergeUnit(unittest.TestCase):
     def test_a_bot_name_with_a_colon_goes_to_the_right_bot(self):
         f = lambda where, bot: {"rule": "ISR-R013", "where": where, "evidence": "x", "key": where, "bot": bot}
-        prev = {"round": "R", "masked": wt.VERSION, "shape_only": True, "bots": ["bot-a", "bot-a:Ops"],
+        prev = {"round": "R", "masked": isr.VERSION, "shape_only": True, "bots": ["bot-a", "bot-a:Ops"],
                 "findings": [f("rollcall:bot-a", "bot-a"), f("rollcall:bot-a:memories", "bot-a"), f("rollcall:bot-a:Ops", "bot-a:Ops"),
                              f("rollcall:bot-a:Ops:routine:Pay", "bot-a:Ops")]}
-        rc = wt.merge_rollcall(prev, "R", [f("rollcall:bot-a", "bot-a")], ["bot-a"], ["bot-a"])
+        rc = isr.merge_rollcall(prev, "R", [f("rollcall:bot-a", "bot-a")], ["bot-a"], ["bot-a"])
         self.assertEqual([x["where"] for x in rc["findings"]], ["rollcall:bot-a:Ops", "rollcall:bot-a:Ops:routine:Pay", "rollcall:bot-a"])
         self.assertEqual(rc["bots"], ["bot-a:Ops", "bot-a"])
-        rc = wt.merge_rollcall(prev, "R", [], ["bot-a:Ops"], ["bot-a:Ops"])
+        rc = isr.merge_rollcall(prev, "R", [], ["bot-a:Ops"], ["bot-a:Ops"])
         self.assertEqual([x["where"] for x in rc["findings"]], ["rollcall:bot-a", "rollcall:bot-a:memories"])
-        rc = wt.merge_rollcall(prev, "other round", [], ["bot-a:Ops"], ["bot-a:Ops"])
+        rc = isr.merge_rollcall(prev, "other round", [], ["bot-a:Ops"], ["bot-a:Ops"])
         self.assertEqual(rc["findings"], [])
         self.assertEqual(rc["bots"], ["bot-a:Ops"])
 
     def test_the_owner_is_the_saved_bot_not_a_guess_from_where(self):
         """Codex round 1: bot-a's ISR-M010 points at `rollcall:bot-a:memories`, the same text a Bot named "bot-a:memories" gets."""
         f = lambda where, bot: {"rule": "ISR-M010", "where": where, "evidence": "x", "key": where + bot, "bot": bot}
-        prev = {"round": "R", "masked": wt.VERSION, "shape_only": True, "bots": ["bot-a"],
+        prev = {"round": "R", "masked": isr.VERSION, "shape_only": True, "bots": ["bot-a"],
                 "findings": [f("rollcall:bot-a:memories", "bot-a"), f("rollcall:bot-a:routine:Pay", "bot-a")]}
         for late in ("bot-a:memories", "bot-a:routine:Pay"):
-            rc = wt.merge_rollcall(prev, "R", [f(f"rollcall:{late}", late)], [late], [late])
+            rc = isr.merge_rollcall(prev, "R", [f(f"rollcall:{late}", late)], [late], [late])
             self.assertEqual([x["bot"] for x in rc["findings"]], ["bot-a", "bot-a", late], late)
             self.assertEqual(rc["bots"], ["bot-a", late])
-        rc = wt.merge_rollcall(dict(prev, findings=prev["findings"] + [{"where": "rollcall:bot-a", "rule": "ISR-R013"},
+        rc = isr.merge_rollcall(dict(prev, findings=prev["findings"] + [{"where": "rollcall:bot-a", "rule": "ISR-R013"},
                                                                        {"where": "rollcall:bot-a", "rule": "ISR-R013", "bot": ["bot-a"]}]),
                                "R", [], ["bot-a"], ["bot-a"])
         self.assertEqual([x.get("bot") for x in rc["findings"]], [None, ["bot-a"]])   # no saved Bot: kept, never dropped on a guess
@@ -326,7 +326,7 @@ class BotNamesThatLookLikeFindings(Base):
     ISR-M010 and ISR-R012 point. Each finding now carries its Bot, so neither Bot's findings are taken for the other's."""
 
     def alpha_first(self):
-        self.run_wt("rollcall", "--question")
+        self.run_isr("rollcall", "--question")
         self.save("bot-a", answer("bot-a", routine="Pay", loosen=1))           # ISR-M010 at rollcall:bot-a:memories, ISR-R012 at :routine:Pay
         self.run_rollcall()
         fs = self.state()["findings"]
@@ -348,7 +348,7 @@ class BotNamesThatLookLikeFindings(Base):
                 self.assertEqual(out["earlier_bots_kept"], ["bot-a"])
 
     def test_alpha_answering_again_replaces_only_its_own(self):
-        self.run_wt("rollcall", "--question")
+        self.run_isr("rollcall", "--question")
         self.save("bot-a:memories", answer("bot-a:memories", sends_without_asking=True))
         self.run_rollcall()
         self.save("bot-a", answer("bot-a", routine="Pay", loosen=1))           # its ISR-M010 points at rollcall:bot-a:memories
@@ -367,7 +367,7 @@ class BotNamesThatLookLikeFindings(Base):
         rp = os.path.join(exp, "roster.json")
         dump([{"name": "bot-a:memories", "kind": "bot"}], rp)                  # bot-a was removed, "bot-a:memories" stays
         os.utime(rp, (time.time() + 5, time.time() + 5))
-        rc, gone = wt.prune_removed_bots(self.state())
+        rc, gone = isr.prune_removed_bots(self.state())
         self.assertEqual(gone, ["bot-a"])
         self.assertEqual([(f["bot"], f["rule"]) for f in rc["findings"]], [("bot-a:memories", "ISR-R013")])
 
@@ -386,7 +386,7 @@ class StateFilesSomeoneSwapped(Base):
 
     def run_within(self, fifo, *argv, stdin=None, seconds=10):
         res = {}
-        t = threading.Thread(target=lambda: res.update(r=self.run_wt(*argv, stdin=stdin)), daemon=True)
+        t = threading.Thread(target=lambda: res.update(r=self.run_isr(*argv, stdin=stdin)), daemon=True)
         t.start()
         t.join(seconds)
         blocked = t.is_alive()
@@ -401,45 +401,45 @@ class StateFilesSomeoneSwapped(Base):
             with self.subTest(in_round=in_round):
                 self.fresh_home()
                 if in_round:
-                    self.run_wt("rollcall", "--question")
+                    self.run_isr("rollcall", "--question")
                     self.save("bot-f", first_answer("bot-f"))
                 else:
-                    dump(first_answer("bot-f"), os.path.join(wt.ensure_rollcall_dir(), "bot-f.json"))
-                p = wt.state_path("rollcall_findings.json")
+                    dump(first_answer("bot-f"), os.path.join(isr.ensure_rollcall_dir(), "bot-f.json"))
+                p = isr.state_path("rollcall_findings.json")
                 os.mkfifo(p)
                 code, o, e = self.run_within(p, "rollcall", "--owner-said-yes")
                 self.assertEqual(code, 0, o + e)
-                self.assertEqual(os.listdir(wt.default_rollcall_dir()), [])
+                self.assertEqual(os.listdir(isr.default_rollcall_dir()), [])
                 self.assertTrue(stat.S_ISREG(os.lstat(p).st_mode))
                 self.assertEqual(self.state()["bots"], ["bot-f"])
 
     def test_a_fifo_for_the_round_never_blocks_the_question(self):
-        p = wt.state_path("rollcall_round.json")
+        p = isr.state_path("rollcall_round.json")
         os.mkfifo(p)
         code, o, _ = self.run_within(p, "rollcall", "--question")
-        self.assertEqual((code, o.strip()), (0, wt.ROLLCALL_PROMPT))
+        self.assertEqual((code, o.strip()), (0, isr.ROLLCALL_PROMPT))
         self.assertTrue(stat.S_ISREG(os.lstat(p).st_mode))
-        self.assertIsNotNone(wt.current_rollcall_round())
+        self.assertIsNotNone(isr.current_rollcall_round())
 
     def test_a_link_swapped_in_after_any_check_is_still_not_followed(self):
         """The old code checked islink() and then opened by name, so a link put there between the two was followed. Here the
         check is made to see what it saw before the swap (no link); the open itself must still refuse the link."""
-        self.run_wt("rollcall", "--question")
-        opened = wt.current_rollcall_round()
+        self.run_isr("rollcall", "--question")
+        opened = isr.current_rollcall_round()
         elsewhere = os.path.join(self.tmp, "elsewhere.json")
-        dump({"at": opened, "round": opened, "masked": wt.VERSION, "shape_only": True, "bots": ["Mallory"],
-              "findings": [dict(wt.finding("ISR-R013", "x", "medium", [], "rollcall:Mallory", "x", "x"), bot="Mallory")]}, elsewhere)
+        dump({"at": opened, "round": opened, "masked": isr.VERSION, "shape_only": True, "bots": ["Mallory"],
+              "findings": [dict(isr.finding("ISR-R013", "x", "medium", [], "rollcall:Mallory", "x", "x"), bot="Mallory")]}, elsewhere)
         before = raw(elsewhere)
-        p = wt.state_path("rollcall_findings.json")
+        p = isr.state_path("rollcall_findings.json")
         os.symlink(elsewhere, p)
         real = os.path.islink
         self.save("bot-f", first_answer("bot-f"))
-        with mock.patch.object(wt.os.path, "islink", lambda q: False if q == p else real(q)):
+        with mock.patch.object(isr.os.path, "islink", lambda q: False if q == p else real(q)):
             self.run_rollcall()
         self.assertFalse(os.path.islink(p))
         self.assertEqual(raw(elsewhere), before)
         self.assertEqual(self.state()["bots"], ["bot-f"])                     # Mallory's file was not read as the earlier run
-        self.assertNotIn("Mallory", self.everything_watchtower_kept())
+        self.assertNotIn("Mallory", self.everything_isr_bot_kept())
 
     def test_a_planted_temp_file_link_does_not_redirect_opening_a_round(self):
         for argv, stdin in ((("rollcall", "--question"), None), (("rollcall", "--save", "bot-f"), json.dumps(first_answer("bot-f")))):
@@ -449,25 +449,25 @@ class StateFilesSomeoneSwapped(Base):
                     target = os.path.join(self.tmp, "victim.txt")
                     with open(target, "w") as f:
                         f.write("do not touch\n")
-                    link = wt.state_path(tmpname)
+                    link = isr.state_path(tmpname)
                     os.symlink(target, link)
-                    code, o, _ = self.run_wt(*argv, stdin=stdin)
+                    code, o, _ = self.run_isr(*argv, stdin=stdin)
                     self.assertEqual(code, 0, o)
                     self.assertEqual(raw(target), b"do not touch\n")             # the link's target is unchanged
-                    rp = wt.state_path("rollcall_round.json")
+                    rp = isr.state_path("rollcall_round.json")
                     self.assertTrue(stat.S_ISREG(os.lstat(rp).st_mode))
-                    self.assertIsNotNone(wt.current_rollcall_round())
+                    self.assertIsNotNone(isr.current_rollcall_round())
 
     def test_the_startup_migration_never_opens_or_follows_a_swapped_file(self):
         """Codex round 2: every command first runs migrate_rollcall_state, which checked isfile() and then opened the findings
         file by name. A FIFO or link put there between the two blocked the command or was followed. The check is made to see
         a regular file (as it would before the swap); the open itself must still refuse, and the target is never opened."""
-        unmasked = {"at": iso(1), "bots": ["Mallory"], "findings": [wt.finding("ISR-R013", "x", "medium", [], "rollcall:Mallory",
+        unmasked = {"at": iso(1), "bots": ["Mallory"], "findings": [isr.finding("ISR-R013", "x", "medium", [], "rollcall:Mallory",
                                                                               SECRETS[0], "x")]}
         for kind in ("fifo", "link to a file", "link to a fifo"):
             with self.subTest(kind=kind):
                 self.fresh_home()
-                p = wt.state_path("rollcall_findings.json")
+                p = isr.state_path("rollcall_findings.json")
                 target = os.path.join(tempfile.mkdtemp(dir=self.tmp), "elsewhere.json")
                 if kind == "link to a file":
                     dump(unmasked, target)
@@ -492,18 +492,18 @@ class StateFilesSomeoneSwapped(Base):
                         opened.append(("os.open", f))
                     return real_os_open(f, flags, *a, **k)
 
-                with mock.patch.object(wt.os.path, "isfile", lambda q: True if q == p else real_isfile(q)), \
-                        mock.patch("builtins.open", spy_open), mock.patch.object(wt.os, "open", spy_os_open):
+                with mock.patch.object(isr.os.path, "isfile", lambda q: True if q == p else real_isfile(q)), \
+                        mock.patch("builtins.open", spy_open), mock.patch.object(isr.os, "open", spy_os_open):
                     code, o, _ = self.run_within(target, "rollcall", "--question")
-                self.assertEqual((code, o.strip()), (0, wt.ROLLCALL_PROMPT))
+                self.assertEqual((code, o.strip()), (0, isr.ROLLCALL_PROMPT))
                 self.assertEqual(opened, [], "the migration opened what the findings file pointed at")
                 self.assertFalse(os.path.lexists(p) and not stat.S_ISREG(os.lstat(p).st_mode))   # the swapped entry is gone
                 if kind != "fifo":
                     after = os.lstat(target)
                     self.assertEqual((after.st_mode, after.st_size, after.st_mtime_ns),
                                      (before.st_mode, before.st_size, before.st_mtime_ns))  # the link's target is unchanged
-                self.assertNotIn("rollcall-state-masked", self.everything_watchtower_kept())
-                self.assertNotIn("Mallory", self.everything_watchtower_kept())
+                self.assertNotIn("rollcall-state-masked", self.everything_isr_bot_kept())
+                self.assertNotIn("Mallory", self.everything_isr_bot_kept())
 
 
 if __name__ == "__main__":

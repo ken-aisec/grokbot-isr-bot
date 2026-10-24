@@ -11,7 +11,8 @@ as it is and with escapes read and adjacent string literals joined. Every path c
 """
 import codecs, functools, hashlib, json, os, re, secrets, shutil, subprocess, sys, tempfile, unicodedata, unittest, uuid
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import ROOT, wt
+from test_boxes import ROOT
+import isr  # noqa: E402
 
 KEYED = frozenset({   # sha256 of key(s): casefolded, only [a-z0-9] kept (fix round 1)
     "78e0b1fdb55ecbc60a8da0168ce87daa0e7ba2b44ffa0cf61a8f0a6c5b423d7a",
@@ -242,7 +243,7 @@ def tracked(root):
 
 
 def tree(files):
-    root = tempfile.mkdtemp(prefix="wt-generic-")
+    root = tempfile.mkdtemp(prefix="isr-bot-generic-")
     for rel, body in files.items():
         os.makedirs(os.path.dirname(os.path.join(root, rel)) or root, exist_ok=True)
         with open(os.path.join(root, rel), "wb" if isinstance(body, bytes) else "w") as f:
@@ -381,7 +382,7 @@ class FixRound1(unittest.TestCase):
         if shutil.which("git") is None:
             self.skipTest("git is not installed")
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-        repo = tempfile.mkdtemp(prefix="wt-generic-git-")
+        repo = tempfile.mkdtemp(prefix="isr-bot-generic-git-")
         subprocess.run(["git", "init", "-q", repo], env=env, check=True, capture_output=True)
         work = tree({"tracked.md": "a\n", "untracked.md": "b\n", ".git": f"gitdir: {os.path.join(repo, '.git')}\n"})
         subprocess.run(["git", "add", "tracked.md"], cwd=work, env=env, check=True, capture_output=True)
@@ -414,7 +415,7 @@ class FixRound1(unittest.TestCase):
 
 class PlatformRefusal(unittest.TestCase):
     def test_platform_refusal_states_the_policy_without_a_name(self):
-        s = wt.PLATFORM_YES_REFUSED
+        s = isr.PLATFORM_YES_REFUSED
         self.assertEqual(scan_text(s, DENY), [])
         self.assertIn("(ISR Bot policy: the owner's yes never approves a platform file)", s)
         self.assertIn("NOT APPROVED", s)
@@ -444,8 +445,8 @@ class RoutineDescriptions(unittest.TestCase):
             self.assertTrue(d["name"].strip() and d["description"].strip(), d["slug"])
 
     def test_the_names_are_the_ones_uninstall_removes(self):
-        self.assertEqual(sorted(d["name"] for d in self.descriptions()), sorted(wt.ROUTINE_NAMES))
-        self.assertEqual(len(wt.ROUTINE_NAMES), 4)
+        self.assertEqual(sorted(d["name"] for d in self.descriptions()), sorted(isr.ROUTINE_NAMES))
+        self.assertEqual(len(isr.ROUTINE_NAMES), 4)
 
     def test_all_four_names_and_descriptions_exact(self):
         same_safely(self, sorted((d["slug"], d["name"], d["description"]) for d in self.descriptions()), sorted([
@@ -456,7 +457,7 @@ class RoutineDescriptions(unittest.TestCase):
              "Every Sunday, run the full audit, threat brief and weekly report into this chat."),
             ("watchtower-weekly-tidy", "ISR Bot weekly tidy",
              "Every Sunday, preview the safe cleanup (changes nothing) and ask before applying anything."),
-            ("watchtower-monthly-rollcall", "ISR Bot monthly roll-call",   # the name uninstall removes (wt.ROUTINE_NAMES)
+            ("watchtower-monthly-rollcall", "ISR Bot monthly roll-call",   # the name uninstall removes (isr.ROUTINE_NAMES)
              "On the 1st, post a reminder that a roll-call is due; it runs only after the owner says yes."),
         ]))
 

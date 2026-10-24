@@ -1,7 +1,7 @@
 """v0.8.0 rename, unit 0: the reviewed name table (tests/golden_rename_v080.json) is well formed. Every entry is unique, and
 where one old value holds another the longer one comes first; no entry maps a name to itself; no new value holds an old name
 and each passes the name guards of test_v074_display_name, through the same blank(); the old and new layouts are complete."""
-import ast, json, os, re, unittest
+import ast, hashlib, json, os, re, unittest
 from unittest import mock
 
 import rename_v080 as rn
@@ -32,12 +32,22 @@ def apply(e, text):
     return re.sub(e["re"], e["new"], text) if "re" in e else text.replace(e["old"], e["new"])
 
 
+def line_key(l):
+    """How source.held_lines names a line: the sha256 of its stripped text, first 16 hex."""
+    return hashlib.sha256(l.strip().encode("utf-8")).hexdigest()[:16]
+
+
 def map_units(units, rel, text, protect=True):
     """text through each unit's plain source entries in turn, as the probe applies them: keep_spans held, an entry's files and
-    unit_files honoured, the historical lines (and a reader file's old-output lines) left as they are unless protect is off."""
+    unit_files honoured, the historical lines (and a reader file's old-output lines) left as they are and a held line spared
+    its entry, unless protect is off."""
     src = rn.TABLE["source"]
     keep = [re.compile(k["re"]) for k in src["keep_spans"]]
     texts = {h["text"] for h in src["historical"]["lines"] if h["file"] == rel}
+    spare = {}
+    for h in src["held_lines"]["lines"]:
+        if h["file"] == rel and protect:
+            spare.setdefault(h["sha256"], set()).add(h["old"])
     reader = os.path.basename(rel) in src["reader_files"]
     for u in units:
         entries = [e for e in src["units"][u] if not e.get("scope") and ("files" not in e or os.path.basename(rel) in e["files"])
@@ -47,11 +57,13 @@ def map_units(units, rel, text, protect=True):
             if protect and (l.strip() in texts or (reader and ("workspace/watchtower" in l or re.search(r"Watchtower\b", l)))):
                 out.append(l)
                 continue
+            spared = spare.get(line_key(l), set())
             held = []
             for rx in keep:
                 l = rx.sub(lambda m: held.append(m.group(0)) or f"\x00{len(held) - 1}\x00", l)
             for e in entries:
-                l = apply(e, l)
+                if e.get("old") not in spared:
+                    l = apply(e, l)
             out.append(re.sub("\x00(\\d+)\x00", lambda m: held[int(m.group(1))], l))
         text = "\n".join(out)
     return text
@@ -215,6 +227,47 @@ class RenameTable(unittest.TestCase):
             # the d2a build's span held the whole call, the module reference included, so it stayed old
             with mock.patch.dict(rn.TABLE["source"], {"keep_spans": [{"re": 'open\\([^\\n]*?, "wt"'}]}):
                 self.assertEqual(map_units(units, rel, line), line)
+
+    def test_d2_open_mode_span_holds_only_the_mode(self):   # replay (d2b table fix: the "wt" mode span held a home folder in the path)
+        order, old, new = rn.TABLE["source"]["order"], json.dumps(rn.OLD["sandbox_home"]), json.dumps(rn.NEW["sandbox_home"])
+        line = '        with open(os.path.join(self.tmp, %s, "exports", "roster.json"), "w") as f:' % old
+        want = line.replace(old, new)
+        self.assertNotEqual(want, line)
+        modes = ('        with gzip.open(p, "wt", encoding="utf-8") as f:', '        with open(p, "wt") as f:')
+        units = order[:order.index("d2b") + 1]
+        for rel in ("tests/test_v069.py", "tests/test_v074_display_name.py"):
+            self.assertNotIn(os.path.basename(rel), rn.TABLE["source"]["unit_files"]["d2a"])
+            self.assertEqual(map_units(units, rel, line), want)
+            for m in modes:
+                self.assertEqual(map_units(order, rel, m), m)   # the file mode stays
+            # the d2a fix 1 span ran to any ', "wt"' in the call, the home folder included, so the folder stayed old
+            with mock.patch.dict(rn.TABLE["source"], {"keep_spans": [{"re": 'open\\((?:(?!wt\\.)[^\\n])*?, "wt"'}]}):
+                self.assertEqual(map_units(units, rel, line), line)
+
+    def test_d2_alias_entry_spares_the_name_guard_data(self):   # replay (d2b fix 1: d2's alias entry hit A5, C's bounds data and a comment)
+        rel, order = "tests/test_v074_display_name.py", rn.TABLE["source"]["order"]
+        units = order[:order.index("d2b") + 1]
+        new = rn.NEW["main"][:-len(".py")]
+        alias = "import %s as %s" % (new, rn.OLD["main"][:-len(".py")])
+        held = rn.TABLE["source"]["held_lines"]["lines"]
+        self.assertEqual({(h["file"], h["old"]) for h in held}, {(rel, alias)})   # one entry, one file
+        self.assertNotIn(os.path.basename(rel), rn.TABLE["source"]["unit_files"]["d2a"])
+        text = read(rel)
+        lines = text.split("\n")
+        at = sorted(i for h in held for i, l in enumerate(lines) if line_key(l) == h["sha256"])
+        self.assertEqual(len(held), 5)
+        self.assertEqual(len(at), len(held))   # each key names one line of the file: none is stale
+        self.assertEqual(map_units(units, rel, text), text)   # the 5 lines stay as they are
+        # only those lines: a new alias line in the same file, or in another d2b file, still loses the alias
+        self.assertEqual(map_units(units, rel, "    " + alias), "    import " + new)
+        for other in ("tests/test_boxes.py", "tests/test_v069.py"):
+            self.assertNotIn(os.path.basename(other), rn.TABLE["source"]["unit_files"]["d2a"])
+            self.assertEqual(map_units(units, other, alias), "import " + new)
+        # without the hold, d2's alias entry changes exactly those 5 lines
+        with mock.patch.dict(rn.TABLE["source"], {"held_lines": {"lines": []}}):
+            mapped = map_units(units, rel, text).split("\n")
+        self.assertEqual(len(mapped), len(lines))
+        self.assertEqual([i for i, (a, b) in enumerate(zip(lines, mapped)) if a != b], at)
 
 
 if __name__ == "__main__":

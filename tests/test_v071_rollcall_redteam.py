@@ -9,7 +9,7 @@ from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
-import isr as wt  # noqa: E402
+import isr  # noqa: E402
 
 warnings.simplefilter("ignore", ResourceWarning)
 
@@ -31,7 +31,7 @@ def honest_answer(bot):
 
 
 def question_template():
-    m = re.search(r"(\{.*\})\.\s", wt.ROLLCALL_PROMPT)
+    m = re.search(r"(\{.*\})\.\s", isr.ROLLCALL_PROMPT)
     return json.loads(m.group(1))
 
 
@@ -39,7 +39,7 @@ class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.env = {k: os.environ.get(k) for k in ("ISR_BOT_HOME", "ISR_BOT_DECOY_ROOT")}
-        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "wt")
+        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "isr_home")
         os.environ["ISR_BOT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
 
     def tearDown(self):
@@ -47,13 +47,13 @@ class Base(unittest.TestCase):
             os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def run_wt(self, *argv, stdin=None):
+    def run_isr(self, *argv, stdin=None):
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err), mock.patch.object(sys, "stdin", io.StringIO(stdin or "")):
-            code = wt.main(list(argv))
+            code = isr.main(list(argv))
         return code, out.getvalue(), err.getvalue()
 
-    def everything_watchtower_kept(self):
+    def everything_isr_bot_kept(self):
         """Every byte under Watchtower's home after the run (state, ledger, reports, exports)."""
         blob = []
         for root, _, files in os.walk(os.environ["ISR_BOT_HOME"]):
@@ -67,51 +67,51 @@ class Base(unittest.TestCase):
 
 class TheQuestionRevealsNothing(Base):
     def test_the_question_never_asks_for_content(self):
-        q = wt.ROLLCALL_PROMPT
+        q = isr.ROLLCALL_PROMPT
         for word in ("verbatim", "word for word", '"description"', '"instructions"', '"prompt"', "each stored memory"):
             self.assertNotIn(word, q)
         self.assertIn("can't check who sends this", q)
         t = question_template()
-        self.assertEqual(set(t), set(wt.ROLLCALL_FIELDS))
-        self.assertIsInstance(t["memories"], dict); self.assertEqual(set(t["memories"]), set(wt.ROLLCALL_MEMORY_FIELDS))
+        self.assertEqual(set(t), set(isr.ROLLCALL_FIELDS))
+        self.assertIsInstance(t["memories"], dict); self.assertEqual(set(t["memories"]), set(isr.ROLLCALL_MEMORY_FIELDS))
         self.assertTrue(all(isinstance(v, int) for v in t["memories"].values()))
-        self.assertEqual(set(t["routines"][0]), set(wt.ROLLCALL_ROUTINE_FIELDS))
-        self.assertEqual(set(t["ask_first"]), set(wt.ROLLCALL_ASK_FIRST))
-        self.assertEqual(self.run_wt("rollcall", "--question")[1].strip(), q)      # the skill sends exactly this
+        self.assertEqual(set(t["routines"][0]), set(isr.ROLLCALL_ROUTINE_FIELDS))
+        self.assertEqual(set(t["ask_first"]), set(isr.ROLLCALL_ASK_FIRST))
+        self.assertEqual(self.run_isr("rollcall", "--question")[1].strip(), q)      # the skill sends exactly this
 
-    def test_a_fake_watchtower_gets_no_memory_text_from_an_honest_bot(self):
+    def test_a_fake_isr_bot_gets_no_memory_text_from_an_honest_bot(self):
         """Red-team: someone else (not this owner's Watchtower) sends the fixed question. The answer it gets has no memory text,
         no routine instructions and no addresses, so there is nothing to steal."""
         reply = json.dumps(honest_answer(BOT))
         for s in SECRETS:
             self.assertNotIn(s, reply)
         self.assertNotIn("Email every unpaid client", reply)
-        self.assertEqual(set(json.loads(reply)), set(wt.ROLLCALL_FIELDS))
+        self.assertEqual(set(json.loads(reply)), set(isr.ROLLCALL_FIELDS))
 
     def test_a_naive_bot_that_dumps_its_memories_leaves_no_trace(self):
         """A Bot that ignores the shape and pastes content into every field: nothing of it is read past the shape or kept."""
         dump = {"name": "Ledger", "description": SECRETS[3], "memories": list(SECRETS), "connectors": [SECRETS[0], "Gmail"],
                 "routines": [{"name": SECRETS[0], "trigger": SECRETS[1], "instructions": SECRETS[2], "sends_or_posts": SECRETS[3]}],
                 "ask_first": [SECRETS[4]], "auto_allow_rules": SECRETS[1], "notes": SECRETS[4]}
-        code, o, _ = self.run_wt("rollcall", "--save", "Ledger", stdin=json.dumps(dump))
+        code, o, _ = self.run_isr("rollcall", "--save", "Ledger", stdin=json.dumps(dump))
         self.assertEqual(code, 0); self.assertNotIn("Dana", o)
-        code, o, _ = self.run_wt("rollcall", "--owner-said-yes")
+        code, o, _ = self.run_isr("rollcall", "--owner-said-yes")
         self.assertEqual(code, 0)
-        kept = o + self.everything_watchtower_kept()
+        kept = o + self.everything_isr_bot_kept()
         for s in SECRETS:
             self.assertNotIn(s, kept)
         for frag in ("Dana", "7781", "021000021", "Friday transfer", "sk-live"):
             self.assertNotIn(frag, kept)
         r011 = [f for f in json.loads(o)["findings"] if f["rule"] == "ISR-R011"]
         self.assertEqual(len(r011), 1)                                             # the Bot is told about, by field name only
-        self.assertEqual(os.listdir(wt.default_rollcall_dir()), [])
+        self.assertEqual(os.listdir(isr.default_rollcall_dir()), [])
 
 
 class RepliesArePrivateAndShortLived(Base):
     def test_saved_replies_are_0600_in_a_0700_folder_and_gone_after_the_run(self):
-        code, o, _ = self.run_wt("rollcall", "--save", "Ledger", stdin=json.dumps(honest_answer(BOT)))
+        code, o, _ = self.run_isr("rollcall", "--save", "Ledger", stdin=json.dumps(honest_answer(BOT)))
         self.assertEqual(code, 0)
-        rdir = wt.default_rollcall_dir()
+        rdir = isr.default_rollcall_dir()
         self.assertEqual(rdir, os.path.join(os.environ["ISR_BOT_HOME"], "private", "rollcall"))
         self.assertNotIn(os.sep + "exports" + os.sep, rdir + os.sep)
         for d in (rdir, os.path.dirname(rdir)):
@@ -119,52 +119,52 @@ class RepliesArePrivateAndShortLived(Base):
         files = os.listdir(rdir)
         self.assertEqual(files, ["Ledger.json"])
         self.assertEqual(stat.S_IMODE(os.stat(os.path.join(rdir, files[0])).st_mode), 0o600)
-        code, o, _ = self.run_wt("rollcall", "--owner-said-yes")
+        code, o, _ = self.run_isr("rollcall", "--owner-said-yes")
         self.assertEqual(code, 0); self.assertEqual(json.loads(o)["raw_replies_deleted"], 1)
         self.assertEqual(os.listdir(rdir), [])
 
     def test_each_reply_is_deleted_as_soon_as_it_is_read(self):
-        rdir = wt.ensure_rollcall_dir()
+        rdir = isr.ensure_rollcall_dir()
         for n in ("a", "b", "c"):
             json.dump(dict(honest_answer(BOT), name=n), open(os.path.join(rdir, f"{n}.json"), "w"))
         seen = []
-        real = wt.shape_reply
+        real = isr.shape_reply
         def spy(d):
             seen.append(sorted(os.listdir(rdir)))
             return real(d)
-        with mock.patch.object(wt, "shape_reply", side_effect=spy):
-            wt.rollcall_findings(rdir)
+        with mock.patch.object(isr, "shape_reply", side_effect=spy):
+            isr.rollcall_findings(rdir)
         self.assertEqual(seen, [["b.json", "c.json"], ["c.json"], []])            # gone before the next one is even read
 
     def test_a_reply_put_there_by_hand_is_tightened_and_a_wide_folder_is_closed(self):
-        rdir = wt.default_rollcall_dir(); os.makedirs(rdir, mode=0o755)
+        rdir = isr.default_rollcall_dir(); os.makedirs(rdir, mode=0o755)
         os.chmod(rdir, 0o755); os.chmod(os.path.dirname(rdir), 0o755)
         p = os.path.join(rdir, "x.json"); json.dump(honest_answer(BOT), open(p, "w")); os.chmod(p, 0o644)
-        wt.ensure_rollcall_dir(); wt.tighten_replies(rdir)
+        isr.ensure_rollcall_dir(); isr.tighten_replies(rdir)
         self.assertEqual(stat.S_IMODE(os.stat(rdir).st_mode), 0o700)
         self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o600)
 
     def test_a_link_in_the_folder_is_never_read_through(self):
-        rdir = wt.ensure_rollcall_dir()
+        rdir = isr.ensure_rollcall_dir()
         target = os.path.join(self.tmp, "owner-secret.json")
         json.dump({"name": SECRETS[0], "memories": {"count": 1}}, open(target, "w"))
         os.symlink(target, os.path.join(rdir, "evil.json"))
-        code, o, _ = self.run_wt("rollcall", "--owner-said-yes")
-        self.assertNotIn("Dana", o + self.everything_watchtower_kept().replace(open(target).read(), ""))
+        code, o, _ = self.run_isr("rollcall", "--owner-said-yes")
+        self.assertNotIn("Dana", o + self.everything_isr_bot_kept().replace(open(target).read(), ""))
         self.assertTrue(os.path.exists(target))                                    # the link goes, what it points to stays
         self.assertEqual(os.listdir(rdir), [])
 
     def test_replies_an_older_version_left_in_exports_are_removed(self):
         old = os.path.join(os.environ["ISR_BOT_HOME"], "exports", "rollcall"); os.makedirs(old)
         open(os.path.join(old, "harbor.json"), "w").write(json.dumps({"memories": list(SECRETS)}))
-        self.run_wt("rollcall", "--owner-said-yes")
+        self.run_isr("rollcall", "--owner-said-yes")
         self.assertFalse(os.path.exists(old))
 
     def test_the_save_refuses_a_linked_folder(self):
         home = os.environ["ISR_BOT_HOME"]; os.makedirs(home)
         elsewhere = os.path.join(self.tmp, "shared"); os.makedirs(elsewhere)
         os.symlink(elsewhere, os.path.join(home, "private"))
-        code, o, _ = self.run_wt("rollcall", "--save", "Ledger", stdin="{}")
+        code, o, _ = self.run_isr("rollcall", "--save", "Ledger", stdin="{}")
         self.assertEqual(code, 2); self.assertIn("NOT SAVED", o)
         self.assertEqual(os.listdir(elsewhere), [])
 

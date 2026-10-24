@@ -1,7 +1,8 @@
 """Claude's v0.7.0 review (Oct 12): precision fixes must not create blind spots."""
 import os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt
+from test_boxes import Box
+import isr  # noqa: E402
 from test_isr_bot import fake_key
 import profiles
 
@@ -33,7 +34,7 @@ class NoBlindSpots(Box):
         self.scanners(); self.audit()
         fs = [f for f in self.snap().get("findings", []) if "/templates/run.md" in f["where"]]
         self.assertTrue(any(f["rule"] == "ISR-T005" and f["severity"] != "info" for f in fs), fs)
-        self.assertTrue(any(wt.counts(f) for f in fs), fs)
+        self.assertTrue(any(isr.counts(f) for f in fs), fs)
 
     # DQ-024 stays fixed: story wording in the platform's own bundled deck template is info
     def test_platform_bundled_template_story_is_info(self):
@@ -44,18 +45,18 @@ class NoBlindSpots(Box):
         profiles.vendor_release(self, os.path.join(d, "SKILL.md"), os.path.join(d, "templates", "tv_series_pitch_deck.js"))   # item 8: as shipped
         self.scanners(); self.audit()
         fs = [f for f in self.snap().get("findings", []) if "tv_series_pitch_deck.js" in f["where"]]
-        self.assertFalse(any(wt.counts(f) for f in fs), fs)
+        self.assertFalse(any(isr.counts(f) for f in fs), fs)
 
 
     # R3: a key in a docs/tests folder or in quarantine also moves the score, not just the list
     def test_key_in_docs_counts_toward_score(self):
         fs = self.keys_found("myapp/docs/notes.txt")
-        self.assertTrue(fs and all(wt.counts(f) for f in fs), fs)
+        self.assertTrue(fs and all(isr.counts(f) for f in fs), fs)
         self.assertLess(self.snap()["score"], 100)
 
     def test_key_in_quarantine_counts(self):
         fs = self.keys_found("quarantine/oldskill/notes.txt")
-        self.assertTrue(fs and all(wt.counts(f) for f in fs), fs)
+        self.assertTrue(fs and all(isr.counts(f) for f in fs), fs)
 
 if __name__ == "__main__":
     unittest.main()

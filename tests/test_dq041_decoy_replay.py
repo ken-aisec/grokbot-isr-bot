@@ -5,18 +5,18 @@ import os, shutil, sys, tempfile, time, unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
-import isr as wt  # noqa: E402
+import isr  # noqa: E402
 
 
 class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.env = {k: os.environ.get(k) for k in ("ISR_BOT_HOME", "ISR_BOT_DECOY_ROOT")}
-        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "wt")
+        os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "isr_home")
         os.environ["ISR_BOT_DECOY_ROOT"] = os.path.join(self.tmp, "decoys")
-        os.makedirs(wt.state_path(""), exist_ok=True)
-        wt.plant_canaries()
-        self.reg = wt.load_json(wt.state_path("canaries.json"), {})
+        os.makedirs(isr.state_path(""), exist_ok=True)
+        isr.plant_canaries()
+        self.reg = isr.load_json(isr.state_path("canaries.json"), {})
         self.name, self.v = next(iter(self.reg.items()))
         self.p = self.v["path"]
 
@@ -30,10 +30,10 @@ class Base(unittest.TestCase):
         old = time.time() - 4 * 86400
         for v in self.reg.values():
             v.pop("mtime", None); v["planted_ts"] = old; v["atime"] = old - 86400
-        wt.save_json(wt.state_path("canaries.json"), self.reg)
+        isr.save_json(isr.state_path("canaries.json"), self.reg)
 
     def rules(self, record=False):
-        return [f["rule"] for f in wt.canary_findings(record=record)]
+        return [f["rule"] for f in isr.canary_findings(record=record)]
 
 
 class ReplayDryRunReplant(Base):
@@ -48,7 +48,7 @@ class ReplayDryRunReplant(Base):
         st = os.stat(self.p)
         os.utime(self.p, (time.time() + 5, st.st_mtime))   # a real read after the rewrite
         self.assertTrue({"ISR-K001", "ISR-K004"} & set(self.rules()))
-        self.assertNotIn("ISR-K007", [f["rule"] for f in wt.canary_findings(record=False) if self.p in f["where"]])
+        self.assertNotIn("ISR-K007", [f["rule"] for f in isr.canary_findings(record=False) if self.p in f["where"]])
 
     def test_untouched_real_decoy_is_quiet(self):
         self.assertEqual(self.rules(), [])
@@ -56,7 +56,7 @@ class ReplayDryRunReplant(Base):
     def test_read_of_own_decoy_still_critical(self):
         st = os.stat(self.p)
         os.utime(self.p, (time.time(), st.st_mtime))
-        fs = wt.canary_findings(record=False)
+        fs = isr.canary_findings(record=False)
         self.assertTrue(any(f["rule"] == "ISR-K001" and f["severity"] == "critical" for f in fs))
 
     def test_plant_records_mtime(self):

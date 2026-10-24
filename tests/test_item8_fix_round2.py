@@ -13,7 +13,8 @@ Each test fails on b8617aa by reaching an assertion unless its docstring says it
 import json, os, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import wt  # noqa: E402
+import test_boxes  # noqa: E402
+import isr  # noqa: E402
 from test_item8_provenance import CLEAN, FLAGGED, ROOT, _Platform, add, put, sha  # noqa: E402
 import profiles  # noqa: E402
 
@@ -21,17 +22,17 @@ import profiles  # noqa: E402
 class OwnWalk(_Platform):
     def assert_counted(self, p):
         x = self.counted_high(p)
-        self.assertEqual(len(x), 1, [(f["rule"], f["severity"], f.get("class"), wt.counts(f)) for f in self.snap()["findings"] if f.get("unverified_platform")])
+        self.assertEqual(len(x), 1, [(f["rule"], f["severity"], f.get("class"), isr.counts(f)) for f in self.snap()["findings"] if f.get("unverified_platform")])
         self.assertTrue(x[0].get("unverified_platform"))
 
     def test_1_a_skill_turned_into_a_link_into_quarantine_is_held_to_the_list(self):
         self.start()
         p = self.md("alpha")
-        q = os.path.join(wt.home(), "quarantine", "alpha", "SKILL.md")
+        q = os.path.join(isr.home(), "quarantine", "alpha", "SKILL.md")
         put(q, CLEAN.format(n="alpha") + "Planted where nothing scans.\n")
         os.remove(p)
         os.symlink(q, p)
-        self.assertTrue(wt.platform_ish(p))
+        self.assertTrue(isr.platform_ish(p))
         out = self.daily()
         self.assertNotEqual(out, "NO_CHANGES")
         self.assert_counted(p)
@@ -56,19 +57,19 @@ class OwnWalk(_Platform):
 
     def test_1_a_folder_too_big_to_walk_is_a_counted_alert(self):
         self.start()
-        had = "PLATFORM_WALK_MAX_FILES" in vars(wt)
-        was = getattr(wt, "PLATFORM_WALK_MAX_FILES", None)
-        wt.PLATFORM_WALK_MAX_FILES = 2
+        had = "PLATFORM_WALK_MAX_FILES" in vars(isr)
+        was = getattr(isr, "PLATFORM_WALK_MAX_FILES", None)
+        isr.PLATFORM_WALK_MAX_FILES = 2
         try:
             out = self.daily()
         finally:
             if had:
-                wt.PLATFORM_WALK_MAX_FILES = was
+                isr.PLATFORM_WALK_MAX_FILES = was
             else:
-                vars(wt).pop("PLATFORM_WALK_MAX_FILES", None)
+                vars(isr).pop("PLATFORM_WALK_MAX_FILES", None)
         self.assertNotEqual(out, "NO_CHANGES")
         x = [f for f in self.snap()["findings"] if f["rule"] == "ISR-I011"]
-        self.assertEqual([(f["severity"], wt.counts(f)) for f in x], [("high", True)])
+        self.assertEqual([(f["severity"], isr.counts(f)) for f in x], [("high", True)])
         self.assertIn("ISR-I011", [r["rule"] for r in json.loads(out)["platform_unverified"]["files"]])
 
     def test_1_contrast_a_folder_link_loop_is_walked_once_and_stays_quiet(self):
@@ -85,8 +86,8 @@ class DailyNeverQuiet(_Platform):
         plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         snap = self.snap()
-        snap["findings"].append(wt.unverified_platform_finding(plant, sha(plant)))   # its deterministic finding and key, in advance
-        wt.save_json(wt.state_path("last_findings.json"), snap)
+        snap["findings"].append(isr.unverified_platform_finding(plant, sha(plant)))   # its deterministic finding and key, in advance
+        isr.save_json(isr.state_path("last_findings.json"), snap)
         out = self.daily()
         self.assertNotEqual(out, "NO_CHANGES")
         d = json.loads(out)
@@ -111,9 +112,9 @@ class BaselineIsNotProvenance(_Platform):
         self.start()
         plant = self.md("helper")
         put(plant, CLEAN.format(n="helper"))
-        base = wt.load_baseline()[0]
+        base = isr.load_baseline()[0]
         base[plant] = sha(plant)
-        wt.save_json(wt.state_path("baseline.json"), base)
+        isr.save_json(isr.state_path("baseline.json"), base)
         self.assertEqual(self.daily(), "NO_CHANGES")
         self.assertEqual(len(self.counted_high(plant)), 0)
         self.assertNotIn("platform_unverified", self.preview())
@@ -127,10 +128,10 @@ class BaselineIsNotProvenance(_Platform):
         plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         alpha = self.md("alpha")
-        was = wt.load_baseline()[0][alpha]
+        was = isr.load_baseline()[0][alpha]
         add(alpha, "Changed, not on the release list.\n")
         out = self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")[1]
-        base = wt.load_baseline()[0]
+        base = isr.load_baseline()[0]
         self.assertNotIn(plant, base)
         self.assertEqual(base[alpha], was)                                      # keeps its line, so it still shows as changed
         self.assertIn("platform-release.lock", out)
@@ -148,7 +149,7 @@ class BaselineIsNotProvenance(_Platform):
         put(same, body)                                                         # the very same bytes, somewhere else
         os.remove(p)
         os.symlink(same, p)
-        self.assertEqual(sha(p), wt.load_baseline()[0][p])
+        self.assertEqual(sha(p), isr.load_baseline()[0][p])
         self.assertNotEqual(self.daily(), "NO_CHANGES")
         self.assertEqual(len(self.counted_high(p)), 1)
 
@@ -159,12 +160,12 @@ class Pages(_Platform):
         for n in names:
             p = (at or self.md)(n)
             put(p, text.format(n=n))
-            snap["findings"].append(dict(wt.unverified_platform_finding(p, "0" * 64), key=sha(p)[:16]))
-        wt.save_json(wt.state_path("last_findings.json"), snap)
+            snap["findings"].append(dict(isr.unverified_platform_finding(p, "0" * 64), key=sha(p)[:16]))
+        isr.save_json(isr.state_path("last_findings.json"), snap)
 
     def test_4_the_list_is_the_exact_count_with_no_code_or_pages(self):
         self.start()
-        n = wt.PLATFORM_OPEN_SHOWN + 1
+        n = isr.PLATFORM_OPEN_SHOWN + 1
         self.forge([f"p{i:04d}" for i in range(n)])
         pv = self.preview()["platform_unverified"]
         self.assertEqual((pv["open"], len(pv["files"]), pv.get("more")), (n, n - 1, 1))
@@ -176,7 +177,7 @@ class Pages(_Platform):
 
     def test_4_no_page_or_code_approves_anything(self):
         self.start()
-        self.forge([f"a{i:04d}" for i in range(wt.PLATFORM_OPEN_SHOWN)], text=FLAGGED)
+        self.forge([f"a{i:04d}" for i in range(isr.PLATFORM_OPEN_SHOWN)], text=FLAGGED)
         self.forge(["zz-clean"], at=self.loose)                                 # b8i4: loose, so never the middle path's quiet line
         pv = self.preview()["platform_unverified"]
         self.assertNotIn("next_page", pv)
@@ -186,7 +187,7 @@ class Pages(_Platform):
         self.assertIn("NOT APPROVED", self.approve("0" * 20))
         out = self.run_cmd("fix", "--approve-platform", "0" * 20, "--platform-from", nxt, "--owner-said-yes", "--roots", *self.roots)[1]
         self.assertIn("platform-release.lock", out)
-        self.assertNotIn(self.loose("zz-clean"), wt.load_baseline()[0])
+        self.assertNotIn(self.loose("zz-clean"), isr.load_baseline()[0])
         self.audit()
         self.assertEqual(len(self.counted_high(self.loose("zz-clean"))), 1)
 
@@ -198,7 +199,7 @@ class ApprovedCopyOneRead(_Platform):
         add(p, "Version 2.\n")
         v2 = sha(p)
         profiles.vendor_release(self, p)
-        real, swapped = wt.platform_listed, []
+        real, swapped = isr.platform_listed, []
 
         def listed_then_swap(q, h):
             ok = real(q, h)
@@ -206,17 +207,17 @@ class ApprovedCopyOneRead(_Platform):
                 add(p, "Swapped in after the check.\n")
                 swapped.append(q)
             return ok
-        wt.platform_listed = listed_then_swap
+        isr.platform_listed = listed_then_swap
         try:
-            r = wt.revet([os.path.dirname(p)], approve=True)
+            r = isr.revet([os.path.dirname(p)], approve=True)
         finally:
-            wt.platform_listed = real
+            isr.platform_listed = real
         self.assertEqual([x["result"] for x in r], ["re-approved"], r)
-        self.assertEqual(wt.load_baseline()[0][p], v2)
-        copy = wt.load_approved(os.path.dirname(p))
+        self.assertEqual(isr.load_baseline()[0][p], v2)
+        copy = isr.load_approved(os.path.dirname(p))
         self.assertEqual(copy["hashes"]["SKILL.md"], v2)
         self.assertNotIn("Swapped in", copy["files"]["SKILL.md"])
-        d = wt.skill_diff(os.path.dirname(p))
+        d = isr.skill_diff(os.path.dirname(p))
         self.assertNotEqual(d["summary"], "same as the approved copy")
         self.assertIn("Swapped in after the check", d["text"])
 

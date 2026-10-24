@@ -9,7 +9,8 @@ ones keep what must not change. As in test_batch5_platform_notes, the skill here
 the real one), and the platform folders of this computer are never opened; the real version is pinned by digests only."""
 import hashlib, json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import ROOT, wt
+from test_boxes import ROOT
+import isr  # noqa: E402
 from test_batch5_platform_notes import _SignIn, LINE12, SIGNIN, REL
 
 OLD = "329d4f59c94da1e42737230253bbb671183546d2ce82e04af9c304a46e759071"
@@ -62,7 +63,7 @@ class NewVersion(_SignIn):
         return {f["rule"]: f for f in self.mine(p) if f["rule"] in ("ISR-T008", "ISR-T004") and not f.get("guarded")}
 
     def counted_change(self, p):
-        return [f for f in self.mine(p) if f["rule"] in ("ISR-I001", "ISR-I002") and f["severity"] == "high" and wt.counts(f)]
+        return [f for f in self.mine(p) if f["rule"] in ("ISR-I001", "ISR-I002") and f["severity"] == "high" and isr.counts(f)]
 
     def test_the_vendor_update_is_a_checked_platform_note_only(self):   # replay (c1bf625: both Confirmed, not checked)
         ps = [self.put(rel, SIGNIN) for rel in (REL, AGENT_REL)]
@@ -73,12 +74,12 @@ class NewVersion(_SignIn):
         for p in ps:
             got = self.checks(p)
             self.assertEqual({(k, f["label"], f["severity"], f["where"].rsplit(":", 1)[1]) for k, f in got.items()},
-                             {("ISR-T008", wt.REVIEWED_LABEL, "info", "11"), ("ISR-T004", wt.REVIEWED_LABEL, "info", "11")}, p)
-            self.assertFalse([f for f in self.mine(p) if wt.counts(f)], p)
+                             {("ISR-T008", isr.REVIEWED_LABEL, "info", "11"), ("ISR-T004", isr.REVIEWED_LABEL, "info", "11")}, p)
+            self.assertFalse([f for f in self.mine(p) if isr.counts(f)], p)
             self.assertFalse(self.counted_change(p), p)
             self.assertFalse([f for f in r["new"] if p in f["where"]], p)
         self.assertEqual((r["open_by_severity"]["critical"], r["open_by_severity"]["high"]), (0, 0))
-        self.assertEqual(r["status"], wt.ALL_GOOD)
+        self.assertEqual(r["status"], isr.ALL_GOOD)
 
     def tampered_counts(self, p, text, line):
         """Not the reviewed bytes, so not on the release list: the change is the file's own counted high ISR-I001, and its
@@ -87,10 +88,10 @@ class NewVersion(_SignIn):
         r = self.audit_json()
         got = self.checks(p)
         self.assertEqual({(k, f["label"], f["severity"], f["where"]) for k, f in got.items()},
-                         {("ISR-T008", wt.CONFIRMED, "critical", f"{p}:{line}"), ("ISR-T004", wt.CONFIRMED, "high", f"{p}:{line}")})
+                         {("ISR-T008", isr.CONFIRMED, "critical", f"{p}:{line}"), ("ISR-T004", isr.CONFIRMED, "high", f"{p}:{line}")})
         self.assertEqual([f["rule"] for f in self.counted_change(p)], ["ISR-I001"])
         self.assertGreaterEqual(r["open_by_severity"]["high"], 1)
-        self.assertNotEqual(r["status"], wt.ALL_GOOD)
+        self.assertNotEqual(r["status"], isr.ALL_GOOD)
 
     def test_one_byte_changed_anywhere_still_counts(self):   # guard
         p = self.put(REL, SIGNIN11)

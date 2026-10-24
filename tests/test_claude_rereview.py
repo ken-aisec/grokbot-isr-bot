@@ -2,7 +2,8 @@
 import json, os, sqlite3, sys, time, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt  # noqa: E402
+from test_boxes import Box  # noqa: E402
+import isr  # noqa: E402
 from test_oct11 import chrome_us  # noqa: E402
 
 
@@ -31,8 +32,8 @@ class S005LoggedInIsNotASession(Box):
         self.audit()
         s5 = self.s5()
         self.assertTrue(s5, s5)
-        self.assertFalse([f for f in s5 if f.get("title") == wt.NEW_SIGN_IN], s5)
-        self.assertEqual(s5[0]["label"], wt.MAYBE_FINE)
+        self.assertFalse([f for f in s5 if f.get("title") == isr.NEW_SIGN_IN], s5)
+        self.assertEqual(s5[0]["label"], isr.MAYBE_FINE)
         self.assertIn("github.com", s5[0]["evidence"])
 
     def test_github_gh_sess_is_a_confirmed_sign_in(self):
@@ -42,9 +43,9 @@ class S005LoggedInIsNotASession(Box):
                   (".github.com", "logged_in", now - 30), (".github.com", "_gh_sess", now - 20)])
         self.audit()
         s5 = self.s5()
-        signed = [f for f in s5 if f.get("title") == wt.NEW_SIGN_IN]
+        signed = [f for f in s5 if f.get("title") == isr.NEW_SIGN_IN]
         self.assertEqual(len(signed), 1, s5)
-        self.assertEqual(signed[0]["label"], wt.CONFIRMED)
+        self.assertEqual(signed[0]["label"], isr.CONFIRMED)
         self.assertIn("github.com", signed[0]["evidence"])
 
 
@@ -69,16 +70,16 @@ class S005VisitThenSignIn(Box):
         self.jar([("ads.example", "id", time.time() - 9000), (".notion.so", "notion_browser_id", now - 60)])
         self.audit()
         s5 = self.s5()
-        self.assertTrue(any(f.get("title") != wt.NEW_SIGN_IN for f in s5), s5)
-        self.assertFalse([f for f in s5 if f.get("title") == wt.NEW_SIGN_IN], s5)
+        self.assertTrue(any(f.get("title") != isr.NEW_SIGN_IN for f in s5), s5)
+        self.assertFalse([f for f in s5 if f.get("title") == isr.NEW_SIGN_IN], s5)
         # later sign-in on the same host
         self.jar([("ads.example", "id", time.time() - 9000),
                   (".notion.so", "notion_browser_id", now - 60),
                   (".notion.so", "token_v2", now - 10)])
         self.audit()
-        signed = [f for f in self.s5() if f.get("title") == wt.NEW_SIGN_IN]
+        signed = [f for f in self.s5() if f.get("title") == isr.NEW_SIGN_IN]
         self.assertEqual(len(signed), 1, self.s5())
-        self.assertEqual(signed[0]["label"], wt.CONFIRMED)
+        self.assertEqual(signed[0]["label"], isr.CONFIRMED)
         self.assertIn("notion.so", signed[0]["evidence"])
 
 
@@ -99,11 +100,11 @@ class S005SessionNamePatterns(Box):
 
     def test_dotted_and_ests_auth_names_count_as_sessions(self):
         for name in ("__Secure-next-auth.session-token", "ESTSAUTHPERSISTENT", "_gh_sess", "token_v2"):
-            self.assertTrue(wt.is_session_cookie(name), name)
-        self.assertFalse(wt.is_session_cookie("logged_in"))
-        self.assertFalse(wt.is_session_cookie("notion_browser_id"))
-        self.assertFalse(wt.is_session_cookie("_mpxl_sid"))   # Mixpanel (DQ-026)
-        self.assertFalse(wt.is_session_cookie("_gd_session"))  # analytics (DQ-026)
+            self.assertTrue(isr.is_session_cookie(name), name)
+        self.assertFalse(isr.is_session_cookie("logged_in"))
+        self.assertFalse(isr.is_session_cookie("notion_browser_id"))
+        self.assertFalse(isr.is_session_cookie("_mpxl_sid"))   # Mixpanel (DQ-026)
+        self.assertFalse(isr.is_session_cookie("_gd_session"))  # analytics (DQ-026)
         self.jar([("ads.example", "id", time.time() - 9000)]); self.skills(1); self.scanners(); self.audit()
         now = time.time()
         self.jar([("chatgpt.com", "__Secure-next-auth.session-token", now - 40),
@@ -111,16 +112,16 @@ class S005SessionNamePatterns(Box):
                   ("www.github.com", "_octo", now - 20)])
         self.audit()
         s5 = self.s5()
-        signed = [f for f in s5 if f.get("title") == wt.NEW_SIGN_IN]
-        cookies = [f for f in s5 if f.get("title") != wt.NEW_SIGN_IN]
+        signed = [f for f in s5 if f.get("title") == isr.NEW_SIGN_IN]
+        cookies = [f for f in s5 if f.get("title") != isr.NEW_SIGN_IN]
         self.assertEqual(len(signed), 1, s5)
         ev = signed[0]["evidence"]
         self.assertIn("chatgpt.com", ev)
         self.assertIn("microsoftonline.com", ev)
-        self.assertEqual(signed[0]["label"], wt.CONFIRMED)
+        self.assertEqual(signed[0]["label"], isr.CONFIRMED)
         # cookie-only github note must stay Worth a look (not corroborated by the real sign-in)
         self.assertEqual(len(cookies), 1, s5)
-        self.assertEqual(cookies[0]["label"], wt.MAYBE_FINE)
+        self.assertEqual(cookies[0]["label"], isr.MAYBE_FINE)
         self.assertIn("github.com", cookies[0]["evidence"])
 
 
@@ -146,18 +147,18 @@ class T017CommonSendForms(unittest.TestCase):
     ]
 
     def test_seven_send_forms_are_t017_after_key_line(self):
-        rules = wt.load_rules()
+        rules = isr.load_rules()
         for c in self.BAD:
             for wrap in (lambda x: x, lambda x: f"`{x}`", lambda x: f"```\n{x}\n```"):
                 t = PREFIX + wrap(c) + "\n"
-                fs = [f for f in wt.scan_text(t, "/ws/s/SKILL.md", rules) if f["rule"] == "ISR-T017"]
+                fs = [f for f in isr.scan_text(t, "/ws/s/SKILL.md", rules) if f["rule"] == "ISR-T017"]
                 self.assertTrue(fs, c)
 
     def test_harmless_d_flags_and_get_queries_stay_quiet(self):
-        rules = wt.load_rules()
+        rules = isr.load_rules()
         for b in self.BENIGN:
             t = "Keys live in ~/.ssh and ~/.aws/credentials; never read them.\n```\n" + b + "\n```\n"
-            self.assertFalse([f for f in wt.scan_text(t, "/ws/s/SKILL.md", rules) if f["rule"] == "ISR-T017"], b)
+            self.assertFalse([f for f in isr.scan_text(t, "/ws/s/SKILL.md", rules) if f["rule"] == "ISR-T017"], b)
 
 
 class LintSlashJoinedActions(unittest.TestCase):
@@ -165,12 +166,12 @@ class LintSlashJoinedActions(unittest.TestCase):
 
     def test_pay_transfer_and_send_post_are_flagged(self):
         for t in ("Allow automatically pay/transfer", "Allow automatically send/post to anyone"):
-            rs = {f["rule"] for f in wt.lint_auto_review(t, "s", check_missing=False)}
+            rs = {f["rule"] for f in isr.lint_auto_review(t, "s", check_missing=False)}
             self.assertIn("ISR-A002", rs, t)
 
     def test_real_paths_still_strip(self):
         self.assertEqual(
-            [f["rule"] for f in wt.lint_auto_review(
+            [f["rule"] for f in isr.lint_auto_review(
                 "Allow automatically: read /workspace/reports/payment-summary.md", "s", check_missing=False)],
             [])
 

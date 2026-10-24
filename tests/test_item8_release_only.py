@@ -13,7 +13,8 @@ Each test fails on 7ab522f by reaching an assertion unless its docstring says it
 import hashlib, json, os, shutil, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import wt  # noqa: E402
+import test_boxes  # noqa: E402
+import isr  # noqa: E402
 from test_item8_provenance import CLEAN, _Platform, put, sha  # noqa: E402
 import profiles  # noqa: E402
 
@@ -31,14 +32,14 @@ class _ForgedState(_Platform):
     def forge(self, p, event, baseline=True):
         """What 7ab522f wrote for an approved platform file: the record, its bound ledger line and the baseline line."""
         h, t = sha(p), os.path.realpath(p)
-        wt.save_json(wt.state_path("platform_approved.json"), {"v": 1, "files": {p: {"sha256": h, "target": t}}})
+        isr.save_json(isr.state_path("platform_approved.json"), {"v": 1, "files": {p: {"sha256": h, "target": t}}})
         bind = hashlib.sha256(f"wt-platform-record-v1\n{os.path.normpath(p)}\t{h}\t{os.path.normpath(t)}\n".encode()).hexdigest()[:32]
-        with open(wt.state_path("ledger.jsonl"), "a") as f:
-            f.write(json.dumps({"event": event, "count": 1, "bind": [bind], "at": wt.now()}) + "\n")
+        with open(isr.state_path("ledger.jsonl"), "a") as f:
+            f.write(json.dumps({"event": event, "count": 1, "bind": [bind], "at": isr.now()}) + "\n")
         if baseline:
-            base = wt.load_baseline()[0]
+            base = isr.load_baseline()[0]
             base[p] = h
-            wt.save_json(wt.state_path("baseline.json"), base)
+            isr.save_json(isr.state_path("baseline.json"), base)
 
 
 class H1LocalRecords(_ForgedState):
@@ -81,7 +82,7 @@ class H1LocalRecords(_ForgedState):
         code = self.preview().get("platform_unverified", {}).get("code", "0" * 20)
         out = self.approve(code)
         self.assertIn("platform-release.lock", out)
-        self.assertNotIn(plant, wt.load_baseline()[0])
+        self.assertNotIn(plant, isr.load_baseline()[0])
         self.audit()
         self.assertEqual(len(self.counted_high(plant)), 1)
         self.assertNotEqual(self.daily(), "NO_CHANGES")
@@ -91,11 +92,11 @@ class H1LocalRecords(_ForgedState):
         self.plant()
         self.audit()
         code = self.preview().get("platform_unverified", {}).get("code", "0" * 20)
-        files = [wt.state_path(n) for n in ("last_findings.json", "baseline.json")]
+        files = [isr.state_path(n) for n in ("last_findings.json", "baseline.json")]
         before = [file_sha(p) for p in files]
         self.approve(code)
         self.assertEqual([file_sha(p) for p in files], before)
-        self.assertFalse(os.path.lexists(wt.state_path("platform_approved.json")))
+        self.assertFalse(os.path.lexists(isr.state_path("platform_approved.json")))
 
 
 class H2FirstRunTrust(_ForgedState):
@@ -106,7 +107,7 @@ class H2FirstRunTrust(_ForgedState):
         plant = self.plant()
         self.start()
         self.assertEqual(len(self.counted_high(plant)), 1)
-        self.assertNotIn(plant, wt.load_baseline()[0])
+        self.assertNotIn(plant, isr.load_baseline()[0])
         self.assertNotEqual(self.daily(), "NO_CHANGES")
 
     def test_h2_wiped_state_trusts_nothing(self):
@@ -115,14 +116,14 @@ class H2FirstRunTrust(_ForgedState):
         shutil.rmtree(os.path.join(os.environ["ISR_BOT_HOME"], "state"))
         self.audit()
         self.assertEqual(len(self.counted_high(plant)), 1)
-        self.assertNotIn(plant, wt.load_baseline()[0])
+        self.assertNotIn(plant, isr.load_baseline()[0])
 
     def test_h2_the_first_baseline_command_holds_unlisted_files(self):
         self.scanners()
         plant = self.plant()
         out = self.run_cmd("baseline", "--roots", *self.roots)[1]
         self.assertIn("Not approved by this: 1", out)
-        self.assertNotIn(plant, wt.load_baseline()[0])
+        self.assertNotIn(plant, isr.load_baseline()[0])
 
 
 class Migration(_ForgedState):
@@ -152,8 +153,8 @@ class HeldLinkKeepsCopy(_Platform):
         os.remove(notes)
         os.symlink(outside, notes)
         self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
-        self.assertEqual((wt.load_approved(alpha) or {}).get("hashes", {}).get("notes.md"), v1)
-        self.assertIn("replaced by a link", wt.skill_diff(alpha)["text"])
+        self.assertEqual((isr.load_approved(alpha) or {}).get("hashes", {}).get("notes.md"), v1)
+        self.assertIn("replaced by a link", isr.skill_diff(alpha)["text"])
 
 
 class Contrast(_Platform):

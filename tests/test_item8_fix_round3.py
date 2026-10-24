@@ -12,7 +12,8 @@ Each test fails on c2982f8 by reaching an assertion unless its docstring says it
 import os, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import wt  # noqa: E402
+import test_boxes  # noqa: E402
+import isr  # noqa: E402
 from test_item8_provenance import CLEAN, ROOT, _Platform, add, put, sha  # noqa: E402
 
 
@@ -42,15 +43,15 @@ class RootsInsidePlatformFolders(_Platform):
 
     def test_1_a_root_inside_a_platform_folder_it_cant_finish_is_a_counted_alert(self):
         self.start()
-        was = wt.PLATFORM_WALK_MAX_FILES
-        wt.PLATFORM_WALK_MAX_FILES = 2
+        was = isr.PLATFORM_WALK_MAX_FILES
+        isr.PLATFORM_WALK_MAX_FILES = 2
         try:
             out = self.daily_in(self.root)
         finally:
-            wt.PLATFORM_WALK_MAX_FILES = was
+            isr.PLATFORM_WALK_MAX_FILES = was
         self.assertNotEqual(out, "NO_CHANGES")
         x = [f for f in self.snap()["findings"] if f["rule"] == "ISR-I011"]
-        self.assertEqual([(f["severity"], wt.counts(f)) for f in x], [("high", True)])
+        self.assertEqual([(f["severity"], isr.counts(f)) for f in x], [("high", True)])
 
     def test_1_contrast_a_root_inside_one_already_walked_is_walked_once(self):
         """Contrast: passes on base too."""
@@ -64,9 +65,9 @@ class RootsInsidePlatformFolders(_Platform):
 
 class FirstRunWithHistory(_Platform):
     def empty_it(self):
-        wt.save_json(wt.state_path("baseline.json"), {})
-        wt.save_json(wt.state_path(wt.BASELINE_META), {"first_at": "2026-01-01T00:00:00", "at": "2026-01-01T00:00:00", "files": 0})
-        self.assertEqual(wt.load_baseline()[1], "first")
+        isr.save_json(isr.state_path("baseline.json"), {})
+        isr.save_json(isr.state_path(isr.BASELINE_META), {"first_at": "2026-01-01T00:00:00", "at": "2026-01-01T00:00:00", "files": 0})
+        self.assertEqual(isr.load_baseline()[1], "first")
 
     def test_2_an_emptied_baseline_on_a_box_with_history_vouches_for_no_platform_file(self):
         self.start()
@@ -75,8 +76,8 @@ class FirstRunWithHistory(_Platform):
         self.empty_it()
         self.assertNotEqual(self.daily(), "NO_CHANGES")
         self.assertEqual(len(self.counted_high(plant)), 1)
-        self.assertFalse(os.path.lexists(wt.state_path("platform_approved.json")))   # nothing writes a platform record now
-        self.assertNotIn(plant, wt.load_baseline()[0])
+        self.assertFalse(os.path.lexists(isr.state_path("platform_approved.json")))   # nothing writes a platform record now
+        self.assertNotIn(plant, isr.load_baseline()[0])
         self.audit()                                                            # and it stays a high after the new first baseline
         self.assertEqual(len(self.counted_high(plant)), 1)
 
@@ -87,7 +88,7 @@ class FirstRunWithHistory(_Platform):
         self.empty_it()
         out = self.run_cmd("baseline", "--roots", *self.roots)[1]
         self.assertIn("Not approved by this: 1", out)
-        self.assertFalse(os.path.lexists(wt.state_path("platform_approved.json")))   # nothing writes a platform record now
+        self.assertFalse(os.path.lexists(isr.state_path("platform_approved.json")))   # nothing writes a platform record now
         self.audit()
         self.assertEqual(len(self.counted_high(plant)), 1)
 
@@ -100,10 +101,10 @@ class FirstRunWithHistory(_Platform):
 
 class ForgedApprovalRecord(_Platform):
     def forge(self, p):
-        path = wt.state_path("platform_approved.json")                         # the record earlier versions wrote
-        d = wt.load_json(path, None) or {"v": 1, "files": {}}
+        path = isr.state_path("platform_approved.json")                         # the record earlier versions wrote
+        d = isr.load_json(path, None) or {"v": 1, "files": {}}
         d["files"][p] = {"sha256": sha(p), "target": os.path.realpath(p)}
-        wt.save_json(path, d)
+        isr.save_json(path, d)
 
     def test_3_a_forged_record_alone_is_not_provenance(self):
         self.start()
@@ -143,7 +144,7 @@ class BlanketBaselineKeepsCopies(_Platform):
         add(alpha, "Changed, not on the release list.\n")
         out = self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")[1]
         self.assertIn("Not approved by this: 1", out)
-        d = wt.skill_diff(os.path.dirname(alpha))
+        d = isr.skill_diff(os.path.dirname(alpha))
         self.assertNotEqual(d["summary"], "same as the approved copy")
         self.assertIn("Changed, not on the release list", d["text"])
 
@@ -152,9 +153,9 @@ class BlanketBaselineKeepsCopies(_Platform):
         self.start()
         own = os.path.join(self.home, "sand-data", "workflows", "skill000")
         add(os.path.join(own, "SKILL.md"), "The owner's own change.\n")
-        self.assertNotEqual(wt.skill_diff(own)["summary"], "same as the approved copy")
+        self.assertNotEqual(isr.skill_diff(own)["summary"], "same as the approved copy")
         self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
-        self.assertEqual(wt.skill_diff(own)["summary"], "same as the approved copy")
+        self.assertEqual(isr.skill_diff(own)["summary"], "same as the approved copy")
 
 
 class Docs(unittest.TestCase):

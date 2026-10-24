@@ -9,7 +9,8 @@ Tests marked "replay" fail on 83fd9bf on their assertion, in every subtest (meas
 MANIFEST.sha256 stashed, this file in place); "guard" ones hold on 83fd9bf too. Every package name is an example."""
 import os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import wt
+import test_boxes  # noqa: E402
+import isr  # noqa: E402
 from test_batch6_codex_r3 import servers, evidence
 
 PIN = ("npm", "exec", "--package=npm@11.21.0", "--")   # a pinned outer launch

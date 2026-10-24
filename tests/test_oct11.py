@@ -3,7 +3,8 @@ import io, json, os, shutil, sqlite3, sys, time, unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt, ROOT, SCANNERS  # noqa: E402
+from test_boxes import Box, ROOT, SCANNERS  # noqa: E402
+import isr  # noqa: E402
 
 CHROME_EPOCH = 11644473600
 
@@ -44,7 +45,7 @@ class BrowserSessions(Box):
         self.audit()
         s5 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-S005"]
         self.assertEqual(len(s5), 1, s5)
-        self.assertEqual((s5[0]["severity"], s5[0]["label"]), ("high", wt.CONFIRMED))
+        self.assertEqual((s5[0]["severity"], s5[0]["label"]), ("high", isr.CONFIRMED))
         self.assertIn("console.anthropic.com", s5[0]["evidence"])
         self.assertNotIn("accounts.google.com", s5[0]["evidence"])                # a refreshed cookie on a known site isn't a new sign-in
         self.assertNotIn("news.example", s5[0]["evidence"])
@@ -113,13 +114,13 @@ class DQ018RemovedBots(Box):
         (22 Worth-a-look and Tip lines). Bot names are anonymized."""
         self.skills(1); self.scanners()
         when = "2026-10-09T12:55:10+00:00"
-        mk = lambda bot, rule, sub="": wt.finding(rule, "t", "high", ["X"], f"rollcall:{bot}{sub}", "ev", "fix")
+        mk = lambda bot, rule, sub="": isr.finding(rule, "t", "high", ["X"], f"rollcall:{bot}{sub}", "ev", "fix")
         fs = [mk("bot-a - Team", "ISR-L001"), mk("bot-t - eggbot", "ISR-L001"), mk("bot-t - eggbot", "ISR-M010", ":memory3"),
               mk("bot-d", "ISR-L001"), mk("bot-z", "ISR-T013", ":routine:Brief")]
-        with mock.patch.object(wt, "now", return_value=when):
-            wt.save_json(wt.state_path("rollcall_findings.json"), {"at": when, "masked": wt.VERSION, "bots": ["bot-a - Team", "bot-d", "bot-t - eggbot", "bot-z"], "findings": fs})
-        fresh = (wt.dt.datetime.now(wt.dt.timezone.utc) - wt.dt.timedelta(days=2)).isoformat()
-        rc = wt.load_json(wt.state_path("rollcall_findings.json"), {}); rc["at"] = fresh; wt.save_json(wt.state_path("rollcall_findings.json"), rc)
+        with mock.patch.object(isr, "now", return_value=when):
+            isr.save_json(isr.state_path("rollcall_findings.json"), {"at": when, "masked": isr.VERSION, "bots": ["bot-a - Team", "bot-d", "bot-t - eggbot", "bot-z"], "findings": fs})
+        fresh = (isr.dt.datetime.now(isr.dt.timezone.utc) - isr.dt.timedelta(days=2)).isoformat()
+        rc = isr.load_json(isr.state_path("rollcall_findings.json"), {}); rc["at"] = fresh; isr.save_json(isr.state_path("rollcall_findings.json"), rc)
         self.audit()
         self.assertEqual(len([f for f in self.snap()["findings"] if f["where"].startswith("rollcall:")]), 5)
         # the owner removed two Bots; the roster the Bot saves now lists who is left
@@ -129,15 +130,15 @@ class DQ018RemovedBots(Box):
         left = sorted({f["where"].split(":")[1] for f in self.snap()["findings"] if f["where"].startswith("rollcall:")})
         self.assertEqual(left, ["bot-d", "bot-z"])
         self.assertTrue(any("2 Bots no longer on the roster" in n for n in r.get("notes", [])), r.get("notes"))
-        md = wt.render_md(self.snap(), [], "2026-W41")
+        md = isr.render_md(self.snap(), [], "2026-W41")
         self.assertNotIn("bot-t", md); self.assertNotIn("bot-a - Team", md)
-        self.assertEqual(wt.load_json(wt.state_path("rollcall_findings.json"), {})["bots"], ["bot-d", "bot-z"])   # pruned at the source
+        self.assertEqual(isr.load_json(isr.state_path("rollcall_findings.json"), {})["bots"], ["bot-d", "bot-z"])   # pruned at the source
 
     def test_old_roll_call_data_ages_out(self):
         self.skills(1); self.scanners()
-        old = (wt.dt.datetime.now(wt.dt.timezone.utc) - wt.dt.timedelta(days=wt.ROLLCALL_MAX_DAYS + 1)).isoformat()
-        wt.save_json(wt.state_path("rollcall_findings.json"), {"at": old, "masked": wt.VERSION, "bots": ["bot-d"],
-                                                               "findings": [wt.finding("ISR-L001", "t", "high", ["X"], "rollcall:bot-d", "ev", "fix")]})
+        old = (isr.dt.datetime.now(isr.dt.timezone.utc) - isr.dt.timedelta(days=isr.ROLLCALL_MAX_DAYS + 1)).isoformat()
+        isr.save_json(isr.state_path("rollcall_findings.json"), {"at": old, "masked": isr.VERSION, "bots": ["bot-d"],
+                                                               "findings": [isr.finding("ISR-L001", "t", "high", ["X"], "rollcall:bot-d", "ev", "fix")]})
         self.audit()
         self.assertFalse([f for f in self.snap()["findings"] if f["where"].startswith("rollcall:")])
 
@@ -154,7 +155,7 @@ class DQ019RevetMatchesPreview(Box):
         code, o, _ = self.run_cmd("fix", "--roots", *self.roots)
         prev = json.loads(o)
         self.assertEqual(prev["changed_skills_total"], 17)                               # the count is never trimmed
-        listed = wt.load_json(wt.state_path("revet_plan.json"), {})["skills"]
+        listed = isr.load_json(isr.state_path("revet_plan.json"), {})["skills"]
         self.assertEqual(len(listed), 17)
         for d in ds[17:]:                                                                  # three more change after the owner saw the list
             open(os.path.join(d, "SKILL.md"), "a").write("Changed later.\n")
@@ -164,7 +165,7 @@ class DQ019RevetMatchesPreview(Box):
         self.assertEqual(sum(1 for x in done if "re-approved" in x), 17)
         self.assertTrue(any("not in the list you approved" in x and "skill017" in x for x in done), done)
         self.audit()
-        still = {wt.skill_name(wt.skill_root(f["where"].split(":")[0])) for f in self.snap()["findings"] if f["rule"] == "ISR-I001"}
+        still = {isr.skill_name(isr.skill_root(f["where"].split(":")[0])) for f in self.snap()["findings"] if f["rule"] == "ISR-I001"}
         self.assertEqual(still, {"skill017", "skill018", "skill019"})
 
 
@@ -187,14 +188,14 @@ class DQ021QuarantineOutsideTheLibrary(Box):
         code, o, _ = self.run_cmd("quarantine", "--restore", "caveman-compress")
         self.assertTrue(os.path.isfile(os.path.join(d, "SKILL.md")), o)
 
-    def test_platform_skills_and_watchtowers_own_folder_are_still_refused(self):
+    def test_platform_skills_and_isr_bots_own_folder_are_still_refused(self):
         self.skills(1)
         bad = [os.path.join(self.home, "sand-data", "plugins", "acme", "skills", "p1"),
                os.path.join(os.environ["ISR_BOT_HOME"], "quarantine-bait", "s1")]
         for d in bad:
             os.makedirs(d); open(os.path.join(d, "SKILL.md"), "w").write("---\nname: x\n---\nEVIL HUSK\n")
         for d in bad:
-            self.assertFalse(wt.owned_path(d, "workspace-skill", log=False), d)
+            self.assertFalse(isr.owned_path(d, "workspace-skill", log=False), d)
 
 
 class DQ018SkillSavesRoster(unittest.TestCase):
@@ -250,7 +251,7 @@ class DQ020CargoUpgrade(Box):
         self.skills(1); d = self.repo(); self.audit()
         self.assertEqual(len([f for f in self.snap()["findings"] if f["rule"] == "ISR-D002"]), 2)
         lock = open(os.path.join(d, "Cargo.lock")).read()
-        with mock.patch.object(wt, "cargo_exe", return_value=self.fake_cargo()):
+        with mock.patch.object(isr, "cargo_exe", return_value=self.fake_cargo()):
             prev = json.loads(self.run_cmd("fix", "--roots", *self.roots)[1])
             cargo = prev["project_upgrades"]["cargo"]
             self.assertIn("phoenix: pyo3 0.26.0 → 0.26.2", cargo)
@@ -269,7 +270,7 @@ class DQ020CargoUpgrade(Box):
     def test_cargo_missing_fails_cleanly_and_says_how_to_install(self):
         self.skills(1); d = self.repo(); self.audit()
         lock = open(os.path.join(d, "Cargo.lock")).read()
-        with mock.patch.object(wt, "cargo_exe", return_value=None):
+        with mock.patch.object(isr, "cargo_exe", return_value=None):
             done = json.loads(self.run_cmd("fix", "--upgrade-projects", "--roots", *self.roots)[1])["done"]
         self.assertTrue(any("cargo isn't installed" in x and "rustup" in x for x in done), done)
         self.assertEqual(open(os.path.join(d, "Cargo.lock")).read(), lock)
@@ -277,11 +278,11 @@ class DQ020CargoUpgrade(Box):
     def test_a_fix_cargo_refuses_puts_the_lockfile_back(self):
         self.skills(1); d = self.repo()
         self.audit()
-        st = wt.load_json(wt.state_path("osv_projects.json"), {})
+        st = isr.load_json(isr.state_path("osv_projects.json"), {})
         st["cargo"][d][0]["want"] = "9.0.0"                                               # needs a Cargo.toml change
-        wt.save_json(wt.state_path("osv_projects.json"), st)
+        isr.save_json(isr.state_path("osv_projects.json"), st)
         lock = open(os.path.join(d, "Cargo.lock")).read()
-        with mock.patch.object(wt, "cargo_exe", return_value=self.fake_cargo()):
+        with mock.patch.object(isr, "cargo_exe", return_value=self.fake_cargo()):
             done = json.loads(self.run_cmd("fix", "--upgrade-projects", "--roots", *self.roots)[1])["done"]
         self.assertTrue(any("pyo3" in x and "left" in x for x in done), done)
         self.assertIn('name = "pyo3"\nversion = "0.26.0"', open(os.path.join(d, "Cargo.lock")).read())

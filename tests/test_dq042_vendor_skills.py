@@ -18,7 +18,8 @@ import json, os, sys, unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt  # noqa: E402
+from test_boxes import Box  # noqa: E402
+import isr  # noqa: E402
 import profiles  # noqa: E402
 
 MARK = "LEARN-REFRESH"   # what the fake engines flag on; no Watchtower rule reads it
@@ -103,13 +104,13 @@ class _Replay(_Learn):
         x = [f for f in self.learn(fs) if f["rule"] == "ISR-X003"]
         self.assertEqual(len(x), 1)
         self.assertEqual(x[0]["evidence"], LEARN_EVIDENCE)                     # the same line the box showed
-        self.assertEqual((x[0]["scope"], x[0]["label"], x[0]["severity"], x[0]["severity_was"]), ("platform", wt.PLATFORM, "info", "high"))
-        self.assertEqual(x[0]["fix"], wt.PLATFORM_FIX)
-        self.assertFalse(wt.counts(x[0]))
+        self.assertEqual((x[0]["scope"], x[0]["label"], x[0]["severity"], x[0]["severity_was"]), ("platform", isr.PLATFORM, "info", "high"))
+        self.assertEqual(x[0]["fix"], isr.PLATFORM_FIX)
+        self.assertFalse(isr.counts(x[0]))
         tip = [f for f in fs if f["rule"] == "ISR-I008"]
         self.assertEqual(len(tip), 1)
         self.assertIn("learn", tip[0]["title"])
-        self.assertNotIn(self.d, wt.changed_skills(fs)[0])                    # nothing to re-approve
+        self.assertNotIn(self.d, isr.changed_skills(fs)[0])                    # nothing to re-approve
         out = json.loads(self.run_cmd("fix", "--roots", *self.roots)[1])
         self.assertFalse([s for s in out.get("changed_skills", []) if s.get("name") == "learn"])
         self.assertEqual(self.daily(), "NO_CHANGES")                          # and the next daily stays quiet
@@ -126,16 +127,16 @@ class ManagedLearnReplay(_Replay, Box):
 class StillAlerts(_Learn, Box):
     REL = ".grok/bundled/skills"
 
-    def test_a_vendor_rug_pull_watchtower_sees_still_alerts(self):
+    def test_a_vendor_rug_pull_isr_bot_sees_still_alerts(self):
         self.refresh(BAD, skillspector=skillspector(LEARN_ISSUES), husk=husk(LEARN_HUSK))
         fs = self.snap()["findings"]
         a = [f for f in fs if f["title"].startswith("Grok Bot's own learn changed and now ")]
         self.assertEqual(len(a), 1)
         self.assertIn(a[0]["severity"], ("critical", "high"))
-        self.assertEqual((a[0]["label"], a[0]["scope"], a[0]["fix"]), (wt.CONFIRMED, "platform", wt.PLATFORM_CONFIRMED_FIX))
+        self.assertEqual((a[0]["label"], a[0]["scope"], a[0]["fix"]), (isr.CONFIRMED, "platform", isr.PLATFORM_CONFIRMED_FIX))
         self.assertIn("support", a[0]["fix"])
         x = [f for f in self.learn(fs) if f["rule"] == "ISR-X003"]
-        self.assertEqual([(f["severity"], f["label"]) for f in x], [("high", wt.CONFIRMED)])
+        self.assertEqual([(f["severity"], f["label"]) for f in x], [("high", isr.CONFIRMED)])
 
     def test_a_vendor_rug_pull_alerts_in_daily(self):
         self.scanners(skillspector=skillspector(LEARN_ISSUES), husk=husk(LEARN_HUSK))
@@ -149,14 +150,14 @@ class StillAlerts(_Learn, Box):
         self.assertTrue([f for f in fs if f["title"].startswith(LEARN_TITLE)])
         self.assertEqual([f["severity"] for f in self.learn(fs) if f["rule"] == "ISR-X003"], ["high"])
 
-    def test_a_demoted_line_comes_back_when_watchtower_confirms_it(self):
+    def test_a_demoted_line_comes_back_when_isr_bot_confirms_it(self):
         self.refresh(LEARN_V2, skillspector=skillspector(LEARN_ISSUES), husk=husk(LEARN_HUSK))
         put(os.path.join(self.d, "SKILL.md"), BAD)
         out = self.daily()
         self.assertNotEqual(out, "NO_CHANGES")
         fs = self.snap()["findings"]
         self.assertTrue([f for f in fs if f["title"].startswith("Grok Bot's own learn changed and now ")])
-        self.assertEqual([(f["severity"], f["label"]) for f in self.learn(fs) if f["rule"] == "ISR-X003"], [("high", wt.CONFIRMED)])
+        self.assertEqual([(f["severity"], f["label"]) for f in self.learn(fs) if f["rule"] == "ISR-X003"], [("high", isr.CONFIRMED)])
 
 
 class OtherSkillsUnchanged(Box):
@@ -172,9 +173,9 @@ class OtherSkillsUnchanged(Box):
         fs = [f for f in self.snap()["findings"] if f["where"].startswith(d)]
         x = [f for f in fs if f["rule"] == "ISR-X003"]
         self.assertEqual([f["severity"] for f in x], ["critical"])
-        self.assertTrue(wt.counts(x[0]))
-        self.assertTrue([f for f in fs if f["rule"] == "ISR-I001" and f["severity"] == "high" and wt.counts(f)])
-        self.assertIn(d, wt.changed_skills(self.snap()["findings"])[0])
+        self.assertTrue(isr.counts(x[0]))
+        self.assertTrue([f for f in fs if f["rule"] == "ISR-I001" and f["severity"] == "high" and isr.counts(f)])
+        self.assertIn(d, isr.changed_skills(self.snap()["findings"])[0])
 
     def test_a_third_party_install_still_counts(self):
         d = os.path.join(self.home, ".agents", "skills", "learn")
@@ -183,7 +184,7 @@ class OtherSkillsUnchanged(Box):
         x = [f for f in self.snap()["findings"] if f["rule"] == "ISR-X003" and f["where"] == d]
         self.assertEqual([f["severity"] for f in x], ["high"])
         self.assertNotEqual(x[0].get("scope"), "platform")
-        self.assertTrue(wt.counts(x[0]))
+        self.assertTrue(isr.counts(x[0]))
 
     def test_the_env_vars_contrast_row_still_alerts(self):
         # SkillSpector + Watchtower on a plugin-cache skill: not a platform skill folder, and Watchtower's own rule agrees.
@@ -196,9 +197,9 @@ class OtherSkillsUnchanged(Box):
         x = [f for f in self.snap()["findings"] if f["rule"] == "ISR-X003" and f["where"] == d]
         self.assertEqual(len(x), 1)
         self.assertEqual(x[0]["evidence"], "SkillSpector + Watchtower; Privilege Escalation: Credential Access; Rogue Agent: Self-Modification")
-        self.assertEqual((x[0]["severity"], x[0]["label"]), ("high", wt.CONFIRMED))
+        self.assertEqual((x[0]["severity"], x[0]["label"]), ("high", isr.CONFIRMED))
         self.assertNotEqual(x[0].get("scope"), "platform")
-        self.assertTrue(wt.counts(x[0]))
+        self.assertTrue(isr.counts(x[0]))
 
 
 class NoSpoofing(Box):
@@ -212,28 +213,28 @@ class NoSpoofing(Box):
         put(os.path.join(self.outside, "SKILL.md"), LEARN_V1)
 
     def test_real_platform_folders(self):
-        self.assertTrue(wt.platform_skill_path(os.path.join(self.bundled, "learn")))
-        self.assertTrue(wt.platform_skill_path(os.path.join(self.managed, "learn", "SKILL.md") + ":3"))
+        self.assertTrue(isr.platform_skill_path(os.path.join(self.bundled, "learn")))
+        self.assertTrue(isr.platform_skill_path(os.path.join(self.managed, "learn", "SKILL.md") + ":3"))
 
     def test_a_lookalike_folder_is_not_platform(self):
         d = os.path.join(self.home, ".grok", "bundled-evil", "skills", "learn")
         put(os.path.join(d, "SKILL.md"), LEARN_V1)
-        self.assertFalse(wt.platform_skill_path(d))
+        self.assertFalse(isr.platform_skill_path(d))
 
     def test_a_link_inside_the_bundled_folder_that_leads_out_is_not_platform(self):
         link = os.path.join(self.bundled, "sneaky")
         os.symlink(self.outside, link)
-        self.assertFalse(wt.platform_skill_path(link))
+        self.assertFalse(isr.platform_skill_path(link))
 
     def test_a_link_leading_into_the_bundled_folder_is_not_platform(self):
         link = os.path.join(self.tmp, "elsewhere", "learn-link")
         os.symlink(os.path.join(self.bundled, "learn"), link)
-        self.assertFalse(wt.platform_skill_path(link))
+        self.assertFalse(isr.platform_skill_path(link))
 
     def test_a_user_folder_named_like_a_platform_folder_is_not_platform(self):
         d = os.path.join(self.home, "sand-data", "workflows", "x", ".grok", "bundled", "skills", "learn")
         put(os.path.join(d, "SKILL.md"), LEARN_V1)
-        self.assertFalse(wt.platform_skill_path(d))
+        self.assertFalse(isr.platform_skill_path(d))
 
     def test_a_spoofed_place_is_never_an_unconfirmed_platform_vote(self):
         # Discovery doesn't reach bundled-evil or follow links today; the demotion must not rely on that.
@@ -241,20 +242,20 @@ class NoSpoofing(Box):
         os.symlink(self.outside, link)
         for d in (os.path.join(self.home, ".grok", "bundled-evil", "skills", "learn"), link):
             x = {"rule": "ISR-X003", "where": d, "severity": "high", "kinds": [], "source": "engines"}
-            self.assertFalse(wt.unconfirmed_platform_vote(x, [x]), d)
+            self.assertFalse(isr.unconfirmed_platform_vote(x, [x]), d)
         real = {"rule": "ISR-X003", "where": os.path.join(self.bundled, "learn"), "severity": "high", "kinds": [], "source": "engines"}
-        self.assertTrue(wt.unconfirmed_platform_vote(real, [real]))
-        self.assertFalse(wt.unconfirmed_platform_vote(dict(real, kinds=["exfil"]), [real]))   # the engines name a behavior
-        self.assertTrue(wt.unconfirmed_platform_vote(dict(real, kinds=["override", "secrecy"]), [real]))   # wording only stays unconfirmed
+        self.assertTrue(isr.unconfirmed_platform_vote(real, [real]))
+        self.assertFalse(isr.unconfirmed_platform_vote(dict(real, kinds=["exfil"]), [real]))   # the engines name a behavior
+        self.assertTrue(isr.unconfirmed_platform_vote(dict(real, kinds=["override", "secrecy"]), [real]))   # wording only stays unconfirmed
 
 
 def classify(fs):
     """The audit's own last steps (cmd_audit: scope, labels, platform-refresh summary, Platform lines), on findings built here."""
     for f in fs:
-        if wt.platform_file(f):
+        if isr.platform_file(f):
             f["scope"] = "platform"
-    fs = wt.label_findings(fs, wt.ask_first_covered(fs))
-    return wt.mark_platform(wt.summarize_refresh(fs))
+    fs = isr.label_findings(fs, isr.ask_first_covered(fs))
+    return isr.mark_platform(isr.summarize_refresh(fs))
 
 
 class ColonInAFolderName(Box):
@@ -270,25 +271,25 @@ class ColonInAFolderName(Box):
         self.d = os.path.join(self.home, ".grok", "bundled", "skills:escape", "learn")
 
     def test_a_colon_folder_that_links_out_is_not_platform(self):
-        self.assertFalse(wt.platform_skill_path(self.d))
-        self.assertFalse(wt.platform_skill_path(os.path.join(self.d, "SKILL.md") + ":3"))
-        self.assertTrue(wt.platform_skill_path(os.path.join(self.home, ".grok", "bundled", "skills", "learn")))
+        self.assertFalse(isr.platform_skill_path(self.d))
+        self.assertFalse(isr.platform_skill_path(os.path.join(self.d, "SKILL.md") + ":3"))
+        self.assertTrue(isr.platform_skill_path(os.path.join(self.home, ".grok", "bundled", "skills", "learn")))
 
     def test_its_vote_stays_confirmed_and_the_change_alerts(self):
-        x = wt.finding("ISR-X003", "Corroborated by multiple engines", "high", ["AST01", "AST08"], self.d, LEARN_EVIDENCE,
+        x = isr.finding("ISR-X003", "Corroborated by multiple engines", "high", ["AST01", "AST08"], self.d, LEARN_EVIDENCE,
                        "Two independent engines agree.", source="engines")
         x["kinds"] = []                                                       # the engines' words name no behavior
         p = os.path.join(self.d, "SKILL.md")
-        rf = wt.finding("ISR-I001", "Built-in skill or plugin updated", "low", ["AST07"], p, "sha256 aaaaaaaaaaaa→bbbbbbbbbbbb", "")
-        rf["refresh"] = wt.platform_file(p)
+        rf = isr.finding("ISR-I001", "Built-in skill or plugin updated", "low", ["AST07"], p, "sha256 aaaaaaaaaaaa→bbbbbbbbbbbb", "")
+        rf["refresh"] = isr.platform_file(p)
         self.assertTrue(rf["refresh"])                                        # still read as a platform change, so it reaches the summary
         fs = classify([x, rf])
         xs = [f for f in fs if f["rule"] == "ISR-X003"]
-        self.assertEqual([(f["severity"], f["label"]) for f in xs], [("high", wt.CONFIRMED)])
+        self.assertEqual([(f["severity"], f["label"]) for f in xs], [("high", isr.CONFIRMED)])
         self.assertFalse([f for f in fs if f["rule"] == "ISR-I008"])           # not folded into the Platform refresh Tip
         a = [f for f in fs if f["title"].startswith("Grok Bot's own ") and "Corroborated by multiple engines" in f["title"]]
         self.assertEqual(len(a), 1)
-        self.assertEqual((a[0]["severity"], a[0]["label"], a[0]["scope"], a[0]["fix"]), ("high", wt.CONFIRMED, "platform", wt.PLATFORM_CONFIRMED_FIX))
+        self.assertEqual((a[0]["severity"], a[0]["label"], a[0]["scope"], a[0]["fix"]), ("high", isr.CONFIRMED, "platform", isr.PLATFORM_CONFIRMED_FIX))
         self.assertIn("support", a[0]["fix"])
 
 
@@ -306,27 +307,27 @@ class NumericSuffixInAFolderName(Box):
         os.symlink(out, self.d)
 
     def test_a_numeric_suffix_folder_that_links_out_is_not_platform(self):
-        self.assertFalse(wt.platform_skill_path(self.d, line=False))
-        self.assertFalse(wt.platform_skill_path(self.d))                       # ":3" as a line or as the name: either reading is out
-        self.assertFalse(wt.platform_skill_path(os.path.join(self.d, "SKILL.md") + ":3"))
-        self.assertTrue(wt.platform_skill_path(os.path.join(self.bundled, "learn")))
+        self.assertFalse(isr.platform_skill_path(self.d, line=False))
+        self.assertFalse(isr.platform_skill_path(self.d))                       # ":3" as a line or as the name: either reading is out
+        self.assertFalse(isr.platform_skill_path(os.path.join(self.d, "SKILL.md") + ":3"))
+        self.assertTrue(isr.platform_skill_path(os.path.join(self.bundled, "learn")))
 
     def test_its_vote_stays_confirmed_and_the_change_alerts(self):
-        x = wt.finding("ISR-X003", "Corroborated by multiple engines", "high", ["AST01", "AST08"], self.d, LEARN_EVIDENCE,
+        x = isr.finding("ISR-X003", "Corroborated by multiple engines", "high", ["AST01", "AST08"], self.d, LEARN_EVIDENCE,
                        "Two independent engines agree.", source="engines")
         x["kinds"] = []                                                       # the engines' words name no behavior
-        self.assertFalse(wt.unconfirmed_platform_vote(x, [x]))
+        self.assertFalse(isr.unconfirmed_platform_vote(x, [x]))
         p = os.path.join(self.d, "SKILL.md")
-        rf = wt.finding("ISR-I001", "Built-in skill or plugin updated", "low", ["AST07"], p, "sha256 aaaaaaaaaaaa→bbbbbbbbbbbb", "")
-        rf["refresh"] = wt.platform_file(p)
+        rf = isr.finding("ISR-I001", "Built-in skill or plugin updated", "low", ["AST07"], p, "sha256 aaaaaaaaaaaa→bbbbbbbbbbbb", "")
+        rf["refresh"] = isr.platform_file(p)
         self.assertTrue(rf["refresh"])                                        # still read as a platform change, so it reaches the summary
         fs = classify([x, rf])
         xs = [f for f in fs if f["rule"] == "ISR-X003"]
-        self.assertEqual([(f["severity"], f["label"]) for f in xs], [("high", wt.CONFIRMED)])
+        self.assertEqual([(f["severity"], f["label"]) for f in xs], [("high", isr.CONFIRMED)])
         self.assertFalse([f for f in fs if f["rule"] == "ISR-I008"])           # not folded into the Platform refresh Tip
         a = [f for f in fs if f["title"].startswith("Grok Bot's own ") and "Corroborated by multiple engines" in f["title"]]
         self.assertEqual(len(a), 1)
-        self.assertEqual((a[0]["severity"], a[0]["label"], a[0]["scope"], a[0]["fix"]), ("high", wt.CONFIRMED, "platform", wt.PLATFORM_CONFIRMED_FIX))
+        self.assertEqual((a[0]["severity"], a[0]["label"], a[0]["scope"], a[0]["fix"]), ("high", isr.CONFIRMED, "platform", isr.PLATFORM_CONFIRMED_FIX))
         self.assertIn("support", a[0]["fix"])
 
 
@@ -343,54 +344,54 @@ class DangerousFifthIssue(_Learn, Box):
     def check_alerts(self):
         fs = self.snap()["findings"]
         x = [f for f in self.learn(fs) if f["rule"] == "ISR-X003"]
-        self.assertEqual([(f["severity"], f["label"]) for f in x], [("high", wt.CONFIRMED)])
+        self.assertEqual([(f["severity"], f["label"]) for f in x], [("high", isr.CONFIRMED)])
         self.assertIn("credential", x[0]["kinds"])
         self.assertFalse([f for f in fs if f["rule"] == "ISR-I008" and "learn" in f["title"]])
         a = [f for f in fs if f["title"].startswith(LEARN_TITLE)]
         self.assertEqual(len(a), 1)
-        self.assertEqual((a[0]["severity"], a[0]["label"], a[0]["scope"], a[0]["fix"]), ("high", wt.CONFIRMED, "platform", wt.PLATFORM_CONFIRMED_FIX))
+        self.assertEqual((a[0]["severity"], a[0]["label"], a[0]["scope"], a[0]["fix"]), ("high", isr.CONFIRMED, "platform", isr.PLATFORM_CONFIRMED_FIX))
         self.assertIn("support", a[0]["fix"])
 
     def test_the_fifth_issue_still_names_its_kind(self):
         self.refresh(LEARN_V2, skillspector=skillspector(FIFTH_ISSUES), husk=husk(LEARN_HUSK))
         self.check_alerts()
-        ss = wt.load_json(wt.state_path("engine_cache.json"), {})[self.d]["ss"]
+        ss = isr.load_json(isr.state_path("engine_cache.json"), {})[self.d]["ss"]
         self.assertEqual(len(ss["top"]), 4)
         self.assertNotIn("Privilege Escalation: Credential Access", ss["top"])   # the summary is still cut to four
         self.assertIn("credential", ss["kinds"])
 
     def test_a_cached_result_from_before_is_scanned_again(self):
         self.refresh(LEARN_V2, skillspector=skillspector(FIFTH_ISSUES), husk=husk(LEARN_HUSK))
-        p = wt.state_path("engine_cache.json")
-        cache = wt.load_json(p, {})
+        p = isr.state_path("engine_cache.json")
+        cache = isr.load_json(p, {})
         cache[self.d]["ss"].pop("kinds", None)                                # what a run before this fix remembered
-        wt.save_json(p, cache)
+        isr.save_json(p, cache)
         self.audit()
         self.check_alerts()
-        self.assertIn("credential", wt.load_json(p, {})[self.d]["ss"]["kinds"])
+        self.assertIn("credential", isr.load_json(p, {})[self.d]["ss"]["kinds"])
 
     def test_a_cached_result_from_before_is_never_demoted_while_it_waits(self):
         # Codex, DQ-042 round 2: with no time left to scan it again, the old answer (four summaries, no kinds) is still what the
         # audit reads. Its kinds may be missing a fifth issue, so the vote stays high and Confirmed until a scan refreshes it.
         self.refresh(LEARN_V2, skillspector=skillspector(FIFTH_ISSUES), husk=husk(LEARN_HUSK))
-        p = wt.state_path("engine_cache.json")
-        cache = wt.load_json(p, {})
+        p = isr.state_path("engine_cache.json")
+        cache = isr.load_json(p, {})
         cache[self.d]["ss"].pop("kinds", None)                                # what a run before this fix remembered
-        wt.save_json(p, cache)
+        isr.save_json(p, cache)
         self.audit("--budget", "0")
-        self.assertNotIn("kinds", wt.load_json(p, {})[self.d]["ss"])          # nothing was scanned again
+        self.assertNotIn("kinds", isr.load_json(p, {})[self.d]["ss"])          # nothing was scanned again
         fs = self.snap()["findings"]
         x = [f for f in self.learn(fs) if f["rule"] == "ISR-X003"]
-        self.assertEqual([(f["severity"], f["label"], f.get("kinds_incomplete")) for f in x], [("high", wt.CONFIRMED, True)])
+        self.assertEqual([(f["severity"], f["label"], f.get("kinds_incomplete")) for f in x], [("high", isr.CONFIRMED, True)])
         self.assertNotIn("credential", x[0]["kinds"])                         # the truncated summary alone would have demoted it
         self.assertFalse([f for f in fs if f["rule"] == "ISR-I008" and "learn" in f["title"]])
         a = [f for f in fs if f["title"].startswith(LEARN_TITLE)]
         self.assertEqual(len(a), 1)
-        self.assertEqual((a[0]["severity"], a[0]["label"], a[0]["scope"], a[0]["fix"]), ("high", wt.CONFIRMED, "platform", wt.PLATFORM_CONFIRMED_FIX))
+        self.assertEqual((a[0]["severity"], a[0]["label"], a[0]["scope"], a[0]["fix"]), ("high", isr.CONFIRMED, "platform", isr.PLATFORM_CONFIRMED_FIX))
         self.assertIn("support", a[0]["fix"])
         self.daily()                                                          # daily keeps the audit's line as it was
         x = [f for f in self.learn(self.snap()["findings"]) if f["rule"] == "ISR-X003"]
-        self.assertEqual([(f["severity"], f["label"]) for f in x], [("high", wt.CONFIRMED)])
+        self.assertEqual([(f["severity"], f["label"]) for f in x], [("high", isr.CONFIRMED)])
 
 
 class _StaysConfirmed(_Learn):
@@ -401,11 +402,11 @@ class _StaysConfirmed(_Learn):
     def assert_still_alerts(self):
         fs = self.snap()["findings"]
         x = [f for f in self.learn(fs) if f["rule"] == "ISR-X003"]
-        self.assertEqual([(f["severity"], f["label"], f.get("kinds_incomplete")) for f in x], [("high", wt.CONFIRMED, True)])
+        self.assertEqual([(f["severity"], f["label"], f.get("kinds_incomplete")) for f in x], [("high", isr.CONFIRMED, True)])
         self.assertFalse([f for f in fs if f["rule"] == "ISR-I008" and "learn" in f["title"]])
         a = [f for f in fs if f["title"].startswith(LEARN_TITLE)]
         self.assertEqual(len(a), 1)
-        self.assertEqual((a[0]["severity"], a[0]["label"], a[0]["scope"], a[0]["fix"]), ("high", wt.CONFIRMED, "platform", wt.PLATFORM_CONFIRMED_FIX))
+        self.assertEqual((a[0]["severity"], a[0]["label"], a[0]["scope"], a[0]["fix"]), ("high", isr.CONFIRMED, "platform", isr.PLATFORM_CONFIRMED_FIX))
         self.assertIn("support", a[0]["fix"])
 
 
@@ -420,30 +421,30 @@ class LegacyLineWhenTheStageIsSkipped(_StaysConfirmed, Box):
     def setUp(self):
         super().setUp()
         self.refresh(LEARN_V2, skillspector=skillspector(FIFTH_ISSUES), husk=husk(LEARN_HUSK))
-        p = wt.state_path("engine_cache.json")
-        cache = wt.load_json(p, {})
+        p = isr.state_path("engine_cache.json")
+        cache = isr.load_json(p, {})
         ss = cache[self.d]["ss"]
         ss.pop("kinds", None)                                                 # what a run before this fix remembered
-        wt.save_json(p, cache)
-        self.old = sorted(wt.engine_kinds(ss["top"]) | wt.engine_kinds([LEARN_HUSK]))
+        isr.save_json(p, cache)
+        self.old = sorted(isr.engine_kinds(ss["top"]) | isr.engine_kinds([LEARN_HUSK]))
         self.assertNotIn("credential", self.old)                              # the four summaries alone name no behavior
         snap = self.snap()
         for f in snap["findings"]:
             if f["rule"] == "ISR-X003" and f["where"] == self.d:
                 f["kinds"] = self.old                                         # and the line it wrote
                 f.pop("kinds_incomplete", None)
-        wt.save_json(wt.state_path("last_findings.json"), snap)
-        wt.ENGINE_CURRENT.clear()                                             # each run is its own process
+        isr.save_json(isr.state_path("last_findings.json"), snap)
+        isr.ENGINE_CURRENT.clear()                                             # each run is its own process
 
     def test_an_audit_that_skips_the_stage_never_demotes_the_kept_line(self):
-        with mock.patch.object(wt, "engine_findings", side_effect=SKIPPED):
+        with mock.patch.object(isr, "engine_findings", side_effect=SKIPPED):
             r = self.audit()
         self.assertTrue([n for n in r["notes"] if n.startswith("SkillSpector and husk FAILED")], r["notes"])
         self.assertEqual([f["kinds"] for f in self.learn(self.snap()["findings"]) if f["rule"] == "ISR-X003"], [self.old])
         self.assert_still_alerts()
 
     def test_a_daily_that_skips_the_stage_never_demotes_the_kept_line(self):
-        with mock.patch.object(wt, "engine_findings", side_effect=SKIPPED):
+        with mock.patch.object(isr, "engine_findings", side_effect=SKIPPED):
             self.daily()
         self.assert_still_alerts()
 
@@ -479,19 +480,19 @@ class HuskDetailMissing(_StaysConfirmed, Box):
         self.audit("--budget", "3")                                           # husk's detail run gets under 3 seconds
         self.assertEqual(self.calls(), 1)
         self.assert_still_alerts()
-        self.assertTrue(wt.load_json(wt.state_path("engine_cache.json"), {})[self.d].get("hk_partial"))
+        self.assertTrue(isr.load_json(isr.state_path("engine_cache.json"), {})[self.d].get("hk_partial"))
         self.scanners(skillspector=skillspector(LEARN_ISSUES), husk=husk(LEARN_HUSK))   # next run husk answers in time
         self.audit()
-        e_ = wt.load_json(wt.state_path("engine_cache.json"), {})[self.d]
+        e_ = isr.load_json(isr.state_path("engine_cache.json"), {})[self.d]
         self.assertEqual((e_["hk"], e_.get("hk_partial")), ([LEARN_HUSK], None))   # asked again, and its words are kept
         x = [f for f in self.learn(self.snap()["findings"]) if f["rule"] == "ISR-X003"]   # now complete: wording only, a Platform line
-        self.assertEqual([(f["severity"], f["label"], f.get("kinds_incomplete")) for f in x], [("info", wt.PLATFORM, None)])
+        self.assertEqual([(f["severity"], f["label"], f.get("kinds_incomplete")) for f in x], [("info", isr.PLATFORM, None)])
 
     def test_a_detail_run_that_leaves_no_sarif(self):
         self.refresh(LEARN_V2, skillspector=skillspector(LEARN_ISSUES), husk=husk_detail(self.log, "missing"))
         self.assertEqual(self.calls(), 1)
         self.assert_still_alerts()
-        self.assertTrue(wt.load_json(wt.state_path("engine_cache.json"), {})[self.d].get("hk_partial"))
+        self.assertTrue(isr.load_json(isr.state_path("engine_cache.json"), {})[self.d].get("hk_partial"))
         self.audit()                                                        # the words are asked for again
         self.assertEqual(self.calls(), 2)
         self.assert_still_alerts()
@@ -517,12 +518,12 @@ class LegacyHuskPlaceholder(_StaysConfirmed, Box):
 
     def legacy(self, hk):
         """What a run before hk_partial remembered when husk's detail run didn't deliver."""
-        p = wt.state_path("engine_cache.json")
-        cache = wt.load_json(p, {})
+        p = isr.state_path("engine_cache.json")
+        cache = isr.load_json(p, {})
         cache[self.d]["hk"] = hk
         cache[self.d].pop("hk_partial", None)
-        wt.save_json(p, cache)
-        wt.ENGINE_CURRENT.clear()                                             # each run is its own process
+        isr.save_json(p, cache)
+        isr.ENGINE_CURRENT.clear()                                             # each run is its own process
 
     def test_a_placeholder_is_scanned_again_and_never_demoted(self):
         self.scanners(skillspector=skillspector(LEARN_ISSUES), husk=husk_detail(self.log, "missing"))   # the words still don't come
@@ -538,7 +539,7 @@ class LegacyHuskPlaceholder(_StaysConfirmed, Box):
             with self.subTest(hk=hk):
                 self.legacy(hk)
                 self.audit("--budget", "0")
-                self.assertEqual(wt.load_json(wt.state_path("engine_cache.json"), {})[self.d]["hk"], hk)   # not scanned again
+                self.assertEqual(isr.load_json(isr.state_path("engine_cache.json"), {})[self.d]["hk"], hk)   # not scanned again
                 self.assert_still_alerts()
 
     def test_a_daily_scans_it_again_too(self):
@@ -551,10 +552,10 @@ class LegacyHuskPlaceholder(_StaysConfirmed, Box):
     def test_when_the_words_come_back_it_is_complete_and_left_alone(self):
         self.legacy(["flagged"])
         self.audit()                                                          # the normal husk answers this time
-        e_ = wt.load_json(wt.state_path("engine_cache.json"), {})[self.d]
+        e_ = isr.load_json(isr.state_path("engine_cache.json"), {})[self.d]
         self.assertEqual((e_["hk"], e_.get("hk_partial")), ([LEARN_HUSK], None))
         x = [f for f in self.learn(self.snap()["findings"]) if f["rule"] == "ISR-X003"]
-        self.assertEqual([(f["severity"], f["label"], f.get("kinds_incomplete")) for f in x], [("info", wt.PLATFORM, None)])
+        self.assertEqual([(f["severity"], f["label"], f.get("kinds_incomplete")) for f in x], [("info", isr.PLATFORM, None)])
         self.scanners(skillspector=skillspector(LEARN_ISSUES), husk=husk_detail(self.log, "missing"))
         self.audit()
         self.assertEqual(self.calls(), 0)                                     # complete now: not scanned again
@@ -567,7 +568,7 @@ class LegacyHuskPlaceholder(_StaysConfirmed, Box):
         self.daily()
         self.assertEqual(self.calls(), 0)
         x = [f for f in self.learn(self.snap()["findings"]) if f["rule"] == "ISR-X003"]
-        self.assertEqual([(f["severity"], f["label"]) for f in x], [("info", wt.PLATFORM)])
+        self.assertEqual([(f["severity"], f["label"]) for f in x], [("info", isr.PLATFORM)])
 
 
 if __name__ == "__main__":

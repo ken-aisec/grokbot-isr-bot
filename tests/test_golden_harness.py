@@ -12,7 +12,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import golden_split as gs  # noqa: E402  (the module, never its TestCase: that would run the real check here)
 
-ITEMS = {"001 --version :rc": "0", "001 --version :stdout": "wt 1.0\n", "001 --version :stderr": ""}
+ITEMS = {"001 --version :rc": "0", "001 --version :stdout": "isr.py 1.0\n", "001 --version :stderr": ""}
 
 
 class _Harness(unittest.TestCase):
@@ -80,7 +80,7 @@ class H2EmptySelection(_Harness):
         self.assertIn("RESULT: post == pre on every tier run (1 scenarios compared)", type(h).report)
 
     def test_a_post_that_differs_is_still_caught(self):
-        h, _ = self.harness(post_items=dict(ITEMS, **{"001 --version :stdout": "wt 1.1\n"}))
+        h, _ = self.harness(post_items=dict(ITEMS, **{"001 --version :stdout": "isr.py 1.1\n"}))
         with mock.patch.dict(os.environ, {"ISR_GOLDEN_ONLY": "^tierA$"}):
             out = self.outcome(h)
         self.assertFailedLoudly(h, out, "1 problems")
@@ -89,7 +89,7 @@ class H2EmptySelection(_Harness):
 class H3BaselineRequired(unittest.TestCase):
     """scripts/golden-check.sh from a copy: stub git accepts every ref, stub python3 prints what it was given."""
     def setUp(self):
-        self.tmp = tempfile.mkdtemp(prefix="wt-golden-harness-")
+        self.tmp = tempfile.mkdtemp(prefix="isr-bot-golden-harness-")
         self.addCleanup(shutil.rmtree, self.tmp, True)
         for d in ("scripts", "bin"):
             os.makedirs(os.path.join(self.tmp, d))

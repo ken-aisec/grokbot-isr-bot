@@ -6,7 +6,8 @@ limit (about 8 minutes), so a bigger budget bought nothing.
 import os, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, SCANNERS, wt  # noqa: E402
+from test_boxes import Box, SCANNERS  # noqa: E402
+import isr  # noqa: E402
 
 SLOW_SS = SCANNERS["skillspector"].replace("skills = []\n", "import time\ntime.sleep(1)\nskills = []\n")
 
@@ -14,16 +15,16 @@ SLOW_SS = SCANNERS["skillspector"].replace("skills = []\n", "import time\ntime.s
 class BiggerBudget(Box):
     def setUp(self):
         super().setUp()
-        saved = (wt.RUN_LIMIT, wt.ENGINE_BUDGET, wt.ENGINE_CHUNK, wt.ENGINE_LAUNCH_BASE, wt.ENGINE_LAUNCH_PER_SKILL)
-        self.addCleanup(lambda: setattr(wt, "RUN_LIMIT", saved[0]) or setattr(wt, "ENGINE_BUDGET", saved[1]) or setattr(wt, "ENGINE_CHUNK", saved[2])
-                        or setattr(wt, "ENGINE_LAUNCH_BASE", saved[3]) or setattr(wt, "ENGINE_LAUNCH_PER_SKILL", saved[4]))
+        saved = (isr.RUN_LIMIT, isr.ENGINE_BUDGET, isr.ENGINE_CHUNK, isr.ENGINE_LAUNCH_BASE, isr.ENGINE_LAUNCH_PER_SKILL)
+        self.addCleanup(lambda: setattr(isr, "RUN_LIMIT", saved[0]) or setattr(isr, "ENGINE_BUDGET", saved[1]) or setattr(isr, "ENGINE_CHUNK", saved[2])
+                        or setattr(isr, "ENGINE_LAUNCH_BASE", saved[3]) or setattr(isr, "ENGINE_LAUNCH_PER_SKILL", saved[4]))
         # Scaled down: a 23-second run limit stands in for the real 540, and each scanner launch takes a second.
-        wt.RUN_LIMIT, wt.ENGINE_BUDGET, wt.ENGINE_CHUNK, wt.ENGINE_LAUNCH_BASE, wt.ENGINE_LAUNCH_PER_SKILL = 23, 420, 1, 5, 0
+        isr.RUN_LIMIT, isr.ENGINE_BUDGET, isr.ENGINE_CHUNK, isr.ENGINE_LAUNCH_BASE, isr.ENGINE_LAUNCH_PER_SKILL = 23, 420, 1, 5, 0
         self.ds = self.skills(8)
         self.scanners(skillspector=SLOW_SS)
 
     def waiting(self):
-        cache = wt.load_json(wt.state_path("engine_cache.json"), {})
+        cache = isr.load_json(isr.state_path("engine_cache.json"), {})
         return [d for d in self.ds if not (cache.get(d) or {}).get("engines")]
 
     def test_the_run_limit_still_caps_a_normal_full_audit(self):
@@ -39,20 +40,20 @@ class BiggerBudget(Box):
     def test_the_budget_has_a_ceiling_and_the_daily_check_keeps_its_limit(self):
         import argparse
         seen = {}
-        real = wt.audit
+        real = isr.audit
         def spy(roots, exports, quick=False):
-            seen[quick] = (wt.ENGINE_BUDGET, wt.DEADLINE - wt.time.monotonic())
+            seen[quick] = (isr.ENGINE_BUDGET, isr.DEADLINE - isr.time.monotonic())
             return [], {}
-        wt.audit = spy
-        self.addCleanup(setattr, wt, "audit", real)
+        isr.audit = spy
+        self.addCleanup(setattr, isr, "audit", real)
         for quick in (False, True):
             try:
-                wt.run_audit_locked(argparse.Namespace(roots=self.roots, exports=None, budget=99999, everything=False, live_only=False), quick)
+                isr.run_audit_locked(argparse.Namespace(roots=self.roots, exports=None, budget=99999, everything=False, live_only=False), quick)
             except Exception:
                 pass
-        self.assertEqual(seen[False][0], wt.MAX_BUDGET)                            # an hour at most
-        self.assertGreater(seen[False][1], wt.MAX_BUDGET)                          # and the full audit runs long enough to use it
-        self.assertLessEqual(seen[True][1], wt.DAILY_LIMIT + 1)                    # the daily check never runs longer
+        self.assertEqual(seen[False][0], isr.MAX_BUDGET)                            # an hour at most
+        self.assertGreater(seen[False][1], isr.MAX_BUDGET)                          # and the full audit runs long enough to use it
+        self.assertLessEqual(seen[True][1], isr.DAILY_LIMIT + 1)                    # the daily check never runs longer
 
 
 if __name__ == "__main__":

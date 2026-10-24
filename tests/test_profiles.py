@@ -3,7 +3,8 @@ import ast, json, os, re, subprocess, sys, unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt, ROOT  # noqa: E402
+from test_boxes import Box, ROOT  # noqa: E402
+import isr  # noqa: E402
 import profiles  # noqa: E402
 
 ISR_PY = os.path.join(ROOT, "isr_bot", "isr.py")
@@ -27,7 +28,7 @@ class Profiles(Box):
         self.assertEqual(r["inventory"]["skills"], 0)
         self.assertEqual(self.run_cmd("rollcall", "--owner-said-yes")[0], 0)      # no replies: nothing to do, no error
         import urllib.error
-        with mock.patch.object(wt, "http_get", side_effect=urllib.error.URLError("offline")):
+        with mock.patch.object(isr, "http_get", side_effect=urllib.error.URLError("offline")):
             self.assertEqual(self.run_cmd("brief")[0], 0)
 
     def test_power_user(self):
@@ -38,7 +39,7 @@ class Profiles(Box):
         self.assertEqual(json.loads(o)["bots_checked"], 24)                       # the list may be trimmed to fit; the count never is
         r = self.everyday("--everything")   # v0.7.1 item 1: half of these sit in ~/projects, checked once the owner says "scan everything"
         self.assertGreaterEqual(r["inventory"]["skills"], 100)
-        self.assertEqual(wt.load_json(wt.state_path("engines.json"), {})["waiting"], 0)
+        self.assertEqual(isr.load_json(isr.state_path("engines.json"), {})["waiting"], 0)
 
     def test_no_git_and_no_scanners(self):
         self.skills(3); self.scanners(all=None)
@@ -62,7 +63,7 @@ class Profiles(Box):
         import urllib.error
         self.skills(2); self.scanners()
         self.audit()
-        with mock.patch.object(wt, "http_get", side_effect=urllib.error.URLError("blocked by network policy")):
+        with mock.patch.object(isr, "http_get", side_effect=urllib.error.URLError("blocked by network policy")):
             code, o, e = self.run_cmd("brief")
         self.assertEqual(code, 0, o + e)
         self.assertTrue(json.loads(o).get("brief"))

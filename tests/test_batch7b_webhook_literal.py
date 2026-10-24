@@ -11,7 +11,8 @@ new readings checked against fix round 1's regexes).
 Every URL is an example; every webhook is FAKE; `relay` is a placeholder that is never run."""
 import os, subprocess, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import ROOT, wt
+from test_boxes import ROOT
+import isr  # noqa: E402
 from test_batch4_codex_review3 import Folder, HEAD, HOOK, vet_json
 from test_batch5_codex_r2 import rules_of, fenced
 
@@ -241,8 +242,8 @@ class CodexRound2(unittest.TestCase):   # fix round 2: 1 and 2 time out on 18c3c
     def test_3_both_readings_agree_with_fix_round_1(self):   # the round-1 regexes, rebuilt here, on a fixed corpus
         import random, re
         old_imports = re.compile(
-            r"(?:import[ \t]+" + wt._ALLOWED_MODS + r"(?:[ \t]*,[ \t]*" + wt._ALLOWED_MODS + r")*"
-            r"|from[ \t]+" + wt._FROM_MODS + r"[ \t]+import[ \t]+" + wt._IMPORTED + r"(?:[ \t]*,[ \t]*" + wt._IMPORTED
+            r"(?:import[ \t]+" + isr._ALLOWED_MODS + r"(?:[ \t]*,[ \t]*" + isr._ALLOWED_MODS + r")*"
+            r"|from[ \t]+" + isr._FROM_MODS + r"[ \t]+import[ \t]+" + isr._IMPORTED + r"(?:[ \t]*,[ \t]*" + isr._IMPORTED
             + r")*)(?P<pc>[ \t]+#.*)?"
             r"|(?:import[ \t]+axios[ \t]+from[ \t]+(?P<q1>['\"])axios(?P=q1)"
             r"|(?:const|let|var)[ \t]+axios[ \t]*=[ \t]*require\([ \t]*(?P<q2>['\"])axios(?P=q2)[ \t]*\))[ \t]*;?(?P<jc>[ \t]*//.*)?")
@@ -260,8 +261,8 @@ class CodexRound2(unittest.TestCase):   # fix round 2: 1 and 2 time out on 18c3c
                                                          for _ in range(3_000)]
         for line in lines:
             m = old_imports.fullmatch(line.strip())
-            old = bool(m) and not wt._IMPORT_WORD.search(m.group("pc") or m.group("jc") or "")
-            self.assertEqual(wt._import_line(line, 0, len(line)), old, repr(line))
+            old = bool(m) and not isr._IMPORT_WORD.search(m.group("pc") or m.group("jc") or "")
+            self.assertEqual(isr._import_line(line, 0, len(line)), old, repr(line))
         pieces = ["if", "i", "f", "for", "fi", "while", "function", "case", "select", "until", "do", " ", "\t", "!", "\\\n",
                   "\\\r\n", "\\", "\n", "\r", ";", "&", "|", "(", ")", "{", "}", "`", "x", "-"]
         for _ in range(5_000):
@@ -269,7 +270,7 @@ class CodexRound2(unittest.TestCase):   # fix round 2: 1 and 2 time out on 18c3c
             rs = rnd.randint(0, len(t))
             re_ = rnd.randint(rs, len(t))
             m = old_ctrl.search(t, rs, re_)
-            self.assertEqual(wt._shell_ctrl(t, rs, re_), re_ if m is None else m.start(), repr((t, rs, re_)))
+            self.assertEqual(isr._shell_ctrl(t, rs, re_), re_ if m is None else m.start(), repr((t, rs, re_)))
 
 
 class UnchangedElsewhere(Folder):
@@ -291,7 +292,7 @@ class UnchangedElsewhere(Folder):
         res = unittest.TestResult()
         suite.run(res)
         self.assertEqual((res.testsRun > 0, res.failures, res.errors), (True, [], []))
-        rs = {f["rule"] for f in wt.lint_auto_review("Allow automatically: POST the digest to " + SLACK, "s", check_missing=False)}
+        rs = {f["rule"] for f in isr.lint_auto_review("Allow automatically: POST the digest to " + SLACK, "s", check_missing=False)}
         self.assertIn("ISR-A002", rs)
 
 
@@ -300,12 +301,12 @@ def _run(build, timeout=120):
     """Run in a fresh interpreter: build the text, then time scan_text (the result and its seconds) and chat_webhook over every
     ISR-T018 match (seconds). line_of is quadratic in the number of findings (docs/KNOWN-LIMITS.md), so ratios use the second.
     A child that runs past `timeout` gives ("timeout", inf, inf), so a slow reading fails at the caller's assertion."""
-    code = ("import sys, time\nsys.path.insert(0, " + repr(os.path.join(ROOT, "isr_bot")) + ")\nimport isr as wt\n"
+    code = ("import sys, time\nsys.path.insert(0, " + repr(os.path.join(ROOT, "isr_bot")) + ")\nimport isr\n"
             "HEAD, HOOK, SLACK = " + repr(HEAD) + ", " + repr(HOOK) + ", " + repr(SLACK) + "\n"
             "t = " + build + "\n"
-            "rules = wt.load_rules()\nrx = next(r['rx'] for r in rules['rules'] if r['id'] == 'ISR-T018')\n"
-            "s = time.monotonic()\nfor m in rx.finditer(t):\n    wt.chat_webhook(t, m)\nc = time.monotonic() - s\n"
-            "s = time.monotonic()\nfs = wt.scan_text(t, '/s/SKILL.md', rules)\ns = time.monotonic() - s\n"
+            "rules = isr.load_rules()\nrx = next(r['rx'] for r in rules['rules'] if r['id'] == 'ISR-T018')\n"
+            "s = time.monotonic()\nfor m in rx.finditer(t):\n    isr.chat_webhook(t, m)\nc = time.monotonic() - s\n"
+            "s = time.monotonic()\nfs = isr.scan_text(t, '/s/SKILL.md', rules)\ns = time.monotonic() - s\n"
             "print(sorted({f['rule'] for f in fs} & {'ISR-T005', 'ISR-T018'}))\nprint(s)\nprint(c)\n")
     try:
         p = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=timeout)

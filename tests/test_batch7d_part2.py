@@ -17,7 +17,8 @@ Tests marked "replay" fail on 006c719 at their assertion (its watchtower/, rules
 No key value is printed: masked text is checked by counts. Every webhook is FAKE; `relay` is a placeholder never run."""
 import base64, json, os, secrets, sys, time, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt
+from test_boxes import Box
+import isr  # noqa: E402
 from test_batch4_codex_review3 import HEAD
 from test_batch5_codex_r2 import rules_of, fenced
 from test_batch6_example_keys import _Keys, fake_text_body, pem
@@ -25,7 +26,7 @@ from test_batch6b_codex_r2 import ed25519_pkcs8
 from test_batch6b_codex_r3 import approved_copy, bits_of, pgp_secret_block, t011
 from test_batch7a_must_fix import kept, old_packet, pgp_armor, run_child
 
-NOTE = "This looks like an example or checksum value"   # wt.EXAMPLE_NOTE's start, written out so a replay fails on its assertion
+NOTE = "This looks like an example or checksum value"   # isr.EXAMPLE_NOTE's start, written out so a replay fails on its assertion
 SLACK = "https://hooks.slack.com/services/T0/B0/FAKE"
 END = "-----END PGP PRIVATE KEY BLOCK-----"
 
@@ -39,14 +40,14 @@ def footless(comment):
 # ---------------------------------------------------------------- A: an escaped END only where the escapes are established
 class EscapedEnds(Box):   # assertions on masked text report counts and yes/no only, never the text
     def assert_hidden(self, text, bits, label, name="key.js"):
-        out = wt.mask_secrets(text)
+        out = isr.mask_secrets(text)
         self.assertEqual(kept(bits, out), 0, label)   # nothing of the real body
-        self.assertTrue(wt.mask_secrets(out) == out, f"masking again changed it: {label}")
+        self.assertTrue(isr.mask_secrets(out) == out, f"masking again changed it: {label}")
         doc = approved_copy(self, name, text)
         self.assertEqual(doc["masked"], 10, label)
         self.assertEqual(kept(bits, doc["files"][name]), 0, label)
-        self.assertIsNone(wt.armor_blocks(text)[0][6], label)
-        self.assertEqual(wt.pem_kind(text, text.index("-----BEGIN")), "real", label)
+        self.assertIsNone(isr.armor_blocks(text)[0][6], label)
+        self.assertEqual(isr.pem_kind(text, text.index("-----BEGIN")), "real", label)
 
     def test_string_raw_with_a_space_before_its_template(self):   # replay (006c719: the body after the comment's END kept)
         armor, bits = footless("Comment: x \\n" + END)   # \\n: a backslash and n, text in a raw template
@@ -70,31 +71,31 @@ class EscapedEnds(Box):   # assertions on masked text report counts and yes/no o
                            ("a shell's double quotes", 'KEY="-----BEGIN PRIVATE KEY-----\\nQUJD\\n-----END PRIVATE KEY-----\\n"\n'),
                            ("a tagged template", "K = tag`-----BEGIN PRIVATE KEY-----\\nQUJD\\n-----END PRIVATE KEY-----\\n`;\n")):
             with self.subTest(name):
-                (_, _, _, es, _, _, hide), = wt.armor_blocks(code)
+                (_, _, _, es, _, _, hide), = isr.armor_blocks(code)
                 self.assertEqual(es, code.index("-----END"), name)   # the strict reading still finds it
                 self.assertIsNone(hide, name)
-                self.assertEqual(wt.pem_kind(code, code.index("-----BEGIN")), "real", name)
+                self.assertEqual(isr.pem_kind(code, code.index("-----BEGIN")), "real", name)
 
     def test_json_documents_still_end(self):   # guard: a JSON key file's END is established, the text after it stays
         k1, k2 = ed25519_pkcs8(), ed25519_pkcs8()
         text = json.dumps({"a": pem("", k1), "between": "visible-between", "b": pem("", k2), "after": "visible-after"})
-        out = wt.mask_secrets(text)
+        out = isr.mask_secrets(text)
         self.assertEqual(kept(bits_of(k1) + bits_of(k2), out), 0)
         self.assertTrue("visible-between" in out and "visible-after" in out, "the text between or after was hidden")
         lines = json.dumps({"lines": [ln + "\n" for ln in pem("", k1).rstrip("\n").split("\n")], "after": "visible"}, indent=1)
-        (_, _, _, es, _, _, hide), = wt.armor_blocks(lines)
+        (_, _, _, es, _, _, hide), = isr.armor_blocks(lines)
         self.assertTrue(es is not None and hide == es)
-        self.assertTrue("visible" in wt.mask_secrets(lines))
+        self.assertTrue("visible" in isr.mask_secrets(lines))
 
     def test_a_json_fake_text_body_is_still_noted(self):   # guard: the example path, at the established level
         text = json.dumps({"k": pem("", fake_text_body(120)), "after": 1})
-        self.assertEqual(wt.pem_kind(text, text.index("-----BEGIN")), "example")
-        self.assertIn("after", wt.mask_secrets(text))
+        self.assertEqual(isr.pem_kind(text, text.index("-----BEGIN")), "example")
+        self.assertIn("after", isr.mask_secrets(text))
 
     def test_real_line_blocks_are_unchanged(self):   # guard: a block of real lines ends at its END line, as before
         raw = ed25519_pkcs8()
         for text in (pem("", raw) + "after-visible\n", 'K = """' + pem("", raw) + '"""\nafter_visible = 1\n'):
-            out = wt.mask_secrets(text)
+            out = isr.mask_secrets(text)
             self.assertEqual(kept(bits_of(raw), out), 0)
             self.assertTrue("after" in out and "visible" in out, text[:8])
 
@@ -132,10 +133,10 @@ class PublicFraming(_Keys):
     def test_public_framing_is_a_key(self):   # replay (006c719: ISR-T011x, "isn't a real key")
         for name, raw in framed().items():
             with self.subTest(name):
-                self.assertEqual(wt.pgp_packets(raw), "public", name)   # the framing is read as before
+                self.assertEqual(isr.pgp_packets(raw), "public", name)   # the framing is read as before
                 self.assertGreaterEqual(len(raw), 64, name)
                 block = pgp_armor(raw)
-                self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real", name)
+                self.assertEqual(isr.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real", name)
                 got = t011("Key:\n" + pem("", raw))
                 self.assertEqual([(f["rule"], f["severity"]) for f in got], [("ISR-T011", "critical")], name)
                 self.assertFalse(NOTE in got[0]["fix"], f"noted as an example: {name}")
@@ -148,7 +149,7 @@ class PublicFraming(_Keys):
         got = [f for f in self.keys(fs, p) if f["rule"] == "ISR-S002"]
         self.assertEqual(len(got), 1, got)
         self.assertNotIn(NOTE, got[0]["fix"])
-        self.assertEqual(wt.plain(got[0])["title"], "Keys left in files")
+        self.assertEqual(isr.plain(got[0])["title"], "Keys left in files")
 
     def test_a_fake_text_body_is_still_noted(self):   # guard: the example path, for a body that starts no key
         raw = fake_text_body(120)
@@ -156,7 +157,7 @@ class PublicFraming(_Keys):
         self.assertEqual([(f["rule"], f["severity"]) for f in got], [("ISR-T011x", "critical")])
         self.assertIn(NOTE, got[0]["fix"])
         block = pgp_armor(raw)
-        self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "example")
+        self.assertEqual(isr.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "example")
 
 
 # ---------------------------------------------------------------- C: chat_webhook doubt
@@ -218,8 +219,8 @@ class WebhookDoubt(unittest.TestCase):
 # ---------------------------------------------------------------- D: ISR-T018's Office branch
 OLD_T018 = (r"(?i)(hooks\.slack\.com/(services|workflows|triggers)/|discord(app)?\.com/api/webhooks/|[\w-]+\.webhook\.office\.com/"
             r"|outlook\.office\.com/webhook/|chat\.googleapis\.com/v1/spaces/[^/\s]+/messages|api\.telegram\.org/bot)")
-CHILD_T018 = ("import sys, time\nsys.path.insert(0, {isr_dir!r})\nimport isr as wt\n"
-              "rx = next(r['rx'] for r in wt.load_rules()['rules'] if r['id'] == 'ISR-T018')\n"
+CHILD_T018 = ("import sys, time\nsys.path.insert(0, {isr_dir!r})\nimport isr\n"
+              "rx = next(r['rx'] for r in isr.load_rules()['rules'] if r['id'] == 'ISR-T018')\n"
               "for word in ('a' * 64000, 'a' * 128000, ('ab-' * 43000)[:128000]):\n"
               "    t = time.perf_counter()\n    list(rx.finditer(word))\n    print(time.perf_counter() - t)\n")
 
@@ -233,7 +234,7 @@ class OfficeWebhookPattern(unittest.TestCase):
 
     def test_every_t018_match_is_kept(self):   # guard: the anchored pattern matches what the old one did
         import re
-        new = next(r["rx"] for r in wt.load_rules()["rules"] if r["id"] == "ISR-T018")
+        new = next(r["rx"] for r in isr.load_rules()["rules"] if r["id"] == "ISR-T018")
         old = re.compile(OLD_T018)
         for text in ("https://example.webhook.office.com/webhookb2/FAKE", "https://contoso.webhook.office.com/webhookb2/FAKE",
                      "https://outlook.office.com/webhook/FAKE", "https://a-b_c.webhook.office.com/webhookb2/FAKE",

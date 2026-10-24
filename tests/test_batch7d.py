@@ -13,7 +13,8 @@ state's watchtower/ and MANIFEST.sha256 in place, this file in place); "guard" o
 example."""
 import json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import wt
+import test_boxes  # noqa: E402
+import isr  # noqa: E402
 from test_batch6_codex_r3 import servers, evidence
 
 PIN = ("npm", "exec", "--package=npm@11.21.0", "--")   # a pinned outer launch

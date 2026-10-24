@@ -455,8 +455,18 @@
     "why": "older KNOWN-LIMITS sections, below the marker h1 adds (the complete planned heading); before h1 the same sections start at the b8i1 heading. Only the link targets change (plan h1: the 17 ../watchtower/wt_parts/ targets, the target only)"}
   ],
   "keep_spans": [
-   {"re": "open\\((?:(?!wt\\.)[^\\n])*?, \"wt\"", "why": "the file mode \"wt\" of gzip.open/open (approved.py:98, :132 and 9 tests); a wt. module reference inside the same call is still mapped (d2a fix 1)"}
+   {"re": "open\\((?:(?!wt\\.)[^\\n])*?, \"wt\"(?=\\)|, encoding=)", "why": "the file mode \"wt\" of gzip.open/open (approved.py:98, :132 and 9 tests); a wt. module reference inside the same call is still mapped (d2a fix 1), and only the mode argument is held, so a home folder \"wt\" in the call's path is still mapped (d2b table fix)"}
   ],
+  "held_lines": {
+   "about": "Single lines one plain source entry (its old value) leaves as they are, in every unit that holds the entry; the other entries still apply there. A line is named by its file and the sha256 of its stripped text, first 16 hex (the text cannot sit in this file: the name guard would flag it); at_d2b is its line number when the hold was added, for reading only. (d2b fix 1) The d2 alias entry spares test_v074_display_name's allowance data: A5 and C must keep matching the alias values d1's entries write, which this table keeps for good, and the comment above C describes the line d2 removes.",
+   "lines": [
+    {"file": "tests/test_v074_display_name.py", "old": "import isr as wt", "sha256": "8548ef0dfd75c22d", "at_d2b": 191, "what": "the comment above C: the alias line d2 removes"},
+    {"file": "tests/test_v074_display_name.py", "old": "import isr as wt", "sha256": "30878a86741bdafa", "at_d2b": 203, "what": "A5's exact table strings"},
+    {"file": "tests/test_v074_display_name.py", "old": "import isr as wt", "sha256": "b23b898767976b46", "at_d2b": 204, "what": "A5's exact table strings"},
+    {"file": "tests/test_v074_display_name.py", "old": "import isr as wt", "sha256": "5e6ed596d77c7326", "at_d2b": 296, "what": "C's bounds data (allowed)"},
+    {"file": "tests/test_v074_display_name.py", "old": "import isr as wt", "sha256": "b4d2be256c8f14ee", "at_d2b": 297, "what": "C's bounds data (allowed)"}
+   ]
+  },
   "reader_files": ["test_golden_expect.py", "test_batch6_golden_counts.py", "test_batch6_golden_perkey.py", "test_batch5_access_round3.py", "test_batch5_codex_r1.py", "test_batch6b_codex_r1.py"],
   "reader_rule": "in a reader file, a line holding an old output value that is an item-name path (workspace/watchtower) or old display text (Watchtower, capitalised) is a historical literal: it keeps its old spelling through units b-g, and h2 switches it to tests/rename_v080.py",
   "historical": {

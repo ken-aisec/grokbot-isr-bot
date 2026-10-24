@@ -7,7 +7,8 @@ each: "This is Grok Bot's own file; nothing for you to do." Plugins the owner in
 import os, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt  # noqa: E402
+from test_boxes import Box  # noqa: E402
+import isr  # noqa: E402
 from test_isr_bot import fake_key  # noqa: E402
 import profiles  # noqa: E402
 
@@ -33,7 +34,7 @@ class BuiltInsNeverScore(Box):
         r = self.audit()
         fs = self.mine(d)
         self.assertEqual(r["score"], before)
-        self.assertEqual([(f["class"], f["label"], f["fix"]) for f in fs], [("platform", wt.PLATFORM, wt.PLATFORM_FIX)])
+        self.assertEqual([(f["class"], f["label"], f["fix"]) for f in fs], [("platform", isr.PLATFORM, isr.PLATFORM_FIX)])
         self.assertFalse([x for x in r.get("worth_a_look", []) if d in x["where"]])
         self.assertEqual(len(r["platform"]), 1)
 
@@ -42,9 +43,9 @@ class BuiltInsNeverScore(Box):
         before = self.audit()["score"]
         d = self.bundled("helper", BAD)
         r = self.audit()
-        conf = [f for f in self.mine(d) if f["label"] == wt.CONFIRMED]
+        conf = [f for f in self.mine(d) if f["label"] == isr.CONFIRMED]
         self.assertTrue(conf)
-        self.assertTrue(all(f["scope"] == "platform" and not wt.counts(f) for f in conf))
+        self.assertTrue(all(f["scope"] == "platform" and not isr.counts(f) for f in conf))
         self.assertEqual(r["score"], before)
         self.assertIn("ISR-X003", {f["rule"] for f in conf})
         self.assertTrue([l for l in r["platform_notes"]["lines"] if "/skills/helper" in l])   # still announced when it appears (batch 5 d1: as a platform note)
@@ -66,7 +67,7 @@ class BuiltInsNeverScore(Box):
         d = self.bundled("notes", "Notes.", {"cfg.txt": "token ghp_" + fake_key(36) + "\n"})
         self.audit()
         keys = [f for f in self.mine(d) if f["rule"] == "ISR-S001"]
-        self.assertTrue(keys and all(wt.counts(f) for f in keys))
+        self.assertTrue(keys and all(isr.counts(f) for f in keys))
 
     def test_the_platform_catalog_cache_is_platform(self):
         self.skills(1); self.scanners()

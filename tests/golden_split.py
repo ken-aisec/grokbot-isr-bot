@@ -96,22 +96,22 @@ SCRATCH_ROOTS = ("/home", "/workspace", "/var/tmp")
 if SEALED and not all(os.path.isfile(d + "/.golden-sentinel") for d in SCRATCH_ROOTS + ("/tmp",)):
     sys.exit("not inside the golden sandbox; nothing was done")
 HOME_DIR = "/home/box" if SEALED else X + "/home"
-ISR_HOME = "/workspace/watchtower" if SEALED else X + "/wt"
+ISR_HOME = "/workspace/watchtower" if SEALED else X + "/isr_home"
 items = {}
 
 DRIVER = """
 import os, random, sys
 tree, argv = sys.argv[1], sys.argv[2:]
 sys.path.insert(0, os.path.join(tree, "isr_bot"))
-import isr as wt
+import isr
 b = os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin")
 for n in sorted(os.listdir(b)) if os.path.isdir(b) else []:
-    if n in wt.SCANNER_NAMES:
-        wt.SCANNER_LOCK_EXTRA[n] = wt.scanner_digest(os.path.join(b, n))      # as test_boxes.Box.scanners registers them
+    if n in isr.SCANNER_NAMES:
+        isr.SCANNER_LOCK_EXTRA[n] = isr.scanner_digest(os.path.join(b, n))      # as test_boxes.Box.scanners registers them
 lock = os.environ.get("GOLDEN_PLATFORM_LOCK", "")
 if os.path.isfile(lock):
-    wt.PLATFORM_LOCK = lock
-wt.now = lambda: "2026-10-18T12:00:00+00:00"
+    isr.PLATFORM_LOCK = lock
+isr.now = lambda: "2026-10-18T12:00:00+00:00"
 import secrets
 rng = random.Random(20261018)
 secrets.token_hex = lambda n=32: "".join("%02x" % rng.randrange(256) for _ in range(n))
@@ -120,9 +120,9 @@ crash = os.environ.get("GOLDEN_CRASH")
 if crash:
     def boom(*a, **k):
         raise RuntimeError("golden forced crash")
-    setattr(wt, crash, boom)
+    setattr(isr, crash, boom)
 try:
-    code = wt.main(argv)
+    code = isr.main(argv)
 except SystemExit as e:
     code = e.code
 sys.stdout.flush()
@@ -1092,7 +1092,7 @@ class GoldenSplit(unittest.TestCase):
             except (OSError, ValueError) as e:
                 raise RuntimeError(f"expect file {cls.EXPECT}: {e}")
         cls.report = []
-        cls.B = tempfile.mkdtemp(prefix="wt-golden-", dir="/tmp")
+        cls.B = tempfile.mkdtemp(prefix="isr-bot-golden-", dir="/tmp")
         real = os.path.realpath(cls.B)
         assert real.startswith("/tmp/") and not real.startswith("/workspace"), real
         cls.pre = os.path.join(cls.B, "trees", "pre")

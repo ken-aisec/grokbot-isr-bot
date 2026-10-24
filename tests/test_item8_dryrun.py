@@ -3,7 +3,8 @@ Each class reproduces one gate failure. Real signal is kept: a key, a live remov
 import json, os, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt  # noqa: E402
+from test_boxes import Box  # noqa: E402
+import isr  # noqa: E402
 
 GOOD = "---\nname: n\ndescription: d\n---\nSummarize the notes. Ask before saving.\n"
 
@@ -33,14 +34,14 @@ class ArchiveAndCandidatesLeak(Box):
         fs = [f for f in self.snap()["findings"] if "_archive" in f["where"]]
         self.assertEqual(fs, [])
         i7 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-I007"]
-        self.assertEqual(len(i7), 1); self.assertEqual(i7[0]["label"], wt.TIP)
+        self.assertEqual(len(i7), 1); self.assertEqual(i7[0]["label"], isr.TIP)
 
     def test_removed_candidate_outside_live_places_is_not_a_removal(self):
         self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
-        base = wt.load_json(wt.state_path("baseline.json"), {})   # a baseline from before item 1 still lists the candidates
+        base = isr.load_json(isr.state_path("baseline.json"), {})   # a baseline from before item 1 still lists the candidates
         for p in (os.path.join(self.cand, "SKILL.md"), os.path.join(self.cand, "scripts", "cli.py")):
-            base[p] = wt.sha256_file(p)
-        wt.save_json(wt.state_path("baseline.json"), base)
+            base[p] = isr.sha256_file(p)
+        isr.save_json(isr.state_path("baseline.json"), base)
         import shutil; shutil.rmtree(self.cand)
         self.audit()
         self.assertEqual([f for f in self.drift() if "candidates" in f["where"]], [])
@@ -53,12 +54,12 @@ class ArchiveAndCandidatesLeak(Box):
 
     def test_a_live_skill_in_a_folder_named_tests_still_counts(self):
         """DQ-028/029 unchanged: only archive-named folders are snapshots."""
-        self.assertTrue(wt.is_live_skill_path(os.path.join(self.wf, "tests", "x", "SKILL.md")))
-        self.assertFalse(wt.is_live_skill_path(os.path.join(self.wf, "_archive", "2026-10-13", "x", "SKILL.md")))
+        self.assertTrue(isr.is_live_skill_path(os.path.join(self.wf, "tests", "x", "SKILL.md")))
+        self.assertFalse(isr.is_live_skill_path(os.path.join(self.wf, "_archive", "2026-10-13", "x", "SKILL.md")))
 
     def test_project_agents_skills_in_a_clone_is_not_live_but_home_one_is(self):
-        self.assertFalse(wt.is_live_skill_path(os.path.join(self.ws, "kb-clone", ".agents", "skills", "3d-brain", "SKILL.md")))
-        self.assertTrue(wt.is_live_skill_path(os.path.join(self.home, ".agents", "skills", "topic-digest", "SKILL.md")))
+        self.assertFalse(isr.is_live_skill_path(os.path.join(self.ws, "kb-clone", ".agents", "skills", "3d-brain", "SKILL.md")))
+        self.assertTrue(isr.is_live_skill_path(os.path.join(self.home, ".agents", "skills", "topic-digest", "SKILL.md")))
 
 
 class ListenerWordingAlone(Box):
@@ -73,8 +74,8 @@ class ListenerWordingAlone(Box):
         self.audit()
         t14 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-T014"]
         self.assertTrue(t14)
-        self.assertFalse([f for f in t14 if f["label"] == wt.CONFIRMED], t14)
-        self.assertTrue([f for f in self.snap()["findings"] if f["rule"] == "ISR-I001" and f["label"] == wt.CONFIRMED])
+        self.assertFalse([f for f in t14 if f["label"] == isr.CONFIRMED], t14)
+        self.assertTrue([f for f in self.snap()["findings"] if f["rule"] == "ISR-I001" and f["label"] == isr.CONFIRMED])
 
 
 class PlainCookieJar(Box):
@@ -86,12 +87,12 @@ class PlainCookieJar(Box):
     def test_no_sensitive_sign_in_is_a_tip_not_confirmed_medium(self):
         f = self.jar([{"domain": f"site{i}.example", "name": "_ga", "value": "x"} for i in range(37)])
         self.assertIn("sensitive: none", f["evidence"])
-        self.assertEqual(f["label"], wt.TIP)
+        self.assertEqual(f["label"], isr.TIP)
         self.assertEqual(f["severity"], "info")
 
     def test_a_real_sensitive_sign_in_stays_confirmed_high(self):
         f = self.jar([{"domain": ".google.com", "name": "SID", "value": "FAKE-ISR-COOKIE"}])
-        self.assertEqual((f["label"], f["severity"]), (wt.CONFIRMED, "high"))
+        self.assertEqual((f["label"], f["severity"]), (isr.CONFIRMED, "high"))
 
 
 class RollCallOneLinePerRule(Box):
@@ -100,12 +101,12 @@ class RollCallOneLinePerRule(Box):
         self.skills(1); self.scanners()
         fs = []
         for i in range(15):
-            fs.append(wt.finding("ISR-L001", "Lethal trifecta: private data + untrusted input + a way out", "high", ["ASI01"], f"rollcall:Bot{i}", "Gmail X Slack", "x"))
+            fs.append(isr.finding("ISR-L001", "Lethal trifecta: private data + untrusted input + a way out", "high", ["ASI01"], f"rollcall:Bot{i}", "Gmail X Slack", "x"))
         for i in range(10):
-            fs.append(wt.finding("ISR-M010", "Memory acts as a standing instruction", "medium", ["ASI06"], f"rollcall:Bot{i}:memory1", "note", "x"))
-        wt.save_json(wt.state_path("rollcall_findings.json"), {"at": wt.now(), "masked": wt.VERSION, "bots": [f"Bot{i}" for i in range(15)], "findings": fs})
+            fs.append(isr.finding("ISR-M010", "Memory acts as a standing instruction", "medium", ["ASI06"], f"rollcall:Bot{i}:memory1", "note", "x"))
+        isr.save_json(isr.state_path("rollcall_findings.json"), {"at": isr.now(), "masked": isr.VERSION, "bots": [f"Bot{i}" for i in range(15)], "findings": fs})
         r = self.audit()
-        look = [f for f in self.snap()["findings"] if f.get("label") == wt.MAYBE_FINE and f["where"].startswith("rollcall:")]
+        look = [f for f in self.snap()["findings"] if f.get("label") == isr.MAYBE_FINE and f["where"].startswith("rollcall:")]
         self.assertEqual(sorted(f["rule"] for f in look), ["ISR-L001", "ISR-M010"], look)
         l1 = next(f for f in look if f["rule"] == "ISR-L001")
         self.assertEqual(l1["also_count"], 14)

@@ -1,11 +1,11 @@
 """DQ-027: "any" inside an Ask-first clause of a pinned allow is not breadth."""
 import os, sys, unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "isr_bot"))
-import isr as wt
+import isr
 
 
 def a001(t):
-    return [f for f in wt.lint_auto_review(t, "s", check_missing=False) if f["rule"] == "ISR-A001"]
+    return [f for f in isr.lint_auto_review(t, "s", check_missing=False) if f["rule"] == "ISR-A001"]
 
 
 class DQ027(unittest.TestCase):

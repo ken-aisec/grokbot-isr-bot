@@ -26,10 +26,11 @@ tracked as DQ-054 (KNOWN-LIMITS "b8i3"). Tests marked "dq054 replay" fail on 12a
 import os, re, sys, time, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt  # noqa: E402
+from test_boxes import Box  # noqa: E402
+import isr  # noqa: E402
 from test_dq042_vendor_skills import MARK, put, skillspector  # noqa: E402
 
-RULES = wt.load_rules()
+RULES = isr.load_rules()
 SKILL = "/ws/vendor-docs/SKILL.md"
 HEAD = "---\nname: vendor-docs\ndescription: Vendor setup notes.\n---\n"
 
@@ -42,7 +43,7 @@ PRINTENV_REPLAY = "printenv 'ProgramFiles(x86)' 2>/dev/null || true"
 
 def hits(text, rule="ISR-T004", where=SKILL):
     """(full, records): this rule's findings at full severity and its guarded records."""
-    fs = [f for f in wt.scan_text(text, where, RULES) if f["rule"] == rule]
+    fs = [f for f in isr.scan_text(text, where, RULES) if f["rule"] == rule]
     return [f["severity"] for f in fs if not f.get("guarded")], [f.get("guarded") for f in fs if f.get("guarded")]
 
 
@@ -62,16 +63,16 @@ class CatExactEnv(unittest.TestCase):
 
     def test_evidence_and_keys_unchanged(self):   # control: the same evidence, so the same key and the same dismissals
         for t, ev in (("cat ~/.env > .env.local", "cat ~/.env"), ("cat .env.example >> .env", "cat .env")):
-            f = [g for g in wt.scan_text(t, SKILL, RULES) if g["rule"] == "ISR-T004"]
+            f = [g for g in isr.scan_text(t, SKILL, RULES) if g["rule"] == "ISR-T004"]
             self.assertEqual([(g["evidence"], g["severity"], g.get("guarded")) for g in f], [(ev, "high", None)], t)
-            self.assertEqual(f[0]["key"], wt.finding_key("ISR-T004", SKILL + ":1", ev), t)
+            self.assertEqual(f[0]["key"], isr.finding_key("ISR-T004", SKILL + ":1", ev), t)
 
 
 # ---------------------------------------------------------------- 2: a negated "such as" list of code spans
 class NegatedSuchAsList(unittest.TestCase):
     def test_such_as_list_is_lowered_not_dropped(self):   # replay
         self.assertEqual(hits(NEG_REPLAY), ([], ["negated"]))
-        f = [g for g in wt.scan_text(NEG_REPLAY, SKILL, RULES) if g["rule"] == "ISR-T004"]
+        f = [g for g in isr.scan_text(NEG_REPLAY, SKILL, RULES) if g["rule"] == "ISR-T004"]
         self.assertEqual([(g["severity"], g["severity_was"]) for g in f], [("medium", "high")])
 
     def test_bare_and_affirmative_reads_keep_severity(self):   # control
@@ -79,7 +80,7 @@ class NegatedSuchAsList(unittest.TestCase):
             self.assertEqual(hits(t), (["high"], []), t)
 
     def test_env_grep_unchanged(self):   # control: pinned, not a ISR-T004 hit today
-        self.assertEqual(wt.scan_text("env | grep KEY", SKILL, RULES), [])
+        self.assertEqual(isr.scan_text("env | grep KEY", SKILL, RULES), [])
 
     def test_conditional_or_unlisted_stays_high(self):   # control
         for t in ("Do not use tools such as `env`, or `printenv` unless asked.",
@@ -120,7 +121,7 @@ class NoAgreementFromTheseLines(Box):
         self.assertTrue([f for f in fs if f["rule"] == "ISR-X001"])
         # scan_text lowers it to medium (NegatedSuchAsList); the audit then labels every guarded record info (scoring.py, batch 2 R1)
         self.assertEqual([(f["severity"], f.get("severity_was"), f.get("guarded"), f.get("label")) for f in fs if f["rule"] == "ISR-T004"],
-                         [("info", "high", "negated", wt.GUARDED_LABEL)])
+                         [("info", "high", "negated", isr.GUARDED_LABEL)])
 
     def test_exact_env_read_still_corroborates(self):   # control
         fs = self.run_on(self.BODY.replace(MARK, "Run `cat .env` first.\n" + MARK))
@@ -135,7 +136,7 @@ OLD_CAT = re.compile(r"(?i)\bcat\s+\S*\.env\b")   # 63714e4's `cat` alternative:
 
 def timed(text):
     t = time.perf_counter()
-    fs = wt.scan_text(text, SKILL, RULES)
+    fs = isr.scan_text(text, SKILL, RULES)
     return time.perf_counter() - t, [f["severity"] for f in fs if f["rule"] == "ISR-T004" and not f.get("guarded")]
 
 
@@ -196,12 +197,12 @@ class FixRound1Cat(unittest.TestCase):
 
     def test_evidence_and_keys_as_on_63714e4(self):   # r1 replay (finding 7)
         for t in ("cat .env>copy.env", "cat .env.example .env", "cat ${X:-.env}", "cat >>.env", "cat ~/.env.bak>.env"):
-            f = [g for g in wt.scan_text(t, SKILL, RULES) if g["rule"] == "ISR-T004"]
+            f = [g for g in isr.scan_text(t, SKILL, RULES) if g["rule"] == "ISR-T004"]
             ev = OLD_CAT.search(t).group(0)
             self.assertEqual([(g["evidence"], g["severity"]) for g in f], [(ev, "high")], t)
-            self.assertEqual(f[0]["key"], wt.finding_key("ISR-T004", SKILL + ":1", ev), t)
+            self.assertEqual(f[0]["key"], isr.finding_key("ISR-T004", SKILL + ":1", ev), t)
         # the v0.8.0 key (rule ID ISR-T004; K3 clean start, no carry-over)
-        self.assertEqual(wt.finding_key("ISR-T004", SKILL + ":1", "cat .env>copy.env"), "cf7026aeebe278e2")
+        self.assertEqual(isr.finding_key("ISR-T004", SKILL + ":1", "cat .env>copy.env"), "cf7026aeebe278e2")
 
 
 class FixRound1Negation(unittest.TestCase):
@@ -298,9 +299,9 @@ class FixRound2Negation(unittest.TestCase):
 class FixRound2Key(unittest.TestCase):
     def test_guarded_key_is_b7s(self):   # control, pinned (finding 6 not redesigned: KNOWN-LIMITS "b8i3")
         t = "Never inspect the environment with tools such as `env`, or `printenv`."
-        f = [g for g in wt.scan_text(t, SKILL, RULES) if g["rule"] == "ISR-T004"]
+        f = [g for g in isr.scan_text(t, SKILL, RULES) if g["rule"] == "ISR-T004"]
         # the v0.8.0 keys (rule ID ISR-T004; K3 clean start, no carry-over); the guarded key is made from the first
-        self.assertEqual(wt.finding_key("ISR-T004", SKILL + ":1", "printenv"), "f6aefce6597a68bf")
+        self.assertEqual(isr.finding_key("ISR-T004", SKILL + ":1", "printenv"), "f6aefce6597a68bf")
         self.assertEqual([(g["evidence"], g["guarded"], g["key"], g.get("key0")) for g in f],
                          [("printenv", "negated", "ead839889024b2bc", None)])
 
@@ -335,7 +336,7 @@ class Dq054PasswordNames(unittest.TestCase):
     def test_pwd_names_are_t004_high_as_on_63714e4(self):   # dq054 replay
         for t in ("printenv MYSQL_PWD", "printenv PGPWD", "printenv DB_PASSWD", "printenv pwd"):
             with self.subTest(t=t):
-                self.assertEqual(wt.scan_text(t, SKILL, RULES), [T004_63714E4], t)
+                self.assertEqual(isr.scan_text(t, SKILL, RULES), [T004_63714E4], t)
 
     def test_harmless_one_names_stay_exempt(self):   # control
         each(self, ("printenv HOME", "printenv PATH", "printenv LANG", PRINTENV_REPLAY), NONE)

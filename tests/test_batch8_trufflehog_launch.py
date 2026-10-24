@@ -20,7 +20,8 @@ import json, os, subprocess, sys, tempfile, time, unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import ROOT, wt  # noqa: E402
+from test_boxes import ROOT  # noqa: E402
+import isr  # noqa: E402
 import test_batch3_scanners as b3  # noqa: E402  (module access: its test classes don't run twice)
 from test_batch6_example_keys import token  # noqa: E402
 
@@ -42,14 +43,14 @@ def result(path):
 class _T(b3._Scanners):
     def setUp(self):
         super().setUp()
-        wt.SCANNERS_HELD.clear()
-        self.addCleanup(wt.SCANNERS_HELD.clear)
+        isr.SCANNERS_HELD.clear()
+        self.addCleanup(isr.SCANNERS_HELD.clear)
         self.tmpd = os.path.join(self.tmp, "tmpd")
         os.makedirs(self.tmpd)
         p = mock.patch.object(tempfile, "tempdir", self.tmpd)
         p.start(); self.addCleanup(p.stop)
         self.seen, self.swap = [], None
-        p = mock.patch.object(wt.subprocess, "Popen", self.popen)
+        p = mock.patch.object(isr.subprocess, "Popen", self.popen)
         p.start(); self.addCleanup(p.stop)
         self.env_file = os.path.join(self.ws, "deploy.env")
         with open(self.env_file, "w") as f:
@@ -75,8 +76,8 @@ class _T(b3._Scanners):
         return [(exe, link) for a0, exe, link in self.seen if a0 == os.path.join(self.bin, "trufflehog")]
 
     def engines_and_fingerprint(self):
-        used = wt.load_json(wt.state_path("engines_used.json"), {})["engines"]
-        with open(wt.state_path("score_history.csv")) as f:
+        used = isr.load_json(isr.state_path("engines_used.json"), {})["engines"]
+        with open(isr.state_path("score_history.csv")) as f:
             last = f.read().splitlines()[-1]
         return used, last.rsplit(",", 1)[1].split("|", 1)[1].split("+")
 
@@ -85,14 +86,14 @@ class Launch(_T):
     def test_1_an_overseer_like_trufflehog_runs_with_local_dev(self):
         self.put("trufflehog", "#!/bin/sh\n" + OVERSEER_CHECK + result(self.env_file) + "echo '" + DONE + "' >&2\n")
         notes = []
-        status = wt.trufflehog_status([self.env_file], notes)
+        status = isr.trufflehog_status([self.env_file], notes)
         self.assertEqual(status, {self.env_file: [{"detector": "Github", "status": "live", "line": 1, "guide": None}]}, notes)
         self.assertFalse([n for n in notes if "FAILED" in n], notes)
 
     def test_2_trufflehog_runs_from_the_sealed_copy(self):
         self.put("trufflehog", self.good)
         self.swap = "#!/bin/sh\necho evil >> " + repr(self.log) + "\n"
-        status = wt.trufflehog_status([self.env_file], [])
+        status = isr.trufflehog_status([self.env_file], [])
         (exe, link), = self.launches()
         self.assertRegex(exe or "", r"^/proc/self/fd/\d+$")
         self.assertTrue((link or "").startswith("/memfd:"), link)
@@ -103,7 +104,7 @@ class Launch(_T):
     def test_3_argv_has_local_dev_and_no_update(self):
         args = os.path.join(self.tmp, "args.txt")
         self.put("trufflehog", "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + repr(args) + "\necho '" + DONE + "' >&2\n")
-        wt.trufflehog_status([self.env_file], [])
+        isr.trufflehog_status([self.env_file], [])
         with open(args) as f:
             got = f.read().splitlines()
         self.assertEqual(got[0], "filesystem")
@@ -114,7 +115,7 @@ class Launch(_T):
     def test_4_a_trufflehog_that_did_not_finish_is_a_failed_stage(self):
         self.scanners(trufflehog=self.good)
         self.audit()
-        good = wt.load_json(wt.state_path("key_status.json"), {})
+        good = isr.load_json(isr.state_path("key_status.json"), {})
         self.assertEqual(list(good.get("files", {})), [self.env_file])   # guard: the good run's key status
         log = os.path.join(self.tmp, "trufflehog.log")
         for case, body in (("exit 0, nothing said", "#!/bin/sh\nexit 0\n"),
@@ -135,7 +136,7 @@ class Launch(_T):
             with self.subTest(case):
                 if os.path.exists(log):
                     os.remove(log)
-                wt.save_json(wt.state_path("key_status.json"), good)   # each case starts from the good run (an earlier case may have saved)
+                isr.save_json(isr.state_path("key_status.json"), good)   # each case starts from the good run (an earlier case may have saved)
                 self.scanners(trufflehog=b3.logged(body, log))
                 r = self.audit()
                 self.assertTrue(os.path.exists(log))             # the stage ran
@@ -144,7 +145,7 @@ class Launch(_T):
                 self.assertNotIn("TruffleHog", used)
                 self.assertNotIn("TruffleHog", fp)
                 self.assertTrue([n for n in r["notes"] if "TruffleHog FAILED" in n], r["notes"])
-                self.assertEqual(wt.load_json(wt.state_path("key_status.json"), {}), good)
+                self.assertEqual(isr.load_json(isr.state_path("key_status.json"), {}), good)
 
     def test_8_exit_183_with_results_and_the_finished_line_is_a_finished_stage(self):
         """Fix round 2 (f): 183 is TruffleHog's "results found" exit, not a failure (contrast: passes on 23476f2 too)."""
@@ -155,14 +156,14 @@ class Launch(_T):
         self.assertIn("TruffleHog", used)
         self.assertIn("TruffleHog", fp)
         self.assertFalse([n for n in r["notes"] if "TruffleHog FAILED" in n], r["notes"])
-        got = wt.load_json(wt.state_path("key_status.json"), {})["files"]
+        got = isr.load_json(isr.state_path("key_status.json"), {})["files"]
         self.assertEqual(got, {self.env_file: [{"detector": "Github", "status": "live", "line": 1, "guide": None}]})
 
     def test_9_scan_errors_fail_the_stage_without_their_text_in_the_note(self):
         """Fix round 2 (h): exit 0 and "finished scanning", but it logged "encountered errors during scan"."""
         self.put("trufflehog", "#!/bin/sh\n" + result(self.env_file) + "echo '" + SCAN_ERRORS + "' >&2\necho '" + DONE + "' >&2\n")
         notes = []
-        self.assertEqual(wt.trufflehog_status([self.env_file], notes), {})
+        self.assertEqual(isr.trufflehog_status([self.env_file], notes), {})
         self.assertEqual([n for n in notes if "TruffleHog FAILED" in n],
                          ["TruffleHog FAILED (it hit errors while scanning): live/dead key status is unavailable this run."])
         self.assertFalse([n for n in notes if "permission denied" in n or "unreadable-scan-target" in n], notes)
@@ -190,7 +191,7 @@ class Timeout(_T):
             if child and not gone(child[0]):
                 os.kill(child[0], 9)   # an older run() left it running: don't leave it behind the test
         self.addCleanup(cleanup)
-        code, out, err = wt.run([exe], 2)
+        code, out, err = isr.run([exe], 2)
         self.assertEqual(code, 124, err)
         with open(pidfile) as f:
             child.append(int(f.read()))
@@ -207,8 +208,8 @@ class EnginesUsed(_T):
         log = os.path.join(self.tmp, "trufflehog.log")
 
         def engines_and_fingerprint():
-            used = wt.load_json(wt.state_path("engines_used.json"), {})["engines"]
-            with open(wt.state_path("score_history.csv")) as f:
+            used = isr.load_json(isr.state_path("engines_used.json"), {})["engines"]
+            with open(isr.state_path("score_history.csv")) as f:
                 last = f.read().splitlines()[-1]
             return used, last.rsplit(",", 1)[1].split("|", 1)[1].split("+")
         self.scanners()
@@ -227,17 +228,17 @@ class EnginesUsed(_T):
         self.assertEqual(snap["scanners_missing"], ["TruffleHog"])
 
     def test_6_a_failed_stage_drops_each_single_scanner(self):
-        saved = list(wt.STAGE_FAILED)
-        self.addCleanup(lambda: wt.STAGE_FAILED.__setitem__(slice(None), saved))
-        del wt.STAGE_FAILED[:]   # an earlier audit's failed stages stay in it until the next audit
+        saved = list(isr.STAGE_FAILED)
+        self.addCleanup(lambda: isr.STAGE_FAILED.__setitem__(slice(None), saved))
+        del isr.STAGE_FAILED[:]   # an earlier audit's failed stages stay in it until the next audit
         for name, stage in (("gitleaks", "gitleaks (keys in files)"), ("pip-audit", "pip-audit (installed Python packages)"),
                             ("osv-scanner", "OSV-Scanner (project dependencies)"), ("trufflehog", "TruffleHog (which keys still work)")):
             with self.subTest(name):
                 self.put(name, "#!/bin/sh\nexit 0\n")
-                wt.STAGE_FAILED.append(stage)
-                self.assertFalse(wt.scanner_used(name))
-                wt.STAGE_FAILED.remove(stage)
-                self.assertTrue(wt.scanner_used(name))       # contrast: used again once its stage didn't fail
+                isr.STAGE_FAILED.append(stage)
+                self.assertFalse(isr.scanner_used(name))
+                isr.STAGE_FAILED.remove(stage)
+                self.assertTrue(isr.scanner_used(name))       # contrast: used again once its stage didn't fail
 
 
 class Pin(unittest.TestCase):

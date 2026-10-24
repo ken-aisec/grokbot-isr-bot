@@ -2,7 +2,8 @@
 import json, os, shutil, sys, tempfile, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt  # noqa: E402
+from test_boxes import Box  # noqa: E402
+import isr  # noqa: E402
 
 
 # Visit/analytics names from a real Bitwarden visit (names only; values never used).
@@ -17,12 +18,12 @@ class SessionCookieAnalytics(unittest.TestCase):
 
     def test_analytics_sid_and_session_names_are_not_logins(self):
         for name in ("_mpxl_sid", "_mpxl_sid_ts", "_gd_session", "_mpxl_cid", "_mpxl_guid"):
-            self.assertFalse(wt.is_session_cookie(name), name)
+            self.assertFalse(isr.is_session_cookie(name), name)
 
     def test_real_session_names_still_count(self):
         for name in ("SID", "sessionKey", "__Secure-next-auth.session-token", "_gh_sess",
                      "token_v2", "ESTSAUTHPERSISTENT", "ssid", "HSID", "SAPISID"):
-            self.assertTrue(wt.is_session_cookie(name), name)
+            self.assertTrue(isr.is_session_cookie(name), name)
 
 
 class DQ026BrowserSessions(unittest.TestCase):
@@ -51,7 +52,7 @@ class DQ026BrowserSessions(unittest.TestCase):
                         for n in BITWARDEN_VISIT_NAMES]
                        + [{"domain": "ads.example", "name": "id", "value": "x"}])
         try:
-            fs = wt.browser_sessions([d])
+            fs = isr.browser_sessions([d])
             self.assertEqual(len(fs), 1, fs)
             f = fs[0]
             self.assertEqual(f["rule"], "ISR-S004")
@@ -59,7 +60,7 @@ class DQ026BrowserSessions(unittest.TestCase):
             self.assertIn("sensitive: none", f["evidence"])
             self.assertNotIn("bitwarden", f["evidence"].split("sensitive:")[-1])
             self.assertNotIn("SECRET-VALUE", json.dumps(fs))
-            plain = wt.plain(f)
+            plain = isr.plain(f)
             self.assertNotIn("sensitive sites", plain["title"].lower())
         finally:
             shutil.rmtree(d)
@@ -70,7 +71,7 @@ class DQ026BrowserSessions(unittest.TestCase):
                        + [{"domain": ".bitwarden.com", "name": "SID", "value": "SECRET-VALUE-NEVER-READ"},
                           {"domain": "ads.example", "name": "id", "value": "x"}])
         try:
-            fs = wt.browser_sessions([d])
+            fs = isr.browser_sessions([d])
             self.assertEqual(len(fs), 1, fs)
             f = fs[0]
             self.assertEqual(f["severity"], "high")
@@ -78,7 +79,7 @@ class DQ026BrowserSessions(unittest.TestCase):
             self.assertIn("sensitive:", f["evidence"])
             self.assertNotIn("sensitive: none", f["evidence"])
             self.assertNotIn("SECRET-VALUE", json.dumps(fs))
-            self.assertIn("sensitive sites", wt.plain(f)["title"].lower())
+            self.assertIn("sensitive sites", isr.plain(f)["title"].lower())
         finally:
             shutil.rmtree(d)
 
@@ -86,7 +87,7 @@ class DQ026BrowserSessions(unittest.TestCase):
         d = self._seed([{"domain": ".google.com", "name": "SID", "value": "x" * 40},
                         {"domain": "bitwarden.com"}])  # domain present, no session name
         try:
-            fs = wt.browser_sessions([d])
+            fs = isr.browser_sessions([d])
             self.assertEqual(len(fs), 1, fs)
             f = fs[0]
             self.assertEqual(f["severity"], "high")
@@ -111,7 +112,7 @@ class DQ026AccountContext(Box):
         self.assertEqual(s4["severity"], "high")
         self.assertIn("google", s4["evidence"])
         self.assertNotIn("bitwarden", s4["evidence"].split("sensitive:")[-1])
-        ctx = wt.account_context()
+        ctx = isr.account_context()
         self.assertEqual(ctx["sites"], 1)  # google only, not bitwarden visit
         self.assertNotIn("SECRET-VALUE", json.dumps(self.snap()))
 

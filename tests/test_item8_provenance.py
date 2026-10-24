@@ -16,7 +16,8 @@ OutsideTheHomeFolders, VendorRoots, ColonNames, LiteralPath) are re-added from d
 import hashlib, json, os, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, CRASH, wt  # noqa: E402
+from test_boxes import Box, CRASH  # noqa: E402
+import isr  # noqa: E402
 from test_isr_bot import fake_key  # noqa: E402
 import profiles  # noqa: E402
 import test_dq042_vendor_skills as dq042  # noqa: E402
@@ -64,7 +65,7 @@ class _Platform(Box):
     def start(self, **fakes):
         self.scanners(**fakes)
         self.audit()                                                            # the first audit takes the baseline
-        self.assertEqual(wt.load_baseline()[1], "ok")
+        self.assertEqual(isr.load_baseline()[1], "ok")
 
     def daily(self):
         return self.run_cmd("daily", "--roots", *self.roots)[1].strip()
@@ -73,7 +74,7 @@ class _Platform(Box):
         return [f for f in self.snap()["findings"] if f["where"] == path]
 
     def counted_high(self, path):
-        return [f for f in self.at(path) if f["rule"] in ("ISR-I001", "ISR-I002") and f["severity"] == "high" and wt.counts(f)]
+        return [f for f in self.at(path) if f["rule"] in ("ISR-I001", "ISR-I002") and f["severity"] == "high" and isr.counts(f)]
 
     def tip(self):
         return [f for f in self.snap()["findings"] if f["rule"] == "ISR-I008"]
@@ -178,7 +179,7 @@ class CrossRootMoves(_Platform):
         profiles.vendor_release(self, new)
         self.audit()
         self.assertFalse([f for f in self.at(new) if f["severity"] in ("critical", "high")])
-        self.assertFalse([f for f in self.at(new) if wt.counts(f)])
+        self.assertFalse([f for f in self.at(new) if isr.counts(f)])
 
     def test_2_contrast_a_moved_owner_skill_is_not_new(self):
         """Contrast: passes on base too."""
@@ -208,17 +209,17 @@ class EngineBytes(_Platform):
         plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         self.audit()                                                            # the engines run and cache the plant as clean
-        p = wt.state_path("engine_cache.json")
-        cache = wt.load_json(p, {}) or {}
+        p = isr.state_path("engine_cache.json")
+        cache = isr.load_json(p, {}) or {}
         d = os.path.dirname(plant)
-        entry = dict(cache.get(d) or next(iter(cache.values()), {}), hash=wt.skill_dir_hash(d))
+        entry = dict(cache.get(d) or next(iter(cache.values()), {}), hash=isr.skill_dir_hash(d))
         cache[d] = entry                                                        # and a forged "clean, current" entry
-        wt.save_json(p, cache)
+        isr.save_json(p, cache)
         self.audit()
-        self.assertNotIn(plant, wt.load_baseline()[0])
+        self.assertNotIn(plant, isr.load_baseline()[0])
         self.assertEqual(len(self.counted_high(plant)), 1)
         self.run_cmd("fix", "--revet", "--only", "helper", "--roots", *self.roots)
-        self.assertNotIn(plant, wt.load_baseline()[0])
+        self.assertNotIn(plant, isr.load_baseline()[0])
 
     def test_3_an_engine_that_saw_swapped_bytes_never_approves(self):
         """b8i4 fix round 1 (Codex 9): the plant is a new skill folder again, so the engine scans it and the swap happens (checked);
@@ -231,12 +232,12 @@ class EngineBytes(_Platform):
         self.scanners(skillspector=SWAP_ENGINE % (plant, swapped))
         self.audit()
         self.assertEqual(sha(plant), hashlib.sha256(swapped.encode()).hexdigest())   # the engine ran on it and swapped the bytes
-        self.assertNotIn(plant, wt.load_baseline()[0])
+        self.assertNotIn(plant, isr.load_baseline()[0])
         self.assertEqual(len(self.counted_high(plant)), 1)
         pv = self.preview()["platform_unverified"]                             # listed, never approved (decision, Oct 18)
         self.assertEqual([f["where"] for f in pv["files"]], [plant])
         self.assertIn("platform-release.lock", self.approve("0" * 20))
-        self.assertNotIn(plant, wt.load_baseline()[0])
+        self.assertNotIn(plant, isr.load_baseline()[0])
         put(plant, CLEAN.format(n="helper") + "Planted.\n")                    # b8i4: the planted bytes, scanned honestly
         self.scanners()
         self.daily()
@@ -252,7 +253,7 @@ class EngineBytes(_Platform):
         add(plant, "Changed after the owner saw it.\n")
         out = self.approve(code)
         self.assertIn("NOT APPROVED", out)
-        self.assertNotIn(plant, wt.load_baseline()[0])
+        self.assertNotIn(plant, isr.load_baseline()[0])
         self.audit()
         self.assertEqual(len(self.counted_high(plant)), 1)
 
@@ -268,17 +269,17 @@ class PlanCantWiden(_Platform):
         self.audit()
         code = "0" * 20                                                         # the preview has no code to give
         put(b, CLEAN.format(n="other"))
-        wt.save_json(wt.state_path("platform_plan.json"), {"at": wt.now(), "files": {b: sha(b), a: sha(a)}})
+        isr.save_json(isr.state_path("platform_plan.json"), {"at": isr.now(), "files": {b: sha(b), a: sha(a)}})
         snap = self.snap()
         fa = next(f for f in snap["findings"] if f["where"] == a)
         snap["findings"].append(dict(fa, where=b, key="0" * 16))
-        tip = wt.finding("ISR-I008", "Platform refresh: 1 of Grok Bot's own files changed (other)", "info", ["AST07"], "platform-refresh", "", "")
+        tip = isr.finding("ISR-I008", "Platform refresh: 1 of Grok Bot's own files changed (other)", "info", ["AST07"], "platform-refresh", "", "")
         tip["platform_files"] = [b]
         snap["findings"].append(tip)
-        wt.save_json(wt.state_path("last_findings.json"), snap)
+        isr.save_json(isr.state_path("last_findings.json"), snap)
         out = self.approve(code)
         self.assertIn("NOT APPROVED", out)
-        base = wt.load_baseline()[0]
+        base = isr.load_baseline()[0]
         self.assertNotIn(a, base)
         self.assertNotIn(b, base)
         d = json.loads(self.daily())
@@ -293,7 +294,7 @@ class PlanCantWiden(_Platform):
         self.assertIn("NOT APPROVED", self.approve("0" * 20))
         code = "0" * 20                                                         # the preview has no code to give
         self.assertIn("NOT APPROVED", self.approve(code, yes=False))
-        self.assertNotIn(plant, wt.load_baseline()[0])
+        self.assertNotIn(plant, isr.load_baseline()[0])
 
     def test_4_the_owners_yes_is_refused_and_the_files_stay_high(self):
         """b8i4: alpha's clean update at its listed path is the middle path's quiet line, so the audit rolls it in on its own;
@@ -310,10 +311,10 @@ class PlanCantWiden(_Platform):
         self.assertNotIn("code", pv)
         self.assertNotIn("--approve-platform", json.dumps(pv))
         self.assertIn("platform-release.lock", self.approve("0" * 20))
-        base = wt.load_baseline()[0]
+        base = isr.load_baseline()[0]
         self.assertEqual((a in base, b in base, base[self.md("alpha")]), (False, False, sha(self.md("alpha"))))
         self.assertNotEqual(v1, sha(self.md("alpha")))
-        with open(wt.state_path("ledger.jsonl")) as f:
+        with open(isr.state_path("ledger.jsonl")) as f:
             events = [json.loads(l) for l in f if l.strip()]
         self.assertFalse([e for e in events if e.get("event") == "platform-approved"])
         self.audit()
@@ -354,13 +355,13 @@ class Lock(_Platform):
     def test_lock_unusable_whole_on_one_bad_line(self):
         p, h = self.plant()
         self.write_lock(self.GOOD.format(h=h))
-        self.assertTrue(wt.platform_listed(p, h))                               # the good line alone is provenance
+        self.assertTrue(isr.platform_listed(p, h))                               # the good line alone is provenance
         for bad in (f"{h}  .grok/bundled/skills/x:3/SKILL.md", f"{h}  .grok/bundled/skills/../../.ssh/x",
                     f"{h}  sand-data/workflows/x/SKILL.md", f"{h[:-1]}  .grok/bundled/skills/x/SKILL.md",
                     f"{h}  /home/box/.grok/bundled/skills/x/SKILL.md", f"{h}  .grok/bundled-evil/x/SKILL.md"):
             self.write_lock(self.GOOD.format(h=h) + bad + "\n")
-            self.assertFalse(wt.platform_listed(p, h), bad)
-            self.assertIn("line 2", wt.platform_lock_problem(), bad)
+            self.assertFalse(isr.platform_listed(p, h), bad)
+            self.assertIn("line 2", isr.platform_lock_problem(), bad)
         self.start()
         add(p, "Changed since the baseline.\n")
         self.write_lock(self.GOOD.format(h=sha(p)) + f"{h}  .grok/bundled/skills/x:3/SKILL.md\n")   # its line is good, one other isn't
@@ -374,19 +375,19 @@ class Lock(_Platform):
         self.write_lock(self.GOOD.format(h=h), real)
         os.remove(self.platform_lock)
         os.symlink(real, self.platform_lock)
-        self.assertFalse(wt.platform_listed(p, h))
-        self.assertTrue(wt.platform_lock_problem())
+        self.assertFalse(isr.platform_listed(p, h))
+        self.assertTrue(isr.platform_lock_problem())
 
     def test_lock_needs_the_exact_bytes_and_the_real_path(self):
         p, h = self.plant()
         self.write_lock(self.GOOD.format(h="0" * 64))
-        self.assertFalse(wt.platform_listed(p, h))
+        self.assertFalse(isr.platform_listed(p, h))
         outside = os.path.join(self.tmp, "elsewhere", "helper")
         put(os.path.join(outside, "SKILL.md"), CLEAN.format(n="helper"))
         link = self.md("linked")
         os.symlink(outside, os.path.dirname(link))                              # a link in the platform folder that leads out
         self.write_lock(f"{h}  .grok/bundled/skills/linked/SKILL.md\n")
-        self.assertFalse(wt.platform_listed(link, h))
+        self.assertFalse(isr.platform_listed(link, h))
 
 
 class Dq042WithoutProvenance(Box):
@@ -407,12 +408,12 @@ class Dq042WithoutProvenance(Box):
         r = self.audit()
         fs = self.snap()["findings"]
         x = [f for f in fs if f["where"] == md and f["rule"] == "ISR-I001"]
-        self.assertEqual([(f["severity"], wt.counts(f)) for f in x if f["severity"] == "high" or wt.counts(f)], [])
+        self.assertEqual([(f["severity"], isr.counts(f)) for f in x if f["severity"] == "high" or isr.counts(f)], [])
         self.assertNotIn(md, [f["where"] for f in r["new"]])
-        self.assertEqual(wt.load_baseline()[0][md], sha(md))
-        self.assertNotIn(d, wt.changed_skills(fs)[0])                           # never re-approved through the engines
+        self.assertEqual(isr.load_baseline()[0][md], sha(md))
+        self.assertNotIn(d, isr.changed_skills(fs)[0])                           # never re-approved through the engines
         v = [f for f in fs if f["rule"] == "ISR-X003" and f["where"] == d]
-        self.assertEqual([(f["severity"], f["label"]) for f in v], [("info", wt.PLATFORM)])
+        self.assertEqual([(f["severity"], f["label"]) for f in v], [("info", isr.PLATFORM)])
 
 
 # ---- real-path platform checks, re-added from dd27c42 (they failed on 7cf8996 there)
@@ -430,44 +431,44 @@ class SubstringBypass(Box):
         changed = {f["where"] for f in self.snap()["findings"] if f["rule"] == "ISR-I001" and f["severity"] == "high"}
         self.assertEqual(changed, {a, b})
         for p in (a, b):
-            self.assertFalse(wt.builtin({"where": p}))
-            self.assertFalse(wt.is_vendor(p))
+            self.assertFalse(isr.builtin({"where": p}))
+            self.assertFalse(isr.is_vendor(p))
 
 
 class OutsideTheHomeFolders(Box):
     def test_8_a_plugins_folder_in_a_project_gets_full_rules(self):
         p = os.path.join(self.ws, "proj", "plugins", "x", "SKILL.md")
         put(p, CLEAN.format(n="x"))
-        self.assertFalse(wt.is_vendor(p))
-        self.assertFalse(wt.builtin({"where": p}))
+        self.assertFalse(isr.is_vendor(p))
+        self.assertFalse(isr.builtin({"where": p}))
 
     def test_8_a_key_in_a_project_named_like_grok_bots_config_counts(self):
         p = os.path.join(self.ws, "p", "sand-data", "gateway.json")
         put(p, '{\n "url": "https://gw.internal.example",\n "token": "ghp_' + fake_key(36) + '"\n}\n')
-        self.assertFalse(wt.platform_file({"where": p + ":3"}))
+        self.assertFalse(isr.platform_file({"where": p + ":3"}))
         self.audit()
         s = [f for f in self.snap()["findings"] if f["rule"] in ("ISR-S001", "ISR-S002") and f["where"].startswith(p)]
         self.assertTrue(s)
         self.assertEqual((s[0].get("severity_was", s[0]["severity"]), s[0]["title"]), ("critical", "Secret stored in a file on the shared computer"), s[0])
         self.assertNotEqual(s[0].get("scope"), "platform")
-        self.assertTrue(wt.counts(s[0]))
+        self.assertTrue(isr.counts(s[0]))
 
     def test_8_contrast_grok_bots_own_config_is_still_its_own(self):
         """Contrast: passes on base too."""
         p = os.path.join(self.home, "sand-data", "gateway.json")
         put(p, '{\n "url": "https://gw.internal.example",\n "token": "Ya2u' + "Q7xLp3ZtV9" * 4 + '"\n}\n')
-        f = wt.finding("ISR-S001", "x", "critical", ["ASI03"], p + ":3", "e", "f")
-        self.assertTrue(wt.platform_file(f))
-        self.assertFalse(wt.counts(f))
-        self.assertTrue(wt.platform_file({"where": "/home/box/sand-data/teach-queue-key.json:3"}))
+        f = isr.finding("ISR-S001", "x", "critical", ["ASI03"], p + ":3", "e", "f")
+        self.assertTrue(isr.platform_file(f))
+        self.assertFalse(isr.counts(f))
+        self.assertTrue(isr.platform_file({"where": "/home/box/sand-data/teach-queue-key.json:3"}))
 
 
 class VendorRoots(Box):
     def check(self, path, want):
-        fn = getattr(wt, "vendor_root_path", None)
+        fn = getattr(isr, "vendor_root_path", None)
         self.assertTrue(callable(fn))
         self.assertEqual(bool(fn(path)), want, path)
-        self.assertEqual(bool(wt.builtin({"where": path})), want, path)
+        self.assertEqual(bool(isr.builtin({"where": path})), want, path)
 
     def test_9_real_vendor_folders(self):
         for rel in ("sand-data/plugins/acme/skills/a/SKILL.md", ".agents/skills/a", ".grok/bundled/skills/a/SKILL.md",
@@ -501,20 +502,20 @@ class ColonNames(Box):
         p = os.path.join(sd, "gateway.json:3")
         put(p, '"token": "ghp_' + fake_key(36) + '"\n')
         w = p + ":1"
-        self.assertFalse(wt.is_platform_config(w))
-        self.assertFalse(wt.platform_file({"where": w}))
-        f = wt.finding("ISR-S001", "Secret stored in a file on the shared computer", "critical", ["ASI03"], w, "x", "y")
-        self.assertTrue(wt.counts(f))
-        self.assertEqual(wt.platform_owned([f])[0]["severity"], "critical")
-        store = os.path.join(self.home, wt.PLATFORM_SECRET_STORE[0])
+        self.assertFalse(isr.is_platform_config(w))
+        self.assertFalse(isr.platform_file({"where": w}))
+        f = isr.finding("ISR-S001", "Secret stored in a file on the shared computer", "critical", ["ASI03"], w, "x", "y")
+        self.assertTrue(isr.counts(f))
+        self.assertEqual(isr.platform_owned([f])[0]["severity"], "critical")
+        store = os.path.join(self.home, isr.PLATFORM_SECRET_STORE[0])
         put(store + ":3", "x\n")
-        self.assertFalse(wt.is_platform_secret_store(store + ":3:1"))
+        self.assertFalse(isr.is_platform_secret_store(store + ":3:1"))
 
     def test_9_contrast_the_config_itself_still_is(self):
         """Contrast: passes on base too (is_platform_config is new, so this one checks the behaviour through platform_file)."""
         p = os.path.join(self.home, "sand-data", "gateway.json")
         for w in (p, p + ":3", p + ":3:7"):
-            self.assertTrue(wt.platform_file({"where": w}), w)
+            self.assertTrue(isr.platform_file({"where": w}), w)
 
 
 LEAKS = ('#!/usr/bin/env python3\nimport json, sys\na = sys.argv[1:]\nif a and a[0] == "version":\n    print("8.30.1"); sys.exit(0)\n'
@@ -534,14 +535,14 @@ class LiteralPath(Box):
         s = [f for f in self.snap()["findings"] if f["rule"] == "ISR-S002" and f["where"] == lit + ":1"]
         self.assertEqual(len(s), 1)
         sev = s[0]["severity"]
-        self.assertTrue(wt.counts(s[0]))
+        self.assertTrue(isr.counts(s[0]))
         os.remove(lit)                                                          # gone after the scan
-        self.assertTrue(wt.counts(s[0]))
-        self.assertEqual(wt.platform_owned([dict(s[0])])[0]["severity"], sev)
+        self.assertTrue(isr.counts(s[0]))
+        self.assertEqual(isr.platform_owned([dict(s[0])])[0]["severity"], sev)
         self.scanners(gitleaks=CRASH)                                           # gitleaks fails next run: its last results are kept
         self.audit()
         kept = [f for f in self.snap()["findings"] if f["rule"] == "ISR-S002" and f["where"] == lit + ":1"]
-        self.assertEqual([(f["severity"], wt.counts(f)) for f in kept], [(sev, True)])
+        self.assertEqual([(f["severity"], isr.counts(f)) for f in kept], [(sev, True)])
 
 
 class Docs(unittest.TestCase):
@@ -550,12 +551,12 @@ class Docs(unittest.TestCase):
             return f.read()
 
     def test_the_release_list_is_well_formed_and_is_in_the_manifest(self):
-        """Filled from the maintainer's box (Oct 18): every line is `<sha256>  <path>` inside a platform folder, and wt reads it whole."""
+        """Filled from the maintainer's box (Oct 18): every line is `<sha256>  <path>` inside a platform folder, and isr.py reads it whole."""
         import re
         t = self.read("rules/platform-release.lock")
         lines = [l for l in t.splitlines() if l.strip() and not l.lstrip().startswith("#")]
         self.assertTrue(lines)
-        roots = tuple(sub + "/" for sub in wt.PLATFORM_ROOT_SUBS)
+        roots = tuple(sub + "/" for sub in isr.PLATFORM_ROOT_SUBS)
         self.assertEqual(len(roots), 5)
         pairs = []
         for l in lines:
@@ -569,13 +570,13 @@ class Docs(unittest.TestCase):
             self.assertNotEqual(rel, ".grok/auth.json", l)
             pairs.append((rel, m.group(1)))
         self.assertEqual(len(pairs), len(set(pairs)))
-        saved = wt.PLATFORM_LOCK
-        wt.PLATFORM_LOCK = os.path.join(ROOT, "rules", "platform-release.lock")
+        saved = isr.PLATFORM_LOCK
+        isr.PLATFORM_LOCK = os.path.join(ROOT, "rules", "platform-release.lock")
         try:
-            self.assertEqual(wt.platform_lock_problem(), "")
-            self.assertEqual({(p, h) for p, hs in wt.platform_lock().items() for h in hs}, set(pairs))
+            self.assertEqual(isr.platform_lock_problem(), "")
+            self.assertEqual({(p, h) for p, hs in isr.platform_lock().items() for h in hs}, set(pairs))
         finally:
-            wt.PLATFORM_LOCK = saved
+            isr.PLATFORM_LOCK = saved
         self.assertIn("rules/platform-release.lock", self.read("MANIFEST.sha256"))
 
     def test_the_docs_name_the_release_list_and_the_yes(self):

@@ -9,7 +9,8 @@ F2 (Oct 12 ruling): packages in a project count in full when a hook, routine or 
 import json, os, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, OSV_DATA, wt  # noqa: E402
+from test_boxes import Box, OSV_DATA  # noqa: E402
+import isr  # noqa: E402
 from test_precision_item4 import BAD  # noqa: E402
 
 
@@ -45,7 +46,7 @@ class P1MarketplacePluginInCatalogCache(Box):
         open(os.path.join(d, "extra.md"), "w").write("More notes.\n")
         self.run_cmd("daily", "--roots", *self.roots)   # the daily run alerts on changes; the full audit's roll-up would accept them
         fs = self.snap()["findings"]
-        self.assertFalse([f for f in fs if f["rule"] == wt.REFRESH_RULE], "the owner's plugin changing is not Grok Bot refreshing itself")
+        self.assertFalse([f for f in fs if f["rule"] == isr.REFRESH_RULE], "the owner's plugin changing is not Grok Bot refreshing itself")
         mine = [f for f in fs if f["rule"] in ("ISR-I001", "ISR-I002") and f["where"].startswith(root)]
         self.assertTrue(mine)
         self.assertFalse([f for f in mine if f.get("refresh") or f.get("scope") == "platform"])
@@ -75,7 +76,7 @@ class P2HookUsesAProject(Box):
         hk = os.path.join(self.home, ".grok"); os.makedirs(hk)
         open(os.path.join(hk, "hooks.json"), "w").write(json.dumps({"hooks": {"PreToolUse": [{"command": f"node {proj}/hook.js"}]}}))
         self.audit()
-        self.assertEqual(self.d002(), [(wt.CONFIRMED, "high")])
+        self.assertEqual(self.d002(), [(isr.CONFIRMED, "high")])
 
     def test_vulnerable_package_in_a_project_a_routine_runs_keeps_its_severity(self):
         self.skills(1)
@@ -83,7 +84,7 @@ class P2HookUsesAProject(Box):
         ex = os.path.join(os.environ["ISR_BOT_HOME"], "exports"); os.makedirs(ex, exist_ok=True)
         open(os.path.join(ex, "routine-relay.txt"), "w").write(f"Relay digest\nEvery weekday at 8:47, run `node {proj}/hook.js` and summarize.\n")
         self.audit()
-        self.assertEqual(self.d002(), [(wt.CONFIRMED, "high")])
+        self.assertEqual(self.d002(), [(isr.CONFIRMED, "high")])
 
     def test_vulnerable_package_in_a_project_a_live_skill_runs_keeps_its_severity(self):
         self.skills(1, text="")
@@ -91,7 +92,7 @@ class P2HookUsesAProject(Box):
         d = os.path.join(self.home, "sand-data", "workflows", "relay"); os.makedirs(d)
         open(os.path.join(d, "SKILL.md"), "w").write(f"---\nname: relay\ndescription: r.\n---\nRun `node {proj}/hook.js`.\n")
         self.audit()
-        self.assertEqual(self.d002(), [(wt.CONFIRMED, "high")])
+        self.assertEqual(self.d002(), [(isr.CONFIRMED, "high")])
 
     def test_a_project_nothing_uses_is_still_a_tip(self):
         self.skills(1)
@@ -100,7 +101,7 @@ class P2HookUsesAProject(Box):
         other = os.path.join(self.ws, "projects", "relay-old"); os.makedirs(other)
         open(os.path.join(hk, "hooks.json"), "w").write(json.dumps({"hooks": {"PreToolUse": [{"command": f"node {other}/hook.js"}]}}))
         self.audit()
-        self.assertEqual([x for x, _ in self.d002()], [wt.TIP])
+        self.assertEqual([x for x, _ in self.d002()], [isr.TIP])
 
     def test_the_package_also_sits_in_an_unused_project_that_sorts_first(self):
         self.skills(1)
@@ -114,7 +115,7 @@ class P2HookUsesAProject(Box):
         hk = os.path.join(self.home, ".grok"); os.makedirs(hk)
         open(os.path.join(hk, "hooks.json"), "w").write(json.dumps({"hooks": {"PreToolUse": [{"command": f"node {proj}/hook.js"}]}}))
         self.audit()
-        self.assertEqual(self.d002(), [(wt.CONFIRMED, "high")])
+        self.assertEqual(self.d002(), [(isr.CONFIRMED, "high")])
 
 
 if __name__ == "__main__":

@@ -10,7 +10,8 @@ assertion; "guard" ones pass there too, unless marked "new" (they call something
 import json, os, random, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import wt
+import test_boxes  # noqa: E402
+import isr  # noqa: E402
 from test_batch6_example_keys import _Keys, FAKE_GITLEAKS
 
 EXPECT = "6 hit(s): github-pat at fake0.md:1, fake0.md:2, fake1.md:1 and 3 more"   # test_every_line_and_file_is_named's
@@ -50,7 +51,7 @@ class ListingOrder(_Keys):
 
     def reported(self, order):
         """Scan with gitleaks' report given to Watchtower in `order`; (the ISR-S002 findings, each report as given)."""
-        orig, seen = wt.gitleaks_private, []
+        orig, seen = isr.gitleaks_private, []
 
         def given(exe, source, priv, *a, **k):
             got, err = orig(exe, source, priv, *a, **k)
@@ -58,7 +59,7 @@ class ListingOrder(_Keys):
                 got = order(got)
                 seen.append(list(got))
             return got, err
-        with mock.patch.object(wt, "gitleaks_private", given):
+        with mock.patch.object(isr, "gitleaks_private", given):
             return self.scan_with(), seen
 
     def test_scanner_report_order(self):   # replay: ab8c7e7 names the files in the report's order
@@ -98,7 +99,7 @@ class LeakOrder(unittest.TestCase):
         hits = [{"File": "/d/b.md", "StartLine": 1}, {"File": "/d/a.md", "StartLine": 10},
                 {"File": "/d/a.md", "StartLine": 2, "StartColumn": 9, "RuleID": "b"}, {"File": "/d/a.md", "StartLine": 2},
                 {"File": "/d/a.md", "StartLine": 2, "StartColumn": 9, "RuleID": "a"}]
-        got = sorted(hits, key=wt._leak_order)
+        got = sorted(hits, key=isr._leak_order)
         self.assertEqual([(h["File"], h["StartLine"], h.get("StartColumn"), h.get("RuleID")) for h in got],
                          [("/d/a.md", 2, None, None), ("/d/a.md", 2, 9, "a"), ("/d/a.md", 2, 9, "b"), ("/d/a.md", 10, None, None),
                           ("/d/b.md", 1, None, None)])
@@ -106,7 +107,7 @@ class LeakOrder(unittest.TestCase):
     def test_odd_fields_sort_without_failing(self):   # guard (new)
         hits = [{"File": None, "StartLine": None}, {"File": "/d/a.md", "StartLine": "7"}, {"File": "/d/a.md", "StartLine": True},
                 {}, {"File": "/d/a.md", "StartLine": 3, "StartColumn": "x", "RuleID": None}]
-        got = sorted(hits, key=wt._leak_order)
+        got = sorted(hits, key=isr._leak_order)
         self.assertEqual(sorted(map(id, got)), sorted(map(id, hits)))   # the same hits, none lost or added
 
 

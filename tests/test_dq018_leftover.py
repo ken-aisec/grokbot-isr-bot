@@ -4,7 +4,8 @@ in Tips and Worth-a-look lines). Bot names are anonymized."""
 import json, os, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt  # noqa: E402
+from test_boxes import Box  # noqa: E402
+import isr  # noqa: E402
 
 TRIFECTA = {"connectors": ["Gmail", "Slack", "X"],
             "routines": [{"name": "Morning", "trigger": "schedule", "sends_or_posts": True, "asks_first": False, "reads_outside_content": True}],
@@ -13,7 +14,7 @@ TRIFECTA = {"connectors": ["Gmail", "Slack", "X"],
 
 class DQ018Leftover(Box):
     def rollcall(self, *names):
-        rdir = wt.default_rollcall_dir(); os.makedirs(rdir, exist_ok=True)
+        rdir = isr.default_rollcall_dir(); os.makedirs(rdir, exist_ok=True)
         for n in names:
             json.dump(dict(TRIFECTA, name=n), open(os.path.join(rdir, n.lower().split()[0] + ".json"), "w"))
         code, o, _ = self.run_cmd("rollcall", "--owner-said-yes")
@@ -30,7 +31,7 @@ class DQ018Leftover(Box):
         self.rollcall("bot-d")                       # bot-a was removed: it no longer answers the roll-call
         r = self.audit()
         self.assertEqual(self.bots_in(), ["bot-d"])
-        md = wt.render_md(self.snap(), [], "2026-W42")
+        md = isr.render_md(self.snap(), [], "2026-W42")
         self.assertNotIn("bot-a - Team", md)
 
     def test_without_a_saved_roster_the_audit_says_how_removed_bots_drop_out(self):
@@ -38,7 +39,7 @@ class DQ018Leftover(Box):
         self.rollcall("bot-a - Team", "bot-d")
         self.audit()   # the full notes go to the report's coverage notes; the audit JSON keeps only the first few
         self.assertTrue(any("roster.json" in n and "removed" in n for n in self.snap()["notes"]), self.snap()["notes"])
-        self.assertIn("No roster saved", wt.render_md(self.snap(), [], "2026-W42"))   # the weekly report's coverage notes say it
+        self.assertIn("No roster saved", isr.render_md(self.snap(), [], "2026-W42"))   # the weekly report's coverage notes say it
         exp = os.path.join(os.environ["ISR_BOT_HOME"], "exports"); os.makedirs(exp, exist_ok=True)
         json.dump([{"name": "bot-d", "kind": "bot"}], open(os.path.join(exp, "roster.json"), "w"))
         r = self.audit()

@@ -6,7 +6,8 @@ old leftpad was a Confirmed high (ISR-D002) though nothing on the computer loads
 import json, os, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, OSV_DATA, wt  # noqa: E402
+from test_boxes import Box, OSV_DATA  # noqa: E402
+import isr  # noqa: E402
 
 
 class PackageFacts(Box):
@@ -32,7 +33,7 @@ class PackageFacts(Box):
     def test_an_old_package_inside_a_live_skill_keeps_its_severity(self):
         d = self.skills(1)[0]; self.osv_at(d)
         self.audit()
-        self.assertEqual([(f["label"], f["severity"]) for f in self.d2()], [(wt.CONFIRMED, "high")])
+        self.assertEqual([(f["label"], f["severity"]) for f in self.d2()], [(isr.CONFIRMED, "high")])
 
     def test_fixing_a_reachable_package_raises_the_score(self):
         d = self.skills(1)[0]; self.osv_at(d)

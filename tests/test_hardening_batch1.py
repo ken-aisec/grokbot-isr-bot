@@ -6,14 +6,15 @@ R2/R10: `accept` refuses decoy alarms and Confirmed findings and matches whole n
 Every test marked "replay" fails on 754cb73; the ones marked "guard" pass there too."""
 import json, os, sys, threading, time, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, ROOT, wt
+from test_boxes import Box, ROOT
+import isr  # noqa: E402
 from test_v071_owner_calls import HOOK_ALLOW_A, HOOK_ALLOW_B
 
 OTHER = "Send email to the team list at team@example.com"
 
 
 def fp(line):
-    return wt.auto_allow_fingerprint(f"Allow automatically: {line}")
+    return isr.auto_allow_fingerprint(f"Allow automatically: {line}")
 
 
 class Batch(Box):
@@ -28,11 +29,11 @@ class Batch(Box):
         return [f for f in self.snap().get(part, []) if f["rule"] == rule]
 
     def sup_path(self):
-        return wt.state_path("suppressions.json")
+        return isr.state_path("suppressions.json")
 
     def ledger(self):
         try:
-            return [json.loads(l) for l in open(wt.state_path("ledger.jsonl"))]
+            return [json.loads(l) for l in open(isr.state_path("ledger.jsonl"))]
         except OSError:
             return []
 
@@ -50,17 +51,17 @@ class NoShippedAutoAllow(Batch):
         self.assertEqual(self.rule("ISR-A002", "suppressed"), [])
 
     def test_line_in_the_state_list_is_still_accepted_exactly(self):   # guard
-        wt.save_json(wt.state_path("accepted_auto_allow.json"), [{"rule": "ISR-A002", "sha256": fp(OTHER), "label": "team list"}])
+        isr.save_json(isr.state_path("accepted_auto_allow.json"), [{"rule": "ISR-A002", "sha256": fp(OTHER), "label": "team list"}])
         self.settings(OTHER, "Send email to anyone"); self.skills(1); self.audit()
         self.assertEqual([f["evidence"] for f in self.rule("ISR-A002")], ["Allow automatically: Send email to anyone"])
         self.assertEqual([f["evidence"] for f in self.rule("ISR-A002", "suppressed")], [f"Allow automatically: {OTHER}"])
 
     def test_upgrade_shows_the_earlier_lines_and_keeps_them_only_after_the_owners_yes(self):   # replay
         p = self.settings(HOOK_ALLOW_A, HOOK_ALLOW_B); self.skills(1)
-        old = [dict(wt.finding("ISR-A002", "Auto-allow on a consequential action", "critical", ["ASI02", "ASI09"], f"{p}:{i}",
+        old = [dict(isr.finding("ISR-A002", "Auto-allow on a consequential action", "critical", ["ASI02", "ASI09"], f"{p}:{i}",
                                f"Allow automatically: {b}", "Change it to Ask first."), accepted_exact={"sha256": fp(b), "label": "reply hook"})
                for i, b in ((1, HOOK_ALLOW_A), (2, HOOK_ALLOW_B))]
-        wt.save_json(wt.state_path("last_findings.json"), {"at": wt.now(), "version": "0.7.1", "score": 90, "findings": [], "suppressed": old})
+        isr.save_json(isr.state_path("last_findings.json"), {"at": isr.now(), "version": "0.7.1", "score": 90, "findings": [], "suppressed": old})
         self.audit()                                                                 # the first run after the upgrade
         live = self.rule("ISR-A002")
         self.assertEqual(len(live), 2, live)                                         # shown, critical, and counted
@@ -75,10 +76,10 @@ class NoShippedAutoAllow(Batch):
         self.assertEqual(o.count("earlier ISR Bot version accepted this line"), 2, o)
         code, o, _ = self.run_cmd("auto-allow", "keep", f"{id3},{id5}")
         self.assertEqual(code, 1, o); self.assertIn("NOT SAVED", o)
-        self.assertFalse(os.path.exists(wt.state_path("accepted_auto_allow.json")))
+        self.assertFalse(os.path.exists(isr.state_path("accepted_auto_allow.json")))
         code, o, _ = self.run_cmd("auto-allow", "keep", f"{id3},{id5}", "--owner-said-yes", "--reason", "my reply hook")
         self.assertEqual(code, 0, o)
-        kept = wt.load_json(wt.state_path("accepted_auto_allow.json"), [])
+        kept = isr.load_json(isr.state_path("accepted_auto_allow.json"), [])
         self.assertEqual(sorted(e["sha256"] for e in kept), sorted([fp(HOOK_ALLOW_A), fp(HOOK_ALLOW_B)]))
         self.assertTrue(any(e.get("event") == "auto-allow-keep" for e in self.ledger()))
         self.audit()
@@ -95,13 +96,13 @@ class NoShippedAutoAllow(Batch):
             code, o, _ = self.run_cmd("auto-allow", "keep", ident, "--owner-said-yes")
             self.assertEqual(code, 1, (ident, o))
             self.assertIn("NOT SAVED", o)
-        self.assertFalse(os.path.exists(wt.state_path("accepted_auto_allow.json")))
+        self.assertFalse(os.path.exists(isr.state_path("accepted_auto_allow.json")))
 
 
 # ---------------------------------------------------------------- item 2 (R2/R10)
 class AcceptLockdown(Batch):
     def read_decoy(self):
-        reg = wt.load_json(wt.state_path("canaries.json"), {})
+        reg = isr.load_json(isr.state_path("canaries.json"), {})
         p = os.path.expanduser(next(iter(reg.values()))["path"])
         st = os.stat(p)
         os.utime(p, (time.time() - 3600, st.st_mtime))                             # one read, an hour ago: no Watchtower run then
@@ -120,7 +121,7 @@ class AcceptLockdown(Batch):
         self.assertFalse(self.rule("ISR-K001", "suppressed"))
 
     def test_a_stored_slash_entry_never_hides_a_decoy_read(self):   # replay
-        wt.save_json(self.sup_path(), [{"rule": "ISR-K001", "match": "/", "reason": "x", "expires": "2999-01-01"}])
+        isr.save_json(self.sup_path(), [{"rule": "ISR-K001", "match": "/", "reason": "x", "expires": "2999-01-01"}])
         self.skills(1); self.run_cmd("canary", "plant"); self.audit()
         self.read_decoy(); self.audit()
         self.assertTrue(self.rule("ISR-K001"))
@@ -129,43 +130,43 @@ class AcceptLockdown(Batch):
         self.assertIn("ignored", o)
 
     def refused(self, f, where):
-        fs = wt.label_findings([f])
-        wt.save_json(wt.state_path("last_findings.json"), {"findings": fs, "suppressed": []})
+        fs = isr.label_findings([f])
+        isr.save_json(isr.state_path("last_findings.json"), {"findings": fs, "suppressed": []})
         code, o, _ = self.run_cmd("accept", f["rule"], where, "--reason", "x")
         self.assertEqual(code, 1, (f["rule"], o))
         self.assertIn("NOT ACCEPTED", o)
         self.assertFalse(os.path.exists(self.sup_path()), f["rule"])
         sup = [{"rule": f["rule"], "match": where, "expires": "2999-01-01"}]            # one stored by an earlier version
-        self.assertFalse(wt.is_accepted(fs[0], sup, "2026-10-16"), f["rule"])
+        self.assertFalse(isr.is_accepted(fs[0], sup, "2026-10-16"), f["rule"])
         return o
 
     def test_evidence_and_corroborated_findings_are_refused(self):   # replay
-        F = wt.finding
+        F = isr.finding
         skill = self.skills(1)[0]
         self.refused(F("ISR-X003", "Two scanners agree", "critical", ["AST01"], skill, "SkillSpector + husk", "f"), "skill000")
-        self.refused(F("ISR-S002", wt.KEY_LIVE, "critical", ["ASI03"], "/home/box/notes/keys.txt:3", "sk-…a1b2", "f"), "/home/box/notes/keys.txt")
+        self.refused(F("ISR-S002", isr.KEY_LIVE, "critical", ["ASI03"], "/home/box/notes/keys.txt:3", "sk-…a1b2", "f"), "/home/box/notes/keys.txt")
         o = self.refused(F("ISR-A002", "Auto-allow on a consequential action", "critical", ["ASI02"], "settings.json:3",
                            "Allow automatically: Send email to anyone", "f"), "settings.json:3")
         self.assertIn("auto-allow", o)
         self.refused(F("ISR-H003", "A command opened a remote shell", "critical", ["ASI05"], "/home/box/.bash_history:12", "bash -i", "f"),
                      "/home/box/.bash_history")
-        self.assertTrue(wt.accept_refused({"rule": "ISR-T004", "title": "x", "class": "corroborated"}))   # two votes, one risk
+        self.assertTrue(isr.accept_refused({"rule": "ISR-T004", "title": "x", "class": "corroborated"}))   # two votes, one risk
 
     def test_a_key_accepted_while_unconfirmed_comes_back_once_it_works(self):   # replay
-        maybe = wt.finding("ISR-S001", wt.KEY_MAYBE, "medium", ["ASI03"], "/home/box/notes/keys.txt:3", "sk-…a1b2", "f")
-        wt.save_json(wt.state_path("last_findings.json"), {"findings": wt.label_findings([maybe]), "suppressed": []})
+        maybe = isr.finding("ISR-S001", isr.KEY_MAYBE, "medium", ["ASI03"], "/home/box/notes/keys.txt:3", "sk-…a1b2", "f")
+        isr.save_json(isr.state_path("last_findings.json"), {"findings": isr.label_findings([maybe]), "suppressed": []})
         code, o, _ = self.run_cmd("accept", "ISR-S001", "/home/box/notes/keys.txt", "--reason", "a test key")
         self.assertEqual(code, 0, o)
-        self.assertEqual(wt.active(wt.label_findings([maybe]))[0], [])
-        live = dict(maybe, title=wt.KEY_LIVE, severity="critical")
-        self.assertEqual(len(wt.active(wt.label_findings([live]))[0]), 1)
+        self.assertEqual(isr.active(isr.label_findings([maybe]))[0], [])
+        live = dict(maybe, title=isr.KEY_LIVE, severity="critical")
+        self.assertEqual(len(isr.active(isr.label_findings([live]))[0]), 1)
 
     def test_whole_names_only(self):   # replay
         skill = self.skills(1)[0]
-        x = wt.finding("ISR-X001", "SkillSpector: do not install", "high", ["AST01"], "/w/slide-deck-2", "risk 100", "f")
-        d = wt.finding("ISR-D002", "Vulnerable package leftpad 1.0.0", "high", ["ASI04"], "/ws/app/package-lock.json", "GHSA-demo", "f")
+        x = isr.finding("ISR-X001", "SkillSpector: do not install", "high", ["AST01"], "/w/slide-deck-2", "risk 100", "f")
+        d = isr.finding("ISR-D002", "Vulnerable package leftpad 1.0.0", "high", ["ASI04"], "/ws/app/package-lock.json", "GHSA-demo", "f")
         d_fact = dict(d, title="Vulnerable package leftpad 1.0.0 (nothing on this computer loads it)")
-        t = wt.finding("ISR-T013", "Sends without asking", "medium", ["ASI09"], os.path.join(skill, "SKILL.md") + ":6", "send", "f")
+        t = isr.finding("ISR-T013", "Sends without asking", "medium", ["ASI09"], os.path.join(skill, "SKILL.md") + ":6", "send", "f")
         for f, match, hidden in ((x, "slide", False), (x, "/w", False), (x, "deck-2", False), (d, "leftpad 1", False), (d, "leftpad", False),
                                  (t, "skill00", False), (t, os.path.dirname(skill), False),
                                  (x, "slide-deck-2", True), (x, "/w/slide-deck-2", True), (d, "leftpad 1.0.0", True), (d_fact, "leftpad 1.0.0", True),
@@ -173,40 +174,40 @@ class AcceptLockdown(Batch):
                                  (t, t["where"], True)):
             with self.subTest(rule=f["rule"], match=match):
                 sup = [{"rule": f["rule"], "match": match, "expires": "2999-01-01"}]
-                self.assertEqual(bool(wt.is_accepted(f, sup, "2026-10-16")), hidden)
+                self.assertEqual(bool(isr.is_accepted(f, sup, "2026-10-16")), hidden)
 
     def test_a_bulk_accept_of_one_bots_line_does_not_cover_another_bot(self):   # replay
-        a = wt.finding("ISR-T013", "Sends without asking", "medium", ["ASI09"], "rollcall:BotA:routine:digest:1", "sends", "f")
-        b = wt.finding("ISR-T013", "Sends without asking", "medium", ["ASI09"], "rollcall:BotB:routine:digest:1", "sends", "f")
-        wt.save_json(wt.state_path("last_findings.json"), {"findings": wt.label_findings([a]), "suppressed": []})
-        n, _, _ = wt.accept_current(["ISR-T013"], "reviewed by owner")
+        a = isr.finding("ISR-T013", "Sends without asking", "medium", ["ASI09"], "rollcall:BotA:routine:digest:1", "sends", "f")
+        b = isr.finding("ISR-T013", "Sends without asking", "medium", ["ASI09"], "rollcall:BotB:routine:digest:1", "sends", "f")
+        isr.save_json(isr.state_path("last_findings.json"), {"findings": isr.label_findings([a]), "suppressed": []})
+        n, _, _ = isr.accept_current(["ISR-T013"], "reviewed by owner")
         self.assertEqual(n, 1)
-        live, acc = wt.active(wt.label_findings([a, b]))
+        live, acc = isr.active(isr.label_findings([a, b]))
         self.assertEqual([f["where"] for f in live], [b["where"]])
         self.assertEqual([f["where"] for f in acc], [a["where"]])
 
     def test_canary_remove_needs_the_owners_yes(self):   # replay
         self.run_cmd("canary", "plant")
-        reg = wt.load_json(wt.state_path("canaries.json"), {})
+        reg = isr.load_json(isr.state_path("canaries.json"), {})
         paths = [os.path.expanduser(v["path"]) for v in reg.values()]
         self.assertTrue(paths)
         code, o, _ = self.run_cmd("canary", "remove")
         self.assertEqual(code, 1, o); self.assertIn("NOT REMOVED", o)
         self.assertTrue(all(os.path.isfile(p) for p in paths))
-        self.assertEqual(wt.load_json(wt.state_path("canaries.json"), {}), reg)
+        self.assertEqual(isr.load_json(isr.state_path("canaries.json"), {}), reg)
         code, o, _ = self.run_cmd("canary", "remove", "--owner-said-yes")
         self.assertEqual(code, 0, o)
         self.assertFalse(any(os.path.exists(p) for p in paths))
-        self.assertEqual(wt.load_json(wt.state_path("canaries.json"), {}), {})
+        self.assertEqual(isr.load_json(isr.state_path("canaries.json"), {}), {})
         self.assertTrue(any(e.get("event") == "canary-remove" for e in self.ledger()))
 
     def test_retaking_the_baseline_needs_the_owners_yes(self):   # replay
         ds = self.skills(1); self.audit()
         open(os.path.join(ds[0], "SKILL.md"), "a").write("One more line.\n")
-        before = open(wt.state_path("baseline.json")).read()
+        before = open(isr.state_path("baseline.json")).read()
         code, o, _ = self.run_cmd("baseline", "--roots", *self.roots)
         self.assertEqual(code, 1, o); self.assertIn("NOT SAVED", o)
-        self.assertEqual(open(wt.state_path("baseline.json")).read(), before)
+        self.assertEqual(open(isr.state_path("baseline.json")).read(), before)
         self.audit()
         self.assertTrue(self.rule("ISR-I001"))
         code, o, _ = self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
@@ -218,7 +219,7 @@ class AcceptLockdown(Batch):
         self.skills(1)
         code, o, _ = self.run_cmd("baseline", "--roots", *self.roots)
         self.assertEqual(code, 0, o); self.assertIn("Baseline saved", o)
-        self.assertTrue(wt.load_json(wt.state_path("baseline.json"), {}))
+        self.assertTrue(isr.load_json(isr.state_path("baseline.json"), {}))
 
     def test_an_unused_connector_can_still_be_accepted_one_at_a_time(self):   # guard (D2)
         self.skills(1)
@@ -275,10 +276,10 @@ class BaselineReset(Batch):
     def test_each_kind_of_reset_is_a_high_confirmed_alert(self):   # replay
         for kind in ("empty", "deleted", "garbage", "list", "fifo"):
             with self.subTest(kind=kind):
-                os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, f"wt-{kind}", "watchtower")
+                os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, f"isr-bot-{kind}", "watchtower")
                 ds = self.changed_after_first_run()
-                copy = wt.load_approved(ds[0])["hash"]
-                bp = wt.state_path("baseline.json")
+                copy = isr.load_approved(ds[0])["hash"]
+                bp = isr.state_path("baseline.json")
                 release = None
                 if kind == "empty":
                     open(bp, "w").close()
@@ -298,19 +299,19 @@ class BaselineReset(Batch):
                 fs = self.i010()
                 self.assertEqual(len(fs), 1, [f["rule"] for f in self.snap()["findings"]])
                 self.assertEqual(fs[0]["severity"], "high")
-                self.assertEqual(fs[0]["label"], wt.CONFIRMED)
-                self.assertIn(fs[0], wt.scored(self.snap()["findings"]))
+                self.assertEqual(fs[0]["label"], isr.CONFIRMED)
+                self.assertIn(fs[0], isr.scored(self.snap()["findings"]))
                 if kind == "deleted":
                     self.assertFalse(os.path.lexists(bp))                            # not rewritten
                 elif kind == "fifo":
                     self.assertTrue(os.path.exists(bp) and not os.path.isfile(bp))
                 else:
                     self.assertEqual(open(bp).read(), {"empty": "", "garbage": "{not json", "list": "[]"}[kind])
-                self.assertEqual(wt.load_approved(ds[0])["hash"], copy)                # the changed skill was not re-approved
+                self.assertEqual(isr.load_approved(ds[0])["hash"], copy)                # the changed skill was not re-approved
 
     def test_daily_reports_the_reset_as_new(self):   # replay
         self.changed_after_first_run()
-        open(wt.state_path("baseline.json"), "w").close()
+        open(isr.state_path("baseline.json"), "w").close()
         code, o, _ = self.run_cmd("daily", "--roots", *self.roots)
         self.assertEqual(code, 0)
         self.assertIn("ISR-I010", [f["rule"] for f in json.loads(o)["new"]], o)
@@ -318,23 +319,23 @@ class BaselineReset(Batch):
     def test_revet_after_a_reset_writes_no_baseline(self):   # replay
         self.changed_after_first_run(); self.audit()
         self.assertTrue(self.rule("ISR-I001"))
-        os.remove(wt.state_path("baseline.json"))
+        os.remove(isr.state_path("baseline.json"))
         code, o, _ = self.run_cmd("fix", "--revet", "--only", "skill000", "--roots", *self.roots)
         self.assertEqual(code, 0, o)
-        self.assertFalse(os.path.lexists(wt.state_path("baseline.json")))
+        self.assertFalse(os.path.lexists(isr.state_path("baseline.json")))
         self.assertIn("not finished", o)
 
     def test_an_older_install_with_its_baseline_deleted_alarms(self):   # replay
         self.changed_after_first_run()
         for fn in ("baseline_meta.json", "baseline.json"):                          # an older version kept no meta file
-            if os.path.exists(wt.state_path(fn)):
-                os.remove(wt.state_path(fn))
+            if os.path.exists(isr.state_path(fn)):
+                os.remove(isr.state_path(fn))
         self.audit()
         self.assertEqual(len(self.i010()), 1)
 
     def test_accepting_the_reset_is_refused(self):   # replay
         self.changed_after_first_run()
-        open(wt.state_path("baseline.json"), "w").close()
+        open(isr.state_path("baseline.json"), "w").close()
         self.audit()
         f = self.i010()[0]
         code, o, _ = self.run_cmd("accept", "ISR-I010", f["where"], "--reason", "x")
@@ -345,8 +346,8 @@ class BaselineReset(Batch):
 
     def test_after_the_owners_yes_a_new_baseline_clears_the_alert(self):
         self.changed_after_first_run()
-        self.assertTrue(os.path.isfile(wt.state_path("baseline_meta.json")))
-        open(wt.state_path("baseline.json"), "w").close()
+        self.assertTrue(os.path.isfile(isr.state_path("baseline_meta.json")))
+        open(isr.state_path("baseline.json"), "w").close()
         self.audit()
         self.assertEqual(len(self.i010()), 1)
         code, o, _ = self.run_cmd("baseline", "--roots", *self.roots)
@@ -360,13 +361,13 @@ class BaselineReset(Batch):
     def test_the_first_run_takes_the_baseline_without_an_alarm(self):   # guard
         self.skills(1); self.audit(); self.audit()
         self.assertEqual(self.i010(), [])
-        self.assertTrue(wt.load_json(wt.state_path("baseline.json"), {}))
+        self.assertTrue(isr.load_json(isr.state_path("baseline.json"), {}))
 
     def test_a_box_with_nothing_to_fingerprint_never_alarms(self):   # guard
         self.audit(); self.audit()
         self.assertEqual(self.i010(), [])
         for reset in ("empty", "deleted"):
-            bp = wt.state_path("baseline.json")
+            bp = isr.state_path("baseline.json")
             if reset == "empty":
                 open(bp, "w").close()
             elif os.path.exists(bp):
@@ -383,27 +384,27 @@ class RoundOne(Batch):
     def test_an_older_install_never_rebaselines_from_an_empty_scan(self):   # replay (P1: emptiness only on a past record)
         ds = self.skills(2); self.audit()
         open(os.path.join(ds[0], "SKILL.md"), "a").write("One more line.\n")
-        copy = wt.load_approved(ds[0])["hash"]
+        copy = isr.load_approved(ds[0])["hash"]
         for fn in ("baseline_meta.json", "baseline.json"):                          # an older version kept no meta file
-            os.remove(wt.state_path(fn))
+            os.remove(isr.state_path(fn))
         code, o, _ = self.run_cmd("daily", "--roots", os.path.join(self.tmp, "nonexistent"))
         self.assertEqual(code, 0, o)
         self.assertNotIn("NO_CHANGES", o)                                            # never a quiet fresh start
         self.assertIn("ISR-I010", [f["rule"] for f in json.loads(o)["new"]], o)
-        self.assertFalse(os.path.lexists(wt.state_path("baseline.json")))         # the empty scan was not saved
-        self.assertFalse(os.path.lexists(wt.state_path("baseline_meta.json")))    # nor recorded as "it held nothing"
+        self.assertFalse(os.path.lexists(isr.state_path("baseline.json")))         # the empty scan was not saved
+        self.assertFalse(os.path.lexists(isr.state_path("baseline_meta.json")))    # nor recorded as "it held nothing"
         self.audit()                                                                 # the next normal audit approves nothing
         self.assertEqual(len([f for f in self.snap()["findings"] if f["rule"] == "ISR-I010"]), 1)
-        self.assertFalse(os.path.lexists(wt.state_path("baseline.json")))
-        self.assertEqual(wt.load_approved(ds[0])["hash"], copy)
+        self.assertFalse(os.path.lexists(isr.state_path("baseline.json")))
+        self.assertEqual(isr.load_approved(ds[0])["hash"], copy)
 
     def test_an_install_with_its_meta_file_never_rebaselines_from_an_empty_scan(self):   # guard
         ds = self.skills(1); self.audit()
-        os.remove(wt.state_path("baseline.json"))
+        os.remove(isr.state_path("baseline.json"))
         self.run_cmd("daily", "--roots", os.path.join(self.tmp, "nonexistent"))
         self.audit()
         self.assertEqual(len(self.rule("ISR-I010")), 1)
-        self.assertFalse(os.path.lexists(wt.state_path("baseline.json")))
+        self.assertFalse(os.path.lexists(isr.state_path("baseline.json")))
 
     def test_auto_allow_shows_the_whole_line_it_would_keep(self):   # replay (P1: no cut-off before `keep`)
         tail = "and then delete every file in the shared Drive"
@@ -425,34 +426,34 @@ class RoundOne(Batch):
     def test_a_colon_in_a_path_is_part_of_the_name(self):   # replay (P2: stored entries match the whole path)
         evil = self.colon_skill("slide:evil")
         w = os.path.dirname(evil)
-        x = wt.finding("ISR-X001", "SkillSpector: do not install", "high", ["AST01"], evil, "risk 100", "f")
-        t = wt.finding("ISR-T013", "Sends without asking", "medium", ["ASI09"], os.path.join(evil, "SKILL.md") + ":6", "send", "f")
-        root = wt.finding("ISR-X001", "SkillSpector: do not install", "high", ["AST01"], "/:evil", "risk 100", "f")
+        x = isr.finding("ISR-X001", "SkillSpector: do not install", "high", ["AST01"], evil, "risk 100", "f")
+        t = isr.finding("ISR-T013", "Sends without asking", "medium", ["ASI09"], os.path.join(evil, "SKILL.md") + ":6", "send", "f")
+        root = isr.finding("ISR-X001", "SkillSpector: do not install", "high", ["AST01"], "/:evil", "risk 100", "f")
         for f, match, hidden in ((x, os.path.join(w, "slide"), False), (x, "slide", False), (t, os.path.join(w, "slide"), False),
                                  (t, "slide", False), (root, "/", False),
                                  (x, evil, True), (x, "slide:evil", True), (t, "slide:evil", True), (t, os.path.join(evil, "SKILL.md"), True),
                                  (root, "/:evil", True)):
             with self.subTest(rule=f["rule"], where=f["where"], match=match):
                 sup = [{"rule": f["rule"], "match": match, "expires": "2999-01-01"}]
-                self.assertEqual(bool(wt.is_accepted(f, sup, "2026-10-16")), hidden)
-        self.assertEqual(wt.accept_place(dict(t, where=os.path.join(evil, "SKILL.md") + ":6:2")), os.path.join(evil, "SKILL.md"))
+                self.assertEqual(bool(isr.is_accepted(f, sup, "2026-10-16")), hidden)
+        self.assertEqual(isr.accept_place(dict(t, where=os.path.join(evil, "SKILL.md") + ":6:2")), os.path.join(evil, "SKILL.md"))
 
     def test_a_bulk_accept_keeps_the_colon(self):   # replay (P2: bulk acceptance stores the whole path)
         evil, plain_ = self.colon_skill("slide:evil"), self.colon_skill("slide")
-        a = wt.finding("ISR-X001", "SkillSpector: do not install", "high", ["AST01"], evil, "risk 100", "f")
-        b = wt.finding("ISR-X001", "SkillSpector: do not install", "high", ["AST01"], plain_, "risk 100", "f")
-        wt.save_json(wt.state_path("last_findings.json"), {"findings": wt.label_findings([a]), "suppressed": []})
-        n, _, _ = wt.accept_current(["ISR-X001"], "reviewed by owner")
+        a = isr.finding("ISR-X001", "SkillSpector: do not install", "high", ["AST01"], evil, "risk 100", "f")
+        b = isr.finding("ISR-X001", "SkillSpector: do not install", "high", ["AST01"], plain_, "risk 100", "f")
+        isr.save_json(isr.state_path("last_findings.json"), {"findings": isr.label_findings([a]), "suppressed": []})
+        n, _, _ = isr.accept_current(["ISR-X001"], "reviewed by owner")
         self.assertEqual(n, 1)
-        self.assertEqual([s["match"] for s in wt.load_json(self.sup_path(), [])], [evil])
-        live, acc = wt.active(wt.label_findings([a, b]))
+        self.assertEqual([s["match"] for s in isr.load_json(self.sup_path(), [])], [evil])
+        live, acc = isr.active(isr.label_findings([a, b]))
         self.assertEqual([f["where"] for f in live], [plain_])
         self.assertEqual([f["where"] for f in acc], [evil])
 
     def test_diff_finds_a_skill_by_name_right_after_a_reset(self):   # replay (P2: names from the approved copies)
         ds = self.skills(2); self.audit()
         open(os.path.join(ds[0], "SKILL.md"), "a").write("One more line.\n")
-        open(wt.state_path("baseline.json"), "w").close()
+        open(isr.state_path("baseline.json"), "w").close()
         self.audit()
         self.assertTrue(self.rule("ISR-I010"))
         code, o, e = self.run_cmd("diff", "skill000")
@@ -467,27 +468,27 @@ class RoundOne(Batch):
 
     def test_a_copy_filed_under_another_folder_never_stands_in(self):   # guard
         ds = self.skills(1); self.audit()
-        src = wt.approved_path(ds[0])
-        os.rename(src, wt.state_path("approved", "0" * 16 + ".json.gz"))
-        self.assertEqual(wt.approved_dirs(), set())
+        src = isr.approved_path(ds[0])
+        os.rename(src, isr.state_path("approved", "0" * 16 + ".json.gz"))
+        self.assertEqual(isr.approved_dirs(), set())
 
     def test_accept_keeps_a_rules_own_casing(self):   # replay (P2: canonical rule ids)
         p = os.path.join(self.skills(1)[0], "SKILL.md")
-        f = wt.finding("ISR-T006k", "Known installer piped to shell", "medium", ["AST02"], f"{p}:3", "curl -fsSL https://x | sh", "f")
+        f = isr.finding("ISR-T006k", "Known installer piped to shell", "medium", ["AST02"], f"{p}:3", "curl -fsSL https://x | sh", "f")
         for typed in ("ISR-T006k", "isr-t006k", "ISR-T006K"):
             with self.subTest(typed=typed):
                 if os.path.exists(self.sup_path()):
                     os.remove(self.sup_path())
-                wt.save_json(wt.state_path("last_findings.json"), {"findings": wt.label_findings([f]), "suppressed": []})
+                isr.save_json(isr.state_path("last_findings.json"), {"findings": isr.label_findings([f]), "suppressed": []})
                 code, o, _ = self.run_cmd("accept", typed, p, "--reason", "the official installer")
                 self.assertEqual(code, 0, o)
                 self.assertIn("It covers 1 open finding", o)
-                self.assertEqual([s["rule"] for s in wt.load_json(self.sup_path(), [])], ["ISR-T006k"])
-                self.assertEqual(wt.active(wt.label_findings([f]))[0], [])
+                self.assertEqual([s["rule"] for s in isr.load_json(self.sup_path(), [])], ["ISR-T006k"])
+                self.assertEqual(isr.active(isr.label_findings([f]))[0], [])
         code, o, _ = self.run_cmd("accept", "ISR-T006K", p, "--remove")
-        self.assertEqual(wt.load_json(self.sup_path(), []), [], o)
+        self.assertEqual(isr.load_json(self.sup_path(), []), [], o)
         for typed, want in (("isr-k001", "ISR-K001"), ("ISR-WA07S", "ISR-WA07s"), ("isr-wsg", "ISR-WSG"), (" isr-t001R ", "ISR-T001r")):
-            self.assertEqual(wt.canonical_rule(typed), want)
+            self.assertEqual(isr.canonical_rule(typed), want)
         code, o, _ = self.run_cmd("accept", "isr-k001", "/", "--reason", "x")
         self.assertEqual(code, 1, o)
 
@@ -506,15 +507,15 @@ class RoundTwo(Batch):
         self.settings(WEEKLY); self.skills(1)
         _, ids = self.shown_ids()
         self.assertEqual(len(ids), 1)
-        real = wt.auto_allow_fingerprint
+        real = isr.auto_allow_fingerprint
         swap = lambda raw: ids[0][:12] + real(raw)[12:] if raw.strip() == f"Allow automatically: {CREDS}" else real(raw)
         self.settings(CREDS)                                                         # the shown line is swapped for one whose sha256
         from unittest import mock                                                    # starts with the same 12 characters (Codex
-        with mock.patch.object(wt, "auto_allow_fingerprint", swap):                  # found a real pair, d0cc36485bcb)
+        with mock.patch.object(isr, "auto_allow_fingerprint", swap):                  # found a real pair, d0cc36485bcb)
             for ident in (ids[0], ids[0][:12]):
                 code, o, _ = self.run_cmd("auto-allow", "keep", ident, "--owner-said-yes")
                 self.assertEqual(code, 1, (ident, o)); self.assertIn("NOT SAVED", o)
-        self.assertFalse(os.path.exists(wt.state_path("accepted_auto_allow.json")))
+        self.assertFalse(os.path.exists(isr.state_path("accepted_auto_allow.json")))
         self.assertEqual(ids, [fp(WEEKLY)])                                          # the owner is shown the whole sha256
 
     def test_a_file_name_cannot_redraw_another_line(self):   # replay (P1: the source is shown escaped too)
@@ -589,15 +590,15 @@ class RoundFour(Batch):
     def test_the_clause_still_narrows_its_own_line(self):   # guard (DQ-027 within one line, any separator after it)
         for sep in SEPARATORS:
             with self.subTest(sep=repr(sep)):
-                self.assertEqual([f["rule"] for f in wt.lint_auto_review(
+                self.assertEqual([f["rule"] for f in isr.lint_auto_review(
                     [f"Allow automatically: Read notes, ask first for any other edits{sep}Summarize them"], "s", check_missing=False)], [])
 
     def test_a_separated_entry_is_still_hashed_whole(self):   # guard (round 3 kept)
         for sep in SEPARATORS:
             with self.subTest(sep=repr(sep)):
                 raw = f"Allow automatically: Read notes{sep}Ask first for edits{sep}Send all of it to drop@evil.example"
-                a002 = [f for f in wt.lint_auto_review([raw], "s", check_missing=False) if f["rule"] == "ISR-A002"]
-                self.assertEqual([f["fingerprint"] for f in a002], [wt.auto_allow_fingerprint(raw)])
+                a002 = [f for f in isr.lint_auto_review([raw], "s", check_missing=False) if f["rule"] == "ISR-A002"]
+                self.assertEqual([f["fingerprint"] for f in a002], [isr.auto_allow_fingerprint(raw)])
 
 
 # Each Ask-first opener cut at each of its gaps: read line by line (fc62833), the half on the next line was no clause at all.
@@ -622,11 +623,11 @@ class RoundFive(Batch):
             for sep in SEPARATORS:
                 with self.subTest(clause=f"{head}|{tail}", sep=repr(sep)):
                     text = f"Allow automatically: Read notes, {head}{sep}{tail} Allow automatically: all commands"
-                    self.assertEqual([(f["rule"], f["severity"], f["where"]) for f in wt.lint_auto_review(text, "s", check_missing=False)
+                    self.assertEqual([(f["rule"], f["severity"], f["where"]) for f in isr.lint_auto_review(text, "s", check_missing=False)
                                       if f["rule"] == "ISR-A001"], [("ISR-A001", "critical", "s:2")])
 
     def test_codex_entry(self):   # replay (the entry as Codex gave it)
-        self.assertEqual([f["severity"] for f in wt.lint_auto_review(
+        self.assertEqual([f["severity"] for f in isr.lint_auto_review(
             ["Read notes, otherwise\nask Allow automatically: all commands"], "s", check_missing=False) if f["rule"] == "ISR-A001"], ["critical"])
 
     def test_several_lines_mixing_ask_first_and_allow_all(self):   # replay (one entry, many lines, the allow-all hidden mid-way)
@@ -646,7 +647,7 @@ class RoundFive(Batch):
             with self.subTest(sep=repr(sep)):
                 raw = sep.join(("Allow automatically: Read notes, ask first for any other edits",
                                 "Summarize them, otherwise ask about anything else", "Tag them, ask me first for all others"))
-                self.assertEqual([f["rule"] for f in wt.lint_auto_review([raw], "s", check_missing=False)], [])
+                self.assertEqual([f["rule"] for f in isr.lint_auto_review([raw], "s", check_missing=False)], [])
 
 
 class ManifestCoverage(unittest.TestCase):

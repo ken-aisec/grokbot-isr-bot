@@ -53,8 +53,8 @@ def can_sandbox():
 class DryRunLeavesWorkspaceAlone(unittest.TestCase):
     def setUp(self):
         base = "/var/tmp" if os.access("/var/tmp", os.W_OK) else os.path.expanduser("~")
-        self.ws = tempfile.mkdtemp(prefix="wt-test-ws-", dir=base)
-        self.tmproot = tempfile.mkdtemp(prefix="wt-test-sbx-")          # under /tmp
+        self.ws = tempfile.mkdtemp(prefix="isr-bot-test-ws-", dir=base)
+        self.tmproot = tempfile.mkdtemp(prefix="isr-bot-test-sbx-")          # under /tmp
         self.addCleanup(shutil.rmtree, self.ws, True); self.addCleanup(shutil.rmtree, self.tmproot, True)
         self.install = os.path.join(self.ws, "watchtower")
         os.makedirs(os.path.join(self.install, "state")); os.makedirs(os.path.join(self.install, "reports"))
@@ -124,7 +124,7 @@ class DryRunLeavesWorkspaceAlone(unittest.TestCase):
 
 
 class NoNameBasedSkip(unittest.TestCase):
-    def test_scanner_has_no_wt_dry_exception(self):
+    def test_scanner_has_no_isr_bot_dry_exception(self):
         src = open(os.path.join(ROOT, "isr_bot", "isr.py")).read()
         self.assertNotIn("wt-dry", src, "a name-based skip for dry-run folders would be a blind spot")
 

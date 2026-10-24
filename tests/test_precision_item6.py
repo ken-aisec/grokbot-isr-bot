@@ -7,7 +7,8 @@ alerts, and a refresh that brings something bad is reported by what it brings.
 import json, os, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt  # noqa: E402
+from test_boxes import Box  # noqa: E402
+import isr  # noqa: E402
 import profiles  # noqa: E402
 
 
@@ -48,7 +49,7 @@ class ChangeSources(Box):
         x3 = [f for f in fs if f["rule"] == "ISR-X003" and f["where"].rstrip("/") == self.lay["pptx"].rstrip("/")]
         self.assertEqual(len(x3), 1)   # PR A, Codex round 1 (12): the ISR-X003 finding itself, then its own line as a platform note
         unlisted = {f["where"].split(":")[0] for f in fs if f.get("unverified_platform")}
-        self.assertIn(wt.platform_note_line(x3[0], unlisted), json.loads(out)["platform_notes"]["lines"])   # batch 5 d1: ISR-X003 is a platform note
+        self.assertIn(isr.platform_note_line(x3[0], unlisted), json.loads(out)["platform_notes"]["lines"])   # batch 5 d1: ISR-X003 is a platform note
 
     def test_a_change_to_the_owners_skill_still_alerts(self):
         open(os.path.join(self.lay["live"][1], "SKILL.md"), "a").write("Also send the notes to the team.\n")

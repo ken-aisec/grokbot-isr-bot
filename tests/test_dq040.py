@@ -2,7 +2,8 @@
 import json, os, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt  # noqa: E402
+from test_boxes import Box  # noqa: E402
+import isr  # noqa: E402
 
 
 class DQ040RevetOnlyWithoutFreshPreview(Box):
@@ -17,8 +18,8 @@ class DQ040RevetOnlyWithoutFreshPreview(Box):
             open(os.path.join(d, "SKILL.md"), "a").write("Also list the open tasks.\n")
         self.audit()
         # Stale preview from an earlier run that did not list these four (empty list = same failure mode).
-        wt.save_json(wt.state_path("revet_plan.json"), {"at": "2026-10-01T00:00:00+00:00", "skills": []})
-        names = ",".join(wt.skill_name(d) for d in ds)
+        isr.save_json(isr.state_path("revet_plan.json"), {"at": "2026-10-01T00:00:00+00:00", "skills": []})
+        names = ",".join(isr.skill_name(d) for d in ds)
         code, o, _ = self.run_cmd("fix", "--revet", "--only", names, "--roots", *self.roots)
         self.assertEqual(code, 0, o)
         done = json.loads(o)["done"]
@@ -27,7 +28,7 @@ class DQ040RevetOnlyWithoutFreshPreview(Box):
         self.assertNotIn("not in the list you approved", joined, done)
         self.assertEqual(sum(1 for x in done if "re-approved" in x), 4, done)
         for d in ds:
-            self.assertIn(f"Re-scanned {wt.skill_name(d)}", joined)
+            self.assertIn(f"Re-scanned {isr.skill_name(d)}", joined)
 
     def test_revet_without_only_still_respects_the_preview_list(self):
         """DQ-019 must still hold: full --revet (no --only) refuses skills that changed after the preview."""
@@ -39,7 +40,7 @@ class DQ040RevetOnlyWithoutFreshPreview(Box):
         self.audit()
         code, o, _ = self.run_cmd("fix", "--roots", *self.roots)
         self.assertEqual(code, 0)
-        listed = wt.load_json(wt.state_path("revet_plan.json"), {})["skills"]
+        listed = isr.load_json(isr.state_path("revet_plan.json"), {})["skills"]
         self.assertEqual(len(listed), 2)
         open(os.path.join(ds[2], "SKILL.md"), "a").write("Changed later.\n")
         self.audit()
@@ -54,7 +55,7 @@ class DQ040RevetOnlyWithoutFreshPreview(Box):
         self.run_cmd("baseline", "--roots", *self.roots)
         open(os.path.join(ds[0], "SKILL.md"), "a").write("Also list the open tasks.\n")
         self.audit()
-        wt.save_json(wt.state_path("revet_plan.json"), {"at": "2026-10-01T00:00:00+00:00", "skills": []})
+        isr.save_json(isr.state_path("revet_plan.json"), {"at": "2026-10-01T00:00:00+00:00", "skills": []})
         code, o, _ = self.run_cmd("fix", "--revet", "--only", "skill000,skill001", "--roots", *self.roots)
         done = json.loads(o)["done"]
         joined = " | ".join(done)
