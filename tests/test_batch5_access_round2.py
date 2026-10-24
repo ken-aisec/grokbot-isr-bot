@@ -15,7 +15,8 @@ planted value is FAKE…; the box is a temp folder, never this computer's own.""
 import datetime as dt, json, os, re, shutil, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import ROOT, wt
+from test_boxes import ROOT
+import isr  # noqa: E402
 from test_batch5_access_map import AGENT, SETTINGS, w
 from test_batch5_brief_access import _Brief
 
@@ -31,11 +32,11 @@ class _Small(_Brief):
     def small(self, bots=("Golf",)):
         """A box with Grok Bot's settings and a roster, and nothing else: no browser, no tool connection, no sign-in."""
         w(os.path.join(self.home, "agent-data", "settings.json"), SETTINGS)
-        w(self.wt_home("exports", "roster.json"), [{"name": n, "kind": "bot"} for n in bots])
+        w(self.isr_home("exports", "roster.json"), [{"name": n, "kind": "bot"} for n in bots])
 
     def said(self, access):
         """rollcall_findings.json with these answers, as a roll-call today keeps them."""
-        wt.save_json(wt.state_path("rollcall_findings.json"), {"at": wt.now(), "masked": wt.VERSION, "bots": list(access), "findings": [],
+        isr.save_json(isr.state_path("rollcall_findings.json"), {"at": isr.now(), "masked": isr.VERSION, "bots": list(access), "findings": [],
                                                                "access": access})
 
     def here(self, title):
@@ -50,11 +51,11 @@ class TheSeedIsLookedAtNow(_Small):
 
     def forget_the_seed_finding(self):
         """Delete ISR-S004 from state/last_findings.json, as the Bot could."""
-        p = wt.state_path("last_findings.json")
+        p = isr.state_path("last_findings.json")
         snap = json.load(open(p))
         for k in ("findings", "suppressed"):
             snap[k] = [f for f in snap.get(k) or [] if f.get("rule") != "ISR-S004"]
-        wt.save_json(p, snap)
+        isr.save_json(p, snap)
 
     def test_deleting_the_cached_finding_hides_no_sign_in(self):   # replay (3170952: "found no shared browser cookies")
         self.small()
@@ -98,14 +99,14 @@ class PluginsAreWhatTheScanFinds(_Small):
         self.small()
         d = self.plugin(".cursor/plugins/acme-tools", "acme-tools")
         self.audit_json()
-        wt.save_json(wt.state_path("plugins.json"), {"acme-tools": {"since": wt.now(), "status": "catalog", "roots": [d]}})
+        isr.save_json(isr.state_path("plugins.json"), {"acme-tools": {"since": isr.now(), "status": "catalog", "roots": [d]}})
         self.assertIn("- Plugins: 1 (0 from Grok Bot, 1 added).", self.access()[1])
 
     def test_one_entry_for_two_folders_is_two_plugins(self):   # replay (3170952: one plugin)
         self.small()
         a, b = self.plugin(".cursor/plugins/a", "x"), self.plugin(".claude/plugins/b", "y")
         self.audit_json()
-        wt.save_json(wt.state_path("plugins.json"), {"x": {"since": wt.now(), "status": "known", "roots": [a, b]}})
+        isr.save_json(isr.state_path("plugins.json"), {"x": {"since": isr.now(), "status": "known", "roots": [a, b]}})
         self.assertIn("- Plugins: 2 (0 from Grok Bot, 2 added).", self.access()[1])
 
     def test_two_folders_with_one_name_are_two_plugins_in_the_audits_map(self):   # replay (3170952: the audit's map had 1)
@@ -153,8 +154,8 @@ class IncompleteIsNeverNone(_Small):
         self.assertEqual((sh["mcp_tools"], sh["mcp_files"], sh["mcp_unreadable"]), (None, 1, 1))   # one file is there; its tools unknown
 
     def crontab(self, code, err):
-        real = wt.run
-        return mock.patch.object(wt, "run", lambda cmd, *a, **k: (code, "", err) if list(cmd[:2]) == ["crontab", "-l"] else real(cmd, *a, **k))
+        real = isr.run
+        return mock.patch.object(isr, "run", lambda cmd, *a, **k: (code, "", err) if list(cmd[:2]) == ["crontab", "-l"] else real(cmd, *a, **k))
 
     def test_a_failed_crontab_is_not_zero_jobs(self):   # replay (3170952: scheduled_jobs 0, checked)
         self.small()
@@ -213,21 +214,21 @@ class CountsBeforeCaps(_Small):
         self.assertEqual((golf["routines"], golf["routines_send_without_asking"]), (61, 1))
 
     def test_a_cli_sign_in_past_the_twelve_listed_still_reaches(self):   # replay (3170952: only the 12 listed were matched)
-        m = wt.access_record({"shared": {"cli_logins": [{"tool": f"tool {i}", "file": f"~/f{i}"} for i in range(12)] + [{"tool": "GitHub CLI login", "file": "~/g"}],
+        m = isr.access_record({"shared": {"cli_logins": [{"tool": f"tool {i}", "file": f"~/f{i}"} for i in range(12)] + [{"tool": "GitHub CLI login", "file": "~/g"}],
                                          "cli_count": 13, "platform_logins": []}})
-        e_ = next(e for e in wt.access_vocab() if e["id"] == "github")
-        self.assertTrue(wt.access_touch(e_, m)["cli"])
+        e_ = next(e for e in isr.access_vocab() if e["id"] == "github")
+        self.assertTrue(isr.access_touch(e_, m)["cli"])
 
 
 # ---------------------------------------------------------------- 5: every product in one name
 class EveryProductInOneName(_Small):
     def test_gmail_and_slack_is_both(self):   # replay (3170952: Gmail only)
-        self.assertEqual(wt.access_connectors(["Gmail and Slack"]), (["Gmail", "Slack"], 0))
-        self.assertEqual(wt.access_connectors(["Gmail and Acme CRM"]), (["Gmail"], 1))     # what is left is one other
+        self.assertEqual(isr.access_connectors(["Gmail and Slack"]), (["Gmail", "Slack"], 0))
+        self.assertEqual(isr.access_connectors(["Gmail and Acme CRM"]), (["Gmail"], 1))     # what is left is one other
 
     def test_a_label_written_out_is_one_product(self):   # replay (3170952 kept one product a name): the longer match wins
-        self.assertEqual(wt.access_connectors(["Microsoft Teams", "MS Teams"]), (["Microsoft Teams"], 0))
-        self.assertEqual(wt.access_connectors(["Teams and Outlook", "Google Drive, Notion"]), (["Google Drive", "Microsoft Teams", "Microsoft 365", "Notion"], 0))
+        self.assertEqual(isr.access_connectors(["Microsoft Teams", "MS Teams"]), (["Microsoft Teams"], 0))
+        self.assertEqual(isr.access_connectors(["Teams and Outlook", "Google Drive, Notion"]), (["Google Drive", "Microsoft Teams", "Microsoft 365", "Notion"], 0))
 
     def test_the_brief_sees_slack_in_gmail_and_slack(self):   # replay (3170952: "found no Slack")
         self.small()
@@ -242,7 +243,7 @@ class NoLinkFromTheRootDown(_Small):
     def test_a_proc_root_alias_is_refused(self):   # replay (3170952 opened the README through both)
         readme = os.path.join(os.path.realpath(ROOT), "README.md")
         for p in ("/proc/self/root" + readme, f"/proc/{os.getpid()}/root" + readme):
-            fd = wt._ax_open(p, [os.path.dirname(p)])
+            fd = isr._ax_open(p, [os.path.dirname(p)])
             if fd is not None:
                 os.close(fd)
             self.assertIsNone(fd, p)
@@ -251,8 +252,8 @@ class NoLinkFromTheRootDown(_Small):
         real = w(os.path.join(self.tmp, "real", "box", "x.json"), {"a": 1})
         os.symlink(os.path.join(self.tmp, "real"), os.path.join(self.tmp, "linked"))
         p = os.path.join(self.tmp, "linked", "box", "x.json")
-        self.assertEqual(wt._ax_json_file(real), {"a": 1})
-        self.assertIsNone(wt._ax_json_file(p, [os.path.join(self.tmp, "linked", "box")]))
+        self.assertEqual(isr._ax_json_file(real), {"a": 1})
+        self.assertIsNone(isr._ax_json_file(p, [os.path.join(self.tmp, "linked", "box")]))
 
     def test_a_folder_swapped_for_a_link_mid_open_is_not_followed(self):   # replay (3170952 opened the link's target, then refused it)
         d = os.path.dirname(w(os.path.join(self.tmp, "box", "agents", "a", "profile.json"), {"name": "Real"}))
@@ -268,7 +269,7 @@ class NoLinkFromTheRootDown(_Small):
             opened.append(os.readlink(f"/proc/self/fd/{fd}"))
             return fd
         with mock.patch("os.open", swap_then_open):
-            got = wt._ax_json_file(os.path.join(d, "profile.json"), [self.tmp])
+            got = isr._ax_json_file(os.path.join(d, "profile.json"), [self.tmp])
         self.assertTrue(swapped)
         self.assertNotIn(os.path.join(os.path.realpath(secret), "profile.json"), opened)
         self.assertNotEqual(got, {"name": "FAKEsecretNAME"})
@@ -287,10 +288,10 @@ class NoLinkFromTheRootDown(_Small):
     def test_the_fallback_map_is_read_the_same_way(self):   # replay (3170952 read it through a linked state folder)
         self.small()
         self.audit_json()
-        st = wt.state_path()
+        st = isr.state_path()
         shutil.move(st, st + ".real")
         os.symlink(st + ".real", st)
-        self.assertIsNone(wt.last_access_map())
+        self.assertIsNone(isr.last_access_map())
 
 
 # ---------------------------------------------------------------- the last audit's lines say so
@@ -301,12 +302,12 @@ class LastAuditLinesSaySo(_Small):
         self.assertIn(f"\n- Chat webhooks (from the last audit, {TODAY}): a Slack webhook in \"digest\". Anyone who has that link can post to that channel.\n", sec)
 
     def test_key_files_from_the_last_audit_say_so(self):   # replay
-        m = wt.access_record({"shared": {"key_files": 2, "cached": ["key_files"], "cached_at": "2026-10-18", "from": "now"}})
-        self.assertIn("Files with live-looking keys (from the last audit, Oct 18): 2. Every Bot can read them (see the findings).", wt.access_shared_lines(m))
+        m = isr.access_record({"shared": {"key_files": 2, "cached": ["key_files"], "cached_at": "2026-10-18", "from": "now"}})
+        self.assertIn("Files with live-looking keys (from the last audit, Oct 18): 2. Every Bot can read them (see the findings).", isr.access_shared_lines(m))
 
     def test_the_audits_own_lines_need_no_mark(self):   # guard: the audit found them itself
-        m = wt.access_record(self.mapped())
-        self.assertIn("Chat webhooks: a Slack webhook in \"digest\". Anyone who has that link can post to that channel.", wt.access_shared_lines(m))
+        m = isr.access_record(self.mapped())
+        self.assertIn("Chat webhooks: a Slack webhook in \"digest\". Anyone who has that link can post to that channel.", isr.access_shared_lines(m))
 
 
 if __name__ == "__main__":

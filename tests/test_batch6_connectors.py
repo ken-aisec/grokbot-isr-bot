@@ -9,7 +9,8 @@ Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2'
 planted value is FAKE…; the box is a temp folder, never this computer's own."""
 import json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import wt
+import test_boxes  # noqa: E402
+import isr  # noqa: E402
 from test_batch5_access_round2 import CANT, DAY
 from test_batch5_access_round3 import GMAIL_STORY, _Round3
 
@@ -56,14 +57,14 @@ class SavedAnswersAreReadLikeFreshOnes(_Round3):
         self.assertEqual(self.here(GMAIL_STORY), "This is about Gmail. Here: 1 Bot said it uses a Gmail connector (Golf).")
 
     def test_a_fresh_reply_reads_as_before(self):   # guard: the fresh reader is unchanged
-        sh, _ = wt.shape_reply({"name": "Golf", "connectors": "Gmail"})
+        sh, _ = isr.shape_reply({"name": "Golf", "connectors": "Gmail"})
         self.assertEqual((sh["connector_labels"], sh["connectors_known"]), (["Gmail"], True))
-        sh, _ = wt.shape_reply({"name": "Golf", "connectors": [{"name": "Gmail"}]})
+        sh, _ = isr.shape_reply({"name": "Golf", "connectors": [{"name": "Gmail"}]})
         self.assertEqual((sh["connector_labels"], sh["connectors_known"]), ([], False))
-        sh, _ = wt.shape_reply({"name": "Golf"})
+        sh, _ = isr.shape_reply({"name": "Golf"})
         self.assertIsNone(sh["connectors_known"])
         for raw, known in (("", None), ("  ", None), ([], True), ({"name": "Gmail"}, False), ([123, "Gmail"], False)):
-            sh, _ = wt.shape_reply({"name": "Golf", "connectors": raw})
+            sh, _ = isr.shape_reply({"name": "Golf", "connectors": raw})
             self.assertEqual(sh["connectors_known"], known, raw)
 
     def test_an_empty_saved_list_is_still_no_connectors(self):   # guard

@@ -15,7 +15,8 @@ planted value is FAKE…; the box is a temp folder, never this computer's own.""
 import html, json, os, re, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import wt
+import test_boxes  # noqa: E402
+import isr  # noqa: E402
 from test_batch5_access_map import _Access, SETTINGS, cookie_jar, w
 from test_batch5_brief_access import _Brief
 
@@ -33,7 +34,7 @@ class _Outputs(_Brief):
         """Every place the map reaches: the state files, `access` and `access --json`, the report section, the dashboard, the brief."""
         md, page = self.report()
         r, out, brief_page, saved = self.brief([("Gmail flaw lets attackers steal session tokens", "")])
-        return {"rollcall_findings.json": open(wt.state_path("rollcall_findings.json")).read(), "access_map.json": self.map_file(),
+        return {"rollcall_findings.json": open(isr.state_path("rollcall_findings.json")).read(), "access_map.json": self.map_file(),
                 "access": self.access()[1], "access --json": self.access("--json")[1], "report": md, "dashboard": page,
                 "brief JSON": out, "brief page": brief_page, "last_brief.json": saved}
 
@@ -45,9 +46,9 @@ class ConnectorsKeepNoText(_Outputs):
 
     def test_a_key_a_password_and_a_sentence_reach_nothing(self):   # replay (0a72c20 kept all three in access.connectors)
         self.build(rollcall=False)
-        w(self.wt_home("exports", "roster.json"), [{"name": "Golf", "kind": "bot"}])
+        w(self.isr_home("exports", "roster.json"), [{"name": "Golf", "kind": "bot"}])
         self.rollcall(self.REPLY)
-        golf = json.load(open(wt.state_path("rollcall_findings.json")))["access"]["Golf"]
+        golf = json.load(open(isr.state_path("rollcall_findings.json")))["access"]["Golf"]
         self.audit_json()
         outs = self.outputs()
         for name, text in outs.items():
@@ -57,13 +58,13 @@ class ConnectorsKeepNoText(_Outputs):
 
     def test_an_earlier_answer_carried_over_is_reduced_again(self):   # replay (0a72c20 carried the planted answer over as it was)
         self.build(rollcall=False)
-        rnd = wt.open_rollcall_round()
-        wt.save_json(wt.state_path("rollcall_findings.json"), {
-            "at": wt.now(), "round": rnd, "masked": wt.VERSION, "shape_only": True, "bots": ["Hotel"],
-            "findings": [dict(wt.finding("ISR-R013", "t", "medium", ["ASI02"], "rollcall:Hotel", f"key {TOKEN} password=hunter2", "fix"), bot="Hotel")],
-            "access": {"Hotel": {"said_at": wt.now()[:10], "connectors": ["Slack", "password=hunter2", "Client Dana Ortiz has cancer"], "routines": []}}})
+        rnd = isr.open_rollcall_round()
+        isr.save_json(isr.state_path("rollcall_findings.json"), {
+            "at": isr.now(), "round": rnd, "masked": isr.VERSION, "shape_only": True, "bots": ["Hotel"],
+            "findings": [dict(isr.finding("ISR-R013", "t", "medium", ["ASI02"], "rollcall:Hotel", f"key {TOKEN} password=hunter2", "fix"), bot="Hotel")],
+            "access": {"Hotel": {"said_at": isr.now()[:10], "connectors": ["Slack", "password=hunter2", "Client Dana Ortiz has cancer"], "routines": []}}})
         self.rollcall(dict(self.REPLY, connectors=["Notion"]))
-        rc = open(wt.state_path("rollcall_findings.json")).read()
+        rc = open(isr.state_path("rollcall_findings.json")).read()
         no_private(self, "rollcall_findings.json", rc)
         self.assertEqual(json.loads(rc)["access"]["Hotel"]["connectors"], ["Slack"])
         self.assertEqual(json.loads(rc)["access"]["Hotel"]["connectors_other"], 2)
@@ -71,12 +72,12 @@ class ConnectorsKeepNoText(_Outputs):
     def test_a_bot_name_or_routine_name_with_a_key_is_masked(self):   # guard: the roll-call's own fields, before they are written
         self.build(rollcall=False)
         self.rollcall({"name": "Ida", "routines": [{"name": f"push {TOKEN}", "trigger": "schedule", "sends_or_posts": True, "asks_first": False}]})
-        rc = open(wt.state_path("rollcall_findings.json")).read()
+        rc = open(isr.state_path("rollcall_findings.json")).read()
         self.assertIn("rollcall:Ida:routine:push ghp_FA", rc)
         self.assertNotIn(TOKEN, rc)
 
     def test_none_is_no_connector(self):   # guard
-        self.assertEqual(wt.access_connectors(["none", " ", "-", "N/A", "no connectors yet", "Google Calendar", "gmail"]), (["Gmail", "Google Calendar"], 0))
+        self.assertEqual(isr.access_connectors(["none", " ", "-", "N/A", "no connectors yet", "Google Calendar", "gmail"]), (["Gmail", "Google Calendar"], 0))
 
 
 # ---------------------------------------------------------------- 2: a planted map
@@ -92,8 +93,8 @@ PLANTED_SAYS = re.compile(r"none found|Never allow|not allowed|no Allow-automati
 
 class APlantedMapUnderstatesNothing(_Outputs):
     def plant(self, m=None):
-        m = dict(m or PLANTED, at=wt.now())
-        wt.save_json(wt.state_path("access_map.json"), m)
+        m = dict(m or PLANTED, at=isr.now())
+        isr.save_json(isr.state_path("access_map.json"), m)
 
     def card(self, page):
         i = page.find("Who can reach what</h2>")
@@ -121,7 +122,7 @@ class APlantedMapUnderstatesNothing(_Outputs):
         self.audit_json()
         self.plant()
         boom = mock.Mock(side_effect=OSError("FAKE"))
-        with mock.patch.object(wt, "access_map_now", boom, create=True):
+        with mock.patch.object(isr, "access_map_now", boom, create=True):
             out, md_page = self.access()[1], self.report()
             r = self.brief([("Dropbox token leak lets attackers steal shared files", "")])[0]
         for text in (out, self.section(md_page[0]), self.card(md_page[1])):
@@ -138,7 +139,7 @@ class APlantedMapUnderstatesNothing(_Outputs):
         self.build()
         self.audit_json()
         self.plant({"v": 1, "shared": {"settings": "found", "runs_programs": "never"}, "bots": []})
-        with mock.patch.object(wt, "access_map_now", mock.Mock(side_effect=OSError("FAKE")), create=True):
+        with mock.patch.object(isr, "access_map_now", mock.Mock(side_effect=OSError("FAKE")), create=True):
             out, js = self.access()[1], self.access("--json")[1]
         self.assertNotRegex(out, NEGATIVE)
         self.assertNotIn("Running programs", out)
@@ -150,8 +151,8 @@ class APlantedMapUnderstatesNothing(_Outputs):
         self.build()
         self.audit_json()
         m = json.loads(self.map_file())
-        self.assertEqual((m["shared"]["from"], m["shared"]["checked"]), ("audit", list(wt.ACCESS_SHARED)))
-        self.assertEqual(wt.last_access_map()["shared"]["checked"], [])
+        self.assertEqual((m["shared"]["from"], m["shared"]["checked"]), ("audit", list(isr.ACCESS_SHARED)))
+        self.assertEqual(isr.last_access_map()["shared"]["checked"], [])
 
 
 # ---------------------------------------------------------------- 3: padding before the cap
@@ -179,7 +180,7 @@ class PaddingHidesNothing(_Brief):
         self.assertIn("1 rule lets Bots send things out without asking you", out)
 
     def test_every_capped_list_keeps_its_count(self):   # replay (0a72c20 had no counts beside its lists)
-        m = wt.access_record({"shared": {
+        m = isr.access_record({"shared": {
             "browser": {"sites": 3, "sensitive": [f"s{i}.github.com" for i in range(20)], "products": []},
             "webhooks": [{"service": "Slack", "skill": f"k{i}"} for i in range(15)] + [{"service": "Discord", "skill": "last"}],
             "cli_logins": [{"tool": f"tool {i}", "file": f"~/f{i}"} for i in range(14)]},
@@ -189,8 +190,8 @@ class PaddingHidesNothing(_Brief):
         self.assertEqual((len(sh["webhooks"]), sh.get("webhook_count"), sh.get("webhook_services")), (12, 16, ["Slack", "Discord"]))
         self.assertEqual((len(sh["cli_logins"]), sh.get("cli_count")), (12, 14))
         self.assertEqual((len(m["bots_silent"]), m["rollcall"].get("silent_more"), len(m["bots"]), m["bots_more"]), (40, 5, 40, 3))
-        e_ = next(e for e in wt.access_vocab() if e["id"] == "discord")
-        self.assertEqual(wt.access_touch(e_, m)["webhook"], True)   # past the twelve listed, still reached
+        e_ = next(e for e in isr.access_vocab() if e["id"] == "discord")
+        self.assertEqual(isr.access_touch(e_, m)["webhook"], True)   # past the twelve listed, still reached
 
 
 # ---------------------------------------------------------------- 5: links
@@ -221,9 +222,9 @@ class NoLinkIsFollowed(_Access):
             opened.append(os.readlink(f"/proc/self/fd/{fd}"))
             return fd
         with mock.patch("builtins.open", rec_open), mock.patch("os.open", rec_os_open):
-            m = wt.build_access_map(snap, meta)
+            m = isr.build_access_map(snap, meta)
             code, out, _ = self.run_cmd("access")
-        self.assertIn(os.path.realpath(self.wt_home("exports", "roster.json")), opened)   # the recorder sees the map's reads
+        self.assertIn(os.path.realpath(self.isr_home("exports", "roster.json")), opened)   # the recorder sees the map's reads
         self.assertNotIn(os.path.realpath(creds), opened)
         self.assertNotIn(os.path.realpath(hidden), opened)
         self.assertEqual(m["shared"]["mcp"]["unreadable_files"], ["~/.cursor/mcp.json", "~/projects/p/linked/mcp.json"])
@@ -233,7 +234,7 @@ class NoLinkIsFollowed(_Access):
         self.build(settings=False, rollcall=False)
         real = w(os.path.join(self.home, "elsewhere.json"), SETTINGS)
         os.symlink(real, os.path.join(self.home, "agent-data", "settings.json"))
-        rules, settings, status = wt._ax_auto_allow(wt._ax_bases([self.home]))
+        rules, settings, status = isr._ax_auto_allow(isr._ax_bases([self.home]))
         self.assertEqual((rules, settings, status), (None, None, "unreadable"))
 
 
@@ -243,11 +244,11 @@ class NoMapBriefAsBefore(_Brief):
         items = [(f"Gmail agent flaw number {i} lets attackers steal session tokens: " + "word " * 165, "") for i in range(5)]
         self.assertTrue(all(850 <= len(t) <= 1000 for t, _ in items))
         r, out, page, saved = self.brief(items)
-        self.assertIsNone(wt.load_access_map())
+        self.assertIsNone(isr.load_access_map())
         b = json.loads(saved)
-        snap = wt.load_json(wt.state_path("last_findings.json"), None)
-        top, _ = wt.split_stories(b)
-        old = wt.fit({"brief": b["path"], "threat_level": wt.threat_level(b, snap, top)[1], "score_line": wt.score_line(snap),   # 77dedd1's cmd_brief
+        snap = isr.load_json(isr.state_path("last_findings.json"), None)
+        top, _ = isr.split_stories(b)
+        old = isr.fit({"brief": b["path"], "threat_level": isr.threat_level(b, snap, top)[1], "score_line": isr.score_line(snap),   # 77dedd1's cmd_brief
                       "top_stories": [{"id": s["id"], "tier": s["tier"], "category": s["category_label"], "title": s["title"],
                                        "cves": s.get("cves", []), "source": s["source"]} for s in top],
                       "kev_relevant": [f"{k['cve']} {k['vendor']} {k['product']}" for k in b["kev"] if k["relevant"]][:6],
@@ -262,11 +263,11 @@ class NoMapBriefAsBefore(_Brief):
 # ---------------------------------------------------------------- 7: "sensitive: none"
 class SensitiveNone(_Access):
     def test_none_is_no_site(self):   # replay (0a72c20 counted "none" as a signed-in site)
-        seed = wt.finding("ISR-S004", "Shared browser cookies visible to every Bot", "medium", ["ASI03"], os.path.join(self.home, "sand-data", "cookies.json"),
+        seed = isr.finding("ISR-S004", "Shared browser cookies visible to every Bot", "medium", ["ASI03"], os.path.join(self.home, "sand-data", "cookies.json"),
                           "12 domains; sensitive: none", "fix")
-        m = wt.build_access_map({"findings": [seed]}, {"access_sources": {"roots": self.roots}, "persistence": {}})
+        m = isr.build_access_map({"findings": [seed]}, {"access_sources": {"roots": self.roots}, "persistence": {}})
         self.assertEqual(m["shared"]["browser"]["sites"], 0)
-        self.assertIn("Browser: not signed in to any site ISR Bot can see.", wt.access_shared_lines(m))
+        self.assertIn("Browser: not signed in to any site ISR Bot can see.", isr.access_shared_lines(m))
 
 
 if __name__ == "__main__":

@@ -14,7 +14,8 @@ this file in place). Every planted value is FAKE…; the box is a temp folder, n
 import datetime as dt, json, os, re, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import ROOT, wt
+from test_boxes import ROOT
+import isr  # noqa: E402
 from test_batch5_access_map import AGENT, w
 from test_batch5_access_round2 import CANT, DAY, _Small
 import golden_split as gs  # noqa: E402  (the module, never its TestCase)
@@ -47,9 +48,9 @@ class TheScanSaysWhatItLeftOut(_Round3):
         self.assertEqual(json.loads(self.map_file())["shared"]["incomplete"].get("mcp"), "unreadable")
 
     def test_the_unreadable_reason_alone_never_renders_none(self):   # replay (2e84aa8: the renderer wanted an unreadable file count)
-        m = wt.access_record({"shared": {"checked": ["mcp"], "incomplete": {"mcp": "unreadable"},
+        m = isr.access_record({"shared": {"checked": ["mcp"], "incomplete": {"mcp": "unreadable"},
                                          "mcp": {"files": 0, "count": 0, "tools": [], "unreadable": 0, "unreadable_files": []}}})
-        lines = [x for x in wt.access_shared_lines(m) if x.startswith("Tool connections")]
+        lines = [x for x in isr.access_shared_lines(m) if x.startswith("Tool connections")]
         self.assertEqual(lines, ["Tool connections (MCP): ISR Bot couldn't check all of it this time (something there couldn't be read)."])
 
     def test_a_tool_list_below_the_depth_limit_is_not_found_no(self):   # replay (2e84aa8: "found no Slack ... here")
@@ -97,7 +98,7 @@ class TheScanSaysWhatItLeftOut(_Round3):
         w(os.path.join(self.home, ".cache", "f.txt"), "x")
         os.symlink(os.path.join(self.home, "a"), os.path.join(self.home, "link"))
         errors, skipped = [], []
-        files = sorted(wt.walk([self.home], errors=errors, skipped=skipped))
+        files = sorted(isr.walk([self.home], errors=errors, skipped=skipped))
         self.assertEqual(files, [os.path.join(self.home, "a", "f.txt")])
         self.assertEqual((errors, sorted(skipped)), ([], [os.path.join(self.home, ".cache"), os.path.join(self.home, "link")]))
 
@@ -110,7 +111,7 @@ class EveryConnectorAnswer(_Round3):
         self.audit_json()
         out = self.access()[1]
         self.assertIn("- Golf: Gmail and 1 other connectors.", out)
-        self.assertNotIn("operations department", out + self.map_file() + open(wt.state_path("rollcall_findings.json")).read())
+        self.assertNotIn("operations department", out + self.map_file() + open(isr.state_path("rollcall_findings.json")).read())
         self.assertEqual(self.here(GMAIL_STORY), "This is about Gmail. Here: 1 Bot said it uses a Gmail connector (Golf).")
 
     def test_connector_1001_counts(self):   # replay (2e84aa8 read connectors 41 to 1000 only)
@@ -224,20 +225,20 @@ class TheJsonCountsWhatItLeavesOut(_Round3):
 class SystemCronIsScheduled(_Round3):
     def test_an_owner_cron_file_is_a_scheduled_job(self):   # replay (2e84aa8: scheduled_jobs 0, checked)
         persist = {"crontab": "", "/etc/cron.d": ["owner-digest"]}
-        with mock.patch.object(wt, "SYSTEM_CRON", "/etc/cron.d", create=True):
-            m = wt.build_access_map({"findings": []}, {"persistence": persist, "access_sources": {"roots": self.roots, "crontab": "none"}})
-        d = json.loads(wt.access_json(m))
+        with mock.patch.object(isr, "SYSTEM_CRON", "/etc/cron.d", create=True):
+            m = isr.build_access_map({"findings": []}, {"persistence": persist, "access_sources": {"roots": self.roots, "crontab": "none"}})
+        d = json.loads(isr.access_json(m))
         self.assertEqual(d["shared"]["scheduled_jobs"], 1)
-        self.assertIn("Scheduled jobs on this computer: 1.", wt.access_shared_lines(m))
+        self.assertIn("Scheduled jobs on this computer: 1.", isr.access_shared_lines(m))
 
     def no_crontab(self):
-        real = wt.run
-        return mock.patch.object(wt, "run", lambda cmd, *a, **k: (1, "", "no crontab for box") if list(cmd[:2]) == ["crontab", "-l"] else real(cmd, *a, **k))
+        real = isr.run
+        return mock.patch.object(isr, "run", lambda cmd, *a, **k: (1, "", "no crontab for box") if list(cmd[:2]) == ["crontab", "-l"] else real(cmd, *a, **k))
 
     def test_access_counts_the_system_cron_folder(self):   # replay (2e84aa8: scheduled_jobs 0)
         self.small()
-        w(os.path.join(wt.SYSTEM_CRON, "owner-digest"), "0 7 * * * box /home/box/digest.sh\n")
-        w(os.path.join(wt.SYSTEM_CRON, ".placeholder"), "")
+        w(os.path.join(isr.SYSTEM_CRON, "owner-digest"), "0 7 * * * box /home/box/digest.sh\n")
+        w(os.path.join(isr.SYSTEM_CRON, ".placeholder"), "")
         with self.no_crontab():
             self.audit_json()
             d = json.loads(self.access("--json")[1])
@@ -247,8 +248,8 @@ class SystemCronIsScheduled(_Round3):
     def test_a_system_cron_folder_that_cant_be_read_is_no_count(self):   # replay (2e84aa8: scheduled_jobs 0)
         self.small()
         w(os.path.join(self.tmp, "elsewhere", "cron.d", "owner-digest"), "x\n")
-        os.makedirs(os.path.dirname(wt.SYSTEM_CRON))
-        os.symlink(os.path.join(self.tmp, "elsewhere", "cron.d"), wt.SYSTEM_CRON)   # _ax_listdir never reads through a link
+        os.makedirs(os.path.dirname(isr.SYSTEM_CRON))
+        os.symlink(os.path.join(self.tmp, "elsewhere", "cron.d"), isr.SYSTEM_CRON)   # _ax_listdir never reads through a link
         with self.no_crontab():
             self.audit_json()
             d = json.loads(self.access("--json")[1])
@@ -259,8 +260,8 @@ class SystemCronIsScheduled(_Round3):
 # ---------------------------------------------------------------- 6: the unreadable profile, always said
 class TheProfileLineIsAlwaysSaid(_Round3):
     def test_without_a_recent_roll_call(self):   # replay (2e84aa8: only the no-roll-call line)
-        m = wt.access_record({"rollcall": {"fresh": False, "profiles_unreadable": 1}})
-        lines = wt.access_bot_lines(m)
+        m = isr.access_record({"rollcall": {"fresh": False, "profiles_unreadable": 1}})
+        lines = isr.access_bot_lines(m)
         self.assertEqual(lines[-1], "ISR Bot couldn't read 1 Bot profile (a link, or not plain JSON), so a Bot may be missing from this list.")
         self.assertTrue(lines[0].startswith("No Bot has answered a roll-call in the last 35 days"), lines)
 

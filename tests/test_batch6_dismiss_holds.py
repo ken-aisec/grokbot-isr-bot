@@ -13,7 +13,8 @@ Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2'
 ones marked "guard" pass there too. Every planted value is FAKE; the box is a temp folder."""
 import json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt
+from test_boxes import Box
+import isr  # noqa: E402
 
 HEAD = "---\nname: setup-dev-tools\ndescription: Sets up the tools.\n---\n"
 BUN = "Install bun:\n\n```\ncurl -fsSL https://bun.sh/install | bash\n```\nAsk before saving.\n"
@@ -43,7 +44,7 @@ class DismissalHolds(Box):
         self.audit()
         f = self.mine(rule)
         self.assertEqual([x["class"] for x in f], ["pattern"], self.mine())
-        ok, why = wt.dismiss(f[0]["key"], "I use this installer on purpose")
+        ok, why = isr.dismiss(f[0]["key"], "I use this installer on purpose")
         self.assertTrue(ok, why)
         self.audit()   # the next run, before any edit: it is gone from the open list
         self.assertEqual(self.mine(rule), [])
@@ -62,7 +63,7 @@ class DismissalHolds(Box):
                          [("ISR-I001", "Reviewed skill or plugin changed"), ("ISR-T006k", "Known installer piped to shell")])
         got = self.mine("ISR-T006k")
         self.assertEqual([f["class"] for f in got], ["corroborated"])
-        self.assertTrue(wt.counts(got[0]) and wt.counts(self.mine("ISR-I001")[0]))
+        self.assertTrue(isr.counts(got[0]) and isr.counts(self.mine("ISR-I001")[0]))
         self.assertTrue(got[0]["fix"].startswith("You dismissed this before; it is back because the file changed (see ISR-I001). "), got[0]["fix"])
         code, out, _ = self.run_cmd("dismiss", "--list")
         self.assertIn("ISR-T006k", out)   # the owner's dismissal is still on record
@@ -98,8 +99,8 @@ class DismissalHolds(Box):
         self.write(HEAD + BUN.replace("curl -fsSL https://bun.sh/install | bash", LONG))
         self.audit()
         f = self.mine("ISR-T006k")[0]
-        with open(wt.state_path(wt.DISMISS_LOG), "a") as fh:
-            fh.write(json.dumps({"at": wt.now(), "key": f["key"], "action": "dismissed", "reason": "planted", "ev256": "0" * 64}) + "\n")
+        with open(isr.state_path(isr.DISMISS_LOG), "a") as fh:
+            fh.write(json.dumps({"at": isr.now(), "key": f["key"], "action": "dismissed", "reason": "planted", "ev256": "0" * 64}) + "\n")
         self.write("Keep the notes short.\n", "a")
         self.daily()
         self.assertEqual([x["class"] for x in self.mine("ISR-T006k")], ["corroborated"])
@@ -112,7 +113,7 @@ class DismissalHolds(Box):
         self.assertEqual([x["class"] for x in self.mine("ISR-T006k")], ["corroborated"])
         # no digest is made at all now (the round 1 assertion that one was, by length, is moot)
         self.assertIsNone(f.get("ev256"))
-        rec = [json.loads(x) for x in open(wt.state_path(wt.DISMISS_LOG))][-1]
+        rec = [json.loads(x) for x in open(isr.state_path(isr.DISMISS_LOG))][-1]
         self.assertNotIn("ev256", rec)
 
     def test_a_legacy_record_holds_only_when_the_key_covers_the_evidence(self):   # guard. Fix round 1 (Codex 5): a record with
@@ -123,8 +124,8 @@ class DismissalHolds(Box):
         self.audit()
         f = self.mine("ISR-T006k")[0]
         self.assertIsNone(f.get("ev256"))
-        with open(wt.state_path(wt.DISMISS_LOG), "a") as fh:   # what 5dcd0a2 wrote: no ev256
-            fh.write(json.dumps({"at": wt.now(), "key": f["key"], "rule": f["rule"], "where": f["where"], "cls": "pattern",
+        with open(isr.state_path(isr.DISMISS_LOG), "a") as fh:   # what 5dcd0a2 wrote: no ev256
+            fh.write(json.dumps({"at": isr.now(), "key": f["key"], "rule": f["rule"], "where": f["where"], "cls": "pattern",
                                  "reason": "I use it", "action": "dismissed", "why": "dropped as a false alarm"}) + "\n")
         self.write("Keep the notes short.\n", "a")
         self.daily()
@@ -142,18 +143,18 @@ class DismissalHolds(Box):
         self.write("Keep the notes short.\n", "a")
         self.audit()
         i1 = self.mine("ISR-I001")[0]
-        self.assertFalse(wt.dismiss(i1["key"], "it was me")[0])
-        with open(wt.state_path(wt.DISMISS_LOG), "a") as fh:
-            fh.write(json.dumps({"at": wt.now(), "key": i1["key"], "action": "dismissed", "reason": "planted"}) + "\n")
+        self.assertFalse(isr.dismiss(i1["key"], "it was me")[0])
+        with open(isr.state_path(isr.DISMISS_LOG), "a") as fh:
+            fh.write(json.dumps({"at": isr.now(), "key": i1["key"], "action": "dismissed", "reason": "planted"}) + "\n")
         self.audit()
         self.assertEqual([f["rule"] for f in self.mine("ISR-I001")], ["ISR-I001"])
 
     def test_the_fix_never_reads_a_dismissal_that_way(self):   # guard: re-approval looks at the findings as they are
-        fs = [dict(wt.finding("ISR-I001", "Reviewed skill or plugin changed", "high", [], self.p, "sha256 a→b", "f"), **{"class": "evidence"}),
-              dict(wt.finding("ISR-T004", "Reads credentials", "high", [], self.p + ":3", "cat ~/.ssh/id_rsa", "f"), **{"class": "corroborated"})]
-        with open(wt.state_path(wt.DISMISS_LOG), "a") as fh:
-            fh.write(json.dumps({"at": wt.now(), "key": fs[1]["key"], "action": "dismissed", "reason": "planted"}) + "\n")
-        self.assertEqual([f["rule"] for f in wt.active(fs)[0]], ["ISR-I001", "ISR-T004"])
+        fs = [dict(isr.finding("ISR-I001", "Reviewed skill or plugin changed", "high", [], self.p, "sha256 a→b", "f"), **{"class": "evidence"}),
+              dict(isr.finding("ISR-T004", "Reads credentials", "high", [], self.p + ":3", "cat ~/.ssh/id_rsa", "f"), **{"class": "corroborated"})]
+        with open(isr.state_path(isr.DISMISS_LOG), "a") as fh:
+            fh.write(json.dumps({"at": isr.now(), "key": fs[1]["key"], "action": "dismissed", "reason": "planted"}) + "\n")
+        self.assertEqual([f["rule"] for f in isr.active(fs)[0]], ["ISR-I001", "ISR-T004"])
 
 
 if __name__ == "__main__":

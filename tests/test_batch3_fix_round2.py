@@ -7,7 +7,8 @@ import hashlib, importlib.util, os, shutil, subprocess, sys, time, unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import wt  # noqa: E402
+import test_boxes  # noqa: E402
+import isr  # noqa: E402
 from test_batch3_scanners import _Scanners, arch  # noqa: E402
 from test_batch3_fix_round1 import chain_root_owned  # noqa: E402
 
@@ -24,7 +25,7 @@ def reader():
 
 
 def six_lines():
-    return "".join(f"{hashlib.sha256(n.encode()).hexdigest()}  {n}  x86_64  v1\n" for n in sorted(wt.SCANNER_NAMES))
+    return "".join(f"{hashlib.sha256(n.encode()).hexdigest()}  {n}  x86_64  v1\n" for n in sorted(isr.SCANNER_NAMES))
 
 
 class CachedReader(_Scanners):
@@ -43,12 +44,12 @@ class CachedReader(_Scanners):
         with open(cache, "wb") as f:
             f.write(importlib._bootstrap_external._code_to_timestamp_pyc(forged, int(st.st_mtime), st.st_size))
         self.lock_line("gitleaks", "a" * 64)
-        wt._SCANNER_LOCK_CACHE.clear()
+        isr._SCANNER_LOCK_CACHE.clear()
         try:
-            with mock.patch.object(wt, "HERE", os.path.join(app, "isr_bot")):
-                lock = wt.scanner_lock()
+            with mock.patch.object(isr, "HERE", os.path.join(app, "isr_bot")):
+                lock = isr.scanner_lock()
         finally:
-            wt._SCANNER_LOCK_CACHE.clear()
+            isr._SCANNER_LOCK_CACHE.clear()
         self.assertNotIn(("gitleaks", "any"), lock)
         self.assertEqual(lock, {("gitleaks", arch()): {"a" * 64}})              # read by the checked source, from the lock file
 
@@ -65,15 +66,15 @@ class RunningInterpreter(_Scanners):
         for n in ("python3", "python"):
             os.symlink(other, os.path.join(self.bin, n))
         with mock.patch.object(sys, "executable", launcher):
-            self.assertIsNone(wt.trusted_interpreter(os.path.join(self.bin, "python3")))
-            self.assertIsNone(wt.scanners_python())
+            self.assertIsNone(isr.trusted_interpreter(os.path.join(self.bin, "python3")))
+            self.assertIsNone(isr.scanners_python())
 
 
 class BoundedTime(_Scanners):
     def test_10_one_slow_read_is_bounded(self):
         """Finding 10: the deadline was checked only between reads, so one slow read followed by EOF took as long as it took."""
         p = self.put("gitleaks", "", register=False)
-        wt.SCANNER_LOCK_EXTRA["gitleaks"] = hashlib.sha256(b"").hexdigest()
+        isr.SCANNER_LOCK_EXTRA["gitleaks"] = hashlib.sha256(b"").hexdigest()
         real, calls = os.read, []
 
         def slow(fd, n):
@@ -82,25 +83,25 @@ class BoundedTime(_Scanners):
                 time.sleep(3)
                 return b""
             return real(fd, n)
-        with mock.patch.object(wt, "SCANNER_HASH_SECONDS", 1), mock.patch.object(wt.os, "read", slow):
+        with mock.patch.object(isr, "SCANNER_HASH_SECONDS", 1), mock.patch.object(isr.os, "read", slow):
             t0 = time.monotonic()
-            got = wt.tool("gitleaks")
+            got = isr.tool("gitleaks")
             took = time.monotonic() - t0
         self.assertIsNone(got, p)
         self.assertLess(took, 2.5)
-        self.assertIn("too long", wt.SCANNER_PROBLEMS["gitleaks"][1])
+        self.assertIn("too long", isr.SCANNER_PROBLEMS["gitleaks"][1])
 
     def test_10_making_the_sealed_copy_counts_against_the_programs_time(self):
         """Finding 10: run() set the program's timeout before the copy was made, so copying plus running took longer."""
         p = self.put("gitleaks", "#!/bin/sh\nsleep 1.5\necho done\n")
-        real = wt._sealed_copy
+        real = isr._sealed_copy
 
         def slow_copy(path, *rest):                                             # rest: run()'s deadline (final review)
             time.sleep(1.5)
             return real(path, *rest)
-        with mock.patch.object(wt, "_sealed_copy", slow_copy):
+        with mock.patch.object(isr, "_sealed_copy", slow_copy):
             t0 = time.monotonic()
-            code, _, _ = wt.run([p], 2)
+            code, _, _ = isr.run([p], 2)
             took = time.monotonic() - t0
         self.assertEqual(code, 124)
         self.assertLess(took, 2.8)
@@ -112,8 +113,8 @@ class SharedLockRules(_Scanners):
         comments passed publish.sh while Watchtower listed no scanner at all."""
         with open(self.lock, "w") as f:
             f.write(six_lines() + ("#" + "x" * 999 + "\n") * 1001)
-        wt._SCANNER_LOCK_CACHE.clear()
-        self.assertEqual(wt.scanner_lock(), {})                                  # the runtime refuses it whole (already on 55a4290)
+        isr._SCANNER_LOCK_CACHE.clear()
+        self.assertEqual(isr.scanner_lock(), {})                                  # the runtime refuses it whole (already on 55a4290)
         r = subprocess.run([sys.executable, "-I", READER, self.lock], capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("is over 1000000 bytes", r.stdout)
@@ -129,9 +130,9 @@ class SharedLockRules(_Scanners):
         self.assertEqual(mod["release_problems"](six_lines() + semgrep), [])
         self.assertEqual(mod["release_problems"](six_lines()), [])                # still optional
         p = self.put("semgrep", "#!/bin/sh\necho '{\"results\": []}'\n", register=False)
-        self.lock_line("semgrep", wt.scanner_digest(p))
-        wt._SCANNER_LOCK_CACHE.clear()
-        self.assertEqual(wt.tool("semgrep"), p)
+        self.lock_line("semgrep", isr.scanner_digest(p))
+        isr._SCANNER_LOCK_CACHE.clear()
+        self.assertEqual(isr.tool("semgrep"), p)
 
 
 if __name__ == "__main__":

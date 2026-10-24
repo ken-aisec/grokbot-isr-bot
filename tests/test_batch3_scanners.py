@@ -13,7 +13,8 @@ import hashlib, json, os, platform, shutil, sys, time, unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, SCANNERS, wt  # noqa: E402
+from test_boxes import Box, SCANNERS  # noqa: E402
+import isr  # noqa: E402
 
 # Engines that flag nothing, whatever they read.
 CLEAN_SS = ('#!/usr/bin/env python3\nimport json, os, sys\na = sys.argv[1:]; stage = a[1]; out = a[a.index("--output") + 1]\n'
@@ -40,12 +41,12 @@ class _Scanners(Box):
     def setUp(self):
         super().setUp()
         for n in ("SCANNER_LOCK_EXTRA", "SCANNER_PROBLEMS", "_SCANNER_OK"):
-            getattr(wt, n, {}).clear()
+            getattr(isr, n, {}).clear()
         self.bin = os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin")
         self.lock = os.path.join(self.tmp, "scanner-bins.lock")
         with open(self.lock, "w") as f:
             f.write("# test lock: no lines\n")
-        p = mock.patch.object(wt, "SCANNER_LOCK", self.lock, create=True)
+        p = mock.patch.object(isr, "SCANNER_LOCK", self.lock, create=True)
         p.start(); self.addCleanup(p.stop)
 
     def put(self, name, body, register=True, where=None):
@@ -55,8 +56,8 @@ class _Scanners(Box):
         with open(p, "w") as f:
             f.write(body)
         os.chmod(p, 0o755)
-        if register and hasattr(wt, "scanner_digest"):
-            getattr(wt, "SCANNER_LOCK_EXTRA", {})[name] = wt.scanner_digest(p)
+        if register and hasattr(isr, "scanner_digest"):
+            getattr(isr, "SCANNER_LOCK_EXTRA", {})[name] = isr.scanner_digest(p)
         return p
 
     def engines(self, **override):
@@ -76,7 +77,7 @@ class _Scanners(Box):
             f.write("{}")
 
 
-class OnlyWatchtowersOwnCopy(_Scanners):
+class OnlyIsrBotsOwnCopy(_Scanners):
     def test_1_a_scanner_on_path_is_never_run(self):
         log = os.path.join(self.tmp, "ss.log")
         pathdir = os.path.join(self.tmp, "pathbin")
@@ -85,9 +86,9 @@ class OnlyWatchtowersOwnCopy(_Scanners):
         os.environ["PATH"] = pathdir + os.pathsep + old
         self.addCleanup(os.environ.__setitem__, "PATH", old)
         self.skills(2)
-        self.assertIsNone(wt.tool("skillspector"))
+        self.assertIsNone(isr.tool("skillspector"))
         self.audit()
-        self.assertNotIn("SkillSpector", wt.load_json(wt.state_path("engines_used.json"), {})["engines"])
+        self.assertNotIn("SkillSpector", isr.load_json(isr.state_path("engines_used.json"), {})["engines"])
         self.assertFalse(os.path.exists(log))
 
     def test_2_the_old_scanner_folder_is_not_used(self):
@@ -119,13 +120,13 @@ class OnlyWatchtowersOwnCopy(_Scanners):
         self.assertFalse(os.path.exists(log))
         x5 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-X005"]
         self.assertEqual(len(x5), 1, r["notes"])
-        self.assertEqual((x5[0]["severity"], x5[0]["label"]), ("high", wt.CONFIRMED))
-        self.assertTrue(wt.counts(x5[0]))
+        self.assertEqual((x5[0]["severity"], x5[0]["label"]), ("high", isr.CONFIRMED))
+        self.assertTrue(isr.counts(x5[0]))
         self.assertIn("install.sh --scanners", x5[0]["fix"])
         self.assertEqual(self.rules("ISR-X001"), x1)
         code, o, e = self.run_cmd("accept", "ISR-X005", "skillspector", "--reason", "x")
         self.assertNotEqual(code, 0, o + e)
-        self.assertFalse([s for s in wt.load_json(wt.state_path("suppressions.json"), []) or [] if s.get("rule") == "ISR-X005"])
+        self.assertFalse([s for s in isr.load_json(isr.state_path("suppressions.json"), []) or [] if s.get("rule") == "ISR-X005"])
 
     def test_4_swapped_engines_never_re_approve_a_skill(self):
         d = self.skills(1)[0]
@@ -142,12 +143,12 @@ class OnlyWatchtowersOwnCopy(_Scanners):
         with open(md, "a") as f:
             f.write("EVIL HUSK again\n")
         self.audit()
-        before = dict(wt.load_json(wt.state_path("baseline.json"), {}))
+        before = dict(isr.load_json(isr.state_path("baseline.json"), {}))
         code, o, _ = self.run_cmd("fix", "--revet", "--roots", *self.roots)
         done = " | ".join(json.loads(o)["done"])
         self.assertIn("not finished", done)
         self.assertNotIn("re-approved", done)
-        self.assertEqual(wt.load_json(wt.state_path("baseline.json"), {}), before)
+        self.assertEqual(isr.load_json(isr.state_path("baseline.json"), {}), before)
 
     def test_5_a_changed_osv_scanner_keeps_its_findings(self):
         self.skills(1); self.project()
@@ -180,7 +181,7 @@ class OnlyWatchtowersOwnCopy(_Scanners):
         if not os.access(real, os.W_OK) and not os.access(os.path.dirname(real), os.W_OK):   # contrast: the computer's own Python
             os.symlink(real, link)
             self.put("pip-audit", body)
-            self.assertTrue(wt.tool("pip-audit"))
+            self.assertTrue(isr.tool("pip-audit"))
             os.remove(link)
         evil = os.path.join(self.tmp, "python-anyone-can-edit")
         with open(evil, "w") as f:
@@ -188,7 +189,7 @@ class OnlyWatchtowersOwnCopy(_Scanners):
         os.chmod(evil, 0o755)
         os.symlink(evil, link)
         self.put("pip-audit", body)                                           # the entry point itself still matches
-        self.assertIsNone(wt.tool("pip-audit"))
+        self.assertIsNone(isr.tool("pip-audit"))
         self.skills(1)
         self.audit()
         x5 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-X005"]
@@ -196,7 +197,7 @@ class OnlyWatchtowersOwnCopy(_Scanners):
         self.assertIn("Python it runs with", x5[0]["evidence"])
 
     def test_8_the_venv_first_line_is_hashed_as_python(self):
-        fn = getattr(wt, "scanner_digest", None)
+        fn = getattr(isr, "scanner_digest", None)
         self.assertTrue(callable(fn))
         os.makedirs(self.bin, exist_ok=True)
         rest = "import sys\nsys.exit(0)\n"
@@ -216,7 +217,7 @@ class OnlyWatchtowersOwnCopy(_Scanners):
         self.run_cmd("canary", "plant")
         self.audit()
         os.remove(os.path.join(self.bin, "osv-scanner"))
-        p = wt.load_json(wt.state_path("canaries.json"), {})["api-env"]["path"]
+        p = isr.load_json(isr.state_path("canaries.json"), {})["api-env"]["path"]
         os.utime(p, (time.time() - 60, os.stat(p).st_mtime))                  # a decoy opened a minute ago
         code, o, _ = self.run_cmd("daily", "--roots", *self.roots)
         self.assertTrue(o.lstrip().startswith("{"), o)
@@ -225,7 +226,7 @@ class OnlyWatchtowersOwnCopy(_Scanners):
         self.assertIn("ISR-K001", [f["rule"] for f in out.get("decoys", []) + out.get("new", [])])
 
     def test_10_doctor_says_which_copies_are_checked(self):
-        digest = getattr(wt, "scanner_digest", lambda p: None)
+        digest = getattr(isr, "scanner_digest", lambda p: None)
         self.engines()
         changed = self.put("husk", CLEAN_HUSK, register=False)
         self.lock_line("husk")

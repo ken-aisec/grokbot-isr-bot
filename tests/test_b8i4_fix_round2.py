@@ -20,7 +20,8 @@ a guard (a contrast) that passes there and here.
 import json, os, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import CRASH, wt  # noqa: E402
+from test_boxes import CRASH  # noqa: E402
+import isr  # noqa: E402
 from test_item8_provenance import CLEAN, add, put, sha  # noqa: E402
 from test_b8i4_middle_path import _Middle  # noqa: E402
 from test_b8i4_fix_round1 import NEEDLE, leaks_in  # noqa: E402
@@ -45,7 +46,7 @@ class BaselineCommandHolds(_Middle):
     def assert_held(self, *paths):
         for p in paths:
             self.assertEqual(len(self.counted_high(p)), 1, p)
-            self.assertNotIn(p, wt.load_baseline()[0], p)
+            self.assertNotIn(p, isr.load_baseline()[0], p)
 
     def test_a_first_baseline_command_keeps_a_new_skill_folder_held(self):
         """R: a clean unlisted helper folder on a new box, then `isr.py baseline` (the first baseline): daily and a full audit
@@ -54,7 +55,7 @@ class BaselineCommandHolds(_Middle):
         md, ref = self.helper()
         out = self.run_cmd("baseline", "--roots", *self.roots)[1]
         self.assertIn("Not approved by this: 2", out)
-        self.assertEqual(wt.load_baseline()[1], "ok")
+        self.assertEqual(isr.load_baseline()[1], "ok")
         self.assertNotEqual(self.daily(), "NO_CHANGES")
         self.assert_held(md, ref)
         self.audit()
@@ -67,10 +68,10 @@ class BaselineCommandHolds(_Middle):
         takes a new baseline: the next daily and audit keep the folder's files counted highs (47d3aba: quiet, then rolled in)."""
         self.start()
         md, ref = self.helper()
-        os.remove(wt.state_path("baseline.json"))
-        self.assertEqual(wt.load_baseline()[1], "reset")
+        os.remove(isr.state_path("baseline.json"))
+        self.assertEqual(isr.load_baseline()[1], "reset")
         self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
-        self.assertEqual(wt.load_baseline()[1], "ok")
+        self.assertEqual(isr.load_baseline()[1], "ok")
         self.assertNotEqual(self.daily(), "NO_CHANGES")
         self.assert_held(md, ref)
         self.audit()
@@ -115,7 +116,7 @@ class RedirectWhileScanning(_Middle):
         self.assertEqual(len(x), 1, [(f["rule"], f["where"]) for f in self.snap()["findings"]])
         self.assertTrue(x[0]["fix"].startswith("It moved out of the platform's own folders"), x[0]["fix"])
         self.assertFalse([f for f in self.tip() if self.rel(self.md("alpha")) in f.get("files", [])])
-        self.assertEqual(wt.load_baseline()[0][self.md("alpha")], v1)
+        self.assertEqual(isr.load_baseline()[0][self.md("alpha")], v1)
 
     def test_the_same_update_without_the_move_rolls_in(self):
         """G: the contrast, the same clean update with engines that leave the folder alone."""
@@ -123,7 +124,7 @@ class RedirectWhileScanning(_Middle):
         add(self.md("alpha"), "One more line.\n")
         self.audit()
         self.assertEqual(self.counted_high(self.md("alpha")), [])
-        self.assertEqual(wt.load_baseline()[0][self.md("alpha")], sha(self.md("alpha")))
+        self.assertEqual(isr.load_baseline()[0][self.md("alpha")], sha(self.md("alpha")))
 
 
 class EscapedMetadata(_Middle):
@@ -142,7 +143,7 @@ class EscapedMetadata(_Middle):
     def assert_held(self, p, v1):
         x = [f for f in self.counted_high(p) if f["rule"] == "ISR-I001"]
         self.assertEqual(len(x), 1, [(f["rule"], f["severity"], f["where"]) for f in self.snap()["findings"]])
-        self.assertEqual(wt.load_baseline()[0][p], v1)
+        self.assertEqual(isr.load_baseline()[0][p], v1)
 
     def test_an_escaped_call_without_a_blank_is_held(self):
         """R: an existing cache.json updated to {"body":"eval\\u0028payload\\u0029"}: ISR-I001 high, and the baseline keeps the
@@ -182,7 +183,7 @@ class GroupedSecrets(_Middle):
         return [f for f in self.snap()["findings"] if f["rule"] == "ISR-S002" and f["where"] == d]
 
     def assert_held(self, ps, old):
-        base = wt.load_baseline()[0]
+        base = isr.load_baseline()[0]
         for p in ps:
             self.assertEqual(len(self.counted_high(p)), 1, [(f["rule"], f["where"]) for f in self.snap()["findings"]])
             self.assertEqual(base[p], old[p], p)
@@ -227,7 +228,7 @@ class GroupedSecrets(_Middle):
         self.audit()
         self.assertEqual(len(self.group()), 1)
         self.assertEqual(self.counted_high(self.md("alpha")), [])
-        self.assertEqual(wt.load_baseline()[0][self.md("alpha")], sha(self.md("alpha")))
+        self.assertEqual(isr.load_baseline()[0][self.md("alpha")], sha(self.md("alpha")))
 
 
 class DailyScannerAlerts(_Middle):
@@ -236,7 +237,7 @@ class DailyScannerAlerts(_Middle):
     def swap_gitleaks(self):
         p = os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin", "gitleaks")
         add(p, "# changed after Watchtower installed it\n")                     # no longer the digest Watchtower registered
-        wt._SCANNER_OK.clear()
+        isr._SCANNER_OK.clear()
 
     def alerts(self, out):
         return [(f["rule"], os.path.basename(f["where"])) for f in json.loads(out).get("scanner_alerts", [])]

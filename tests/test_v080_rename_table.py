@@ -2,6 +2,7 @@
 where one old value holds another the longer one comes first; no entry maps a name to itself; no new value holds an old name
 and each passes the name guards of test_v074_display_name, through the same blank(); the old and new layouts are complete."""
 import ast, json, os, re, unittest
+from unittest import mock
 
 import rename_v080 as rn
 import test_v074_display_name as v074
@@ -199,6 +200,21 @@ class RenameTable(unittest.TestCase):
         for before, after in ((f"python3 {old} vet", f"python3 {new} vet"), (f'"{old}"', f'"{new}"'),
                               (f"'{old}'", f"'{new}'"), (f"({old})", f"({new})"), (f"run {old}", f"run {new}")):
             self.assertEqual(map_units(units, "tests/test_boxes.py", before), after)
+
+    def test_d2_open_mode_span_spares_the_module(self):   # replay (d2a fix 1: the "wt" mode span held a wt. call in the same open)
+        order, old, new = rn.TABLE["source"]["order"], rn.OLD["main"][:-len("py")], rn.NEW["main"][:-len("py")]
+        line = '        with gzip.open(%sapproved_path(d), "wt") as f:' % old
+        want = line.replace(old, new)
+        self.assertIn(', "wt")', want)   # the file mode stays
+        plain = '        with open(p, "wt") as f:'
+        for u, rel in (("d2a", "tests/test_batch6_mask.py"), ("d2b", "tests/test_boxes.py")):
+            self.assertEqual(os.path.basename(rel) in rn.TABLE["source"]["unit_files"]["d2a"], u == "d2a")
+            units = order[:order.index(u) + 1]
+            self.assertEqual(map_units(units, rel, line), want)
+            self.assertEqual(map_units(order, rel, plain), plain)
+            # the d2a build's span held the whole call, the module reference included, so it stayed old
+            with mock.patch.dict(rn.TABLE["source"], {"keep_spans": [{"re": 'open\\([^\\n]*?, "wt"'}]}):
+                self.assertEqual(map_units(units, rel, line), line)
 
 
 if __name__ == "__main__":

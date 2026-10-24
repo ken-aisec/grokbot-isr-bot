@@ -16,7 +16,8 @@ first run is no middle-path candidate, so the skill-file wording test reads its 
 import hashlib, json, os, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, ROOT, wt
+from test_boxes import Box, ROOT
+import isr  # noqa: E402
 import profiles
 
 REL = ".grok/bundled/manifest.json"
@@ -29,7 +30,7 @@ def text(doc):
 
 
 def canonical(doc, drop=("generated_at",)):
-    """The canonical form, written independently of wt.canonical_platform_json: the named top-level fields dropped, compact JSON."""
+    """The canonical form, written independently of isr.canonical_platform_json: the named top-level fields dropped, compact JSON."""
     return hashlib.sha256(json.dumps({k: v for k, v in doc.items() if k not in drop}, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
 
 
@@ -54,15 +55,15 @@ class _Meta(Box):
         p = os.path.join(self.tmp, "platform-normalize.json")
         with open(p, "w") as f:
             json.dump({"about": "test", "entries": entries}, f)
-        had, old = hasattr(wt, "PLATFORM_NORMALIZE"), getattr(wt, "PLATFORM_NORMALIZE", None)   # 151e40c has none: it reads no spec
-        wt.PLATFORM_NORMALIZE = p
-        self.addCleanup(lambda: setattr(wt, "PLATFORM_NORMALIZE", old) if had else delattr(wt, "PLATFORM_NORMALIZE"))
+        had, old = hasattr(isr, "PLATFORM_NORMALIZE"), getattr(isr, "PLATFORM_NORMALIZE", None)   # 151e40c has none: it reads no spec
+        isr.PLATFORM_NORMALIZE = p
+        self.addCleanup(lambda: setattr(isr, "PLATFORM_NORMALIZE", old) if had else delattr(isr, "PLATFORM_NORMALIZE"))
 
     def mine(self):
         return [f for f in self.snap()["findings"] if f["where"].split(":")[0] == self.p]
 
     def counted(self):
-        return [f for f in self.mine() if wt.counts(f)]
+        return [f for f in self.mine() if isr.counts(f)]
 
 
 # ---------------------------------------------------------------- d3a: the wording
@@ -71,25 +72,25 @@ class MetadataWording(_Meta):
         self.write(text(V1))
         profiles.vendor_release(self, self.p)
         self.skills(1); self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
-        was = wt.sha256_file(self.p)
+        was = isr.sha256_file(self.p)
         self.write(text(dict(V1, generated_at="2026-10-18T08:00:00Z")))
         self.audit()
         i1 = [f for f in self.mine() if f["rule"] == "ISR-I001"]
-        self.assertEqual([(f["severity"], wt.counts(f)) for f in i1 if wt.counts(f)], [])   # b8i4: the middle path's quiet line
-        self.assertNotIn(self.p, wt.VERIFIED_METADATA)                         # not compared with the released version
-        held = wt.unverified_platform_finding(self.p, wt.sha256_file(self.p), was)   # the wording a held version gets
+        self.assertEqual([(f["severity"], isr.counts(f)) for f in i1 if isr.counts(f)], [])   # b8i4: the middle path's quiet line
+        self.assertNotIn(self.p, isr.VERIFIED_METADATA)                         # not compared with the released version
+        held = isr.unverified_platform_finding(self.p, isr.sha256_file(self.p), was)   # the wording a held version gets
         self.assertEqual(held["title"], "ISR Bot's release list doesn't have Grok Bot's changed list of what it loads yet")
         self.assertIn("Don't delete it (Grok Bot needs it)", held["fix"])
         self.assertIn("tell ISR Bot support", held["fix"])
         self.assertNotIn("remove it", held["fix"])
-        self.assertEqual(self.snap()["status"], wt.ALL_GOOD)
+        self.assertEqual(self.snap()["status"], isr.ALL_GOOD)
 
     def test_a_new_metadata_file_too(self):   # replay (151e40c: "A new file appeared …")
         self.skills(1)
         self.write(text(V1))
         self.audit()
         i2 = [f for f in self.mine() if f["rule"] == "ISR-I002"]
-        self.assertEqual([(f["severity"], wt.counts(f)) for f in i2], [("high", True)])
+        self.assertEqual([(f["severity"], isr.counts(f)) for f in i2], [("high", True)])
         self.assertTrue(i2[0]["title"].startswith("ISR Bot's release list doesn't have Grok Bot's new list of what it loads"))
 
     def test_a_skill_file_keeps_its_wording(self):   # guard
@@ -120,12 +121,12 @@ class Normalized(_Meta):
         self.write(text(dict(V1, generated_at="2026-10-18T09:30:00.123Z")))
         self.assertEqual(self.run_cmd("daily", "--roots", *self.roots)[1].strip(), "NO_CHANGES")
         tip = [f for f in self.snap()["findings"] if f["rule"] == "ISR-I008"]
-        self.assertEqual([(f["label"], f["severity"]) for f in tip], [(wt.TIP, "info")])
+        self.assertEqual([(f["label"], f["severity"]) for f in tip], [(isr.TIP, "info")])
         self.assertIn("Platform refresh: 1 of Grok Bot's own files changed", tip[0]["title"])
         r = json.loads(self.run_cmd("audit", "--roots", *self.roots)[1])   # the full audit accepts it like any listed platform update
         self.assertEqual(self.counted(), [])
         self.assertFalse([f for f in self.mine() if f.get("unverified_platform")])
-        self.assertEqual(r["status"], wt.ALL_GOOD)
+        self.assertEqual(r["status"], isr.ALL_GOOD)
 
     def assert_counted(self, data, why):
         self.write(data)
@@ -137,7 +138,7 @@ class Normalized(_Meta):
         self.write(data)
         self.audit()
         self.assertEqual([(f["rule"], f["severity"]) for f in self.counted()], [], why)
-        self.assertNotIn(self.p, wt.VERIFIED_METADATA, why)
+        self.assertNotIn(self.p, isr.VERIFIED_METADATA, why)
 
     def test_any_other_change_stays_counted(self):   # guard
         changes = {"installation_preference available -> required": dict(V1, skills=[dict(V1["skills"][0], installation_preference="required"), V1["skills"][1]]),
@@ -173,14 +174,14 @@ class Normalized(_Meta):
     def test_a_spec_that_isnt_the_released_one_is_ignored(self):   # guard
         self.baseline_with(V1)
         self.write(text(dict(V1, generated_at="2026-10-18T09:30:00Z")))
-        real = wt.release_digest
-        vars(wt)["_PLATFORM_NORMALIZE_CACHE"].clear()
-        with mock.patch.object(wt, "release_digest", lambda rel: "0" * 64 if rel == wt.PLATFORM_NORMALIZE_REL else real(rel)):
+        real = isr.release_digest
+        vars(isr)["_PLATFORM_NORMALIZE_CACHE"].clear()
+        with mock.patch.object(isr, "release_digest", lambda rel: "0" * 64 if rel == isr.PLATFORM_NORMALIZE_REL else real(rel)):
             self.audit()
-        vars(wt)["_PLATFORM_NORMALIZE_CACHE"].clear()
+        vars(isr)["_PLATFORM_NORMALIZE_CACHE"].clear()
         self.assertEqual([(f["rule"], f["severity"]) for f in self.counted()], [])   # b8i4: the middle path's quiet line
-        self.assertNotIn(self.p, wt.VERIFIED_METADATA)                         # the spec was ignored: nothing was verified
-        self.assertTrue([n for n in self.snap()["notes"] if wt.PLATFORM_NORMALIZE_REL in n and "MANIFEST.sha256" in n])
+        self.assertNotIn(self.p, isr.VERIFIED_METADATA)                         # the spec was ignored: nothing was verified
+        self.assertTrue([n for n in self.snap()["notes"] if isr.PLATFORM_NORMALIZE_REL in n and "MANIFEST.sha256" in n])
 
     def test_the_shipped_spec_is_empty(self):   # guard: no behavior change until the spike's data lands
         with open(os.path.join(ROOT, "rules", "platform-normalize.json")) as f:

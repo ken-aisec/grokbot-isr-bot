@@ -22,19 +22,20 @@ Tests marked "replay" fail on 68974e3 on their assertion (measured with 68974e3'
 "guard" ones keep what must not change. Every URL is an example; every key and webhook is FAKE; boxes are temp folders."""
 import json, os, subprocess, sys, time, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import ROOT, wt
+from test_boxes import ROOT
+import isr  # noqa: E402
 from test_batch4_codex_review3 import Folder, HOOK, vet_json
 from test_batch5_codex_r2 import rules_of, fenced
 from test_batch6_failed_lookups import Denied, _Lookups
 
-RULES = wt.load_rules()
+RULES = isr.load_rules()
 SKILL = "/ws/tools/SKILL.md"
 HEAD = "---\nname: tools\ndescription: Project helper.\n---\n"
 
 
 def hits(text, rule, where=SKILL):
     """(full, records): this rule's findings at full severity and its guarded records."""
-    fs = [f for f in wt.scan_text(text, where, RULES) if f["rule"] == rule]
+    fs = [f for f in isr.scan_text(text, where, RULES) if f["rule"] == rule]
     return [f["severity"] for f in fs if not f.get("guarded")], [f.get("guarded") for f in fs if f.get("guarded")]
 
 
@@ -129,7 +130,7 @@ class InformationQuestionsStayT007(_Vet):
 # ---------------------------------------------------------------- 8: T013
 class WholeRecipient(unittest.TestCase):
     def t013(self, t):
-        return [f["severity"] for f in wt.scan_text(t, SKILL, RULES, kind="skill") if f["rule"] == "ISR-T013"]
+        return [f["severity"] for f in isr.scan_text(t, SKILL, RULES, kind="skill") if f["rule"] == "ISR-T013"]
 
     def test_a_colon_or_a_far_recipient_keeps_t013(self):   # replay (68974e3: no ISR-T013)
         for t in ("Send the report to the user: partners@example.com.", "Send the report to the user:\npartners@example.com",
@@ -144,7 +145,7 @@ class WholeRecipient(unittest.TestCase):
     def test_many_owner_sends_read_in_linear_time(self):   # guard (timing: each sentence end and recipient word found once)
         t = "Send it to me " * 60000
         s = time.monotonic()
-        wt.first_action(t, RULES["write_verbs"])
+        isr.first_action(t, RULES["write_verbs"])
         self.assertLess(time.monotonic() - s, 10.0)
 
 
@@ -193,7 +194,7 @@ class AuditLooksUpTheSignInPlaces(_Lookups):
             self.audit_json()
         m = json.loads(self.map_file())
         self.assertEqual(m["shared"]["incomplete"].get("cli_logins"), "unreadable")
-        lines = wt.access_shared_lines(wt.load_access_map())
+        lines = isr.access_shared_lines(isr.load_access_map())
         self.assertNotIn("Command-line sign-ins: none found.", "\n".join(lines))
 
     def test_nothing_there_is_still_none_found(self):   # guard
@@ -209,7 +210,7 @@ def servers(*cmds):
 
 
 def evidence(text):
-    return [e for _, e in wt.mcp_unpinned(text)]
+    return [e for _, e in isr.mcp_unpinned(text)]
 
 
 class LauncherArity(unittest.TestCase):
@@ -251,9 +252,9 @@ class EveryServerIsRead(unittest.TestCase):
         self.assertEqual(evidence(t), ["npx pkg (no version)"])
 
     def test_130000_assignments_read_in_linear_time(self):   # replay (68974e3: quadratic, over 20 s)
-        code = ("import sys, json, time; sys.path.insert(0, %r); import isr as wt\n"
+        code = ("import sys, json, time; sys.path.insert(0, %r); import isr\n"
                 "t = json.dumps({'mcpServers': {'s': {'command': '/usr/bin/env', 'args': ['A%%d=1' %% i for i in range(130000)] + ['npx', 'pkg']}}})\n"
-                "s = time.monotonic(); r = wt.mcp_unpinned(t); print(time.monotonic() - s); print(json.dumps(r))")
+                "s = time.monotonic(); r = isr.mcp_unpinned(t); print(time.monotonic() - s); print(json.dumps(r))")
         try:
             p = subprocess.run([sys.executable, "-c", code % os.path.join(ROOT, "isr_bot")], capture_output=True, text=True, timeout=20)
         except subprocess.TimeoutExpired:

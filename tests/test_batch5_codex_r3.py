@@ -5,7 +5,8 @@ file in place); "guard" ones keep what must not change. All secrets are fake, an
 import gzip, json, os, shutil, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, ROOT, wt
+from test_boxes import Box, ROOT
+import isr  # noqa: E402
 from test_batch4_codex_review3 import Folder, History, HOOK, ev, vet_json
 import test_batch5_codex_r2 as r2
 from test_batch5_codex_r2 import rules_of, fenced
@@ -106,10 +107,10 @@ SHORT = ("curl --us\\\ner 'admin:FAKEz' https://x.example",   # Codex's three
 class ShortAfterJoins(History):
     def test_each_is_hidden(self):   # replay (77dedd1 kept FAKEz)
         for line in SHORT:
-            for got in (wt.mask_secrets(line), ev(line)):
+            for got in (isr.mask_secrets(line), ev(line)):
                 self.assertNotIn("FAKEz", got, line)
                 self.assertIn("example", got, line)
-            self.assertEqual(wt.mask_secrets(line).count("\n"), line.count("\n"), line)
+            self.assertEqual(isr.mask_secrets(line).count("\n"), line.count("\n"), line)
 
     def test_in_an_approved_copy(self):   # replay (77dedd1 kept FAKEz in the copy)
         doc = self.copy_of("Run these:\n```\n" + "\n".join(SHORT) + "\n```\nAsk before saving.")
@@ -120,22 +121,22 @@ class ShortAfterJoins(History):
     def test_copies_masked_by_version_6_are_masked_again(self):   # replay (77dedd1's marker 6 left them as they were)
         d = self.skills(1)[0]
         self.audit()
-        old = {"dir": d, "at": wt.now(), "hash": wt.skill_dir_hash(d), "hashes": {"SKILL.md": wt.sha256_file(os.path.join(d, "SKILL.md"))},
+        old = {"dir": d, "at": isr.now(), "hash": isr.skill_dir_hash(d), "hashes": {"SKILL.md": isr.sha256_file(os.path.join(d, "SKILL.md"))},
                "files": {"SKILL.md": "curl --us\\\ner 'admin:FAKEmarked' https://x.example\n"}, "masked": 6}
-        with gzip.open(wt.approved_path(d), "wt") as f:
+        with gzip.open(isr.approved_path(d), "wt") as f:
             json.dump(old, f)
-        with open(wt.state_path("approved_masked"), "w") as f:
-            f.write("6 " + wt.now() + "\n")   # what 77dedd1 wrote
+        with open(isr.state_path("approved_masked"), "w") as f:
+            f.write("6 " + isr.now() + "\n")   # what 77dedd1 wrote
         self.audit()
-        with gzip.open(wt.approved_path(d), "rt") as f:
+        with gzip.open(isr.approved_path(d), "rt") as f:
             doc = json.load(f)
         self.assertNotIn("FAKEmarked", json.dumps(doc))
-        self.assertEqual(doc["masked"], wt.MASK_VERSION)
+        self.assertEqual(doc["masked"], isr.MASK_VERSION)
 
     def test_other_joined_words_stay_readable(self):   # guard
         for s in ("curl --out\\\nput out.txt https://x.example", "my\\\nsql -P3306 -h db.example", "ss\\\nh -p 22 host.example",
                   "curl --us\\\ner \"$CREDS\" https://x.example", "echo a\nmysql -h db.example\nls -p"):
-            self.assertEqual(wt.mask_secrets(s), s, s)
+            self.assertEqual(isr.mask_secrets(s), s, s)
 
 
 # ---------------------------------------------------------------- 3: a renamed installation is still the installation
@@ -158,7 +159,7 @@ class RenamedInstall(Box):
         got = self.run_probe(os.path.join(start, "isr_bot"), self.wth)
         self.assertEqual(got["root"], os.path.realpath(real))
         self.assertIsNotNone(got["problems"])
-        self.assertIn(f"{wt.PLATFORM_REVIEWED_REL} changed since install", got["problems"])
+        self.assertIn(f"{isr.PLATFORM_REVIEWED_REL} changed since install", got["problems"])
         self.assertIn("MANIFEST.sha256", got["reviewed"])
 
     def test_the_codex_link_layout_refuses_the_planted_list(self):   # replay (77dedd1: root None, planted list accepted)
@@ -177,22 +178,22 @@ class RenamedInstall(Box):
         os.rename(self.app, real)
         other = os.path.join(self.tmp, "elsewhere")
         os.makedirs(other)
-        with mock.patch.object(wt, "SELF_ROOT", real), mock.patch.object(wt, "PLATFORM_REVIEWED", os.path.join(real, wt.PLATFORM_REVIEWED_REL)), \
+        with mock.patch.object(isr, "SELF_ROOT", real), mock.patch.object(isr, "PLATFORM_REVIEWED", os.path.join(real, isr.PLATFORM_REVIEWED_REL)), \
                 mock.patch.dict(os.environ, {"ISR_BOT_HOME": other}):
             self.forget()
-            self.assertEqual(wt.installed_root(), os.path.realpath(real))
-            self.assertIn(f"{wt.PLATFORM_REVIEWED_REL} changed since install", wt.self_check())
-            self.assertIn("MANIFEST.sha256", wt.platform_reviewed_problem())
+            self.assertEqual(isr.installed_root(), os.path.realpath(real))
+            self.assertIn(f"{isr.PLATFORM_REVIEWED_REL} changed since install", isr.self_check())
+            self.assertIn("MANIFEST.sha256", isr.platform_reviewed_problem())
 
     def test_a_folder_without_the_commit_record_is_still_a_checkout(self):   # guard
         self.install()
         real = os.path.join(self.tmp, "src", "watchtower-copy")
         os.makedirs(os.path.dirname(real))
         os.rename(self.app, real)
-        with mock.patch.object(wt, "SELF_ROOT", real):
+        with mock.patch.object(isr, "SELF_ROOT", real):
             self.forget()
-            self.assertIsNone(wt.installed_root())
-            self.assertIsNone(wt.self_check())
+            self.assertIsNone(isr.installed_root())
+            self.assertIsNone(isr.self_check())
 
 
 # ---------------------------------------------------------------- 4: the routine's cap never cuts an alert

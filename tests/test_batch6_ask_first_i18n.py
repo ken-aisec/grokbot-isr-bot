@@ -11,7 +11,8 @@ place); "guard" ones keep what must not change. Settings files are written into 
 import json, os, re, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, ROOT, wt
+from test_boxes import Box, ROOT
+import isr  # noqa: E402
 
 AREAS = ["sending email or messages", "publishing or posting", "purchases or payments", "deleting data", "changing permissions or settings"]
 SPANISH = ["Antes de enviar correos o mensajes", "Antes de publicar en redes", "Antes de hacer compras o pagos",
@@ -85,7 +86,7 @@ class OtherLanguages(_Settings):
         self.native(ask=[s for s in SPANISH if "pagos" not in s])
         self.assertEqual(self.counted(), [("ISR-A003", "medium", "Ask-first rules don't cover everything", "purchases or payments")])
 
-    def test_a_language_watchtower_cant_read_stays_counted_with_a_tip(self):   # replay (5dcd0a2: the medium, no Tip)
+    def test_a_language_isr_bot_cant_read_stays_counted_with_a_tip(self):   # replay (5dcd0a2: the medium, no Tip)
         self.native(ask=SWAHILI)   # fix round 1 (Codex 5): the medium stays; the language Tip is added beside it
         fs = self.a003()
         self.assertEqual(sorted((f["class"], f["severity"]) for f in fs), [("evidence", "medium"), ("tip", "info")])
@@ -95,7 +96,7 @@ class OtherLanguages(_Settings):
         self.assertIn("The alert above stays", tip["fix"])
         r = self.audit()
         self.assertEqual(r["open_by_severity"]["medium"], 1, r)
-        self.assertEqual(wt.ask_first_covered(self.snap()["findings"]), set())   # nothing is assumed covered
+        self.assertEqual(isr.ask_first_covered(self.snap()["findings"]), set())   # nothing is assumed covered
 
     def test_rules_that_name_no_area_stay_the_counted_medium(self):   # replay, Codex 5 (6cd1ab4: a Tip, nothing counted)
         for ask in (["."], ["every shell command"]):
@@ -104,10 +105,10 @@ class OtherLanguages(_Settings):
             self.assertEqual(self.audit()["open_by_severity"]["medium"], 1, ask)
 
     def test_a_forged_tip_flag_never_lowers_the_medium(self):   # guard: the Tip is known by its own evidence, never the medium's
-        med = wt.finding("ISR-A003", "Ask-first rules not found", "medium", ["ASI09"], "Auto-review rules", ", ".join(AREAS), "x")
+        med = isr.finding("ISR-A003", "Ask-first rules not found", "medium", ["ASI09"], "Auto-review rules", ", ".join(AREAS), "x")
         med["ask_first_unread"] = True
-        self.assertFalse(wt.ask_first_unread(med))
-        self.assertEqual(wt.label_findings([med])[0]["severity"], "medium")
+        self.assertFalse(isr.ask_first_unread(med))
+        self.assertEqual(isr.label_findings([med])[0]["severity"], "medium")
 
 
 class EnglishAsBefore(_Settings):
@@ -128,12 +129,12 @@ class EnglishAsBefore(_Settings):
 
     def test_english_parity_on_a_corpus(self):   # guard: the shipped English entry is 5dcd0a2's regexes, and no other language
         for text in ENGLISH_CORPUS:                  # makes an English rule set look covered
-            self.assertEqual(wt.ask_first_gaps(text), old_gaps(text), text)
+            self.assertEqual(isr.ask_first_gaps(text), old_gaps(text), text)
 
     def test_lint_auto_review_is_unchanged_for_english(self):   # guard (test_isr_bot's test_auto_review shape)
         t = open(os.path.join(ROOT, "tests", "fixtures", "exports", "auto-review.txt")).read()
-        self.assertIn("ISR-A003", {f["rule"] for f in wt.lint_auto_review(t, "x")})
-        self.assertEqual(len(wt.ask_first_gaps("Ask first: before sending email")), 4)
+        self.assertIn("ISR-A003", {f["rule"] for f in isr.lint_auto_review(t, "x")})
+        self.assertEqual(len(isr.ask_first_gaps("Ask first: before sending email")), 4)
 
 
 class Vocabulary(_Settings):
@@ -147,34 +148,34 @@ class Vocabulary(_Settings):
                                                          "permission|setting|routine|connector"]})
         with open(os.path.join(ROOT, "MANIFEST.sha256")) as f:
             self.assertIn("  rules/ask_first_vocab.json\n", f.read())
-        self.assertEqual(wt.ask_first_vocab_problem(), "")
+        self.assertEqual(isr.ask_first_vocab_problem(), "")
 
     def test_a_malformed_file_is_refused_whole_and_english_still_works(self):   # replay (5dcd0a2: no vocabulary)
-        self.assertTrue(hasattr(wt, "ASK_FIRST_VOCAB") and os.path.isfile(wt.ASK_FIRST_VOCAB))
+        self.assertTrue(hasattr(isr, "ASK_FIRST_VOCAB") and os.path.isfile(isr.ASK_FIRST_VOCAB))
         bad =os.path.join(self.tmp, "ask_first_vocab.json")
         with open(os.path.join(ROOT, "rules", "ask_first_vocab.json"), encoding="utf-8") as f:
             doc = json.load(f)
         doc["languages"][1]["areas"] = doc["languages"][1]["areas"][:4]   # one area short
         with open(bad, "w", encoding="utf-8") as f:
             json.dump(doc, f, ensure_ascii=False)
-        with mock.patch.object(wt, "ASK_FIRST_VOCAB", bad):
-            wt._ASK_FIRST_VOCAB_CACHE.clear()
-            self.addCleanup(wt._ASK_FIRST_VOCAB_CACHE.clear)
-            self.assertIn("entry 2", wt.ask_first_vocab_problem())
-            self.assertEqual(wt.ask_first_gaps(ENGLISH_CORPUS[0]), [])
+        with mock.patch.object(isr, "ASK_FIRST_VOCAB", bad):
+            isr._ASK_FIRST_VOCAB_CACHE.clear()
+            self.addCleanup(isr._ASK_FIRST_VOCAB_CACHE.clear)
+            self.assertIn("entry 2", isr.ask_first_vocab_problem())
+            self.assertEqual(isr.ask_first_gaps(ENGLISH_CORPUS[0]), [])
             self.native(ask=SPANISH)
             self.assertEqual([s for _, s, _, _ in self.counted()], ["medium"])   # Spanish is unread without the file: the medium (fix round 1)
             notes = self.snap()["notes"]
             self.assertTrue([n for n in notes if "rules/ask_first_vocab.json" in n and "entry 2" in n], notes)
 
     def test_a_file_that_isnt_the_released_one_is_refused(self):   # replay (5dcd0a2: no vocabulary)
-        self.assertTrue(hasattr(wt, "_ASK_FIRST_VOCAB_CACHE"))
-        real = wt.release_digest
-        wt._ASK_FIRST_VOCAB_CACHE.clear()
-        self.addCleanup(wt._ASK_FIRST_VOCAB_CACHE.clear)
-        with mock.patch.object(wt, "release_digest", lambda rel: "0" * 64 if rel == wt.ASK_FIRST_VOCAB_REL else real(rel)):
-            self.assertIn("MANIFEST.sha256", wt.ask_first_vocab_problem())
-            self.assertEqual(len(wt.ask_first_vocab()), 1)   # the built-in English only
+        self.assertTrue(hasattr(isr, "_ASK_FIRST_VOCAB_CACHE"))
+        real = isr.release_digest
+        isr._ASK_FIRST_VOCAB_CACHE.clear()
+        self.addCleanup(isr._ASK_FIRST_VOCAB_CACHE.clear)
+        with mock.patch.object(isr, "release_digest", lambda rel: "0" * 64 if rel == isr.ASK_FIRST_VOCAB_REL else real(rel)):
+            self.assertIn("MANIFEST.sha256", isr.ask_first_vocab_problem())
+            self.assertEqual(len(isr.ask_first_vocab()), 1)   # the built-in English only
 
 
 if __name__ == "__main__":

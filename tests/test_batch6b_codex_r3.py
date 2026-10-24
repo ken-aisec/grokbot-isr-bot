@@ -16,11 +16,12 @@ their assertion (measured with b621cf4's watchtower/ sources, this file in place
 "new" (they call something b621cf4 doesn't have, or its behaviour is new)."""
 import base64, gzip, json, os, secrets, shutil, subprocess, sys, tempfile, time, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, ROOT, wt
+from test_boxes import Box, ROOT
+import isr  # noqa: E402
 from test_batch6_example_keys import _Keys, der, der_int, fake_text_body, pem, public_key_packet, rsa_der, token
 from test_batch6b_codex_r2 import ed25519_pkcs8, raw_sev
 
-NOTE = "This looks like an example or checksum value"   # wt.EXAMPLE_NOTE's start, written out so a replay fails on its assertion
+NOTE = "This looks like an example or checksum value"   # isr.EXAMPLE_NOTE's start, written out so a replay fails on its assertion
 SKILL = "---\nname: setup-dev-tools\ndescription: Sets up the tools.\n---\nInstall the tools the project uses. Ask before saving.\n"
 P224_N = int("FFFFFFFFFFFFFFFFFFFFFFFFFFFF16A2E0B8F03E13DD29455C5C2A3D", 16)
 P160_N = int("0100000000000000000001F4C8F927AED3CA752257", 16)   # secp160r1
@@ -67,7 +68,7 @@ def bits_of(raw):
 
 
 def t011(text):
-    return [f for f in wt.scan_text(text, "/s/SKILL.md", wt.load_rules()) if f["rule"].startswith("ISR-T011")]
+    return [f for f in isr.scan_text(text, "/s/SKILL.md", isr.load_rules()) if f["rule"].startswith("ISR-T011")]
 
 
 def approved_copy(test, name, text):
@@ -78,8 +79,8 @@ def approved_copy(test, name, text):
         f.write("---\nname: deploy-keys\ndescription: Deploys.\n---\nUse the keys.\n")
     with open(os.path.join(d, name), "w") as f:
         f.write(text)
-    wt.save_approved(d)
-    with gzip.open(wt.approved_path(d), "rt", encoding="utf-8") as f:
+    isr.save_approved(d)
+    with gzip.open(isr.approved_path(d), "rt", encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -116,14 +117,14 @@ class ExamplesLowerNothing(_Keys):
         fs, _ = self.scan()
         first = self.s002(fs, p)
         self.assertEqual(len(first), 1, first)
-        with open(wt.state_path(wt.DISMISS_LOG), "a") as fh:
-            fh.write(json.dumps({"at": wt.now(), "key": first[0]["key"], "action": "dismissed", "reason": "FAKE planted"}) + "\n")
+        with open(isr.state_path(isr.DISMISS_LOG), "a") as fh:
+            fh.write(json.dumps({"at": isr.now(), "key": first[0]["key"], "action": "dismissed", "reason": "FAKE planted"}) + "\n")
         with open(p, "a") as fh:
             fh.write("Keep the notes short.\n")
         fs, _ = self.scan()
         got = self.s002(fs, p)
         self.assertEqual([(f["class"], raw_sev(f)) for f in got], [("corroborated", "medium")], got)
-        self.assertTrue(wt.counts(got[0]))
+        self.assertTrue(isr.counts(got[0]))
 
     def test_a_planted_dismissal_never_removes_a_drift_backed_fake(self):   # replay 1 (b621cf4: never backed up, then dismissed)
         hx = secrets.token_hex(32)
@@ -150,23 +151,23 @@ class ExamplesLowerNothing(_Keys):
         fs, _ = self.scan()
         mine = self.s002(fs, p)
         self.assertEqual([raw_sev(f) for f in mine], ["critical"])
-        self.assertNotIn(p, wt.scrub_targets_from_findings())
-        self.assertEqual(wt.revoke_targets([dict(mine[0], severity="critical")]), [])
-        self.assertEqual(wt.plain(mine[0])["title"], "Keys that look like examples or checksums")
-        self.assertNotIn("fix it", wt.plain(mine[0])["how"])
-        dead = wt.apply_key_status(mine, {p: [{"status": "dead", "detector": "Github", "line": 1}]}, ran=True)[0]
-        self.assertEqual((dead["title"], wt.fix_class(dead)), (wt.KEY_DEAD, "only_you"))   # not the fix's automatic clearing
+        self.assertNotIn(p, isr.scrub_targets_from_findings())
+        self.assertEqual(isr.revoke_targets([dict(mine[0], severity="critical")]), [])
+        self.assertEqual(isr.plain(mine[0])["title"], "Keys that look like examples or checksums")
+        self.assertNotIn("fix it", isr.plain(mine[0])["how"])
+        dead = isr.apply_key_status(mine, {p: [{"status": "dead", "detector": "Github", "line": 1}]}, ran=True)[0]
+        self.assertEqual((dead["title"], isr.fix_class(dead)), (isr.KEY_DEAD, "only_you"))   # not the fix's automatic clearing
         self.assertIn(NOTE, dead["fix"])
 
     def test_a_live_key_loses_its_note(self):   # guard (new): the provider's answer decides
-        f = wt.annotate_example(wt.finding("ISR-S002", "gitleaks: secrets in file", "critical", [], "/w/k.md:3", "1 hit(s): github-pat", "x",
+        f = isr.annotate_example(isr.finding("ISR-S002", "gitleaks: secrets in file", "critical", [], "/w/k.md:3", "1 hit(s): github-pat", "x",
                                            source="gitleaks"), "FAKE or placeholder text")
-        out = wt.apply_key_status([f], {"/w/k.md": [{"status": "live", "detector": "Github", "line": 3}]}, ran=True)[0]
-        self.assertEqual((out["severity"], out["title"], "example" in out), ("critical", wt.KEY_LIVE, False))
+        out = isr.apply_key_status([f], {"/w/k.md": [{"status": "live", "detector": "Github", "line": 3}]}, ran=True)[0]
+        self.assertEqual((out["severity"], out["title"], "example" in out), ("critical", isr.KEY_LIVE, False))
         self.assertNotIn(NOTE, out["fix"])
 
 
-class ExamplesInWatchtowersRules(unittest.TestCase):
+class ExamplesInIsrBotsRules(unittest.TestCase):
     def test_t011_examples_keep_t011s_severity(self):   # replay 1 (b621cf4: ISR-T011x low, "Looks like an example")
         for v in ("ghp_FAKE" + "x9" * 16, "AKIAFAKE" + "Q7" * 6, "sk-proj-EXAMPLEKEY1234567890abcdefgh"):
             got = t011(f"Use {v} here.\n")
@@ -176,23 +177,23 @@ class ExamplesInWatchtowersRules(unittest.TestCase):
     def test_an_example_backs_up_and_is_backed_up(self):   # replay 1 (b621cf4: an example backed nothing and nothing backed it)
         ex = [f for f in t011("Use ghp_FAKE" + "x9" * 16 + " here.\n")][0]
         ex = dict(ex, where="/w/a.md:2")
-        other = wt.finding("ISR-S002", "gitleaks: secrets in file", "critical", ["ASI03"], "/w/a.md:2", "1 hit(s): github-pat", "f", source="gitleaks")
-        self.assertEqual([f["class"] for f in wt.label_findings([ex, other])], ["corroborated", "corroborated"])
+        other = isr.finding("ISR-S002", "gitleaks: secrets in file", "critical", ["ASI03"], "/w/a.md:2", "1 hit(s): github-pat", "f", source="gitleaks")
+        self.assertEqual([f["class"] for f in isr.label_findings([ex, other])], ["corroborated", "corroborated"])
 
     def test_t011x_is_t011_to_every_table(self):   # guard (new)
         ex = dict(t011("Use ghp_FAKE" + "x9" * 16 + " here.\n")[0], where="/w/a.md:2")
-        real = wt.finding("ISR-T011", "Secret or key in text", "critical", ["AST04"], "/w/a.md:5", "ghp_…", "f")
-        self.assertEqual(wt.kinds_of(ex), {"credential"})
-        self.assertTrue(wt.same_rule(ex, real))
-        self.assertEqual([f["class"] for f in wt.label_findings([ex, real])], ["pattern", "pattern"])   # one rule: no second vote
-        self.assertEqual(wt.vet_verdict(wt.label_findings([ex])), "Do not install")
+        real = isr.finding("ISR-T011", "Secret or key in text", "critical", ["AST04"], "/w/a.md:5", "ghp_…", "f")
+        self.assertEqual(isr.kinds_of(ex), {"credential"})
+        self.assertTrue(isr.same_rule(ex, real))
+        self.assertEqual([f["class"] for f in isr.label_findings([ex, real])], ["pattern", "pattern"])   # one rule: no second vote
+        self.assertEqual(isr.vet_verdict(isr.label_findings([ex])), "Do not install")
 
     def test_a_placeholder_never_raises_t011_itself(self):   # guard: the pre-batch test_placeholder_keys_ignored's line
         for k in ("sk-ant-api03-your-key-here-xxxxxxxxxxxxxxxx", "ghp_" + "a" * 36, "sk-proj-EXAMPLEKEY1234567890abcdefgh"):
             self.assertEqual({f["rule"] for f in t011(f"key={k}")}, {"ISR-T011x"}, k)
 
     def test_nothing_is_dropped_on_a_reference(self):   # guard: a $VAR is noted, never left out (owner decision: may be dropped; kept, safe)
-        self.assertEqual(wt.secret_kind("${API_TOKEN}"), ("example", "an environment variable name"))
+        self.assertEqual(isr.secret_kind("${API_TOKEN}"), ("example", "an environment variable name"))
 
 
 # ---------------------------------------------------------------- 3: key structures before any size
@@ -202,7 +203,7 @@ class KeyStructures(unittest.TestCase):
             block = pem("EC ", raw)
             self.assertLess(len(base64.b64encode(raw).rstrip(b"=")), 64, name)
             self.assertEqual([(f["rule"], f["severity"]) for f in t011("Key:\n" + block)], [("ISR-T011", "critical")], name)
-            self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real", name)
+            self.assertEqual(isr.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real", name)
 
     def test_openssl_reads_the_p224_key(self):   # guard: the replay's key is a valid key (when openssl is here to say)
         exe = shutil.which("openssl")
@@ -227,12 +228,12 @@ class KeyStructures(unittest.TestCase):
         for raw, want in ((sec1(P224_N, P224_OID, 28), "sec1"), (sec1(P160_N, P160_OID, 21), "sec1"),
                           (sec1(P224_N, P256_OID, 32, point), "sec1"), (rsa_der(), "pkcs1"), (p8, "pkcs8"), (ed25519_pkcs8(), "pkcs8"),
                           (enc8, "encrypted-pkcs8"), (dsa, "dsa"), (b"\x30\x03\x02\x01", None), (r(64), None)):
-            self.assertEqual(wt.der_key_structure(raw), want, raw[:8].hex())
+            self.assertEqual(isr.der_key_structure(raw), want, raw[:8].hex())
 
     def test_short_or_unreadable_blocks_stay_real(self):   # guard (new: b621cf4 called short ones examples)
         for block in (pem("", secrets.token_bytes(16)), pem("", b"\x99" + secrets.token_bytes(40)),
                       "-----BEGIN PRIVATE KEY-----\nyour-key-here\n-----END PRIVATE KEY-----\n"):
-            self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real", block[:60])
+            self.assertEqual(isr.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real", block[:60])
 
     def test_a_long_body_that_is_no_key_is_still_noted(self):   # guard (new: b621cf4 lowered it): what B5 still says, as a note only
         block = pem("RSA ", public_key_packet(300))   # batch 7a fix round 1: a whole public-key packet
@@ -252,11 +253,11 @@ class ArmorBoundaries(Box):
             block, bits = pgp_secret_block(comment)
             doc = approved_copy(self, "notes.md", "My key:\n\n" + block + "\nKeep it safe.\n")
             kept = doc["files"]["notes.md"]
-            self.assertEqual(doc["masked"], wt.MASK_VERSION)
+            self.assertEqual(doc["masked"], isr.MASK_VERSION)
             for bit in bits:
                 self.assertNotIn(bit, kept, comment)
             self.assertTrue(kept.endswith("-----END PGP PRIVATE KEY BLOCK-----\n\nKeep it safe.\n"), kept[-120:])
-            self.assertEqual(wt.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real", comment)
+            self.assertEqual(isr.secret_kind(block.split("\n")[0], tail=block[block.index("\n"):])[0], "real", comment)
 
     def test_a_label_of_any_length_is_masked(self):   # replay 5 (b621cf4: a 65-character label kept the whole body)
         raw = ed25519_pkcs8()
@@ -267,17 +268,17 @@ class ArmorBoundaries(Box):
         self.assertNotIn(b64, doc["files"]["server.pem"])
         for bit in bits_of(raw):
             self.assertNotIn(bit, doc["files"]["server.pem"])
-            self.assertNotIn(bit, wt.mask_secrets("Key:\n" + block))
+            self.assertNotIn(bit, isr.mask_secrets("Key:\n" + block))
         self.assertEqual([(f["rule"], f["severity"]) for f in t011("Key:\n" + block)], [("ISR-T011", "critical")])
 
     def test_an_end_with_another_label_hides_to_the_end(self):   # guard (new)
         raw = rsa_der()
         text = pem("RSA ", raw).replace("-----END RSA PRIVATE KEY-----", "-----END EC PRIVATE KEY-----") + "after\n"
-        out = wt.mask_secrets(text)
+        out = isr.mask_secrets(text)
         self.assertNotIn("after", out)
         for bit in bits_of(raw):
             self.assertNotIn(bit, out)
-        self.assertEqual(wt.secret_kind(text.split("\n")[0], tail=text[text.index("\n"):])[0], "real")
+        self.assertEqual(isr.secret_kind(text.split("\n")[0], tail=text[text.index("\n"):])[0], "real")
 
     def test_a_whole_line_end_is_found_in_each_framing(self):   # guard: what follows a block stays
         raw = ed25519_pkcs8()
@@ -288,33 +289,33 @@ class ArmorBoundaries(Box):
                      json.dumps({"key": pem("", raw), "after": "visible"}),
                      code,
                      'K = """-----BEGIN PRIVATE KEY-----\n' + b + '\n-----END PRIVATE KEY-----"""\nafter = 1\n'):
-            out = wt.mask_secrets(text)
+            out = isr.mask_secrets(text)
             self.assertNotIn(b[:24], out, text[:40])
             # batch 7d (A): code literals aren't a JSON document, so their END is unsure and what follows is hidden (was:
             # assertIn("after", out) for every framing)
             (self.assertNotIn if text is code else self.assertIn)("after", out, text[:40])
-            self.assertEqual(wt.mask_secrets(out), out)
+            self.assertEqual(isr.mask_secrets(out), out)
 
     def test_a_header_line_never_ends_a_block_escaped_either(self):   # guard (new)
         block, bits = pgp_secret_block("Comment: -----END PGP PRIVATE KEY BLOCK-----")
-        out = wt.mask_secrets(json.dumps({"k": block}))
+        out = isr.mask_secrets(json.dumps({"k": block}))
         for bit in bits:
             self.assertNotIn(bit, out)
 
     def test_many_begin_and_end_lines_stay_linear(self):   # guard (new)
         t = time.perf_counter()
-        wt.mask_secrets("-----BEGIN " + "X" * 50_000 + " PRIVATE KEY-----\n" + "-----END PRIVATE KEY-----\n" * 4000)
-        wt.mask_secrets("-----BEGIN PRIVATE KEY-----\n-----END PRIVATE KEY-----\n" * 4000)
-        wt.mask_secrets(("-----BEGIN A PRIVATE KEY-----\nComment: -----END A PRIVATE KEY-----\n") * 4000)
+        isr.mask_secrets("-----BEGIN " + "X" * 50_000 + " PRIVATE KEY-----\n" + "-----END PRIVATE KEY-----\n" * 4000)
+        isr.mask_secrets("-----BEGIN PRIVATE KEY-----\n-----END PRIVATE KEY-----\n" * 4000)
+        isr.mask_secrets(("-----BEGIN A PRIVATE KEY-----\nComment: -----END A PRIVATE KEY-----\n") * 4000)
         self.assertLess(time.perf_counter() - t, 3.0)
 
 
 # ---------------------------------------------------------------- 6, 7: linear time
-CHILD_BACKSLASH = ("import sys, time\nsys.path.insert(0, {isr_dir!r})\nimport isr as wt\nrules = wt.load_rules()\n"
+CHILD_BACKSLASH = ("import sys, time\nsys.path.insert(0, {isr_dir!r})\nimport isr\nrules = isr.load_rules()\n"
                    "text = ('-----BEGIN PRIVATE KEY-----\\n' + '\\\\' * 16000 + '\\n-----END PRIVATE KEY-----\\n') * 16\n"
-                   "assert len(text) > 256000\nt = time.perf_counter()\nfs = wt.scan_text(text, '/s/SKILL.md', rules)\n"
+                   "assert len(text) > 256000\nt = time.perf_counter()\nfs = isr.scan_text(text, '/s/SKILL.md', rules)\n"
                    "print(len([f for f in fs if f['rule'] == 'ISR-T011']), time.perf_counter() - t)\n")
-CHILD_HITS = ("import os, sys, time, secrets, string\nsys.path.insert(0, {isr_dir!r})\nimport isr as wt\n"
+CHILD_HITS = ("import os, sys, time, secrets, string\nsys.path.insert(0, {isr_dir!r})\nimport isr\n"
               "p = sys.argv[1]\nalnum = string.ascii_letters + string.digits\nlines, leaks = [], []\n"
               "for i in range(16000):\n"
               "    s = ''.join(secrets.choice(alnum) for _ in range(41))\n"
@@ -322,20 +323,20 @@ CHILD_HITS = ("import os, sys, time, secrets, string\nsys.path.insert(0, {isr_di
               "    first = i == 0\n"
               "    leaks.append({{'File': p, 'StartLine': i + 1, 'EndLine': i + 1, 'StartColumn': 1 if first else 2,\n"
               "                  'EndColumn': len(m) if first else len(m) + 1, 'Match': 'k%05d=REDACTED' % i, 'Secret': 'REDACTED',\n"
-              "                  'RuleID': 'generic-api-key', 'Entropy': wt.shannon_entropy(s)}})\n"
+              "                  'RuleID': 'generic-api-key', 'Entropy': isr.shannon_entropy(s)}})\n"
               "open(p, 'w').write('\\n'.join(lines) + '\\n')\nsince = os.stat(p).st_ctime_ns + 1\n"
               "assert os.path.getsize(p) > 780000\ndatas = {{}}\nt = time.perf_counter()\n"
-              "out = [wt.gitleaks_example(l, datas, since) for l in leaks]\n"
+              "out = [isr.gitleaks_example(l, datas, since) for l in leaks]\n"
               "print(sum(1 for x in out if x == ''), time.perf_counter() - t)\n")
-CHILD_ONE_LINE = ("import sys, time\nsys.path.insert(0, {isr_dir!r})\nimport isr as wt\n"
+CHILD_ONE_LINE = ("import sys, time\nsys.path.insert(0, {isr_dir!r})\nimport isr\n"
                   "hx = 'ab12' * 16\nline = ' '.join('sha256:' + hx for _ in range(1380))\ndata = (line + '\\n').encode()\n"
-                  "assert len(data) < wt.GITLEAKS_FRAGMENT\nbuf = wt.FileBytes(data)\nt = time.perf_counter()\nn = 0\n"
+                  "assert len(data) < isr.GITLEAKS_FRAGMENT\nbuf = isr.FileBytes(data)\nt = time.perf_counter()\nn = 0\n"
                   "for i in range(1380):\n"
                   "    s = i * 72 + 7\n"
                   "    lk = {{'StartLine': 1, 'EndLine': 1, 'StartColumn': s + 1, 'EndColumn': s + 64, 'Match': 'REDACTED',\n"
-                  "          'Entropy': wt.shannon_entropy(hx)}}\n"
-                  "    got = wt.gitleaks_hit(lk, buf)\n"
-                  "    n += got is not None and wt.secret_kind(got[0], line=got[1], at=got[2])[1] == \"a file's checksum\"\n"
+                  "          'Entropy': isr.shannon_entropy(hx)}}\n"
+                  "    got = isr.gitleaks_hit(lk, buf)\n"
+                  "    n += got is not None and isr.secret_kind(got[0], line=got[1], at=got[2])[1] == \"a file's checksum\"\n"
                   "print(n, time.perf_counter() - t)\n")
 
 
@@ -367,22 +368,22 @@ class LinearTime(unittest.TestCase):
 
 class EscapedBreaks(unittest.TestCase):
     def test_runs_are_read_once_and_as_before(self):   # guard (new)
-        self.assertEqual(list(wt.split_escaped_breaks("a\\nb\\\\nc\\\\d\\te\nf")), ["a", "b", "c\\\\d", "e", "f"])
+        self.assertEqual(list(isr.split_escaped_breaks("a\\nb\\\\nc\\\\d\\te\nf")), ["a", "b", "c\\\\d", "e", "f"])
         raw = ed25519_pkcs8()
         text = json.dumps({"k": pem("", raw)})
         i = text.index("-----BEGIN")
-        self.assertEqual(wt.secret_kind(text[i:i + 27], tail=text[i + 27:])[0], "real")
+        self.assertEqual(isr.secret_kind(text[i:i + 27], tail=text[i + 27:])[0], "real")
         junk = base64.b64encode(public_key_packet(120)).decode()   # batch 7a fix round 1: a whole public-key packet
         text = json.dumps({"k": "-----BEGIN PRIVATE KEY-----\n" + junk + "\n-----END PRIVATE KEY-----\n"})
         i = text.index("-----BEGIN")
-        self.assertEqual(wt.secret_kind(text[i:i + 27], tail=text[i + 27:])[0], "real")   # batch 7d (B): was "example"
+        self.assertEqual(isr.secret_kind(text[i:i + 27], tail=text[i + 27:])[0], "real")   # batch 7d (B): was "example"
         # batch 7d: a FAKE-text body is the example, read in its whole JSON text as scanning reads it (with `tail` alone the
         # text starts at the BEGIN, no JSON document, so since A it has no sure END and is real)
         fake = base64.b64encode(fake_text_body(120)).decode()
         text = json.dumps({"k": "-----BEGIN PRIVATE KEY-----\n" + fake + "\n-----END PRIVATE KEY-----\n"})
         i = text.index("-----BEGIN")
-        self.assertEqual(wt.secret_kind(text[i:i + 27], block=(text, i, True))[0], "example")
-        self.assertEqual(wt.secret_kind(text[i:i + 27], tail=text[i + 27:])[0], "real")
+        self.assertEqual(isr.secret_kind(text[i:i + 27], block=(text, i, True))[0], "example")
+        self.assertEqual(isr.secret_kind(text[i:i + 27], tail=text[i + 27:])[0], "real")
 
 
 if __name__ == "__main__":

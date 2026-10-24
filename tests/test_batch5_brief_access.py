@@ -9,7 +9,8 @@ Tests marked "replay" fail on 77dedd1 on their assertion (measured with 77dedd1'
 import datetime as dt, html, json, os, re, shutil, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import ROOT, wt
+from test_boxes import ROOT
+import isr  # noqa: E402
 from test_batch5_access_map import _Access
 
 TODAY = dt.datetime.now(dt.timezone.utc)
@@ -30,7 +31,7 @@ def rss(items):
 
 class _Brief(_Access):
     def brief(self, items, kev=(), notes=None):
-        cfg = json.load(open(wt.FEEDS_PATH))
+        cfg = json.load(open(isr.FEEDS_PATH))
         off = {cfg["feeds"][1]["url"]: rss(items),   # a feed whose every item is relevant
                cfg["kev_url"]: json.dumps({"vulnerabilities": [dict({"dateAdded": TODAY.date().isoformat(), "dueDate": "2026-11-01",
                                                                       "vulnerabilityName": "x", "knownRansomwareCampaignUse": "Unknown"}, **k) for k in kev]})}
@@ -43,7 +44,7 @@ class _Brief(_Access):
         code, out, err = self.run_cmd(*argv)
         self.assertEqual(code, 0, err)
         r = json.loads(out)
-        return r, out, open(r["brief"]).read(), open(wt.state_path("last_brief.json")).read()
+        return r, out, open(r["brief"]).read(), open(isr.state_path("last_brief.json")).read()
 
     def mapped(self):
         self.build()
@@ -65,7 +66,7 @@ class WhatAStoryTouchesHere(_Brief):
         r, out, page, saved = self.brief([(HOSTILE, BODY)])
         here = r["top_stories"][0]["here"]
         names = {x for b in m["bots"] for x in [b["name"]] + b["connectors"]} | set(m["shared"]["browser"]["sensitive"])
-        allowed = TEMPLATE_WORDS | {w for e in wt.access_vocab() for w in re.findall(r"[A-Za-z0-9']+", e["label"])}
+        allowed = TEMPLATE_WORDS | {w for e in isr.access_vocab() for w in re.findall(r"[A-Za-z0-9']+", e["label"])}
         allowed |= {w for n in names for w in re.findall(r"[A-Za-z0-9']+", n)}
         self.assertLessEqual(set(re.findall(r"[A-Za-z0-9']+", here)), allowed | {"1", "com", "mail", "google"})
         for bad in ("ignore", "previous", "curl", "evil", "flaw", "attackers", "steal"):
@@ -121,9 +122,9 @@ class RankingAndKev(_Brief):
 
     def test_the_boost_is_capped_and_dampen_still_applies(self):   # guard
         for text in ("Gmail and Slack and GitHub tokens stolen", "Survey finds Gmail tokens stolen", "Gmail"):
-            self.assertEqual(wt.story_score(text, "research", touches=True) - wt.story_score(text, "research"), wt.ACCESS_BOOST)
-        self.assertEqual(wt.ACCESS_BOOST, 3)
-        self.assertLess(wt.story_score("Survey finds Gmail tokens stolen", "research", touches=True), wt.story_score("Gmail tokens stolen", "research"))
+            self.assertEqual(isr.story_score(text, "research", touches=True) - isr.story_score(text, "research"), isr.ACCESS_BOOST)
+        self.assertEqual(isr.ACCESS_BOOST, 3)
+        self.assertLess(isr.story_score("Survey finds Gmail tokens stolen", "research", touches=True), isr.story_score("Gmail tokens stolen", "research"))
 
     def test_the_boost_never_lets_a_story_in(self):   # guard: only stories that scored in already are ranked by it
         self.mapped()
@@ -142,9 +143,9 @@ class RankingAndKev(_Brief):
 class OlderBoxes(_Brief):
     def test_without_an_access_map_the_brief_is_as_before(self):   # guard
         r, out, page, saved = self.brief([(HOSTILE, BODY)])
-        self.assertIsNone(wt.load_access_map())
+        self.assertIsNone(isr.load_access_map())
         s = r["top_stories"][0]
-        old = wt.means_here(json.loads(saved)["research"][0]["category"], wt.account_context()).split(". ")[0].rstrip(".") + "."
+        old = isr.means_here(json.loads(saved)["research"][0]["category"], isr.account_context()).split(". ")[0].rstrip(".") + "."
         self.assertNotIn("here", s)   # PR B, Codex round 1 (6): no `here` key at all (was: s["here"] == old)
         self.assertIn("<b>Why you care:</b> " + html.escape(old) + " <b>Do:</b> ", page)
         self.assertNotIn("<b>Here:</b>", page)
@@ -163,23 +164,23 @@ class Vocabulary(_Brief):
     def test_the_vocabulary_ships_with_the_release(self):   # guard
         man = open(os.path.join(ROOT, "MANIFEST.sha256")).read()
         self.assertIn("  rules/access_vocab.json\n", man)
-        self.assertEqual(wt.access_vocab_problem(), "")
-        self.assertGreaterEqual(len(wt.access_vocab()), 25)
-        self.assertEqual(wt.access_vocab()[-1]["id"], "mcp")   # generic entries come last
+        self.assertEqual(isr.access_vocab_problem(), "")
+        self.assertGreaterEqual(len(isr.access_vocab()), 25)
+        self.assertEqual(isr.access_vocab()[-1]["id"], "mcp")   # generic entries come last
 
     def test_a_vocabulary_not_from_the_release_is_ignored(self):   # guard
         self.mapped()
-        wt._ACCESS_VOCAB_CACHE.clear()
-        self.addCleanup(wt._ACCESS_VOCAB_CACHE.clear)
-        with mock.patch.object(wt, "release_digest", lambda rel: "0" * 64 if rel == wt.ACCESS_VOCAB_REL else None):
-            self.assertIn("MANIFEST.sha256", wt.access_vocab_problem())
-            self.assertEqual(wt.access_products(HOSTILE), [])
+        isr._ACCESS_VOCAB_CACHE.clear()
+        self.addCleanup(isr._ACCESS_VOCAB_CACHE.clear)
+        with mock.patch.object(isr, "release_digest", lambda rel: "0" * 64 if rel == isr.ACCESS_VOCAB_REL else None):
+            self.assertIn("MANIFEST.sha256", isr.access_vocab_problem())
+            self.assertEqual(isr.access_products(HOSTILE), [])
 
     def test_common_words_are_not_products(self):   # guard: few false matches
         for title in ("Linear regression model leaks training data", "Mouse cursor tricks in phishing pages", "Agents teams up with attackers",
                       "Supply chain attack hits npm"):
-            self.assertEqual([e["id"] for e in wt.access_products(title)], [], title)
-        self.assertEqual([e["id"] for e in wt.access_products("Cursor IDE flaw lets MCP servers run code")], ["cursor", "mcp"])
+            self.assertEqual([e["id"] for e in isr.access_products(title)], [], title)
+        self.assertEqual([e["id"] for e in isr.access_products("Cursor IDE flaw lets MCP servers run code")], ["cursor", "mcp"])
 
 
 if __name__ == "__main__":

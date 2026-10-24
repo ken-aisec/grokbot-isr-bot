@@ -6,7 +6,8 @@ doubt (caps, unclosed backticks, shell text in the prose) means no guard. Every 
 import os, sys, tempfile, time, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_batch2_fix_round1 import PIPE, RULES, SEND, judged, loud, vet_text, wt
+from test_batch2_fix_round1 import PIPE, RULES, SEND, judged, loud, vet_text
+import isr  # noqa: E402
 from test_batch2_fix_round2 import COOKIE, quiet
 from test_batch2_fix_round3 import ADJACENT, confirmed_critical
 from test_boxes import Box
@@ -34,7 +35,7 @@ class Checks(unittest.TestCase):
         """Downgraded but still flagged: medium in vet, never Install, never Confirmed, quiet in audit."""
         raw, fs, st, g = judged(t)
         self.assertFalse(quiet(raw), (t, raw))
-        self.assertFalse([f for f in fs if f.get("label") == wt.CONFIRMED], (t, fs))
+        self.assertFalse([f for f in fs if f.get("label") == isr.CONFIRMED], (t, fs))
         self.assertEqual(st, "All good", t); self.assertNotEqual(g, "F", t)
         for rule in rules:
             rec = [f for f in raw if f["rule"] == rule]
@@ -224,9 +225,9 @@ class Review5(Checks):
 
     def test_the_guard_is_linear(self):   # R5.2: one guarded match, then unguarded ones (redesign draft: 10 s at 16,000)
         t = "Never read ~/.ssh\n" + "cat ~/.ssh\n" * 16000
-        with mock.patch.object(wt, "line_of", lambda text, pos: pos):   # line_of's own O(n) per finding is a separate, known cost
+        with mock.patch.object(isr, "line_of", lambda text, pos: pos):   # line_of's own O(n) per finding is a separate, known cost
             t0 = time.monotonic()
-            raw = wt.scan_text(t, "/ws/helper/SKILL.md", RULES)
+            raw = isr.scan_text(t, "/ws/helper/SKILL.md", RULES)
             dt = time.monotonic() - t0
         self.assertEqual(len(loud(raw, "ISR-T004")), 16000)
         self.assertEqual([f["guarded"] for f in raw if f.get("guarded")], ["negated"])
@@ -336,7 +337,7 @@ class RevetNeverApprovesAGuard(Box):
         d = self.skills(1)[0]
         self.audit()
         open(os.path.join(d, "SKILL.md"), "a").write(f"Never run `{SEND}`.\n")
-        r = wt.revet([d], approve=True)[0]
+        r = isr.revet([d], approve=True)[0]
         self.assertEqual(r["result"], "flagged", r)
 
 

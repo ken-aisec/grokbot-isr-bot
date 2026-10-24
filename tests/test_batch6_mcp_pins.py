@@ -8,7 +8,8 @@ Tests marked "replay" fail on 1aed58a on their assertion (measured with 1aed58a'
 "guard" ones keep what must not change. The box is a temp folder; every package name is an example."""
 import json, os, sys, time, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt
+from test_boxes import Box
+import isr  # noqa: E402
 
 
 def server(command, *args):
@@ -63,7 +64,7 @@ class Pins(Box):
     def test_each_server_is_reported_at_its_own_line(self):   # the new parser (1aed58a has none)
         doc = {"mcpServers": {"a": {"command": "node", "args": ["x.js"]}, "b": {"command": "npx", "args": ["pkg"]}}}
         text = json.dumps(doc, indent=2)
-        self.assertEqual(wt.mcp_unpinned(text), [(text[:text.index('"npx"')].count("\n") + 1, "npx pkg (no version)")])
+        self.assertEqual(isr.mcp_unpinned(text), [(text[:text.index('"npx"')].count("\n") + 1, "npx pkg (no version)")])
 
 
 class Scaling(unittest.TestCase):
@@ -74,7 +75,7 @@ class Scaling(unittest.TestCase):
                  '"command": "npx", "args": ["' + "a==1." * 40000 + '!"]')
         for t in texts:
             s = time.monotonic()
-            wt.mcp_unpinned(t)
+            isr.mcp_unpinned(t)
             self.assertLess(time.monotonic() - s, 5.0)
 
 

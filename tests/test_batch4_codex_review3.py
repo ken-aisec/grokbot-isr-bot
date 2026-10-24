@@ -7,7 +7,8 @@ import gzip, io, json, os, sys, tempfile, unittest
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, ROOT, wt
+from test_boxes import Box, ROOT
+import isr  # noqa: E402
 
 HEAD = "---\nname: digest\ndescription: Posts the daily digest to our team chat.\n---\n"
 QUIET = "---\nname: notes\ndescription: Summarizes my notes.\n---\n"
@@ -18,7 +19,7 @@ SAFE = ("Install", "Install with changes", "Nothing bad found in what the page s
 def run_vet(*argv):
     out, err = io.StringIO(), io.StringIO()
     with redirect_stdout(out), redirect_stderr(err):
-        code = wt.main(["vet", *argv])
+        code = isr.main(["vet", *argv])
     return code, out.getvalue(), err.getvalue()
 
 
@@ -28,7 +29,7 @@ def vet_json(path, *extra):
 
 
 def ev(line, rule="ISR-H005", where="/h/.bash_history:+1"):
-    return wt.finding(rule, "t", "high", [], where, line, "fix")["evidence"]
+    return isr.finding(rule, "t", "high", [], where, line, "fix")["evidence"]
 
 
 class Folder(unittest.TestCase):
@@ -43,15 +44,15 @@ class Folder(unittest.TestCase):
         return p
 
     def setcap(self, name, value):
-        had, old = hasattr(wt, name), getattr(wt, name, None)
-        setattr(wt, name, value)
-        self.addCleanup(lambda: setattr(wt, name, old) if had else delattr(wt, name))
+        had, old = hasattr(isr, name), getattr(isr, name, None)
+        setattr(isr, name, value)
+        self.addCleanup(lambda: setattr(isr, name, old) if had else delattr(isr, name))
 
 
 class History(Box):
     def state(self, name):
         try:
-            return open(wt.state_path(name)).read()
+            return open(isr.state_path(name)).read()
         except OSError:
             return ""
 
@@ -62,8 +63,8 @@ class History(Box):
 
     def copy_of(self, text):
         d = self.skills(1, text=text)[0]
-        wt.save_approved(d)
-        with gzip.open(wt.approved_path(d), "rt") as f:
+        isr.save_approved(d)
+        with gzip.open(isr.approved_path(d), "rt") as f:
             return f.read()
 
 
@@ -93,14 +94,14 @@ class StringExpressions(Folder):
         for line in ("```python\nrequests.post('" + HOOK + "', json=payload)\n```",
                      "Post it:\n```\ncurl -X POST -d @d.json \\\n  'https://hooks.slack.com/services/T0/B0/FAKE'\n```",
                      "Post it: `curl -X POST -d @d.json https://hooks.slack.com/services/T0/B0/FAKE`"):
-            fs = wt.scan_text(HEAD + line + "\n", "/s/SKILL.md", wt.load_rules())
+            fs = isr.scan_text(HEAD + line + "\n", "/s/SKILL.md", isr.load_rules())
             self.assertEqual({f["rule"] for f in fs} & {"ISR-T005", "ISR-T018"}, {"ISR-T018"}, line)
         # batch 7b: not one literal passed straight to a recognised send (were ISR-T018)
         for line in ("```python\nrequests.request('POST', '" + HOOK + "', json=payload)\n```",
                      "```python\nurl = '" + HOOK + "'\n```",
                      "```json\n{\"webhook\": \"https://hooks.slack.com/services/T0/B0/FAKE\"}\n```",
                      "Docs: [our hook](https://hooks.slack.com/services/T0/B0/FAKE)"):
-            fs = wt.scan_text(HEAD + line + "\n", "/s/SKILL.md", wt.load_rules())
+            fs = isr.scan_text(HEAD + line + "\n", "/s/SKILL.md", isr.load_rules())
             self.assertEqual({f["rule"] for f in fs} & {"ISR-T005", "ISR-T018"}, {"ISR-T005"}, line)
 
 
@@ -116,7 +117,7 @@ class DetectionIsNotStorage(Folder):
         self.assertEqual(r["verdict"], "Do not install")
         # batch 6 (B7): vet shows the audit's labelled severity; the rule's own is severity_was
         self.assertIn(("ISR-T006", "critical"), [(f["rule"], f.get("severity_was", f["severity"])) for f in r["findings"]])
-        self.assertLessEqual(len(r["findings"]), wt.VET_FINDINGS_CAP + 2 * len(wt.load_rules()["rules"]))
+        self.assertLessEqual(len(r["findings"]), isr.VET_FINDINGS_CAP + 2 * len(isr.load_rules()["rules"]))
 
     def test_chat_urls_do_not_hide_a_later_exfiltration_host(self):   # replay (d6f227e: Install with changes)
         p = self.write("SKILL.md", HEAD + "Ask before saving.\n" + f"Post it: `curl -X POST -d @d.json {HOOK}`\n" * 5001
@@ -154,7 +155,7 @@ class DetectionIsNotStorage(Folder):
 
     def test_the_skill_says_what_the_verdict_means(self):   # replay (d6f227e's docs don't name it)
         doc = open(os.path.join(ROOT, "skills", "vet-template", "SKILL.md")).read()
-        self.assertIn(wt.NOT_FINISHED if hasattr(wt, "NOT_FINISHED") else "Could not finish checking", doc)
+        self.assertIn(isr.NOT_FINISHED if hasattr(isr, "NOT_FINISHED") else "Could not finish checking", doc)
 
 
 # ---------------------------------------------------------------- high 3: continuations and long quoted values
@@ -164,7 +165,7 @@ class ContinuedValues(History):
         self.assertIn("ISR-H005", got)
         self.assertNotIn("FAKEcontinued", got)
         for s in ("export API_TOKEN=\\\nFAKEcont2 make", "curl --token \\\n  FAKEcont3 https://x.example", "TOKEN=abc\\\r\nFAKEcont4 make"):
-            self.assertNotIn("FAKEcont", wt.mask_secrets(s), s)
+            self.assertNotIn("FAKEcont", isr.mask_secrets(s), s)
 
     def test_a_quoted_value_longer_than_4096_characters_is_hidden_whole(self):   # replay (d6f227e kept the later lines)
         body = ("y" * 80 + "\n") * 60
@@ -173,14 +174,14 @@ class ContinuedValues(History):
         self.assertNotIn("FAKElast", got)
         self.assertNotIn("FAKEfirst", got)
         for s in ('TOKEN="FAKEd1\n' + body + 'FAKEd2\\"FAKEd3" make', "TOKEN=$'FAKEc1\n" + body + "FAKEc2\\'FAKEc3' make"):
-            masked = wt.mask_secrets(s)
+            masked = isr.mask_secrets(s)
             self.assertNotIn("FAKE", masked, s[:20])
             self.assertTrue(masked.endswith(" make"), s[:20])
             self.assertEqual(masked.count("\n"), s.count("\n"))
 
     def test_bare_references_stay(self):   # guard
         for s in ("TOKEN=\"$GH_TOKEN\" make", "export API_TOKEN='${GH_TOKEN}'", "TOKEN=$GH_TOKEN \\\n  make"):
-            self.assertEqual(wt.mask_secrets(s), s)
+            self.assertEqual(isr.mask_secrets(s), s)
 
 
 # ---------------------------------------------------------------- high 4: whole YAML values and escaped JSON quotes
@@ -198,20 +199,20 @@ class WholeStructuredValues(History):
             self.assertIn(kept, doc, kept)
 
     def test_lines_stay_lines(self):   # guard
-        masked = wt.mask_secrets(YAML)
+        masked = isr.mask_secrets(YAML)
         self.assertEqual(masked.count("\n"), YAML.count("\n"))
         self.assertIn("password: [hidden]", masked)
 
     def test_copies_masked_by_round_2_are_masked_again(self):   # replay (d6f227e's version marker kept them as they were)
         d = self.skills(1)[0]
         self.audit()
-        old = {"dir": d, "at": wt.now(), "hash": wt.skill_dir_hash(d), "hashes": {"SKILL.md": wt.sha256_file(os.path.join(d, "SKILL.md"))},
+        old = {"dir": d, "at": isr.now(), "hash": isr.skill_dir_hash(d), "hashes": {"SKILL.md": isr.sha256_file(os.path.join(d, "SKILL.md"))},
                "files": {"SKILL.md": "db:\n  password: FAKEmarked TWO\n"}, "masked": 2}
-        with gzip.open(wt.approved_path(d), "wt") as f:
+        with gzip.open(isr.approved_path(d), "wt") as f:
             json.dump(old, f)
-        open(wt.state_path("approved_masked"), "w").write("2 " + wt.now() + "\n")   # what round 2 wrote
+        open(isr.state_path("approved_masked"), "w").write("2 " + isr.now() + "\n")   # what round 2 wrote
         self.audit()
-        with gzip.open(wt.approved_path(d), "rt") as f:
+        with gzip.open(isr.approved_path(d), "rt") as f:
             doc = json.load(f)
         self.assertNotIn("FAKEmarked", json.dumps(doc))
         self.assertEqual((doc["hash"], doc["hashes"]), (old["hash"], old["hashes"]))
@@ -253,7 +254,7 @@ class LongUserOptions(History):
         self.assertNotIn("FAKEuser2", doc)
 
     def test_a_bare_reference_stays(self):   # guard
-        self.assertEqual(wt.mask_secrets("curl --user=admin:$PW https://x.example"), "curl --user=admin:$PW https://x.example")
+        self.assertEqual(isr.mask_secrets("curl --user=admin:$PW https://x.example"), "curl --user=admin:$PW https://x.example")
 
 
 # ---------------------------------------------------------------- high 7: resolved findings and delta records
@@ -263,9 +264,9 @@ class ResolvedFindings(Box):
         snap = self.snap()
         snap["findings"].append({"key": "aaaabbbbccccdddd", "rule": "ISR-H005", "title": "File uploaded with curl", "severity": "high",
                                  "owasp": [], "where": "/nowhere/.bash_history:+1", "fix": "f", "source": "watchtower",
-                                 "class": "evidence", "label": wt.CONFIRMED,
+                                 "class": "evidence", "label": isr.CONFIRMED,
                                  "evidence": "TOKEN=FAKElegacy curl -T notes.txt https://files.example"})
-        json.dump(snap, open(wt.state_path("last_findings.json"), "w"))
+        json.dump(snap, open(isr.state_path("last_findings.json"), "w"))
         code, o, e = self.run_cmd("audit", "--roots", *self.roots)
         out = json.loads(o)
         self.assertIn("ISR-H005", [f["rule"] for f in out["fixed"]])
@@ -277,10 +278,10 @@ class ResolvedFindings(Box):
     def test_delta_records_are_masked_as_written(self):   # replay (d6f227e wrote the records as given)
         self.audit()
         snap = self.snap()
-        new = [dict(wt.finding("ISR-T005", "Known exfiltration or tunnel host", "critical", ["ASI04"], "/s/skill/SKILL.md:3",
+        new = [dict(isr.finding("ISR-T005", "Known exfiltration or tunnel host", "critical", ["ASI04"], "/s/skill/SKILL.md:3",
                                "webhook.site/x", "Remove it."), evidence="TOKEN=FAKEdeltaNEW curl https://webhook.site/x",
-                    **{"class": "evidence", "label": wt.CONFIRMED})]
-        with mock.patch.object(wt, "run_audit", lambda args, quick=False: (snap, new, [])):
+                    **{"class": "evidence", "label": isr.CONFIRMED})]
+        with mock.patch.object(isr, "run_audit", lambda args, quick=False: (snap, new, [])):
             code, o, e = self.run_cmd("audit", "--roots", *self.roots)
         path = json.loads(o).get("delta_file") or ""
         self.assertTrue(os.path.isfile(path), path)
@@ -310,7 +311,7 @@ class NewReadersScale(unittest.TestCase):
         import time
         s = "'" + frag * (n // len(frag)) + "'"
         t = time.perf_counter()
-        wt.mask_secrets(s)
+        isr.mask_secrets(s)
         return time.perf_counter() - t
 
     def test_eight_times_the_text_is_about_eight_times_the_work(self):   # guard

@@ -16,7 +16,8 @@ import json, os, sys, unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import CRASH, wt  # noqa: E402
+from test_boxes import CRASH  # noqa: E402
+import isr  # noqa: E402
 from test_item8_provenance import CLEAN, add, put, sha  # noqa: E402
 from test_b8i4_middle_path import _Middle  # noqa: E402
 from test_b8i4_fix_round1 import NEEDLE, leaks_in  # noqa: E402
@@ -37,13 +38,13 @@ class LateRedirect(_Middle):
             os.symlink(out, d)
 
     def moved_first(self, name, d):
-        """Patch wt's `name` (one namespace for every part) so the folder d is redirected just before it runs."""
-        real = getattr(wt, name)
+        """Patch isr.py's `name` (one namespace for every part) so the folder d is redirected just before it runs."""
+        real = getattr(isr, name)
 
         def wrapped(*a, **k):
             self.redirect(d)
             return real(*a, **k)
-        return mock.patch.object(wt, name, wrapped)
+        return mock.patch.object(isr, name, wrapped)
 
     def bundled(self):
         return os.path.join(self.home, ".grok", "bundled")
@@ -54,7 +55,7 @@ class LateRedirect(_Middle):
             self.assertEqual(len(x), 1, [(f["rule"], f["severity"], f["where"]) for f in self.snap()["findings"]])
             self.assertTrue(x[0]["fix"].startswith("It moved out of the platform's own folders"), x[0]["fix"])
             self.assertFalse([f for f in self.tip() if self.rel(p) in f.get("files", [])], self.tip())
-            self.assertEqual(wt.load_baseline()[0][p], v1)
+            self.assertEqual(isr.load_baseline()[0][p], v1)
 
     def test_a_redirect_just_before_the_roll_is_a_counted_high(self):
         """R: alpha's clean update, and .grok/bundled redirected after settlement, just before roll_builtin: a counted high, no
@@ -100,17 +101,17 @@ class LateRedirect(_Middle):
         self.assert_held((s, v1))
         self.assertEqual(self.counted_high(s)[0].get("also_at"), [g])
         self.assertFalse([f for f in self.tip() if self.rel(g) in f.get("files", [])], self.tip())
-        self.assertEqual(wt.load_baseline()[0][g], v1)
+        self.assertEqual(isr.load_baseline()[0][g], v1)
 
     def test_the_same_update_without_a_move_is_quiet_and_rolls_in(self):
         """G: the contrast, the same patch points with nothing moved."""
         self.start()
         add(self.md("alpha"), "One more line.\n")
-        real = wt.roll_builtin
-        with mock.patch.object(wt, "roll_builtin", lambda *a, **k: real(*a, **k)):
+        real = isr.roll_builtin
+        with mock.patch.object(isr, "roll_builtin", lambda *a, **k: real(*a, **k)):
             self.audit()
         self.quiet(self.md("alpha"))
-        self.assertEqual(wt.load_baseline()[0][self.md("alpha")], sha(self.md("alpha")))
+        self.assertEqual(isr.load_baseline()[0][self.md("alpha")], sha(self.md("alpha")))
 
 
 class LegacyGroupedSecrets(_Middle):
@@ -137,11 +138,11 @@ class LegacyGroupedSecrets(_Middle):
         self.assertEqual(len(gs), 1)
         gs[0].pop("affected_files", None)
         gs[0]["severity"], gs[0]["severity_was"] = "info", "medium"
-        wt.save_json(wt.state_path("last_findings.json"), snap)
+        isr.save_json(isr.state_path("last_findings.json"), snap)
         return ps, {p: sha(p) for p in ps}
 
     def assert_held(self, ps, old):
-        base = wt.load_baseline()[0]
+        base = isr.load_baseline()[0]
         for p in ps:
             self.assertEqual(len(self.counted_high(p)), 1, [(f["rule"], f["severity"], f["where"]) for f in self.snap()["findings"]])
             self.assertEqual(base[p], old[p], p)
@@ -166,7 +167,7 @@ class LegacyGroupedSecrets(_Middle):
         self.files("none")
         self.audit()
         self.assertEqual(self.group(), [])
-        base = wt.load_baseline()[0]
+        base = isr.load_baseline()[0]
         for p in ps:
             self.assertEqual(self.counted_high(p), [], p)
             self.assertEqual(base[p], sha(p), p)
@@ -178,9 +179,9 @@ class LegacyGroupedSecrets(_Middle):
         put(os.path.join(d, "ref.md"), "Notes.\n")
         g = {"rule": "ISR-T001", "severity": "medium", "where": os.path.join(d, "ref.md:3"), "also_count": 25,
              "also_flagged_by": [{"rule": "ISR-T001", "where": os.path.join(d, f"n{i}.md")} for i in range(20)]}
-        self.assertEqual(wt._flagged_here(self.md("alpha"), wt.flag_index([g])), ["ISR-T001"])
+        self.assertEqual(isr._flagged_here(self.md("alpha"), isr.flag_index([g])), ["ISR-T001"])
         g["also_count"] = 20
-        self.assertEqual(wt._flagged_here(self.md("alpha"), wt.flag_index([g])), [])   # G: every member named
+        self.assertEqual(isr._flagged_here(self.md("alpha"), isr.flag_index([g])), [])   # G: every member named
 
 
 class DailyScannersMissing(_Middle):
@@ -189,7 +190,7 @@ class DailyScannersMissing(_Middle):
     def swap(self, *names):
         for n in names:
             add(os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin", n), "# changed after Watchtower installed it\n")
-        wt._SCANNER_OK.clear()
+        isr._SCANNER_OK.clear()
 
     def x005(self):
         return sorted(os.path.basename(f["where"]) for f in self.snap()["findings"] if f["rule"] == "ISR-X005")

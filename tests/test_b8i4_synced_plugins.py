@@ -8,7 +8,8 @@ here.
 """
 import os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import wt  # noqa
+import test_boxes  # noqa: E402
+import isr  # noqa: E402
 from test_item8_provenance import CLEAN, put, add  # noqa
 from test_b8i4_middle_path import _Middle  # noqa
 from test_item8_provenance import sha  # noqa: E402
@@ -30,7 +31,7 @@ class SyncedMarketplacePluginNeverQuiet(_Middle):
         self.assertNotEqual(self.daily(), "NO_CHANGES")
         self.audit()
         self.assertIn(p, self.unverified())
-        self.assertNotIn(p, wt.load_baseline()[0])
+        self.assertNotIn(p, isr.load_baseline()[0])
         self.assertFalse(any(self.rel(p) in (t.get("files") or []) for t in self.tip()))
 
     def test_new_file_in_marketplace_plugin_after_update_is_counted(self):
@@ -52,13 +53,13 @@ class SyncedMarketplacePluginNeverQuiet(_Middle):
         p = self.plug()
         put(p, CLEAN.format(n="x"))
         v1 = sha(p)
-        wt.save_baseline(dict(wt.load_baseline()[0], **{p: v1}))
+        isr.save_baseline(dict(isr.load_baseline()[0], **{p: v1}))
         add(p, "Version 2.\n")
         self.assertNotEqual(self.daily(), "NO_CHANGES")
         self.audit()
         self.assertEqual(len(self.counted_high(p)), 1)
         self.assertIn(p, self.unverified())
-        self.assertEqual(wt.load_baseline()[0][p], v1)
+        self.assertEqual(isr.load_baseline()[0][p], v1)
         self.assertFalse(any(self.rel(p) in (t.get("files") or []) for t in self.tip()))
 
 
@@ -76,7 +77,7 @@ class SyncedReleaseListedStaysQuiet(_Middle):
         self.assertEqual(self.daily(), "NO_CHANGES")
         self.quiet(a, b)
         self.audit()
-        self.assertEqual((wt.load_baseline()[0][a], wt.load_baseline()[0][b]), (sha(a), sha(b)))
+        self.assertEqual((isr.load_baseline()[0][a], isr.load_baseline()[0][b]), (sha(a), sha(b)))
 
 
 class ManagedSkillsStayPlatform(_Middle):
@@ -103,7 +104,7 @@ class ManagedSkillsStayPlatform(_Middle):
         s, g = self.pair()
         self.assertEqual(self.daily(), "NO_CHANGES")
         self.audit()
-        self.assertEqual((wt.load_baseline()[0].get(s), wt.load_baseline()[0].get(g)), (sha(s), sha(g)))
+        self.assertEqual((isr.load_baseline()[0].get(s), isr.load_baseline()[0].get(g)), (sha(s), sha(g)))
         add(s, "Version 2.\n"); add(g, "Version 2.\n")
         self.assertEqual(self.daily(), "NO_CHANGES")
         self.quiet(s)

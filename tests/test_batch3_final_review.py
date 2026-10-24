@@ -6,7 +6,8 @@ import json, os, sys, threading, time, unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import wt  # noqa: E402
+import test_boxes  # noqa: E402
+import isr  # noqa: E402
 from test_batch3_scanners import _Scanners  # noqa: E402
 
 FOUND = ('#!/bin/sh\necho \'{"results": [{"check_id": "python.lang.security.sqli", "path": "app.py", "start": {"line": 2}, '
@@ -33,8 +34,8 @@ class SemgrepInCodescan(_Scanners):
 
     def listed(self, body):
         p = self.put("semgrep", body, register=False)
-        self.lock_line("semgrep", wt.scanner_digest(p))                         # the lock lists this very copy
-        wt._SCANNER_LOCK_CACHE.clear()
+        self.lock_line("semgrep", isr.scanner_digest(p))                         # the lock lists this very copy
+        isr._SCANNER_LOCK_CACHE.clear()
         return p
 
     def codescan(self):
@@ -48,14 +49,14 @@ class SemgrepInCodescan(_Scanners):
     def test_a_semgrep_refused_at_launch_is_never_used_and_is_a_high_alert(self):
         log = os.path.join(self.tmp, "evil.log")
         p = self.listed(FOUND)
-        real = wt.tool
+        real = isr.tool
 
         def tool_then_swap(name):                                               # checked, then swapped before it starts
             got = real(name)
             if name == "semgrep":
                 os.replace(script(p + ".new", f"#!/bin/sh\necho evil >> {log}\necho '{{\"results\": []}}'\n"), p)
             return got
-        with mock.patch.object(wt, "tool", tool_then_swap):
+        with mock.patch.object(isr, "tool", tool_then_swap):
             r = self.codescan()
         self.assertFalse(os.path.exists(log))
         self.assertNotIn("found and used", r["engine"])
@@ -68,7 +69,7 @@ class SemgrepInCodescan(_Scanners):
     def test_a_changed_semgrep_is_a_high_alert_not_just_missing(self):
         self.put("semgrep", FOUND, register=False)
         self.lock_line("semgrep")                                               # the lock lists another program
-        wt._SCANNER_LOCK_CACHE.clear()
+        isr._SCANNER_LOCK_CACHE.clear()
         r = self.codescan()
         self.assertIn("semgrep NOT run", r["engine"])
         self.assertTrue(r.get("not_checked_this_run"), r)
@@ -79,7 +80,7 @@ class SemgrepInCodescan(_Scanners):
                      "#!/bin/sh\necho 'Killed' >&2\n",
                      "#!/bin/sh\necho '{\"errors\": []}'\n"):
             with self.subTest(body=body):
-                wt.SCANNER_PROBLEMS.clear()
+                isr.SCANNER_PROBLEMS.clear()
                 with open(self.lock, "w") as f:
                     f.write("# test lock\n")
                 self.listed(body)
@@ -111,14 +112,14 @@ class LaunchDeadline(_Scanners):
     so a 1-second call took as long as the other launch or the copy took."""
 
     def hold_launch(self, seconds):
-        wt._LAUNCH.acquire()
-        t = threading.Timer(seconds, wt._LAUNCH.release)
+        isr._LAUNCH.acquire()
+        t = threading.Timer(seconds, isr._LAUNCH.release)
         t.start()
         self.addCleanup(t.join)
 
     def timed(self, cmd, timeout):
         t0 = time.monotonic()
-        res = wt.run(cmd, timeout)
+        res = isr.run(cmd, timeout)
         return res, time.monotonic() - t0
 
     def test_waiting_for_another_launch_counts_against_a_scanners_timeout(self):
@@ -127,7 +128,7 @@ class LaunchDeadline(_Scanners):
         (code, _, _), took = self.timed([p], 1)
         self.assertEqual(code, 124)
         self.assertLess(took, 2)
-        self.assertNotIn("gitleaks", wt.SCANNER_PROBLEMS)                        # a time out, not a refusal
+        self.assertNotIn("gitleaks", isr.SCANNER_PROBLEMS)                        # a time out, not a refusal
 
     def test_waiting_for_another_launch_counts_against_any_programs_timeout(self):
         self.hold_launch(3)
@@ -144,15 +145,15 @@ class LaunchDeadline(_Scanners):
                 calls.append(1)
                 time.sleep(3)
             return real(fd, n)
-        with mock.patch.object(wt.os, "read", slow):
+        with mock.patch.object(isr.os, "read", slow):
             (code, _, _), took = self.timed([p], 1)
         for t in threading.enumerate():                                         # let the copy given up on finish and close
             if t.name == "watchtower-hash":
                 t.join(10)
         self.assertEqual(code, 124)
         self.assertLess(took, 2)
-        self.assertNotIn("gitleaks", wt.SCANNER_PROBLEMS)
-        self.assertEqual(wt.run([p], 10)[:2], (0, "done\n"))                     # judged again at its next launch, and runs
+        self.assertNotIn("gitleaks", isr.SCANNER_PROBLEMS)
+        self.assertEqual(isr.run([p], 10)[:2], (0, "done\n"))                     # judged again at its next launch, and runs
 
     def test_contrast_a_launch_within_its_time_runs(self):
         """Contrast: passes on dd27c42 too."""

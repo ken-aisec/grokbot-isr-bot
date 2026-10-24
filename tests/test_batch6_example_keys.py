@@ -21,10 +21,11 @@ Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2'
 ones marked "guard" pass there too."""
 import base64, gzip, json, os, re, secrets, string, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, SCANNERS, wt
+from test_boxes import Box, SCANNERS
+import isr  # noqa: E402
 
 ALNUM = string.ascii_letters + string.digits
-EXAMPLE = "Looks like an example or checksum value - check it"   # round 2's wt.EXAMPLE_TITLE; fix round 3: no finding has it
+EXAMPLE = "Looks like an example or checksum value - check it"   # round 2's isr.EXAMPLE_TITLE; fix round 3: no finding has it
 NOTE = "This looks like an example or checksum value"   # fix round 3: the note an example-looking hit gets in its fix
 PLACEHOLDER_WORDS = re.compile(r"(?i)(example|sample|placeholder|your|dummy|fake|test|xxxx|0000|1234|abcd)")
 
@@ -82,7 +83,7 @@ for f, text in later:
 
 
 def token(prefix, n):
-    """A real-shaped random token, made now: no placeholder word in it (fix round 1: the words checked here, as wt.PLACEHOLDER,
+    """A real-shaped random token, made now: no placeholder word in it (fix round 1: the words checked here, as isr.PLACEHOLDER,
     which is gone, did; such a token is real for every version)."""
     while True:
         k = prefix + "".join(secrets.choice(ALNUM) for _ in range(n))
@@ -224,11 +225,11 @@ class ExampleKeysAreNotSecrets(_Keys):
                          [("gitleaks: secrets in 4 files under references", "critical")])
         self.assertNotIn(NOTE, got[0]["fix"])   # three of its four hits are keys
         for name, block in fake_pems().items():
-            t11 = [f for f in wt.scan_text("Key:\n" + block, "/s/SKILL.md", wt.load_rules()) if f["rule"] in ("ISR-T011", "ISR-T011x")]
+            t11 = [f for f in isr.scan_text("Key:\n" + block, "/s/SKILL.md", isr.load_rules()) if f["rule"] in ("ISR-T011", "ISR-T011x")]
             self.assertEqual([(f["rule"], f["title"], f["severity"]) for f in t11], [(want[name], "Secret or key in text", "critical")], name)
             self.assertEqual(NOTE in t11[0]["fix"], False, name)   # batch 7d (B): was name == "random"
         # batch 7d (B): a body of FAKE text starts no key: the example path, noted
-        t11 = [f for f in wt.scan_text("Key:\n" + pem("RSA ", fake_text_body(300)), "/s/SKILL.md", wt.load_rules())
+        t11 = [f for f in isr.scan_text("Key:\n" + pem("RSA ", fake_text_body(300)), "/s/SKILL.md", isr.load_rules())
                if f["rule"] in ("ISR-T011", "ISR-T011x")]
         self.assertEqual([(f["rule"], f["title"], f["severity"]) for f in t11], [("ISR-T011x", "Secret or key in text", "critical")])
         self.assertIn(NOTE, t11[0]["fix"])
@@ -244,7 +245,7 @@ class ExampleKeysAreNotSecrets(_Keys):
         got = self.keys(fs, p)
         self.assertTrue(self.noted_only(got, "medium"), got)   # fix round 3: the generic rule's own severity, noted
         self.assertEqual([f["evidence"] for f in got], ["6 hit(s): generic-api-key"])
-        self.assertNotIn(p, wt.scrub_targets_from_findings())
+        self.assertNotIn(p, isr.scrub_targets_from_findings())
 
     def test_a_checksum_list_is_noted(self):   # replay (5dcd0a2: S002 for each line)
         # fix round 1 (Codex 3): a checksum by its line's own format (sha256sum's "<hex>  <path>", pip's --hash=sha256:), no
@@ -273,11 +274,11 @@ class ExampleKeysAreNotSecrets(_Keys):
         self.assertNotIn(NOTE, s2[0]["fix"])   # a real one among them: no note
 
     def test_fake_akia_is_noted_and_a_real_one_critical(self):   # replay of fix round 2 (de3b328 left the fake out)
-        rules = wt.load_rules()   # fix round 3 (Codex 1): ISR-T011's own title and severity, noted
-        got = [f for f in wt.scan_text("Use AKIAFAKE" + "Q7" * 6 + " to call it.", "/s/SKILL.md", rules) if f["rule"].startswith("ISR-T011")]
+        rules = isr.load_rules()   # fix round 3 (Codex 1): ISR-T011's own title and severity, noted
+        got = [f for f in isr.scan_text("Use AKIAFAKE" + "Q7" * 6 + " to call it.", "/s/SKILL.md", rules) if f["rule"].startswith("ISR-T011")]
         self.assertEqual([(f["rule"], f["title"], f["severity"]) for f in got], [("ISR-T011x", "Secret or key in text", "critical")])
         self.assertIn(NOTE, got[0]["fix"])
-        self.assertIn("ISR-T011", {f["rule"] for f in wt.scan_text("Use " + token("AKIA", 0) + "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ234567") for _ in range(16)) + " to call it.", "/s/SKILL.md", rules)})
+        self.assertIn("ISR-T011", {f["rule"] for f in isr.scan_text("Use " + token("AKIA", 0) + "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ234567") for _ in range(16)) + " to call it.", "/s/SKILL.md", rules)})
 
 
 class RealKeysAreReportedAnywhere(_Keys):
@@ -308,14 +309,14 @@ class RealKeysAreReportedAnywhere(_Keys):
         self.assertEqual({f.get("severity_was") or f["severity"] for f in got if f["rule"] == "ISR-S002"}, {"critical"})
         self.assertFalse(any("were example values" in n for n in notes), notes)
         for name, block in real_pems().items():
-            self.assertIn("ISR-T011", {f["rule"] for f in wt.scan_text("Key:\n" + block, "/s/SKILL.md", wt.load_rules())}, name)
+            self.assertIn("ISR-T011", {f["rule"] for f in isr.scan_text("Key:\n" + block, "/s/SKILL.md", isr.load_rules())}, name)
 
     def test_a_fake_word_inside_a_real_key_block_is_still_a_key(self):   # guard
         b = pem("RSA ", rsa_der())
         body = b.split("\n")
         body[3] = body[3][:20] + "FAKE" + body[3][24:]
         block = "\n".join(body)
-        self.assertIn("ISR-T011", {f["rule"] for f in wt.scan_text("Key:\n" + block, "/s/SKILL.md", wt.load_rules())})
+        self.assertIn("ISR-T011", {f["rule"] for f in isr.scan_text("Key:\n" + block, "/s/SKILL.md", isr.load_rules())})
         p = self.put("sand-data/workflows/setup-dev-tools/examples/k.md", "Key:\n" + block)
         self.leak(p, block.rstrip("\n"), rule="private-key")
         fs, _ = self.scan()

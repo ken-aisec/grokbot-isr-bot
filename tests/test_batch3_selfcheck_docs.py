@@ -10,7 +10,8 @@ import os, re, subprocess, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import test_v068_hardening as v068  # noqa: E402
-from test_v068_hardening import ROOT, wt  # noqa: E402
+from test_v068_hardening import ROOT  # noqa: E402
+import isr  # noqa: E402
 
 
 def text(*rel):
@@ -43,19 +44,19 @@ class VersionAfterTheSelfCheck(v068.Base):
         self.assertIn("SELF-CHECK FAILED", out)
         self.assertIn("1 problem (listed in ISR Bot's ledger)", out)            # Claude review 1 (9): a count, never names
         self.assertNotIn("isr_bot/isr.py", out)
-        self.assertNotIn(wt.VERSION, out)
+        self.assertNotIn(isr.VERSION, out)
 
     def test_a_clean_install_prints_its_version(self):
         """Contrast (Claude review 1, finding 8): passes on 7cf8996 too, where --version printed it without any check."""
         app = self.install()
         code, out, err = self.version(app)
-        self.assertEqual((code, out.strip()), (0, wt.VERSION), err)
+        self.assertEqual((code, out.strip()), (0, isr.VERSION), err)
 
     def test_a_developer_checkout_prints_its_version(self):
         """Contrast (Codex, batch 3 round 1): passes on 7cf8996 too; it guards that the new self-check doesn't break checkouts."""
         p = subprocess.run([sys.executable, os.path.join(ROOT, "isr_bot", "isr.py"), "--version"], capture_output=True, text=True,
                            env=dict(os.environ), timeout=120)
-        self.assertEqual((p.returncode, p.stdout.strip()), (0, wt.VERSION), p.stderr)
+        self.assertEqual((p.returncode, p.stdout.strip()), (0, isr.VERSION), p.stderr)
 
 
 class Readme(unittest.TestCase):
@@ -67,8 +68,8 @@ class Readme(unittest.TestCase):
         self.assertTrue(0.9 * count <= n <= count, (n, count))
 
     def test_every_command_and_flag_is_in_the_cli_list(self):
-        build = getattr(wt, "build_parser", None)
-        self.assertTrue(callable(build), "wt.build_parser()")
+        build = getattr(isr, "build_parser", None)
+        self.assertTrue(callable(build), "isr.build_parser()")
         block, ap = cli_block(), build()
         missing = []
         def flags(p):
@@ -76,7 +77,7 @@ class Readme(unittest.TestCase):
         for o in flags(ap):
             if o not in block:
                 missing.append(o)
-        subs = next(a for a in ap._actions if isinstance(a, wt.argparse._SubParsersAction))
+        subs = next(a for a in ap._actions if isinstance(a, isr.argparse._SubParsersAction))
         for name, p in subs.choices.items():
             if not re.search(r"(?<![\w-])" + re.escape(name) + r"(?![\w-])", block):
                 missing.append(name)

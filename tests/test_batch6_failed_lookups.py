@@ -12,7 +12,8 @@ folder on the way does), except where a real chmod or link is named. Every plant
 import errno, json, os, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import wt
+import test_boxes  # noqa: E402
+import isr  # noqa: E402
 from test_batch5_access_map import AGENT, w
 from test_batch5_access_round2 import CANT, DAY, _Small
 
@@ -53,8 +54,8 @@ class Denied:
 class _Lookups(_Small):
     def setUp(self):
         super().setUp()
-        real = wt.run   # no crontab on the box: `crontab -l` says so (the computer's own crontab is never read)
-        self.cron = mock.patch.object(wt, "run", lambda cmd, *a, **k: (1, "", "no crontab for box") if list(cmd[:2]) == ["crontab", "-l"] else real(cmd, *a, **k))
+        real = isr.run   # no crontab on the box: `crontab -l` says so (the computer's own crontab is never read)
+        self.cron = mock.patch.object(isr, "run", lambda cmd, *a, **k: (1, "", "no crontab for box") if list(cmd[:2]) == ["crontab", "-l"] else real(cmd, *a, **k))
         self.cron.start()
         self.addCleanup(self.cron.stop)
 
@@ -63,8 +64,8 @@ class _Lookups(_Small):
 
     def denied_places(self):
         h = self.home
-        return Denied(*[os.path.expanduser(j) for j in wt.BROWSER_JARS], os.path.join(h, "sand-data"), os.path.join(h, "agent-data", "cookies.json"),
-                      os.path.join(h, ".aws", "credentials"), os.path.join(h, ".config", "systemd", "user"), wt.SYSTEM_CRON)
+        return Denied(*[os.path.expanduser(j) for j in isr.BROWSER_JARS], os.path.join(h, "sand-data"), os.path.join(h, "agent-data", "cookies.json"),
+                      os.path.join(h, ".aws", "credentials"), os.path.join(h, ".config", "systemd", "user"), isr.SYSTEM_CRON)
 
     def json_map(self):
         code, out = self.access("--json")
@@ -101,21 +102,21 @@ class DeniedIsNotAbsent(_Lookups):
     def test_a_scan_root_it_couldnt_look_at_is_an_error(self):   # replay (1aed58a: skipped as if not there)
         errors = []
         with Denied(self.ws):
-            self.assertEqual(list(wt.walk([self.ws], errors=errors)), [])
+            self.assertEqual(list(isr.walk([self.ws], errors=errors)), [])
         self.assertEqual(len(errors), 1)
 
     def test_a_scan_root_it_couldnt_look_at_is_not_none_found(self):   # replay (1aed58a: "Tool connections (MCP): none found.")
         self.small()
-        wt.ACCESS_WORKSPACE = os.path.join(self.tmp, "projects")   # a scanned folder apart from Watchtower's own (tearDown restores it)
-        w(os.path.join(wt.ACCESS_WORKSPACE, "mcp.json"), {"mcpServers": {"slack": {"command": "npx"}}})
+        isr.ACCESS_WORKSPACE = os.path.join(self.tmp, "projects")   # a scanned folder apart from Watchtower's own (tearDown restores it)
+        w(os.path.join(isr.ACCESS_WORKSPACE, "mcp.json"), {"mcpServers": {"slack": {"command": "npx"}}})
         self.audit_json()
-        with Denied(wt.ACCESS_WORKSPACE):
+        with Denied(isr.ACCESS_WORKSPACE):
             self.assertEqual(self.lines("Tool connections"), ["- Tool connections (MCP): " + UNREAD])
 
     def test_a_settings_file_it_couldnt_look_at_is_unreadable_not_missing(self):   # replay (1aed58a: "couldn't find")
         self.small()
         self.audit_json()
-        with Denied(*[os.path.expanduser(p) for p in wt.NATIVE_SETTINGS]):
+        with Denied(*[os.path.expanduser(p) for p in isr.NATIVE_SETTINGS]):
             d = self.json_map()
         self.assertEqual(d["shared"]["settings"], "unreadable")
 
@@ -137,44 +138,44 @@ class DeniedIsNotAbsent(_Lookups):
 
     def test_a_default_folder_it_couldnt_look_at_is_not_out_of_scope_silently(self):   # replay (1aed58a: None, "not there")
         with Denied(self.ws):
-            self.assertEqual(wt._ax_scope([self.home]), "unreadable")
+            self.assertEqual(isr._ax_scope([self.home]), "unreadable")
 
 
 class ScheduledFolders(_Lookups):
     def test_a_cron_folder_that_cant_be_listed_doesnt_stop_the_audit(self):   # replay (1aed58a: os.listdir raised; the audit failed)
         self.small()
-        w(os.path.join(wt.SYSTEM_CRON, "backup"), "0 3 * * * root /usr/local/bin/backup\n")
-        os.chmod(wt.SYSTEM_CRON, 0)   # (the box's tearDown opens it up again)
+        w(os.path.join(isr.SYSTEM_CRON, "backup"), "0 3 * * * root /usr/local/bin/backup\n")
+        os.chmod(isr.SYSTEM_CRON, 0)   # (the box's tearDown opens it up again)
         try:
             code, out, err = self.run_cmd("audit", "--roots", *self.roots, "--budget", "0")
         except AssertionError as e:   # run_cmd refuses a traceback in the output
             self.fail(f"the audit failed: {e}")
         self.assertEqual(code, 0, err)
         self.assertEqual(json.loads(self.map_file())["shared"]["incomplete"].get("scheduled"), "unreadable")
-        self.assertIn(wt.SYSTEM_CRON, getattr(wt, "PERSIST_UNKNOWN", set()))
+        self.assertIn(isr.SYSTEM_CRON, getattr(isr, "PERSIST_UNKNOWN", set()))
 
     def test_a_linked_cron_folder_is_not_listed_through_the_link(self):   # replay (1aed58a: the audit counted 2 jobs through the link)
         self.small()
         real = os.path.join(self.tmp, "elsewhere", "cron.d")
         w(os.path.join(real, "a"), "* * * * * root true\n")
         w(os.path.join(real, "b"), "* * * * * root true\n")
-        os.makedirs(os.path.dirname(wt.SYSTEM_CRON), exist_ok=True)
-        os.symlink(real, wt.SYSTEM_CRON)
+        os.makedirs(os.path.dirname(isr.SYSTEM_CRON), exist_ok=True)
+        os.symlink(real, isr.SYSTEM_CRON)
         self.audit_json()
         sh = json.loads(self.map_file())["shared"]
         self.assertEqual(sh["incomplete"].get("scheduled"), "unreadable")
-        self.assertNotIn(wt.SYSTEM_CRON, wt.persistence_snapshot())
+        self.assertNotIn(isr.SYSTEM_CRON, isr.persistence_snapshot())
 
     def test_a_systemd_folder_it_couldnt_look_at_is_unknown(self):   # replay (1aed58a: not in the snapshot, "no units")
         d = os.path.join(self.home, ".config", "systemd", "user")
         with Denied(d):
-            snap = wt.persistence_snapshot()
+            snap = isr.persistence_snapshot()
         self.assertNotIn(d, snap)
-        self.assertIn(d, getattr(wt, "PERSIST_UNKNOWN", set()))
+        self.assertIn(d, getattr(isr, "PERSIST_UNKNOWN", set()))
 
     def test_listed_folders_are_still_counted(self):   # guard
         self.small()
-        w(os.path.join(wt.SYSTEM_CRON, "backup"), "0 3 * * * root /usr/local/bin/backup\n")
+        w(os.path.join(isr.SYSTEM_CRON, "backup"), "0 3 * * * root /usr/local/bin/backup\n")
         w(os.path.join(self.home, ".config", "systemd", "user", "sync.timer"), "[Timer]\n")
         self.audit_json()
         self.assertEqual(json.loads(self.map_file())["shared"]["scheduled"], {"crontab": 0, "systemd": 1, "system": 1})
@@ -203,12 +204,12 @@ class AbsentIsStillNone(_Lookups):
 
     def test_look_tells_absent_from_unknown(self):   # the new helper itself (1aed58a has none)
         f = w(os.path.join(self.tmp, "x", "file"), "x")
-        self.assertTrue(wt._look(f))
-        self.assertIs(wt._look(os.path.join(self.tmp, "x", "nothing")), False)
-        self.assertIs(wt._look(os.path.join(f, "under-a-file")), False)
+        self.assertTrue(isr._look(f))
+        self.assertIs(isr._look(os.path.join(self.tmp, "x", "nothing")), False)
+        self.assertIs(isr._look(os.path.join(f, "under-a-file")), False)
         with Denied(os.path.join(self.tmp, "x")):
-            self.assertIsNone(wt._look(f))
-            self.assertIsNone(wt._look(os.path.join(self.tmp, "x", "nothing")))
+            self.assertIsNone(isr._look(f))
+            self.assertIsNone(isr._look(os.path.join(self.tmp, "x", "nothing")))
 
 
 if __name__ == "__main__":

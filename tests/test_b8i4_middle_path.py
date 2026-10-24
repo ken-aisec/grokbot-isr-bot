@@ -14,7 +14,8 @@ passes there and here.
 import hashlib, json, os, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt  # noqa: E402
+from test_boxes import Box  # noqa: E402
+import isr  # noqa: E402
 from test_item8_provenance import CLEAN, FLAGGED, SWAP_ENGINE, _Platform, add, put, sha  # noqa: E402
 import profiles  # noqa: E402
 import test_dq042_vendor_skills as dq042  # noqa: E402
@@ -31,7 +32,7 @@ class _Middle(_Platform):
         return self.snap_counts()["high"]
 
     def snap_counts(self):
-        return {s: sum(1 for f in self.snap()["findings"] if f["severity"] == s and wt.counts(f)) for s in ("critical", "high")}
+        return {s: sum(1 for f in self.snap()["findings"] if f["severity"] == s and isr.counts(f)) for s in ("critical", "high")}
 
     def quiet(self, *paths):
         """Each path has no counted high and no held finding, and the one Platform refresh line names it."""
@@ -60,7 +61,7 @@ class CleanUpdates(_Middle):
         add(self.md("alpha"), "One more line.\n")
         self.daily()
         self.audit()
-        self.assertEqual(wt.load_baseline()[0][self.md("alpha")], sha(self.md("alpha")))
+        self.assertEqual(isr.load_baseline()[0][self.md("alpha")], sha(self.md("alpha")))
         self.audit()
         self.assertEqual(self.at(self.md("alpha")), [])
         self.assertFalse(self.tip())
@@ -71,13 +72,13 @@ class CleanUpdates(_Middle):
         p = self.md("helper")
         put(p, CLEAN.format(n="helper"))
         self.audit()
-        self.assertEqual(wt.load_baseline()[0].get(p), sha(p))
+        self.assertEqual(isr.load_baseline()[0].get(p), sha(p))
         for v in ("Version 2.\n", "Version 3.\n"):
             add(p, v)
             self.assertEqual(self.daily(), "NO_CHANGES", v)
             self.quiet(p)
             self.audit()
-            self.assertEqual(wt.load_baseline()[0].get(p), sha(p), v)
+            self.assertEqual(isr.load_baseline()[0].get(p), sha(p), v)
 
     def test_first_run_clean_file_at_listed_path_raises_nothing(self):
         """R: a new box whose alpha is a newer version than the release list's: no counted high, not in the first baseline, and the
@@ -86,9 +87,9 @@ class CleanUpdates(_Middle):
         self.start()
         self.assertEqual(self.counted_high(self.md("alpha")), [])
         self.assertNotIn(self.md("alpha"), self.unverified())
-        self.assertNotIn(self.md("alpha"), wt.load_baseline()[0])
+        self.assertNotIn(self.md("alpha"), isr.load_baseline()[0])
         self.audit()
-        self.assertEqual(wt.load_baseline()[0].get(self.md("alpha")), sha(self.md("alpha")))
+        self.assertEqual(isr.load_baseline()[0].get(self.md("alpha")), sha(self.md("alpha")))
 
     def test_tip_names_vendor_per_root(self):
         """R: one Platform refresh line with each vendor's count, and both paths in `files`."""
@@ -142,7 +143,7 @@ class NewSkillFolders(_Middle):
         tip = self.quiet(md, ref)
         self.assertIn("helper", tip["title"])
         self.audit()
-        base = wt.load_baseline()[0]
+        base = isr.load_baseline()[0]
         self.assertEqual((base.get(md), base.get(ref)), (sha(md), sha(ref)))
 
     def test_new_skill_folder_with_one_flagged_file_is_all_high(self):
@@ -153,7 +154,7 @@ class NewSkillFolders(_Middle):
         self.audit()
         for p in (md, ref):
             self.assertEqual(len(self.counted_high(p)), 1, p)
-        base = wt.load_baseline()[0]
+        base = isr.load_baseline()[0]
         self.assertNotIn(md, base); self.assertNotIn(ref, base)
 
     def test_new_file_in_skill_alone_is_high(self):
@@ -173,7 +174,7 @@ class NewSkillFolders(_Middle):
         self.assertNotEqual(self.daily(), "NO_CHANGES")
         self.assertEqual(len(self.counted_high(p)), 1)
         self.audit()
-        self.assertNotIn(p, wt.load_baseline()[0])
+        self.assertNotIn(p, isr.load_baseline()[0])
 
     def test_first_run_loose_file_is_high(self):
         """G: a loose file on a new box."""
@@ -181,7 +182,7 @@ class NewSkillFolders(_Middle):
         put(p, CLEAN.format(n="helper"))
         self.start()
         self.assertEqual(len(self.counted_high(p)), 1)
-        self.assertNotIn(p, wt.load_baseline()[0])
+        self.assertNotIn(p, isr.load_baseline()[0])
 
 
 class StillHigh(_Middle):
@@ -196,7 +197,7 @@ class StillHigh(_Middle):
         self.assertEqual([f["rule"] for f in x], ["ISR-I001"])
         self.assertEqual(x[0]["title"], "One of Grok Bot's own files changed, and the new version isn't on Grok Bot's release list")
         self.audit()
-        self.assertEqual(wt.load_baseline()[0][self.md("alpha")], v1)
+        self.assertEqual(isr.load_baseline()[0][self.md("alpha")], v1)
         self.assertNotIn(self.rel(self.md("alpha")), (self.tip() or [{}])[0].get("files", []))
 
     def test_lock_path_with_other_bytes_flagged_is_high(self):
@@ -207,7 +208,7 @@ class StillHigh(_Middle):
         put(p, FLAGGED.format(n="helper"))
         self.audit()
         self.assertEqual(len(self.counted_high(p)), 1)
-        self.assertNotIn(p, wt.load_baseline()[0])
+        self.assertNotIn(p, isr.load_baseline()[0])
 
     def test_dangerous_engine_kind_holds_update(self):
         """G: two scanners name a dangerous behavior (the harness fakes: "Exfil: Upload" and "obfuscated loader") in alpha's folder."""
@@ -218,7 +219,7 @@ class StillHigh(_Middle):
         x = [f for f in self.snap()["findings"] if f["rule"] == "ISR-X003" and f["where"] == os.path.dirname(self.md("alpha"))]
         self.assertEqual(len(x), 1)
         self.assertEqual(len(self.counted_high(self.md("alpha"))), 1)
-        self.assertEqual(wt.load_baseline()[0][self.md("alpha")], v1)
+        self.assertEqual(isr.load_baseline()[0][self.md("alpha")], v1)
 
     def test_kinds_incomplete_holds_update(self):
         """G: an engine answer that is out of date (kinds_incomplete) never lets an update through."""
@@ -229,15 +230,15 @@ class StillHigh(_Middle):
         self.start(skillspector=dq042.skillspector(dq042.FIFTH_ISSUES[:4]), husk=dq042.husk(dq042.LEARN_HUSK))
         put(md, dq042.LEARN_V2)
         self.daily()
-        p = wt.state_path("engine_cache.json")
-        cache = wt.load_json(p, {})
+        p = isr.state_path("engine_cache.json")
+        cache = isr.load_json(p, {})
         cache[d]["ss"].pop("kinds", None)                                       # an answer from before DQ-042 read every kind
-        wt.save_json(p, cache)
+        isr.save_json(p, cache)
         self.audit("--budget", "0")
         x = [f for f in self.snap()["findings"] if f["rule"] == "ISR-X003" and f["where"] == d]
         self.assertEqual([f.get("kinds_incomplete") for f in x], [True])
         self.assertEqual(len(self.counted_high(md)), 1)
-        self.assertEqual(wt.load_baseline()[0][md], hashlib.sha256(dq042.LEARN_V1.encode()).hexdigest())
+        self.assertEqual(isr.load_baseline()[0][md], hashlib.sha256(dq042.LEARN_V1.encode()).hexdigest())
 
     def test_unusable_lock_disables_quiet_path(self):
         """G: one bad line makes the release list unusable, and with it the quiet path (decision D4)."""
@@ -268,8 +269,8 @@ class StillHigh(_Middle):
         self.audit()
         for p in [self.md("helper")] + [os.path.join(a, "SKILL.md") for a in aliases]:
             self.assertEqual(len(self.counted_high(p)), 1, p)
-            self.assertNotIn(p, wt.load_baseline()[0], p)
-            self.assertFalse(wt.platform_skill_path(p, line=False), p)
+            self.assertNotIn(p, isr.load_baseline()[0], p)
+            self.assertFalse(isr.platform_skill_path(p, line=False), p)
 
     def test_a_file_link_inside_the_root_stays_high(self):
         """G: a listed file replaced by a link to another platform file (clean bytes, real path in the same root) is never quiet."""
@@ -279,7 +280,7 @@ class StillHigh(_Middle):
         os.symlink(self.md("beta"), self.md("alpha"))
         self.audit()
         self.assertEqual(len(self.counted_high(self.md("alpha"))), 1)
-        self.assertEqual(wt.load_baseline()[0][self.md("alpha")], v1)
+        self.assertEqual(isr.load_baseline()[0][self.md("alpha")], v1)
 
     def test_colon_folder_stays_high(self):
         """G: a path with a colon is never quiet."""
@@ -288,7 +289,7 @@ class StillHigh(_Middle):
         put(p, CLEAN.format(n="x"))
         self.audit()
         self.assertEqual(len(self.counted_high(p)), 1)
-        self.assertNotIn(p, wt.load_baseline()[0])
+        self.assertNotIn(p, isr.load_baseline()[0])
 
     def test_lookalike_roots_get_no_platform_quiet(self):
         """G: ~/.grok/bundled-evil and an owner's workflows/x/managed-skills are no platform folder. The owner's folder is the
@@ -300,9 +301,9 @@ class StillHigh(_Middle):
         add(evil, "One more line.\n"); add(mine, "One more line.\n")
         self.audit()
         x = [f for f in self.at(mine) if f["rule"] == "ISR-I001"]
-        self.assertEqual([(f["title"], f["severity"], wt.counts(f)) for f in x], [("Reviewed skill or plugin changed", "high", True)])
+        self.assertEqual([(f["title"], f["severity"], isr.counts(f)) for f in x], [("Reviewed skill or plugin changed", "high", True)])
         for p in (evil, mine):
-            self.assertFalse(wt.platform_skill_path(p, line=False), p)
+            self.assertFalse(isr.platform_skill_path(p, line=False), p)
             self.assertFalse([f for f in self.at(p) if f.get("platform_update")], p)
             self.assertFalse([f for f in self.tip() if self.rel(p) in f.get("files", []) or self.rel(p) in f["evidence"]], p)
 
@@ -316,7 +317,7 @@ class StillHigh(_Middle):
         put(big, "A line.\n" * 140_000)
         self.audit()
         self.assertEqual(len(self.counted_high(big)), 1)
-        self.assertNotEqual(wt.load_baseline()[0].get(big), sha(big))
+        self.assertNotEqual(isr.load_baseline()[0].get(big), sha(big))
 
     def test_rolled_bytes_are_the_scanned_bytes(self):
         """G: an engine that rewrites the file while it scans never gets the new bytes rolled into the baseline."""
@@ -328,8 +329,8 @@ class StillHigh(_Middle):
         swapped = FLAGGED.format(n="alpha")
         self.scanners(skillspector=SWAP_ENGINE % (md, swapped))
         self.audit()
-        self.assertIn(wt.load_baseline()[0].get(md), (v1, v2))
-        self.assertNotEqual(wt.load_baseline()[0].get(md), hashlib.sha256(swapped.encode()).hexdigest())
+        self.assertIn(isr.load_baseline()[0].get(md), (v1, v2))
+        self.assertNotEqual(isr.load_baseline()[0].get(md), hashlib.sha256(swapped.encode()).hexdigest())
 
     def test_approve_platform_still_refused(self):
         """G: `fix --approve-platform` is refused and changes nothing (decision D10)."""
@@ -337,12 +338,12 @@ class StillHigh(_Middle):
         plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         self.audit()
-        before = wt.load_baseline()[0]
+        before = isr.load_baseline()[0]
         out = self.approve("0" * 20)
         self.assertIn("NOT APPROVED", out)
         self.assertIn("Nothing was changed", out)
-        self.assertEqual(wt.load_baseline()[0], before)
-        self.assertFalse(os.path.lexists(wt.state_path(wt.OLD_PLATFORM_APPROVALS)))
+        self.assertEqual(isr.load_baseline()[0], before)
+        self.assertFalse(os.path.lexists(isr.state_path(isr.OLD_PLATFORM_APPROVALS)))
 
     def test_unscanned_types_are_scanned_first_flagged(self):
         """G: the same .xsd file with flagged text stays a counted high."""
@@ -369,9 +370,9 @@ class WordingOnlyVote(_Middle):
         tip = self.quiet(md)
         self.assertIn("learn", tip["title"])
         x = [f for f in self.snap()["findings"] if f["rule"] == "ISR-X003" and f["where"] == d]
-        self.assertEqual([(f["severity"], f["label"]) for f in x], [("info", wt.PLATFORM)])
+        self.assertEqual([(f["severity"], f["label"]) for f in x], [("info", isr.PLATFORM)])
         self.audit()
-        self.assertEqual(wt.load_baseline()[0][md], sha(md))
+        self.assertEqual(isr.load_baseline()[0][md], sha(md))
         self.assertFalse([f for f in self.at(md) if f["rule"] in ("ISR-I001", "ISR-I002")])
 
 
@@ -386,7 +387,7 @@ class KeptVoteInDaily(_Middle):
         self.start(skillspector=dq042.skillspector(dq042.LEARN_ISSUES), husk=dq042.husk(dq042.LEARN_HUSK))
         put(md, dq042.LEARN_V2)
         self.audit()                                                            # quiet, rolled in; the vote is a Platform line
-        self.assertEqual(wt.load_baseline()[0][md], sha(md))
+        self.assertEqual(isr.load_baseline()[0][md], sha(md))
         add(md, "One more line.\n")
         self.scanners(skillspector=None, husk=None)                             # no engine answers in daily: last run's line is kept
         self.daily()

@@ -12,7 +12,8 @@ file in place); "guard" ones hold on a3e535e too. Timing guards check time only;
 The box is a temp folder; every package name is an example."""
 import json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, wt
+from test_boxes import Box
+import isr  # noqa: E402
 from test_batch6_codex_r3 import servers, evidence, timed
 
 PIN = ("npm", "exec", "--package=npm@11.21.0", "--")   # a pinned outer launch
@@ -199,7 +200,7 @@ class Linear(unittest.TestCase):
     """Timing guards: about 100 KB, then about 1 MB, of each input (the same bounds as r3's assertLinear). Time only."""
 
     def assertLinear(self, args, small, large):
-        body = ("    t = wt.json.dumps({'mcpServers': {'s': {'command': %r, 'args': %s}}})\n    go = wt.mcp_unpinned" % args)
+        body = ("    t = isr.json.dumps({'mcpServers': {'s': {'command': %r, 'args': %s}}})\n    go = isr.mcp_unpinned" % args)
         got = timed(body, small, large)
         self.assertIsNotNone(got, "over 30 seconds")
         s, l, _ = got

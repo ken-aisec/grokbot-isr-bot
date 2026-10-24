@@ -11,7 +11,8 @@ maintainer's box (Oct 18), the rest is made up, so its sha256 is not the shipped
 import json, os, re, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, ROOT, wt
+from test_boxes import Box, ROOT
+import isr  # noqa: E402
 import profiles
 
 LINE12 = ("1. 1Password: at a username and password login, first call ListCredentials with the exact current URL. If it says 1Password is "
@@ -66,9 +67,9 @@ class _SignIn(Box):
         p = os.path.join(self.tmp, "platform-reviewed.json")
         with open(p, "w") as f:
             json.dump({"about": "test", "entries": entries}, f)
-        had, old = hasattr(wt, "PLATFORM_REVIEWED"), getattr(wt, "PLATFORM_REVIEWED", None)   # 151e40c has none: it reads no list
-        wt.PLATFORM_REVIEWED = p
-        self.addCleanup(lambda: setattr(wt, "PLATFORM_REVIEWED", old) if had else delattr(wt, "PLATFORM_REVIEWED"))
+        had, old = hasattr(isr, "PLATFORM_REVIEWED"), getattr(isr, "PLATFORM_REVIEWED", None)   # 151e40c has none: it reads no list
+        isr.PLATFORM_REVIEWED = p
+        self.addCleanup(lambda: setattr(isr, "PLATFORM_REVIEWED", old) if had else delattr(isr, "PLATFORM_REVIEWED"))
         return p
 
     def entry(self, sha, rule="ISR-T008", line=12, paths=(REL,), note="Checked note for the test."):
@@ -81,13 +82,13 @@ class PlatformNotes(_SignIn):
         self.skills(1)
         p = self.put(REL, SIGNIN)
         r = self.audit_json()
-        self.assertEqual({f["rule"] for f in self.mine(p) if f.get("label") == wt.CONFIRMED}, {"ISR-T008", "ISR-T004"})   # inside, as before
+        self.assertEqual({f["rule"] for f in self.mine(p) if f.get("label") == isr.CONFIRMED}, {"ISR-T008", "ISR-T004"})   # inside, as before
         self.assertEqual((r["open_by_severity"]["critical"], r["open_by_severity"]["high"]), (0, 0))
         self.assertFalse([f for f in r["new"] if p in f["where"]])
         self.assertEqual(r["platform_notes"]["count"], 2)
         self.assertTrue(any("(line 12)" in l and "Secrecy or concealment instruction" in l for l in r["platform_notes"]["lines"]))
         self.assertEqual(r["platform"], r["platform_notes"]["lines"])   # the old key, one release, the same lines
-        self.assertEqual(r["status"], wt.ALL_GOOD)
+        self.assertEqual(r["status"], isr.ALL_GOOD)
 
     def test_breakdown_lists_it_as_a_platform_note_not_confirmed(self):   # replay (151e40c listed both under Confirmed)
         self.skills(1)
@@ -130,8 +131,8 @@ class PlatformNotes(_SignIn):
         p = self.put("sand-data/workflows/x/SKILL.md", SIGNIN.replace("name: sign-in", "name: x"), listed=False)
         r = self.audit_json()
         got = {(f["rule"], f["severity"], f["label"]) for f in self.mine(p)}
-        self.assertTrue({("ISR-T008", "critical", wt.CONFIRMED), ("ISR-T004", "high", wt.CONFIRMED)} <= got, got)
-        self.assertEqual(r["status"], wt.ACT_NOW)
+        self.assertTrue({("ISR-T008", "critical", isr.CONFIRMED), ("ISR-T004", "high", isr.CONFIRMED)} <= got, got)
+        self.assertEqual(r["status"], isr.ACT_NOW)
         self.assertGreaterEqual(r["open_by_severity"]["critical"], 1)
         self.assertTrue({"ISR-T008", "ISR-T004"} <= {f["rule"] for f in r["new"] if p in f["where"]})
         self.assertNotIn("platform_notes", r)
@@ -141,8 +142,8 @@ class PlatformNotes(_SignIn):
         p = self.put(REL, SIGNIN, listed=False)
         r = self.audit_json()
         i2 = [f for f in self.mine(p) if f["rule"] == "ISR-I002"]
-        self.assertEqual([(f["severity"], wt.counts(f)) for f in i2], [("high", True)])
-        self.assertEqual(r["status"], wt.CHECK_WEEK)
+        self.assertEqual([(f["severity"], isr.counts(f)) for f in i2], [("high", True)])
+        self.assertEqual(r["status"], isr.CHECK_WEEK)
         self.assertGreaterEqual(r["open_by_severity"]["high"], 1)
         self.assertTrue(any("Not on ISR Bot's release list: its own alert counts" in l for l in r["platform_notes"]["lines"]))
         self.assertIn("a file ISR Bot's release list doesn't include has its own counted alert above", self.report_md())
@@ -154,7 +155,7 @@ class PlatformNotes(_SignIn):
             f.write("[default]\n")
         self.put(REL, SIGNIN)
         r = self.audit_json()
-        rules = {f["rule"]: f["severity"] for f in self.snap()["findings"] if f.get("scope") != "platform" and wt.counts(f)}
+        rules = {f["rule"]: f["severity"] for f in self.snap()["findings"] if f.get("scope") != "platform" and isr.counts(f)}
         self.assertEqual((rules.get("ISR-A002"), rules.get("ISR-S003")), ("critical", "high"))
         self.assertGreaterEqual(r["open_by_severity"]["critical"], 1)
         self.assertGreaterEqual(r["open_by_severity"]["high"], 1)
@@ -175,7 +176,7 @@ class PlatformNotes(_SignIn):
         r = self.daily_json()
         self.assertTrue(any("learn" in l for l in r["platform_notes"]["lines"]), r)
         a = [f for f in self.snap()["findings"] if f["title"].startswith("Grok Bot's own learn changed and now ")]
-        self.assertEqual([(f["label"], f["scope"]) for f in a], [(wt.CONFIRMED, "platform")])
+        self.assertEqual([(f["label"], f["scope"]) for f in a], [(isr.CONFIRMED, "platform")])
 
 
 # ---------------------------------------------------------------- d2: exact-bytes checked findings
@@ -205,11 +206,11 @@ class CheckedPlatformFiles(_SignIn):
         self.reviewed_file([self.entry(self.sha(SIGNIN))])
         p = self.put(REL, SIGNIN + " ")
         self.audit()
-        self.assertEqual([f["label"] for f in self.mine(p) if f["rule"] == "ISR-T008"], [wt.CONFIRMED])
+        self.assertEqual([f["label"] for f in self.mine(p) if f["rule"] == "ISR-T008"], [isr.CONFIRMED])
         q = self.put("agent-data/managed-skills/skills/sign-in/SKILL.md", SIGNIN, listed=False)   # the right bytes, not on the release list
         self.audit()
-        self.assertEqual([f["label"] for f in self.mine(q) if f["rule"] == "ISR-T008"], [wt.CONFIRMED])
-        self.assertTrue([f for f in self.mine(q) if f["rule"] == "ISR-I002" and wt.counts(f)])
+        self.assertEqual([f["label"] for f in self.mine(q) if f["rule"] == "ISR-T008"], [isr.CONFIRMED])
+        self.assertTrue([f for f in self.mine(q) if f["rule"] == "ISR-I002" and isr.counts(f)])
 
     def test_the_same_bytes_in_the_owners_skill_still_count(self):   # guard
         self.skills(1)
@@ -217,47 +218,47 @@ class CheckedPlatformFiles(_SignIn):
         self.reviewed_file([self.entry(self.sha(SIGNIN), paths=(REL, rel))])
         p = self.put(rel, SIGNIN, listed=False)
         self.audit()
-        self.assertEqual([(f["label"], f["severity"], wt.counts(f)) for f in self.mine(p) if f["rule"] == "ISR-T008"], [(wt.CONFIRMED, "critical", True)])
+        self.assertEqual([(f["label"], f["severity"], isr.counts(f)) for f in self.mine(p) if f["rule"] == "ISR-T008"], [(isr.CONFIRMED, "critical", True)])
 
     def test_the_right_bytes_with_another_rule_or_line_is_not_checked(self):   # guard
         self.skills(1)
         self.reviewed_file([self.entry(self.sha(SIGNIN), "ISR-T008", line=11), self.entry(self.sha(SIGNIN), "ISR-T005", line=12)])
         p = self.put(REL, SIGNIN)
         self.audit()
-        self.assertEqual({f["label"] for f in self.mine(p) if f["rule"] in ("ISR-T008", "ISR-T004") and not f.get("guarded")}, {wt.CONFIRMED})
+        self.assertEqual({f["label"] for f in self.mine(p) if f["rule"] in ("ISR-T008", "ISR-T004") and not f.get("guarded")}, {isr.CONFIRMED})
 
     def test_a_list_that_isnt_the_released_one_is_ignored_with_a_note(self):   # guard
         self.skills(1)
         self.reviewed_file([self.entry(self.sha(SIGNIN))])
         p = self.put(REL, SIGNIN)
-        real = wt.release_digest
-        with mock.patch.object(wt, "release_digest", lambda rel: "0" * 64 if rel == wt.PLATFORM_REVIEWED_REL else real(rel)):
-            vars(wt)["_PLATFORM_REVIEWED_CACHE"].clear()
+        real = isr.release_digest
+        with mock.patch.object(isr, "release_digest", lambda rel: "0" * 64 if rel == isr.PLATFORM_REVIEWED_REL else real(rel)):
+            vars(isr)["_PLATFORM_REVIEWED_CACHE"].clear()
             self.audit()
-        vars(wt)["_PLATFORM_REVIEWED_CACHE"].clear()
-        self.assertEqual([f["label"] for f in self.mine(p) if f["rule"] == "ISR-T008"], [wt.CONFIRMED])
-        notes = [n for n in self.snap()["notes"] if wt.PLATFORM_REVIEWED_REL in n]
+        vars(isr)["_PLATFORM_REVIEWED_CACHE"].clear()
+        self.assertEqual([f["label"] for f in self.mine(p) if f["rule"] == "ISR-T008"], [isr.CONFIRMED])
+        notes = [n for n in self.snap()["notes"] if isr.PLATFORM_REVIEWED_REL in n]
         self.assertEqual(len(notes), 1)
         self.assertIn("MANIFEST.sha256", notes[0])
 
     def test_nothing_on_the_computer_adds_an_entry(self):   # guard
         self.skills(1)
         self.reviewed_file([])
-        os.makedirs(wt.state_path(""), exist_ok=True)
+        os.makedirs(isr.state_path(""), exist_ok=True)
         for name in ("platform-reviewed.json", "platform_reviewed.json"):
-            with open(wt.state_path(name), "w") as f:
+            with open(isr.state_path(name), "w") as f:
                 json.dump({"entries": [self.entry(self.sha(SIGNIN))]}, f)
         p = self.put(REL, SIGNIN)
-        with mock.patch.dict(os.environ, {"ISR_BOT_PLATFORM_REVIEWED": wt.state_path("platform-reviewed.json")}):
+        with mock.patch.dict(os.environ, {"ISR_BOT_PLATFORM_REVIEWED": isr.state_path("platform-reviewed.json")}):
             self.audit()
-        self.assertEqual([f["label"] for f in self.mine(p) if f["rule"] == "ISR-T008"], [wt.CONFIRMED])
+        self.assertEqual([f["label"] for f in self.mine(p) if f["rule"] == "ISR-T008"], [isr.CONFIRMED])
 
     def test_a_malformed_entry_makes_the_list_unusable(self):   # guard
         self.skills(1)
         self.reviewed_file([self.entry(self.sha(SIGNIN)), dict(self.entry(self.sha(SIGNIN)), paths=["/etc/passwd"])])
         p = self.put(REL, SIGNIN)
         self.audit()
-        self.assertEqual([f["label"] for f in self.mine(p) if f["rule"] == "ISR-T008"], [wt.CONFIRMED])
+        self.assertEqual([f["label"] for f in self.mine(p) if f["rule"] == "ISR-T008"], [isr.CONFIRMED])
         self.assertTrue([n for n in self.snap()["notes"] if "platform-reviewed.json can't be used" in n])
 
 
@@ -273,11 +274,11 @@ class ShippedReviewedList(unittest.TestCase):
                 self.assertIn(f"{e['sha256']}  {rel}", lock, rel)
         with open(os.path.join(ROOT, "MANIFEST.sha256")) as f:
             self.assertIn("  rules/platform-reviewed.json", f.read())
-        old, wt.PLATFORM_REVIEWED = wt.PLATFORM_REVIEWED, os.path.join(ROOT, "rules", "platform-reviewed.json")
+        old, isr.PLATFORM_REVIEWED = isr.PLATFORM_REVIEWED, os.path.join(ROOT, "rules", "platform-reviewed.json")
         try:
-            self.assertEqual(wt.platform_reviewed_problem(), "")
+            self.assertEqual(isr.platform_reviewed_problem(), "")
         finally:
-            wt.PLATFORM_REVIEWED = old
+            isr.PLATFORM_REVIEWED = old
 
     def test_the_notes_say_what_line_12_does(self):   # guard: the owner read line 12 on the maintainer's box (Oct 18); these are its two findings
         with open(os.path.join(ROOT, "rules", "platform-reviewed.json")) as f:

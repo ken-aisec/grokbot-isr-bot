@@ -7,7 +7,8 @@ import hashlib, importlib.util, os, sys, unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import SCANNERS, wt  # noqa: E402
+from test_boxes import SCANNERS  # noqa: E402
+import isr  # noqa: E402
 from test_batch3_scanners import _Scanners  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -41,23 +42,23 @@ class SealedCopy(_Scanners):
         log = os.path.join(self.tmp, "evil.log")
         self.lock_line("gitleaks")                                             # the release lists gitleaks for this computer
         p = self.put("gitleaks", "#!/bin/sh\necho good\n")
-        self.assertEqual(wt.tool("gitleaks"), p)
+        self.assertEqual(isr.tool("gitleaks"), p)
         script(p + ".new", f"#!/bin/sh\necho evil >> {log}\n")
         os.replace(p + ".new", p)                                              # swapped in after the check
-        code, out, err = wt.run([p, "version"], 10)
+        code, out, err = isr.run([p, "version"], 10)
         self.assertFalse(os.path.exists(log))
         self.assertNotEqual(code, 0)
-        self.assertEqual(wt.SCANNER_PROBLEMS.get("gitleaks", ("",))[0], "changed")
+        self.assertEqual(isr.SCANNER_PROBLEMS.get("gitleaks", ("",))[0], "changed")
         script(p + ".new", "#!/bin/sh\necho good\n")
         os.replace(p + ".new", p)                                              # and swapped back: still not trusted this run
-        self.assertIsNone(wt.tool("gitleaks"))
-        self.assertEqual([os.path.basename(f["where"]) for f in wt.scanner_x005()], ["gitleaks"])
+        self.assertIsNone(isr.tool("gitleaks"))
+        self.assertEqual([os.path.basename(f["where"]) for f in isr.scanner_x005()], ["gitleaks"])
 
     def test_1_contrast_the_checked_program_runs(self):
         """Contrast: passes on the build commit too."""
         p = self.put("gitleaks", "#!/bin/sh\necho good \"$1\"\n")
-        self.assertEqual(wt.tool("gitleaks"), p)
-        self.assertEqual(wt.run([p, "version"], 10)[:2], (0, "good version\n"))
+        self.assertEqual(isr.tool("gitleaks"), p)
+        self.assertEqual(isr.run([p, "version"], 10)[:2], (0, "good version\n"))
 
     @unittest.skipUnless(TRUSTED_PY, "needs a root-owned Python")
     def test_1_a_venv_python_link_swapped_after_the_check_never_runs(self):
@@ -65,13 +66,13 @@ class SealedCopy(_Scanners):
         link = os.path.join(self.bin, "python3")
         os.symlink(REAL_PY, link)
         p = self.put("pip-audit", f"#!{link}\nimport sys\nprint('ok', sys.prefix == sys.base_prefix, sys.argv[1:])\n")
-        self.assertEqual(wt.tool("pip-audit"), p)
-        code, out, _ = wt.run([p, "-r", "x"], 30)
+        self.assertEqual(isr.tool("pip-audit"), p)
+        code, out, _ = isr.run([p, "-r", "x"], 30)
         self.assertEqual((code, out.split()[0], out.split()[-1]), (0, "ok", "'x']"), out)    # runs as the pinned Python
         log = os.path.join(self.tmp, "evil.log")
         evil = script(os.path.join(self.tmp, "evil-python"), f"#!/bin/sh\necho evil >> {log}\nexec {REAL_PY} \"$@\"\n")
         os.remove(link); os.symlink(evil, link)                                # the link now leads to another program
-        code, out, err = wt.run([p, "-r", "x"], 30)
+        code, out, err = isr.run([p, "-r", "x"], 30)
         self.assertFalse(os.path.exists(log))
         self.assertNotEqual(code, 0)
 
@@ -91,18 +92,18 @@ class InterpreterTrust(_Scanners):
         evil = script(os.path.join(d, "python3"), f"#!/bin/sh\nexec {REAL_PY} \"$@\"\n")
         os.chmod(evil, 0o555); os.chmod(d, 0o555)                              # Box's tearDown makes it removable again
         self.entry_point(evil)
-        self.assertIsNone(wt.tool("pip-audit"))
-        self.assertIsNone(wt.scanners_python())
-        self.assertIn("Python it runs with", wt.SCANNER_PROBLEMS["pip-audit"][1])
+        self.assertIsNone(isr.tool("pip-audit"))
+        self.assertIsNone(isr.scanners_python())
+        self.assertIn("Python it runs with", isr.SCANNER_PROBLEMS["pip-audit"][1])
 
-    def test_2_only_the_python_watchtower_runs_under(self):
+    def test_2_only_the_python_isr_bot_runs_under(self):
         other = os.path.realpath("/bin/sh")                                    # root-owned, but not Watchtower's Python
         self.entry_point(other)
-        self.assertIsNone(wt.tool("pip-audit"))
-        self.assertIsNone(wt.scanners_python())
+        self.assertIsNone(isr.tool("pip-audit"))
+        self.assertIsNone(isr.scanners_python())
 
     def test_2_every_folder_above_it_counts(self):
-        fn = getattr(wt, "trusted_interpreter", None)
+        fn = getattr(isr, "trusted_interpreter", None)
         self.assertTrue(callable(fn))
         self.assertIsNone(fn(os.path.join(self.tmp, "no-such-python")))
         copy = script(os.path.join(self.tmp, "python3"), "#!/bin/sh\n")
@@ -138,11 +139,11 @@ class OwnToolsPython(_Scanners):
         lines read as fixed."""
         self.skills(1); self.engines()
         self.audit()
-        snap = wt.load_json(wt.state_path("last_findings.json"), {})
-        w1 = wt.finding("ISR-W001", "Watchtower's own tool urllib3 1.0 has known holes", "medium", ["ASI04", "AST02"],
+        snap = isr.load_json(isr.state_path("last_findings.json"), {})
+        w1 = isr.finding("ISR-W001", "Watchtower's own tool urllib3 1.0 has known holes", "medium", ["ASI04", "AST02"],
                         "watchtower scanner package urllib3", "1 known: GHSA-test", "Tell Watchtower \"update yourself\".", source="pip-audit")
         snap["findings"].append(w1)
-        wt.save_json(wt.state_path("last_findings.json"), snap)
+        isr.save_json(isr.state_path("last_findings.json"), snap)
         os.symlink(script(os.path.join(self.tmp, "python-anyone-can-edit"), f"#!/bin/sh\nexec {REAL_PY} \"$@\"\n"),
                    os.path.join(self.bin, "python"))
         r = self.audit()
@@ -162,34 +163,34 @@ class BoundedHashing(_Scanners):
 
     def test_10_a_program_with_no_lock_line_is_not_read(self):
         self.put("gitleaks", "#!/bin/sh\n", register=False)
-        with mock.patch.object(wt, "scanner_digest", side_effect=AssertionError("read")), \
+        with mock.patch.object(isr, "scanner_digest", side_effect=AssertionError("read")), \
                 mock.patch.object(hashlib, "sha256", side_effect=AssertionError("hashed")):
-            self.assertIsNone(wt.tool("gitleaks"))
-        self.assertEqual(wt.SCANNER_PROBLEMS["gitleaks"][0], "unlisted")
+            self.assertIsNone(isr.tool("gitleaks"))
+        self.assertEqual(isr.SCANNER_PROBLEMS["gitleaks"][0], "unlisted")
 
     def test_10_a_program_over_the_size_limit_is_refused_unread(self):
         p = self.put("gitleaks", "#!/bin/sh\n" + "#" * 8192 + "\n", register=False)
         self.lock_line("gitleaks", hashlib.sha256(open(p, "rb").read()).hexdigest())
-        with mock.patch.object(wt, "SCANNER_MAX_BYTES", 4096, create=True):
-            self.assertIsNone(wt.tool("gitleaks"))
-            self.assertIn("too large", wt.SCANNER_PROBLEMS["gitleaks"][1])
-            self.assertEqual(wt.run([p], 10)[0], 126)
+        with mock.patch.object(isr, "SCANNER_MAX_BYTES", 4096, create=True):
+            self.assertIsNone(isr.tool("gitleaks"))
+            self.assertIn("too large", isr.SCANNER_PROBLEMS["gitleaks"][1])
+            self.assertEqual(isr.run([p], 10)[0], 126)
 
 
 class LockReader(_Scanners):
     def test_7_runtime_and_publish_read_the_lock_the_same_way(self):
         """Finding 7, the runtime half: publish.sh and Watchtower now share one reader. On the build commit scripts/scanner_lock.py
         doesn't exist, so this errors there; its runtime reader already skipped these lines (contrast for that half). The replay
-        that fails on the build commit is test_scripts.Publish.test_batch3_round1_lock_lines_watchtower_would_skip_stop."""
+        that fails on the build commit is test_scripts.Publish.test_batch3_round1_lock_lines_isr_bot_would_skip_stop."""
         spec = importlib.util.spec_from_file_location("scanner_lock_t", os.path.join(ROOT, "scripts", "scanner_lock.py"))
         mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
-        names = sorted(wt.SCANNER_NAMES)
+        names = sorted(isr.SCANNER_NAMES)
         bad = "".join(f"{hashlib.sha256(n.encode()).hexdigest()}  {n}  \n" for n in names)
         good = "# header\n" + "".join(f"{hashlib.sha256(n.encode()).hexdigest()}  {n}  x86_64  v1\n" for n in names)
         for text, usable in ((bad, False), (good, True)):
             with open(self.lock, "w") as f:
                 f.write(text)
-            got = {n for (n, a) in wt.scanner_lock()} if wt.scanner_lock() else set()
+            got = {n for (n, a) in isr.scanner_lock()} if isr.scanner_lock() else set()
             self.assertEqual(not mod.release_problems(text), usable)
             self.assertEqual(got == set(names), usable)
 
@@ -204,12 +205,12 @@ class Docs(unittest.TestCase):
         self.assertIn("JSON with `scanners_missing`", t)
         self.assertIn("never held back for a retry", t)
 
-    def test_14_codescan_and_wt_describe_the_checked_folder(self):
+    def test_14_codescan_and_isr_py_describe_the_checked_folder(self):
         skill = self.read("skills", "watchtower-codescan", "SKILL.md")
         self.assertNotIn("if it's installed", skill)
         self.assertIn("checked scanner folder", skill)
-        self.assertNotIn("are used when on PATH", wt.__doc__)
-        self.assertIn("scanner-bins.lock", wt.__doc__)
+        self.assertNotIn("are used when on PATH", isr.__doc__)
+        self.assertIn("scanner-bins.lock", isr.__doc__)
 
     def test_13_contrasts_are_marked(self):
         """Finding 13 (test accounting): fails with the build commit's test files, which didn't mark these as contrasts."""

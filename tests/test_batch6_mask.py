@@ -11,7 +11,8 @@ Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2'
 Every secret is FAKE."""
 import gzip, json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import wt
+import test_boxes  # noqa: E402
+import isr  # noqa: E402
 from test_batch4_codex_review3 import History, ev
 
 SPLIT = ("curl --coo\\\nkie 'sid=FAKEz' https://x.example",      # Codex's three (KL3)
@@ -66,14 +67,14 @@ def paired(s):
 class CurlCookieAndBearer(History):
     def test_codex_split_forms_are_hidden(self):   # replay (5dcd0a2 kept FAKEz in all three)
         for line in SPLIT:
-            for got in (wt.mask_secrets(line), ev(line)):
+            for got in (isr.mask_secrets(line), ev(line)):
                 self.assertNotIn("FAKEz", got, line)
                 self.assertIn("x.example", got, line)
-            self.assertEqual(wt.mask_secrets(line).count("\n"), line.count("\n"), line)
+            self.assertEqual(isr.mask_secrets(line).count("\n"), line.count("\n"), line)
 
     def test_single_line_forms_are_hidden(self):   # replay (5dcd0a2 kept FAKEz in --cookie, -b, -bsid= and --oauth2-bearer)
         for line in ONE_LINE:
-            for got in (wt.mask_secrets(line), ev(line)):
+            for got in (isr.mask_secrets(line), ev(line)):
                 self.assertNotIn("FAKEz", got, line)
                 self.assertIn("x.example", got, line)
 
@@ -81,7 +82,7 @@ class CurlCookieAndBearer(History):
         doc = self.copy_of("Run these:\n```\n" + "\n".join(SPLIT + ONE_LINE) + "\n```\nAsk before saving.")
         self.assertNotIn("FAKEz", doc)
         self.assertIn("Ask before saving.", doc)
-        self.assertEqual(json.loads(doc)["masked"], wt.MASK_VERSION)
+        self.assertEqual(json.loads(doc)["masked"], isr.MASK_VERSION)
 
     def test_in_shell_history_state(self):   # guard (passes on 5dcd0a2 too: these lines aren't kept as history events)
         got = self.history("\n".join(SPLIT[:3] + ONE_LINE[:4]) + "\n")
@@ -90,49 +91,49 @@ class CurlCookieAndBearer(History):
     def test_copies_masked_by_version_7_are_masked_again(self):   # replay (5dcd0a2's marker 7 left them as they were)
         d = self.skills(1)[0]
         self.audit()
-        old = {"dir": d, "at": wt.now(), "hash": wt.skill_dir_hash(d), "hashes": {"SKILL.md": wt.sha256_file(os.path.join(d, "SKILL.md"))},
+        old = {"dir": d, "at": isr.now(), "hash": isr.skill_dir_hash(d), "hashes": {"SKILL.md": isr.sha256_file(os.path.join(d, "SKILL.md"))},
                "files": {"SKILL.md": "\n".join(SPLIT) + "\n"}, "masked": 7}
-        with gzip.open(wt.approved_path(d), "wt") as f:
+        with gzip.open(isr.approved_path(d), "wt") as f:
             json.dump(old, f)
-        with open(wt.state_path("approved_masked"), "w") as f:
-            f.write("7 " + wt.now() + "\n")   # what 5dcd0a2 wrote
+        with open(isr.state_path("approved_masked"), "w") as f:
+            f.write("7 " + isr.now() + "\n")   # what 5dcd0a2 wrote
         self.audit()
-        with gzip.open(wt.approved_path(d), "rt") as f:
+        with gzip.open(isr.approved_path(d), "rt") as f:
             doc = json.load(f)
         self.assertNotIn("FAKEz", json.dumps(doc))
         self.assertEqual(doc["masked"], 10)   # batch 7d: MASK_VERSION 10 (was 9, and "9" below; batch 7a: 9, was 8)
-        self.assertEqual(open(wt.state_path("approved_masked")).read().split()[0], "10")
+        self.assertEqual(open(isr.state_path("approved_masked")).read().split()[0], "10")
 
     def test_names_files_and_other_tools_stay_readable(self):   # guard
         for s in READABLE:
-            self.assertEqual(wt.mask_secrets(s), s, s)
+            self.assertEqual(isr.mask_secrets(s), s, s)
 
 
 class QuotesAndIdempotence(unittest.TestCase):
     def test_a_hidden_value_keeps_its_closing_quote(self):   # replay (5dcd0a2 ate the closing quote)
-        self.assertEqual(wt.mask_secrets("curl -d 'token=FAKEd8&user=bob' https://x.example"), "curl -d 'token=[hidden]' https://x.example")
-        self.assertEqual(wt.mask_secrets('export "API_TOKEN=FAKEe9" && make'), 'export "API_TOKEN=[hidden]" && make')
-        self.assertEqual(wt.mask_secrets("curl -u 'admin:FAKEu5' https://x.example"), "curl -u 'admin:[hidden]' https://x.example")
+        self.assertEqual(isr.mask_secrets("curl -d 'token=FAKEd8&user=bob' https://x.example"), "curl -d 'token=[hidden]' https://x.example")
+        self.assertEqual(isr.mask_secrets('export "API_TOKEN=FAKEe9" && make'), 'export "API_TOKEN=[hidden]" && make')
+        self.assertEqual(isr.mask_secrets("curl -u 'admin:FAKEu5' https://x.example"), "curl -u 'admin:[hidden]' https://x.example")
 
     def test_masked_text_keeps_its_quotes_paired(self):   # replay (5dcd0a2 left an open quote in several)
         for s in CORPUS:
             if paired(s):
-                self.assertTrue(paired(wt.mask_secrets(s)), (s, wt.mask_secrets(s)))
+                self.assertTrue(paired(isr.mask_secrets(s)), (s, isr.mask_secrets(s)))
 
     def test_masking_twice_is_masking_once(self):   # replay (5dcd0a2's second pass hid "&& make")
         for s in CORPUS:
-            once = wt.mask_secrets(s)
-            self.assertEqual(wt.mask_secrets(once), once, s)
+            once = isr.mask_secrets(s)
+            self.assertEqual(isr.mask_secrets(once), once, s)
             self.assertNotIn("FAKE", once.replace("FAKEbranch", ""), s)
 
     def test_a_quoted_value_with_a_quote_inside_is_still_whole(self):   # guard: the shapes that were already whole stay so
-        self.assertEqual(wt.mask_secrets("API_TOKEN='prefix'\"FAKEp11\" && make"), "API_TOKEN=[hidden] && make")
-        self.assertEqual(wt.mask_secrets("'API_TOKEN'='FAKEq10' make"), "'API_TOKEN'=[hidden] make")
-        self.assertEqual(wt.mask_secrets("curl -H 'Authorization: Bearer FAKEh7' https://x.example"),
+        self.assertEqual(isr.mask_secrets("API_TOKEN='prefix'\"FAKEp11\" && make"), "API_TOKEN=[hidden] && make")
+        self.assertEqual(isr.mask_secrets("'API_TOKEN'='FAKEq10' make"), "'API_TOKEN'=[hidden] make")
+        self.assertEqual(isr.mask_secrets("curl -H 'Authorization: Bearer FAKEh7' https://x.example"),
                          "curl -H 'Authorization: Bearer [hidden]' https://x.example")
 
     def test_the_version_is_8(self):   # replay (5dcd0a2: 7)
-        self.assertEqual(wt.MASK_VERSION, 10)   # batch 7d: 10 (was 9; batch 7a: 9, was 8); the name is batch 6's, kept so no test disappears
+        self.assertEqual(isr.MASK_VERSION, 10)   # batch 7d: 10 (was 9; batch 7a: 9, was 8); the name is batch 6's, kept so no test disappears
 
 
 if __name__ == "__main__":

@@ -11,12 +11,13 @@ The canonical form drops the fields and puts {"$unit": id} in place of each veri
 lock line for the path. Anything else leaves the file counted, as on 5dcd0a2.
 
 The spec and lock here are the box's own (module constants pointed at temp files); the canonical digests are computed by this
-file's own canon(), independently of wt. Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's
+file's own canon(), independently of isr.py. Tests marked "replay" fail on 5dcd0a2 on their assertion (measured with 5dcd0a2's
 watchtower/ sources, rules and scripts, this file in place); "guard" ones keep real changes counted. All values are made up."""
 import copy, hashlib, json, os, subprocess, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, ROOT, TH_DONE, wt
+from test_boxes import Box, ROOT, TH_DONE
+import isr  # noqa: E402
 import profiles
 
 CACHE = "sand-data/managed-skills/cache.json"
@@ -59,7 +60,7 @@ def text(doc):
 
 
 def canon(doc, spec):
-    """The canonical form's sha256, written independently of wt: fields dropped (a "*" step is every list element), each unit's
+    """The canonical form's sha256, written independently of isr.py: fields dropped (a "*" step is every list element), each unit's
     text fields (or digest values) replaced by {"$unit": its id}, compact JSON in the file's own key order."""
     return sha(canon_bytes(doc, spec))
 
@@ -124,15 +125,15 @@ class _Units(Box):
         p = os.path.join(self.tmp, "platform-normalize.json")
         with open(p, "w") as f:
             json.dump({"about": "test", "entries": entries}, f)
-        old = wt.PLATFORM_NORMALIZE
-        wt.PLATFORM_NORMALIZE = p
-        self.addCleanup(setattr, wt, "PLATFORM_NORMALIZE", old)
-        vars(wt)["_PLATFORM_NORMALIZE_CACHE"].clear()
-        self.addCleanup(vars(wt)["_PLATFORM_NORMALIZE_CACHE"].clear)
+        old = isr.PLATFORM_NORMALIZE
+        isr.PLATFORM_NORMALIZE = p
+        self.addCleanup(setattr, isr, "PLATFORM_NORMALIZE", old)
+        vars(isr)["_PLATFORM_NORMALIZE_CACHE"].clear()
+        self.addCleanup(vars(isr)["_PLATFORM_NORMALIZE_CACHE"].clear)
 
     def list_canon(self, rel, doc, spec):
         # fix round 1 (Codex 1): a line that says it is a canonical form; 6cd1ab4 (a replay against it) read a plain line as one
-        tag = "canonical " if hasattr(wt, "platform_lock_canonical") else ""
+        tag = "canonical " if hasattr(isr, "platform_lock_canonical") else ""
         with open(self.platform_lock, "a") as f:
             f.write(f"{tag}{canon(doc, spec)}  {rel}\n")
 
@@ -157,12 +158,12 @@ class _Units(Box):
 
     def counted(self, where=None):
         return [(f["rule"], f["severity"], f["where"]) for f in self.snap()["findings"]
-                if wt.counts(f) and f["severity"] in ("critical", "high") and (where is None or f["where"].split(":")[0] == where)]
+                if isr.counts(f) and f["severity"] in ("critical", "high") and (where is None or f["where"].split(":")[0] == where)]
 
     def run_manifest(self):
         """This run's fingerprints of the box's platform files, as the audit takes them."""
-        files, _ = wt.platform_inventory(self.roots)
-        return {p: wt.sha256_file(p) for p in files}
+        files, _ = isr.platform_inventory(self.roots)
+        return {p: isr.sha256_file(p) for p in files}
 
 
 # ---------------------------------------------------------------- B1 replays
@@ -174,12 +175,12 @@ class VerifiedRewrites(_Units):
         self.assertEqual(self.counted(), [])
         self.assertFalse([f for f in self.snap()["findings"] if f.get("unverified_platform")])
         tip = [f for f in self.snap()["findings"] if f["rule"] == "ISR-I008"]
-        self.assertEqual([(f["label"], f["severity"]) for f in tip], [(wt.TIP, "info")])
+        self.assertEqual([(f["label"], f["severity"]) for f in tip], [(isr.TIP, "info")])
         self.assertIn("Grok Bot updated its list of what it loads (~/" + CACHE + ")", tip[0]["fix"])
         self.assertIn("only dates, and copies of files ISR Bot checked itself, changed", tip[0]["fix"])
         r = self.audit()   # the full audit accepts it like any listed platform update
         self.assertEqual(self.counted(), [])
-        self.assertEqual(r["status"], wt.ALL_GOOD)
+        self.assertEqual(r["status"], isr.ALL_GOOD)
 
     def test_a_skill_update_is_one_counted_high_on_its_skill_file(self):   # replay (5dcd0a2: 2, the cache too)
         """b8i4: the clean skill update at its listed path is the middle path's quiet line now, so nothing is counted."""
@@ -196,7 +197,7 @@ class VerifiedRewrites(_Units):
         self.write_manifest(manifest_doc(sha(PPTX2), when="2026-10-19T06:00:00Z"))
         r = self.audit()
         self.assertEqual(self.counted(), [])
-        self.assertEqual(r["status"], wt.ALL_GOOD)
+        self.assertEqual(r["status"], isr.ALL_GOOD)
 
     def test_daily_twice_says_no_changes(self):   # replay (5dcd0a2: platform_unverified both times)
         self.baseline()
@@ -225,8 +226,8 @@ class StillCounted(_Units):
             self.write_cache(data)
         self.audit()
         self.assertFalse([r for r, s, _ in self.counted(p) if r in ("ISR-I001", "ISR-I002") and s == "high"], why)
-        self.assertNotIn(p, wt.VERIFIED_METADATA, why)
-        self.assertEqual(wt.load_baseline()[0].get(p), wt.sha256_file(p), why)
+        self.assertNotIn(p, isr.VERIFIED_METADATA, why)
+        self.assertEqual(isr.load_baseline()[0].get(p), isr.sha256_file(p), why)
 
     def test_content_changes_stay_counted(self):   # guard
         base = cache_doc()
@@ -291,19 +292,19 @@ class StillCounted(_Units):
         self.write_cache(cache_doc(when=1760900000000))
         m = self.run_manifest()
         swapped = dict(m, **{self.pptx: sha(PPTX2)})   # the scan read other bytes for the SKILL.md than are there now
-        self.assertIn(self.cache, wt.platform_unproven(swapped))
-        self.assertIn(self.cache, wt.platform_unproven({k: v for k, v in m.items() if k != self.pptx}))   # not fingerprinted
-        self.assertIn(self.cache, wt.platform_unproven(dict(m, **{self.cache: sha(b"other")})))   # the file itself changed since the scan
+        self.assertIn(self.cache, isr.platform_unproven(swapped))
+        self.assertIn(self.cache, isr.platform_unproven({k: v for k, v in m.items() if k != self.pptx}))   # not fingerprinted
+        self.assertIn(self.cache, isr.platform_unproven(dict(m, **{self.cache: sha(b"other")})))   # the file itself changed since the scan
 
     def test_the_scanned_bytes_are_verified(self):   # replay (5dcd0a2: unproven, the spec refused)
         self.baseline(clean=False)
         self.write_cache(cache_doc(when=1760900000000))
-        self.assertNotIn(self.cache, wt.platform_unproven(self.run_manifest()))
+        self.assertNotIn(self.cache, isr.platform_unproven(self.run_manifest()))
 
     def test_a_spec_with_an_unknown_unit_kind_is_refused_whole(self):   # guard
         bad = dict(CACHE_SPEC, units=[dict(CACHE_SPEC["units"][0], kind="anything_goes")])
         self.spec([{"path": MANIFEST, "fields": MANIFEST_SPEC["fields"]}, bad])
-        self.assertIn("entry 2", wt.platform_normalize_problem())
+        self.assertIn("entry 2", isr.platform_normalize_problem())
         self.baseline_counted(held=False)
 
     def baseline_counted(self, held=True):
@@ -317,27 +318,27 @@ class StillCounted(_Units):
             self.assertIn(("ISR-I002", "high", self.cache), self.counted(self.cache))
         else:
             self.assertEqual(self.counted(self.cache), [])
-            self.assertNotIn(self.cache, wt.VERIFIED_METADATA)
-            self.assertNotIn(self.cache, wt.load_baseline()[0])
+            self.assertNotIn(self.cache, isr.VERIFIED_METADATA)
+            self.assertNotIn(self.cache, isr.load_baseline()[0])
 
     def test_a_spec_or_lock_that_isnt_the_released_one_is_refused(self):   # guard
-        real = wt.release_digest
-        for rel in (wt.PLATFORM_NORMALIZE_REL, wt.PLATFORM_LOCK_REL):
-            vars(wt)["_PLATFORM_NORMALIZE_CACHE"].clear()
-            vars(wt)["_PLATFORM_LOCK_CACHE"].clear()
-            with mock.patch.object(wt, "release_digest", lambda r, rel=rel: "0" * 64 if r == rel else real(r)):
-                self.baseline_counted(held=rel == wt.PLATFORM_LOCK_REL)
-        vars(wt)["_PLATFORM_LOCK_CACHE"].clear()
+        real = isr.release_digest
+        for rel in (isr.PLATFORM_NORMALIZE_REL, isr.PLATFORM_LOCK_REL):
+            vars(isr)["_PLATFORM_NORMALIZE_CACHE"].clear()
+            vars(isr)["_PLATFORM_LOCK_CACHE"].clear()
+            with mock.patch.object(isr, "release_digest", lambda r, rel=rel: "0" * 64 if r == rel else real(r)):
+                self.baseline_counted(held=rel == isr.PLATFORM_LOCK_REL)
+        vars(isr)["_PLATFORM_LOCK_CACHE"].clear()
 
     def test_the_shipped_spec_is_still_empty_and_verifies_nothing(self):   # guard: no change until the spike's data lands
         with open(os.path.join(ROOT, "rules", "platform-normalize.json")) as f:
             self.assertEqual(json.load(f)["entries"], [])
-        wt.PLATFORM_NORMALIZE = os.path.join(ROOT, "rules", "platform-normalize.json")
-        vars(wt)["_PLATFORM_NORMALIZE_CACHE"].clear()
+        isr.PLATFORM_NORMALIZE = os.path.join(ROOT, "rules", "platform-normalize.json")
+        vars(isr)["_PLATFORM_NORMALIZE_CACHE"].clear()
         self.write_cache(cache_doc())
         self.list_canon(CACHE, cache_doc(), CACHE_SPEC)
-        self.assertEqual(wt.platform_normalize_problem(), "")
-        self.assertIn(self.cache, wt.platform_unproven(self.run_manifest()))
+        self.assertEqual(isr.platform_normalize_problem(), "")
+        self.assertIn(self.cache, isr.platform_unproven(self.run_manifest()))
 
 
 # ---------------------------------------------------------------- B2: gitleaks on a verified metadata file
@@ -378,8 +379,8 @@ class GitleaksOnVerifiedFiles(_Units):
         r = self.audit()
         s2 = self.s002()
         self.assertEqual(len(s2), 1)
-        self.assertTrue(wt.platform_scope(s2[0]), s2[0])
-        owners = wt.owners(self.snap()["findings"])
+        self.assertTrue(isr.platform_scope(s2[0]), s2[0])
+        owners = isr.owners(self.snap()["findings"])
         self.assertNotIn(s2[0], owners)
         self.assertEqual([f["rule"] for f in owners if f["severity"] != "info"], ["ISR-A003"])   # the box's only counted finding
         self.assertEqual((r["open_by_severity"]["medium"], r["open_by_severity"]["high"]), (1, 0))
@@ -394,16 +395,16 @@ class GitleaksOnVerifiedFiles(_Units):
         self.audit()
         s2 = self.s002()
         self.assertEqual(len(s2), 1)
-        self.assertIn(s2[0], wt.owners(self.snap()["findings"]))
-        self.assertEqual((s2[0]["label"], s2[0]["severity"]), (wt.CONFIRMED, "medium"))
+        self.assertIn(s2[0], isr.owners(self.snap()["findings"]))
+        self.assertEqual((s2[0]["label"], s2[0]["severity"]), (isr.CONFIRMED, "medium"))
 
     # ------------------------------------------------ fix round 1
     def assert_counted_with_cleanup(self, where=None):
         where = where or self.manifest
         s2 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-S002" and f["where"].split(":")[0] == where]
         self.assertEqual(len(s2), 1, s2)
-        self.assertIn(s2[0], wt.owners(self.snap()["findings"]))
-        self.assertTrue(wt.counts(s2[0]))
+        self.assertIn(s2[0], isr.owners(self.snap()["findings"]))
+        self.assertTrue(isr.counts(s2[0]))
         plan = json.loads(self.fix_plan())   # its cleanup: the revoke for a working key, else the key-strings decision
         if s2[0]["severity"] == "critical":
             self.assertTrue([x for x in plan["only_you"] if x["what"] == "Keys that still work are sitting in files"], plan)
@@ -424,7 +425,7 @@ class GitleaksOnVerifiedFiles(_Units):
         swapped = text(dict(doc, generation=8))   # same hit, same line; not the verified bytes
         self.scanners(gitleaks=gitleaks_hit(self.manifest, swap=(swapped, None)))
         self.audit()
-        self.assertIn(self.manifest, wt.VERIFIED_METADATA)   # it was verified before gitleaks read it
+        self.assertIn(self.manifest, isr.VERIFIED_METADATA)   # it was verified before gitleaks read it
         self.assert_counted_with_cleanup()
 
     def test_a_swap_put_back_after_the_scan_keeps_the_hit_counted(self):   # replay, Codex 2 (6cd1ab4: a note)
@@ -448,7 +449,7 @@ class GitleaksOnVerifiedFiles(_Units):
         self.scanners(gitleaks=gitleaks_hit(self.manifest))
         self.write_manifest(dict(manifest_doc(sha(PPTX1)), generation=8))   # not the released version
         r = self.audit()
-        p = wt.state_path("last_findings.json")
+        p = isr.state_path("last_findings.json")
         with open(p) as f:
             snap = json.load(f)
         with open(self.manifest, "rb") as f:
@@ -470,13 +471,13 @@ class GitleaksOnVerifiedFiles(_Units):
     def test_report_and_doctor_decide_a_note_as_the_audit_did(self):   # guard: decided again, from the disk and the release
         r = self.audit_of_a_note()
         self.assertEqual(json.loads(self.run_cmd("doctor")[1])["last_run"]["open_by_severity"], r["open_by_severity"])
-        wt._METADATA_PROOF.clear()
-        self.assertNotIn(self.s002()[0], wt.owners(self.snap()["findings"]))
+        isr._METADATA_PROOF.clear()
+        self.assertNotIn(self.s002()[0], isr.owners(self.snap()["findings"]))
 
     def audit_of_a_note(self):
         self.verified_rewrite(gitleaks=gitleaks_hit(self.manifest))
         r = self.audit()
-        self.assertNotIn(self.s002()[0], wt.owners(self.snap()["findings"]))
+        self.assertNotIn(self.s002()[0], isr.owners(self.snap()["findings"]))
         return r
 
     def test_a_note_counts_again_once_the_file_changes(self):   # guard: the bytes it was bound to must still be there
@@ -490,7 +491,7 @@ class GitleaksOnVerifiedFiles(_Units):
         self.verified_rewrite(gitleaks=gitleaks_hit(self.manifest), trufflehog=th)
         self.audit()
         s2 = self.assert_counted_with_cleanup()
-        self.assertEqual((s2["severity"], s2["title"]), ("critical", wt.KEY_LIVE))
+        self.assertEqual((s2["severity"], s2["title"]), ("critical", isr.KEY_LIVE))
 
     def test_a_hit_in_a_file_with_an_unlisted_unit_is_counted(self):   # replay, Codex 4 (6cd1ab4: a note in the cache)
         token = "api_key = FAKE-0000-not-a-real-key"
@@ -500,7 +501,7 @@ class GitleaksOnVerifiedFiles(_Units):
         self.put("sand-data/managed-skills/skills/pptx/SKILL.md", evil)   # not on the release list: its own counted high
         self.write_cache(cache_doc(pptx=evil, when=1760900000000))   # the cache repeats it, so B1 still verifies the cache
         self.audit()
-        self.assertIn(self.cache, wt.VERIFIED_METADATA)
+        self.assertIn(self.cache, isr.VERIFIED_METADATA)
         # b8i4 fix round 1 (Codex 4): gitleaks's medium hit on the skill file holds its update, so the middle path doesn't take it
         self.assertIn(("ISR-I001", "high", self.pptx), self.counted())
         self.assert_counted_with_cleanup(self.cache)
@@ -525,9 +526,9 @@ class ShapeScriptModes(_Units):
         self.assertIn('."files"."skills/pptx/SKILL.md"\tfile_digest\tskills/pptx/SKILL.md', out)
         self.assertNotIn(sha(PPTX1), out)
 
-    def test_canonical_prints_the_lock_line_wt_would_need(self):   # replay (5dcd0a2: no --canonical)
+    def test_canonical_prints_the_lock_line_isr_py_would_need(self):   # replay (5dcd0a2: no --canonical)
         self.write_cache(cache_doc())
-        out = self.run_script("--canonical", "--spec", wt.PLATFORM_NORMALIZE, self.cache)
+        out = self.run_script("--canonical", "--spec", isr.PLATFORM_NORMALIZE, self.cache)
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
         self.assertIn(f"canonical {canon(cache_doc(), CACHE_SPEC)}  {CACHE}\n", out.stdout)
 
@@ -547,13 +548,13 @@ class CanonicalLinesAreNotRawLines(_Units):
 
     def released_line(self):
         self.write_cache(cache_doc())
-        out = self.run_script("--canonical", "--spec", wt.PLATFORM_NORMALIZE, self.cache)
+        out = self.run_script("--canonical", "--spec", isr.PLATFORM_NORMALIZE, self.cache)
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
         line = next(l for l in out.stdout.splitlines() if l.endswith("  " + CACHE))
         with open(self.platform_lock, "a") as f:
             f.write(line + "\n")
-        vars(wt)["_PLATFORM_LOCK_CACHE"].clear()
-        self.assertNotIn(self.cache, wt.platform_unproven(self.run_manifest()))   # the released cache is verified by it
+        vars(isr)["_PLATFORM_LOCK_CACHE"].clear()
+        self.assertNotIn(self.cache, isr.platform_unproven(self.run_manifest()))   # the released cache is verified by it
 
     def test_the_canonical_bytes_written_as_the_file_stay_unproven(self):   # replay (6cd1ab4: listed through platform_listed)
         self.released_line()
@@ -562,34 +563,34 @@ class CanonicalLinesAreNotRawLines(_Units):
         os.remove(self.pptx)
         os.remove(self.learn)   # no backing skill file at all
         self.write_cache(raw)
-        self.assertIn(self.cache, wt.platform_unproven(self.run_manifest()))
-        self.assertFalse(wt.platform_listed(self.cache, sha(raw)))
+        self.assertIn(self.cache, isr.platform_unproven(self.run_manifest()))
+        self.assertFalse(isr.platform_listed(self.cache, sha(raw)))
         self.skills(1)
         self.audit()
         # b8i4: still unproven (above), but its path is on the release list and the rules find nothing, so on this first run it
         # is the middle path's (silent, out of the first baseline: D8), like any other clean version there
         self.assertEqual(self.counted(self.cache), [])
-        self.assertNotIn(self.cache, wt.VERIFIED_METADATA)
-        self.assertNotIn(self.cache, wt.load_baseline()[0])
+        self.assertNotIn(self.cache, isr.VERIFIED_METADATA)
+        self.assertNotIn(self.cache, isr.load_baseline()[0])
 
     def test_the_canonical_bytes_stay_unproven_with_the_skill_files_there(self):   # replay (6cd1ab4: listed)
         self.released_line()
         self.write_cache(canon_bytes(cache_doc(), CACHE_SPEC))
-        self.assertIn(self.cache, wt.platform_unproven(self.run_manifest()))
+        self.assertIn(self.cache, isr.platform_unproven(self.run_manifest()))
 
     def test_a_plain_line_never_vouches_for_a_canonical_form(self):   # replay (6cd1ab4: a plain line was read as either form)
         self.write_cache(cache_doc())
         with open(self.platform_lock, "a") as f:
             f.write(f"{canon(cache_doc(), CACHE_SPEC)}  {CACHE}\n")
-        vars(wt)["_PLATFORM_LOCK_CACHE"].clear()
-        self.assertIn(self.cache, wt.platform_unproven(self.run_manifest()))
+        vars(isr)["_PLATFORM_LOCK_CACHE"].clear()
+        self.assertIn(self.cache, isr.platform_unproven(self.run_manifest()))
 
     def test_a_canonical_line_parses_and_a_malformed_one_refuses_the_list(self):   # guard
-        with mock.patch.object(wt, "release_want", lambda *a: None):
-            raw, why, can = wt._parse_platform_lock(f"canonical {'a' * 64}  {CACHE}\n{'b' * 64}  {CACHE}\n".encode())
+        with mock.patch.object(isr, "release_want", lambda *a: None):
+            raw, why, can = isr._parse_platform_lock(f"canonical {'a' * 64}  {CACHE}\n{'b' * 64}  {CACHE}\n".encode())
             self.assertEqual((raw, why, can), ({CACHE: {"b" * 64}}, "", {CACHE: {"a" * 64}}))
             for bad in (f"canonicals {'a' * 64}  {CACHE}\n", f"Canonical {'a' * 64}  {CACHE}\n", f"canonical  {'a' * 64}  {CACHE}\n"):
-                self.assertEqual(wt._parse_platform_lock(bad.encode())[0::2], ({}, {}), bad)
+                self.assertEqual(isr._parse_platform_lock(bad.encode())[0::2], ({}, {}), bad)
 
 
 if __name__ == "__main__":

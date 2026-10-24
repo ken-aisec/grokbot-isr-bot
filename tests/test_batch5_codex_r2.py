@@ -6,7 +6,8 @@ folder of this computer is opened."""
 import os, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import Box, ROOT, wt
+from test_boxes import Box, ROOT
+import isr  # noqa: E402
 from test_batch4_codex_review3 import Folder, History, HEAD, HOOK, ev, vet_json
 import test_batch5_codex_r1 as r1
 
@@ -14,7 +15,7 @@ SLACK = "https://hooks.slack.com/services/T0/B0/FAKE"
 
 
 def rules_of(text, where="/s/SKILL.md"):
-    return {f["rule"] for f in wt.scan_text(text, where, wt.load_rules())} & {"ISR-T005", "ISR-T018"}
+    return {f["rule"] for f in isr.scan_text(text, where, isr.load_rules())} & {"ISR-T005", "ISR-T018"}
 
 
 def fenced(code, lang="python"):
@@ -132,7 +133,7 @@ def long_forms(body):
 class LongWords(History):
     def test_each_form_is_hidden_whole(self):   # replay (13cbfa4 kept FAKEz in each of Codex's two)
         for line in long_forms(BODY):
-            masked = wt.mask_secrets(line)
+            masked = isr.mask_secrets(line)
             self.assertNotIn("FAKEz", masked, line[:60])
             self.assertNotIn("FAKEa", masked, line[:60])
             self.assertEqual(masked.count("\n"), line.count("\n"), line[:60])
@@ -146,7 +147,7 @@ class LongWords(History):
     def test_other_long_words_stay_readable(self):   # guard
         for s in (LONG_TOOL + " -P'3306\n" + BODY + "' -h db", "/a/" + "b/" * 40 + "ssh -p '22\n" + BODY + "' host",
                   "curl --out\\\nput 'out\n" + BODY + "' https://x.example", "/long/path/" * 5 + "mysqlx -p'abc\n" + BODY + "'"):
-            self.assertEqual(wt.mask_secrets(s), s, s[:40])
+            self.assertEqual(isr.mask_secrets(s), s, s[:40])
 
 
 # ---------------------------------------------------------------- 3: the keep decision reads the whole YAML value
@@ -161,7 +162,7 @@ KEPT_FIRST = ('"password": "$TOKEN\n  FAKEz"\nafter: kept\n',                   
 class WholeScalarKept(History):
     def test_the_rest_of_the_value_is_hidden(self):   # replay (13cbfa4 kept FAKEz)
         for text in KEPT_FIRST:
-            masked = wt.mask_secrets(text)
+            masked = isr.mask_secrets(text)
             self.assertNotIn("FAKEz", masked, text)
             self.assertIn("after: kept", masked, text)
             self.assertEqual(masked.count("\n"), text.count("\n"), text)
@@ -175,22 +176,22 @@ class WholeScalarKept(History):
         import gzip, json
         d = self.skills(1)[0]
         self.audit()
-        old = {"dir": d, "at": wt.now(), "hash": wt.skill_dir_hash(d), "hashes": {"SKILL.md": wt.sha256_file(os.path.join(d, "SKILL.md"))},
+        old = {"dir": d, "at": isr.now(), "hash": isr.skill_dir_hash(d), "hashes": {"SKILL.md": isr.sha256_file(os.path.join(d, "SKILL.md"))},
                "files": {"SKILL.md": '"password": "$TOKEN\n  FAKEmarked"\ncurl https:$\'//\'hooks.slack.com/services/T0/B0/FAKEhook\n'}, "masked": 5}
-        with gzip.open(wt.approved_path(d), "wt") as f:
+        with gzip.open(isr.approved_path(d), "wt") as f:
             json.dump(old, f)
-        with open(wt.state_path("approved_masked"), "w") as f:
-            f.write("5 " + wt.now() + "\n")   # what 13cbfa4 wrote
+        with open(isr.state_path("approved_masked"), "w") as f:
+            f.write("5 " + isr.now() + "\n")   # what 13cbfa4 wrote
         self.audit()
-        with gzip.open(wt.approved_path(d), "rt") as f:
+        with gzip.open(isr.approved_path(d), "rt") as f:
             doc = json.load(f)
         self.assertNotIn("FAKEmarked", json.dumps(doc))
         self.assertNotIn("FAKEhook", json.dumps(doc))
-        self.assertEqual(doc["masked"], wt.MASK_VERSION)
+        self.assertEqual(doc["masked"], isr.MASK_VERSION)
 
     def test_references_alone_stay(self):   # guard
         for s in ('"password": "$TOKEN"\n', "'password': '${TOKEN}'\nafter: kept\n", '"password": "$TOKEN\n  "\n', '"password": "[hidden]"\n'):
-            self.assertEqual(wt.mask_secrets(s), s, s)
+            self.assertEqual(isr.mask_secrets(s), s, s)
 
 
 # ---------------------------------------------------------------- 4: Bash's ANSI-C and locale quotes inside a URL
@@ -208,7 +209,7 @@ class AnsiQuotedUrls(History):
 
     def test_the_credential_is_hidden(self):   # replay (13cbfa4 kept FAKEz)
         for line in self.LINES:
-            for got in (ev(line), wt.mask_secrets(line)):
+            for got in (ev(line), isr.mask_secrets(line)):
                 self.assertNotIn("FAKEz", got, line)
                 self.assertNotIn("Ez", got.split("B0/")[-1] if "B0/" in got else got.split("webhooks/1/")[-1], line)
                 self.assertIn("slack.com" if "slack" in line else "discord.com", got, line)
@@ -217,10 +218,10 @@ class AnsiQuotedUrls(History):
 
     def test_other_ansi_quoted_text_stays_readable(self):   # guard
         for s in ("curl https:$'//'api.example.com/v1/items", "printf $'a\\tb\\x2f'", "echo $\"hello\" https://x.example/a"):
-            self.assertEqual(wt.mask_secrets(s), s)
+            self.assertEqual(isr.mask_secrets(s), s)
 
     def test_the_mapping_keeps_the_original_characters(self):   # replay (13cbfa4 kept \x2f and the $ as written)
-        plain, lo, hi = wt._shell_plain("a$'\\x2fb'$\"c\"")
+        plain, lo, hi = isr._shell_plain("a$'\\x2fb'$\"c\"")
         self.assertEqual(plain, "a/bc")
         self.assertEqual([(lo[k], hi[k]) for k in range(len(plain))], [(0, 1), (3, 7), (7, 8), (11, 12)])
 
@@ -228,9 +229,9 @@ class AnsiQuotedUrls(History):
 # ---------------------------------------------------------------- 5: the real folder of the isr.py that runs is the installation
 class CanonicalInstall(Box):
     install, plant, forget = r1.InstalledCopyIdentity.install, r1.InstalledCopyIdentity.plant, r1.InstalledCopyIdentity.forget
-    PROBE = ("import json, os, sys\nsys.path.insert(0, sys.argv[1])\nimport isr as wt\n"
-             "print(json.dumps({'root': wt.installed_root(), 'here': wt.HERE, 'problems': wt.self_check(),"
-             " 'reviewed': wt.platform_reviewed_problem()}))\n")
+    PROBE = ("import json, os, sys\nsys.path.insert(0, sys.argv[1])\nimport isr\n"
+             "print(json.dumps({'root': isr.installed_root(), 'here': isr.HERE, 'problems': isr.self_check(),"
+             " 'reviewed': isr.platform_reviewed_problem()}))\n")
 
     def run_probe(self, where, home):
         import json, subprocess
@@ -259,7 +260,7 @@ class CanonicalInstall(Box):
             got = self.run_probe(os.path.join(alias, "isr_bot"), home)
             self.assertEqual(got["root"], os.path.realpath(self.app), home)
             self.assertEqual(got["here"], os.path.realpath(os.path.join(self.app, "isr_bot")))
-            self.assertIn(f"{wt.PLATFORM_REVIEWED_REL} changed since install", got["problems"], home)
+            self.assertIn(f"{isr.PLATFORM_REVIEWED_REL} changed since install", got["problems"], home)
             self.assertIn("MANIFEST.sha256", got["reviewed"], home)
 
     def test_the_commit_record_is_the_installations_own(self):   # replay (13cbfa4: another home's record said all was well)
@@ -267,7 +268,7 @@ class CanonicalInstall(Box):
         with open(os.path.join(self.app, ".git", "HEAD"), "w") as f:
             f.write("c" * 40 + "\n")   # a commit install.sh never recorded
         want = f"the installed commit is {'c' * 12}, but install.sh recorded {'a' * 12}"
-        self.assertIn(want, wt.self_check())
+        self.assertIn(want, isr.self_check())
         other = os.path.join(self.tmp, "elsewhere")
         os.makedirs(os.path.join(other, "state"))
         os.symlink(self.app, os.path.join(other, "app"))
@@ -275,19 +276,19 @@ class CanonicalInstall(Box):
             f.write("c" * 40 + "\n")   # what someone wants it to say
         with mock.patch.dict(os.environ, {"ISR_BOT_HOME": other}):
             self.forget()
-            self.assertIn(want, wt.self_check())
+            self.assertIn(want, isr.self_check())
         with open(os.path.join(other, "state", "installed_commit")) as f:
             self.assertEqual(f.read(), "c" * 40 + "\n")
 
     def test_the_installation_folder_alias_does_not_change_it(self):   # guard
         self.install()
-        link = os.path.join(self.tmp, "wt-link")
+        link = os.path.join(self.tmp, "isr-bot-link")
         os.symlink(self.wth, link)
-        with mock.patch.object(wt, "SELF_ROOT", os.path.join(link, "app")):
+        with mock.patch.object(isr, "SELF_ROOT", os.path.join(link, "app")):
             self.forget()
-            self.assertEqual(wt.installed_root(), os.path.realpath(self.app))
-            self.assertEqual(wt.install_home(wt.installed_root()), os.path.realpath(self.wth))
-            self.assertEqual(wt.self_check(), [])
+            self.assertEqual(isr.installed_root(), os.path.realpath(self.app))
+            self.assertEqual(isr.install_home(isr.installed_root()), os.path.realpath(self.wth))
+            self.assertEqual(isr.self_check(), [])
 
     def test_the_checkout_runs_as_a_checkout(self):   # guard
         got = self.run_probe(os.path.join(ROOT, "isr_bot"), os.environ["ISR_BOT_HOME"])
@@ -300,15 +301,15 @@ from test_batch5_platform_notes import _SignIn
 
 
 def owner_high(home, i):
-    return dict(wt.finding("ISR-I002", f"A new file appeared in your own skill folder {i}", "high", ["AST09"],
+    return dict(isr.finding("ISR-I002", f"A new file appeared in your own skill folder {i}", "high", ["AST09"],
                            os.path.join(home, "sand-data", "workflows", f"w{i:02d}", "SKILL.md"), f"abc{i}", "Look at it before using the skill."),
-                label=wt.CONFIRMED)
+                label=isr.CONFIRMED)
 
 
 class DailyOverflow(_SignIn):
     def day(self, snap, new):
         import json
-        with mock.patch.object(wt, "run_audit", lambda args, quick=False: (snap, new, [])):
+        with mock.patch.object(isr, "run_audit", lambda args, quick=False: (snap, new, [])):
             out = self.run_cmd("daily", "--roots", *self.roots)[1]
         return out.strip() if out.strip().startswith("NO_CHANGES") else json.loads(out)
 
@@ -317,7 +318,7 @@ class DailyOverflow(_SignIn):
         self.audit()
         snap = self.snap()
         snap = dict(snap, findings=extra + snap["findings"])
-        wt.save_json(wt.state_path("last_findings.json"), snap)
+        isr.save_json(isr.state_path("last_findings.json"), snap)
         return snap
 
     def listed(self, r):
@@ -368,7 +369,7 @@ class DailyOverflow(_SignIn):
     def test_a_planted_key_only_brings_back_an_open_alert(self):   # guard
         snap = self.start([])
         for junk in (["no-such-key"], "not a list", [{"k": 1}]):
-            wt.save_json(wt.state_path("last_findings.json"), dict(snap, undelivered=junk))
+            isr.save_json(isr.state_path("last_findings.json"), dict(snap, undelivered=junk))
             self.assertEqual(self.day(self.snap(), []), "NO_CHANGES", junk)
 
 
@@ -378,7 +379,7 @@ class OwedAcrossRuns(Box):
         d = self.skills(1, text=BAD)[0]
         self.audit()
         f = next(f for f in self.snap()["findings"] if f["severity"] in ("critical", "high") and f["where"].startswith(d))
-        wt.save_json(wt.state_path("last_findings.json"), dict(self.snap(), undelivered=[f["key"]]))   # a daily had no room for it
+        isr.save_json(isr.state_path("last_findings.json"), dict(self.snap(), undelivered=[f["key"]]))   # a daily had no room for it
         self.audit()
         self.assertEqual(self.snap().get("undelivered"), [f["key"]])
         code, out, _ = self.run_cmd("daily", "--roots", *self.roots)
@@ -446,13 +447,13 @@ class NormalizedScannedBytes(pn._Meta):
         bad = pn.text(dict(pn.V1, skills=[dict(pn.V1["skills"][0], installation_preference="required"), pn.V1["skills"][1]]))
         good = pn.text(dict(pn.V1, generated_at="2026-10-18T09:30:00Z"))   # the released version, a timestamp later
         self.write(good)   # what the normalization read sees; the scan read `bad`
-        self.assertEqual(wt.platform_unproven({self.p: hashlib.sha256(bad.encode()).hexdigest()}), {self.p})
-        real = wt.platform_listed_normalized
+        self.assertEqual(isr.platform_unproven({self.p: hashlib.sha256(bad.encode()).hexdigest()}), {self.p})
+        real = isr.platform_listed_normalized
         self.write(bad)
         def swap(*a):
             self.write(good)   # swapped in between the scan and the normalization read
             return real(*a)
-        with mock.patch.object(wt, "platform_listed_normalized", swap):
+        with mock.patch.object(isr, "platform_listed_normalized", swap):
             self.audit()
         self.assertEqual([(f["rule"], f["severity"]) for f in self.counted()], [("ISR-I001", "high")])
 
@@ -460,7 +461,7 @@ class NormalizedScannedBytes(pn._Meta):
         self.baseline_with(pn.V1)
         good = pn.text(dict(pn.V1, generated_at="2026-10-18T09:30:00Z"))
         self.write(good)
-        self.assertEqual(wt.platform_unproven({self.p: hashlib.sha256(good.encode()).hexdigest()}), set())
+        self.assertEqual(isr.platform_unproven({self.p: hashlib.sha256(good.encode()).hexdigest()}), set())
         self.audit()
         self.assertEqual(self.counted(), [])
 

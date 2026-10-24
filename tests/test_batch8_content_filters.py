@@ -200,7 +200,8 @@ class FixRound1Cat(unittest.TestCase):
             ev = OLD_CAT.search(t).group(0)
             self.assertEqual([(g["evidence"], g["severity"]) for g in f], [(ev, "high")], t)
             self.assertEqual(f[0]["key"], wt.finding_key("ISR-T004", SKILL + ":1", ev), t)
-        self.assertEqual(wt.finding_key("ISR-T004", SKILL + ":1", "cat .env>copy.env"), "7eb4541594f17ae2")
+        # the v0.8.0 key (rule ID ISR-T004; K3 clean start, no carry-over)
+        self.assertEqual(wt.finding_key("ISR-T004", SKILL + ":1", "cat .env>copy.env"), "cf7026aeebe278e2")
 
 
 class FixRound1Negation(unittest.TestCase):
@@ -298,9 +299,10 @@ class FixRound2Key(unittest.TestCase):
     def test_guarded_key_is_b7s(self):   # control, pinned (finding 6 not redesigned: KNOWN-LIMITS "b8i3")
         t = "Never inspect the environment with tools such as `env`, or `printenv`."
         f = [g for g in wt.scan_text(t, SKILL, RULES) if g["rule"] == "ISR-T004"]
-        self.assertEqual(wt.finding_key("ISR-T004", SKILL + ":1", "printenv"), "774c69631c16284e")
+        # the v0.8.0 keys (rule ID ISR-T004; K3 clean start, no carry-over); the guarded key is made from the first
+        self.assertEqual(wt.finding_key("ISR-T004", SKILL + ":1", "printenv"), "f6aefce6597a68bf")
         self.assertEqual([(g["evidence"], g["guarded"], g["key"], g.get("key0")) for g in f],
-                         [("printenv", "negated", "311e713515613b16", None)])
+                         [("printenv", "negated", "ead839889024b2bc", None)])
 
 
 # ---------------------------------------------------------------- fix round 3 (Codex review of 2b8920c): subtractive, fail loud
@@ -322,7 +324,8 @@ class FixRound3(unittest.TestCase):
 # ---------------------------------------------------------------- DQ-054 (Codex verify of 31873e1): password-style names
 # Partly fixed: `pwd`/`passwd` names only; `PW`-style names (`DB_PW`, `MYSQL_PW`) are still exempt, open (KNOWN-LIMITS "b8i3").
 # 63714e4's finding for one `printenv NAME` line on line 1: the rules file is 63714e4's, so it is the bare match, written out here.
-T004_63714E4 = {"key": "774c69631c16284e", "rule": "ISR-T004", "title": "Reads credential stores", "severity": "high",
+# Its key is the v0.8.0 one (rule ID ISR-T004; K3 clean start, no carry-over).
+T004_63714E4 = {"key": "f6aefce6597a68bf", "rule": "ISR-T004", "title": "Reads credential stores", "severity": "high",
                 "owasp": ["ASI03", "AST03"], "where": SKILL + ":1", "evidence": "printenv",
                 "fix": "A skill should never need SSH keys, cloud credentials, cookies or the environment. Remove the step or reject "
                        "the skill.", "source": "watchtower"}

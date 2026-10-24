@@ -13,7 +13,8 @@ Tests marked "replay" fail on 1aed58a on their assertion (measured with 1aed58a'
 "guard" ones keep what must not change. Every URL is an example; the webhook is FAKE."""
 import os, subprocess, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import ROOT, wt
+from test_boxes import ROOT
+import isr  # noqa: E402
 from test_batch4_codex_review3 import Folder, HEAD, HOOK, vet_json
 from test_batch5_codex_r2 import rules_of, fenced
 
@@ -111,9 +112,9 @@ class Scaling(unittest.TestCase):
         lines = ["config = {}", "WEBHOOK = '" + HOOK + "'"]
         lines += ["requests.post(config.get('k%d', '%s'), json=p)" % (i, HOOK) for i in range(3000)]
         lines += ["requests.post(WEBHOOK, json=p)"] * 3000
-        code = ("import sys, time; sys.path.insert(0, %r); import isr as wt\n"
+        code = ("import sys, time; sys.path.insert(0, %r); import isr\n"
                 "t = '---\\nname: x\\ndescription: x\\n---\\n```python\\n' + open(%r).read() + '\\n```\\n'\n"
-                "s = time.monotonic(); wt.scan_text(t, '/s/SKILL.md', wt.load_rules()); print(time.monotonic() - s)")
+                "s = time.monotonic(); isr.scan_text(t, '/s/SKILL.md', isr.load_rules()); print(time.monotonic() - s)")
         import tempfile
         with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as f:
             f.write("\n".join(lines))
