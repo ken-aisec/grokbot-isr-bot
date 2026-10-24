@@ -4,7 +4,8 @@ scenario in place of the item diff: the old layout's outputs must map onto the n
 from the table only (tests/rename_v080.py); the engine is never imported, and the key recipe below is this checker's own copy
 (state.py finding and finding_key, text.py guard_record).
 
-Compared: item names (old ones mapped through the table's output list) and every exit code; the records (every dict with a
+Compared: item names (old ones mapped through the table's output list) and every exit code; whole, the normalized text of a
+JSON item whose normalized form doesn't parse (run_windows.json's bare <EPOCH> list items); the records (every dict with a
 string rule in a JSON stdout, a JSON or JSON-lines file of the snapshot, or a :last_findings item) by identity at each position;
 every field of each paired record but its display wording (title, fix), its references through the key map included (Codex r2
 HIGH 5); each keyed record's class (N, I, G or U, decided on the old side) by the recipe; the key map the pairs give (a one-to-one
@@ -37,6 +38,15 @@ def map_old(text, table):
     for old, new in table["output"]:
         text = text.replace(old, new)
     return text
+
+
+def map_name(name, table):
+    """An old item name as map_old maps it; a `tree …` name as a folder (a "/" put on for the mapping and taken off again), so
+    the install folder's own item (no path after it) maps through the table's folder entries like the items under it."""
+    if not name.startswith("tree "):
+        return map_old(name, table)
+    t = map_old(name + "/", table)
+    return t[:-1] if t.endswith("/") else t
 
 
 def plain(r):
@@ -92,12 +102,16 @@ def documents(name, text):
 
 class Side:
     """What one side's items hold: records [(position, normalized record, raw record)], references [(position, value)],
-    findings lists [(position, [keys])] and what couldn't be read."""
+    findings lists [(position, [keys])], the items compared as text (JSON the normalization left no JSON: a placeholder as a
+    list item, run_windows.json's [[<EPOCH>, <EPOCH>]]) and what couldn't be read."""
     def __init__(self, items):
-        self.recs, self.refs, self.lists, self.bad = [], [], [], []
+        self.recs, self.refs, self.lists, self.bad, self.texts = [], [], [], [], []
         for name in sorted(items):
             raw, norm = items[name]
             dn, dr = documents(name, norm), documents(name, raw)
+            if dn is None and dr is not None:
+                self.texts.append(name)
+                continue
             if (dn is None) != (dr is None) or (dn is not None and len(dn) != len(dr)):
                 self.bad.append(f"{name!r}: the raw and normalized texts don't parse alike")
                 continue
@@ -164,16 +178,19 @@ def check(raw_old, raw_new, norm_old, norm_new, table):
     conv = lambda t: map_old(t, table)
     by_name = collections.defaultdict(list)
     for k in sorted(norm_old):
-        by_name[conv(k)].append(k)
+        by_name[map_name(k, table)].append(k)
     out += [f"two old items map onto one name {n!r}: {v}" for n, v in by_name.items() if len(v) > 1]
     names = {n: v[0] for n, v in by_name.items()}
     out += [f"an old item has no new one: {names[n]!r} (mapped: {n!r})" for n in sorted(set(names) - set(norm_new))]
     out += [f"a new item has no old one: {n!r}" for n in sorted(set(norm_new) - set(names))]
     out += [f"the exit code differs in {n!r}: {norm_old[names[n]]!r} (old), {norm_new[n]!r} (new)" for n in sorted(set(names) & set(norm_new))
             if n.endswith(" :rc") and norm_old[names[n]] != norm_new[n]]
-    old = Side({n: (raw_old.get(k), conv(norm_old[k])) for n, k in names.items()})
+    mapped = {n: conv(norm_old[k]) for n, k in names.items()}
+    old = Side({n: (raw_old.get(k), mapped[n]) for n, k in names.items()})
     new = Side({n: (raw_new.get(n), norm_new[n]) for n in norm_new})
     out += ["old side: " + x for x in old.bad] + ["new side: " + x for x in new.bad]
+    out += [f"the normalized texts differ in {n!r} (compared as text: the normalized JSON doesn't parse)"
+            for n in sorted(set(old.texts) | set(new.texts)) if n in mapped and n in norm_new and mapped[n] != norm_new[n]]
 
     # 3. records: the same multiset of identities at every position, paired in list order within an equal group
     ident = lambda pos, d: (pos, json.dumps([d.get(f) for f in ID_FIELDS], sort_keys=True))

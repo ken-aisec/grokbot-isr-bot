@@ -4,7 +4,7 @@ One synthetic scenario, written once per layout (scenario()): vet and prepublish
 grouped_into and undelivered, resolved.json, dismissed.jsonl, a delta and an events file. Its keys are made with the checker's
 recipe copy, and it holds an N, an I and a G record. Old names come from the name table (tests/rename_v080.py); nothing here
 imports the engine."""
-import hashlib, json, os, sys, unittest
+import hashlib, json, os, re, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import golden_cross as gc  # noqa: E402
@@ -160,6 +160,31 @@ class Cross(_Cross):
         self.assertTrue([p for p in out if "the field 'grouped_into' differs" in p], out)
         self.assertFalse([p for p in out if p.startswith("references differ")], out)   # the multiset at the position is equal
         self.assertFails(edit(self.new, VET, lambda d: d[0]["findings"][0].update(source="elsewhere")), "the field 'source' differs")
+
+    def test_9_the_install_folders_own_item_maps(self):   # fix round 1: 'tree workspace/<home>' with no path after it
+        folder = lambda L: "tree " + L["home"].lstrip("/")
+        self.assertEqual(gc.map_name(folder(rn.OLD), rn.TABLE), folder(rn.NEW))
+        old, new = dict(self.old, **{folder(rn.OLD): "dir 0700"}), dict(self.new, **{folder(rn.NEW): "dir 0700"})
+        self.assertEqual(self.problems(new, old), [])
+        self.assertFails({k: v for k, v in new.items() if k != folder(rn.NEW)}, "an old item has no new one: %r" % folder(rn.OLD), old)
+
+    def test_10_a_run_windows_item_is_compared_as_text(self):   # fix round 1: [[<EPOCH>, <EPOCH>]] is no JSON once normalized
+        def windows(n, t):
+            raw = json.dumps([[t + i, t + i + 0.39] for i in range(n)], indent=2)
+            return "file 0600\n" + raw, "file 0600\n" + re.sub(r"\d{10}\.\d+", "<EPOCH>", raw)
+        name = self.state + "run_windows.json"
+        old_name = "tree " + rn.OLD["home"].lstrip("/") + "/state/run_windows.json"
+        o_raw, o_norm = windows(1, 1792832200.125)
+
+        def check(n, t):
+            n_raw, n_norm = windows(n, t)
+            return gc.check(dict(self.old, **{old_name: o_raw}), dict(self.new, **{name: n_raw}),
+                            dict(self.old, **{old_name: o_norm}), dict(self.new, **{name: n_norm}), rn.TABLE)[0]
+        self.assertEqual(check(1, 1792832291.2927184), [])   # other times, the same normalized text
+        for n in (2, 0):   # a window more, none at all ("[]" parses: one side compared as text)
+            with self.subTest(windows=n):
+                out = check(n, 1792832291.2927184)
+                self.assertEqual(out, [f"the normalized texts differ in {name!r} (compared as text: the normalized JSON doesn't parse)"])
 
 
 if __name__ == "__main__":
