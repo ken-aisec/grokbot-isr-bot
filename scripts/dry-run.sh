@@ -7,7 +7,7 @@
 # state path (so paths match), and the sandbox folder is the namespace's /tmp. Afterwards only the
 # report is kept (audit.json, audit.err); the state copy and decoys are removed with the sandbox.
 #
-#   scripts/dry-run.sh [REF] [-- wt.py args]      default REF=HEAD, args "audit"
+#   scripts/dry-run.sh [REF] [-- isr.py args]      default REF=HEAD, args "audit"
 #
 # Env: ISR_DRY_KEEP=1 keeps the whole sandbox; ISR_DRY_OUT=<dir under /tmp> sets the report folder.
 # ISR_DRY_WORKSPACE / ISR_DRY_INSTALL / ISR_DRY_TMPROOT / ISR_DRY_RO exist for the tests. ISR_DRY_RO lists
@@ -53,7 +53,7 @@ mount --bind "$B" /tmp
 export PYTHONDONTWRITEBYTECODE=1 XDG_CACHE_HOME=/tmp/cache TMPDIR=/tmp ISR_BOT_HOME="$INSTALL"
 cd /tmp
 set +e
-python3 -W ignore /tmp/code/watchtower/wt.py "$@" > /tmp/out/audit.json 2> /tmp/out/audit.err
+python3 -W ignore /tmp/code/isr_bot/isr.py "$@" > /tmp/out/audit.json 2> /tmp/out/audit.err
 rc=$?
 echo "exit=$rc" >> /tmp/out/audit.err
 exit $rc

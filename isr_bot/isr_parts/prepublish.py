@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 # ---------------------------------------------------------------- pre-publish check (before Share → Create template)
 PREPUB_RULES = [
     ("ISR-PP01", "Email address", "medium", r"[\w.+-]+@[\w-]+\.[\w.-]+"),
@@ -108,7 +108,7 @@ def cmd_prepublish(args):
                     continue
                 if rid == "ISR-PP06":   # Watchtower's own script is installed by its setup skill from a pinned release, so it does travel
                     line = t[t.rfind("\n", 0, m.start()) + 1:(t.find("\n", m.end()) if t.find("\n", m.end()) != -1 else len(t))]
-                    if re.search(r"(wt\.py|/workspace/watchtower/|install\.sh)", line):
+                    if re.search(r"(isr\.py|/workspace/watchtower/|install\.sh)", line):
                         continue
                 fs.append(finding(rid, title, sev, ["AST04", "LLM02"], f"{where}:{line_of(t, m.start())}", mask(ev) if rid in ("ISR-PP01", "ISR-PP02") else ev[:120],
                                   "Remove or generalize it before you create the template: anything in a description, skill or routine ships to every installer.",

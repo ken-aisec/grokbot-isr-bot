@@ -195,7 +195,7 @@ class BoundedPlatformList(_Platform):
             self.assertEqual(pv["open"], self.N)
             self.assertEqual(len(pv["files"]), wt.PLATFORM_OPEN_SHOWN)
             self.assertEqual(pv.get("more"), self.N - wt.PLATFORM_OPEN_SHOWN)
-            self.assertIn("wt.py show ISR-I002", pv["next"])
+            self.assertIn("isr.py show ISR-I002", pv["next"])
             self.assertIn("platform-release.lock", self.approve("0" * 20))
             self.assertEqual(len(reads), 0)
         finally:

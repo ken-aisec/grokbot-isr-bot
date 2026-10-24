@@ -142,7 +142,7 @@ def busy_clean_box(box):
     _cookie_jar(box, [("vault.bitwarden.com", "_mpxl_sid"), (".bitwarden.com", "_ga"), (".example.com", "_gid")])
     # 8. Watchtower's own dev checkout: the engine source (every rule string) and its bad fixtures
     dev = os.path.join(box.ws, "watchtower-dev")
-    shutil.copytree(os.path.join(here, "watchtower"), os.path.join(dev, "watchtower"),
+    shutil.copytree(os.path.join(here, "isr_bot"), os.path.join(dev, "isr_bot"),
                     ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     shutil.copytree(os.path.join(here, "tests", "fixtures"), os.path.join(dev, "tests", "fixtures"))
     if os.path.isdir(os.path.join(here, "skills")):

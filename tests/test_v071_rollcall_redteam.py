@@ -8,8 +8,8 @@ from contextlib import redirect_stdout, redirect_stderr
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "watchtower"))
-import wt  # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
+import isr as wt  # noqa: E402
 
 warnings.simplefilter("ignore", ResourceWarning)
 

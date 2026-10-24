@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 SCORE_ERA = "s5"   # bump when the formula changes; older history is then hidden instead of compared
 SCORE_BASE = {"critical": 12, "high": 5, "medium": 1.5, "low": 0.3}   # per kind of risk
 SCORE_CAP = {"critical": 50, "high": 25, "medium": 12, "low": 3}      # per severity tier
@@ -287,7 +287,7 @@ def _no_severity(f, cls, label):
 # (DQ-027: critical only when broader than one pinned address) already do this where they are made; FACT_ONLY holds the rest.
 FACT_NOTE = {"ISR-D002": ("in a project nothing on this computer loads",
                          "Nothing Grok Bot loads uses this project, so it isn't scored. If you still run or deploy it, update the package "
-                         "there (`wt.py fix` offers the upgrade).")}
+                         "there (`isr.py fix` offers the upgrade).")}
 
 
 # Oct 12 ruling (Claude review Oct 13, F2): packages in a project count in full when a live skill, routine or hook uses that

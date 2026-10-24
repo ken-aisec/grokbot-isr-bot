@@ -125,7 +125,7 @@ class PluginsAreWhatTheScanFinds(_Small):
 
 # ---------------------------------------------------------------- 3: incomplete collection
 class IncompleteIsNeverNone(_Small):
-    def test_watchtower_installed_elsewhere_still_looks_in_the_workspace(self):   # replay (3170952 looked in /opt: "found no Slack")
+    def test_isr_bot_installed_elsewhere_still_looks_in_the_workspace(self):   # replay (3170952 looked in /opt: "found no Slack")
         os.environ["ISR_BOT_HOME"] = os.path.join(self.tmp, "opt", "watchtower")
         self.small()
         w(os.path.join(self.ws, "project", "mcp.json"), {"mcpServers": {"slack": {"command": "npx"}}})

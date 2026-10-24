@@ -1,4 +1,4 @@
-"""Hardening batch 3, Codex final review of rows 12 and 5: replays for the semgrep high (wt.py:6874 on dd27c42) and the launch
+"""Hardening batch 3, Codex final review of rows 12 and 5: replays for the semgrep high (isr.py:6874 on dd27c42) and the launch
 deadline medium. Each fails on dd27c42 unless its docstring says it is a contrast. Against 7cf8996 (the PR's base; Claude
 review 1, finding 8) all 9 error, the 3 contrasts too: the scanner code these tests drive isn't there.
 """

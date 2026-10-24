@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 # ---------------------------------------------------------------- plain language and the easy fix
 SCRUB = re.compile(
     r"(AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|(?i:aws_secret_access_key)\s*[=:]\s*[A-Za-z0-9/+=]{40}"
@@ -236,11 +236,11 @@ def tidy_apply(plan, args):
     """One list, one yes. Applies only what the owner saw in the last preview (saved in tidy_plan.json) and what is still
     on the list now (a cache that changed in the last day drops off), minus anything they named to skip."""
     if not getattr(args, "owner_said_yes", False):
-        return ["Cleanup not done: it needs the owner's yes to the whole list. Run `wt.py fix` to show the list, then "
-                "`wt.py fix --apply --owner-said-yes` after they say yes (add `--skip <ids or paths>` for anything they named)."]
+        return ["Cleanup not done: it needs the owner's yes to the whole list. Run `isr.py fix` to show the list, then "
+                "`isr.py fix --apply --owner-said-yes` after they say yes (add `--skip <ids or paths>` for anything they named)."]
     saved = load_json(state_path("tidy_plan.json"), {}) or {}
     if not saved.get("items") or time.time() - float(saved.get("ts", 0)) > TIDY_PLAN_DAYS * 86400:
-        return ["Cleanup not done: there is no list from the last week for the owner to have said yes to. Run `wt.py fix` and show it first."]
+        return ["Cleanup not done: there is no list from the last week for the owner to have said yes to. Run `isr.py fix` and show it first."]
     skip = {x.strip() for x in (getattr(args, "skip", None) or "").split(",") if x.strip()}
     # a target that grew since the preview (more files than the owner saw) needs a fresh preview
     shown = {(x.get("action"), x.get("path")) for x in saved["items"]}
@@ -628,9 +628,9 @@ def refusal(rule, title=""):
                 "Tell ISR Bot \"incident check\".")
     what = f" ({title})" if title else ""
     out = (f"{rule}{what} is something ISR Bot saw happen, or two checks agree on, so it can't be marked as fine. "
-           f"`wt.py show {rule}` shows where.")
+           f"`isr.py show {rule}` shows where.")
     if rule == "ISR-A002":
-        out += " To keep one exact Allow-automatically line, use `wt.py auto-allow`."
+        out += " To keep one exact Allow-automatically line, use `isr.py auto-allow`."
     return out
 
 
@@ -693,7 +693,7 @@ def upgrade_tried():
 
 
 def fix_class(f):
-    if f.get("unverified_platform"):   # item 8 (R3): only a release that lists it clears one (`wt.py fix` lists them: platform_unverified)
+    if f.get("unverified_platform"):   # item 8 (R3): only a release that lists it clears one (`isr.py fix` lists them: platform_unverified)
         return "platform"
     if f["rule"] in ("ISR-D001", "ISR-D002"):
         t = upgrade_tried()

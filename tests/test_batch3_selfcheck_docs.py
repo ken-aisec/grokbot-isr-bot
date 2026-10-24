@@ -30,19 +30,19 @@ class VersionAfterTheSelfCheck(v068.Base):
     install = v068.SelfCheck.install
 
     def version(self, app):
-        p = subprocess.run([sys.executable, os.path.join(app, "watchtower", "wt.py"), "--version"], capture_output=True, text=True,
+        p = subprocess.run([sys.executable, os.path.join(app, "isr_bot", "isr.py"), "--version"], capture_output=True, text=True,
                            env=dict(os.environ), timeout=120)
         return p.returncode, p.stdout, p.stderr
 
     def test_a_changed_copy_never_prints_its_version(self):
         app = self.install()
-        with open(os.path.join(app, "watchtower", "wt.py"), "a") as f:
+        with open(os.path.join(app, "isr_bot", "isr.py"), "a") as f:
             f.write("\n# changed\n")
         code, out, err = self.version(app)
         self.assertEqual(code, 4, out + err)
         self.assertIn("SELF-CHECK FAILED", out)
         self.assertIn("1 problem (listed in ISR Bot's ledger)", out)            # Claude review 1 (9): a count, never names
-        self.assertNotIn("watchtower/wt.py", out)
+        self.assertNotIn("isr_bot/isr.py", out)
         self.assertNotIn(wt.VERSION, out)
 
     def test_a_clean_install_prints_its_version(self):
@@ -53,7 +53,7 @@ class VersionAfterTheSelfCheck(v068.Base):
 
     def test_a_developer_checkout_prints_its_version(self):
         """Contrast (Codex, batch 3 round 1): passes on 7cf8996 too; it guards that the new self-check doesn't break checkouts."""
-        p = subprocess.run([sys.executable, os.path.join(ROOT, "watchtower", "wt.py"), "--version"], capture_output=True, text=True,
+        p = subprocess.run([sys.executable, os.path.join(ROOT, "isr_bot", "isr.py"), "--version"], capture_output=True, text=True,
                            env=dict(os.environ), timeout=120)
         self.assertEqual((p.returncode, p.stdout.strip()), (0, wt.VERSION), p.stderr)
 
@@ -99,7 +99,7 @@ class Egress(unittest.TestCase):
 
 class CodescanNote(unittest.TestCase):
     def test_no_advice_to_install_an_unchecked_semgrep(self):
-        src = text("watchtower", "wt.py")
+        src = text("isr_bot", "isr.py")
         self.assertNotIn("install semgrep for deeper analysis", src)
         self.assertIn("semgrep isn't one of ISR Bot's checked scanners", src)
 

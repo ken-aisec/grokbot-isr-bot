@@ -268,7 +268,7 @@ def doc(*p):
 class NoUnattendedDismiss(unittest.TestCase):
     def test_daily_watch_never_dismisses_accepts_or_clears(self):   # replay
         t = doc("routines", "daily-watch.md")
-        for bad in ("wt.py dismiss <key>", "--accept", "events clear"):
+        for bad in ("isr.py dismiss <key>", "--accept", "events clear"):
             self.assertNotIn(bad, t)
         self.assertFalse(re.search(r"(?i)\baccept", t))
         self.assertIn("For you to check", t)

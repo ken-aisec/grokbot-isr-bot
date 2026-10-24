@@ -84,7 +84,7 @@ class _Access(Box):
         return json.loads(out)
 
     def access(self, *extra):
-        """`wt.py access` (code, stdout). 77dedd1 has no such command: argparse exits 2, which is returned, never raised."""
+        """`isr.py access` (code, stdout). 77dedd1 has no such command: argparse exits 2, which is returned, never raised."""
         try:
             code, out, _ = self.run_cmd("access", *extra)
         except SystemExit as e:
@@ -147,7 +147,7 @@ class WhoCanReachWhat(_Access):
         self.assertEqual([a["area"] for a in sh["auto_allow"]], ["sends", "runs code"])
         self.assertTrue(all(re.fullmatch(r"[0-9a-f]{64}", a["id"]) for a in sh["auto_allow"]))
         ids = [x["id"] for x in wt.auto_allow_lines()]
-        self.assertIn(sh["auto_allow"][0]["id"], ids)   # the same id `wt.py auto-allow` shows
+        self.assertIn(sh["auto_allow"][0]["id"], ids)   # the same id `isr.py auto-allow` shows
         self.assertEqual((sh["runs_programs"], sh["auto_review"], sh["settings"]), ("without asking", True, "found"))
         self.assertEqual([b["name"] for b in m["bots"]], ["bot-e", "bot-f"])
         self.assertEqual(m["bots_silent"], ["bot-d"])
@@ -331,7 +331,7 @@ class UnknownsAreStated(_Access):
         except SystemExit as e:
             code, err = e.code, ""
         self.assertEqual(code, 2)
-        self.assertIn("no access map yet: run `wt.py audit` first", err)
+        self.assertIn("no access map yet: run `isr.py audit` first", err)
 
 
 # ---------------------------------------------------------------- the roll-call keeps what each Bot said

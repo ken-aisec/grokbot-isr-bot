@@ -310,11 +310,11 @@ class ArmorBoundaries(Box):
 
 
 # ---------------------------------------------------------------- 6, 7: linear time
-CHILD_BACKSLASH = ("import sys, time\nsys.path.insert(0, {wt_dir!r})\nimport wt\nrules = wt.load_rules()\n"
+CHILD_BACKSLASH = ("import sys, time\nsys.path.insert(0, {isr_dir!r})\nimport isr as wt\nrules = wt.load_rules()\n"
                    "text = ('-----BEGIN PRIVATE KEY-----\\n' + '\\\\' * 16000 + '\\n-----END PRIVATE KEY-----\\n') * 16\n"
                    "assert len(text) > 256000\nt = time.perf_counter()\nfs = wt.scan_text(text, '/s/SKILL.md', rules)\n"
                    "print(len([f for f in fs if f['rule'] == 'ISR-T011']), time.perf_counter() - t)\n")
-CHILD_HITS = ("import os, sys, time, secrets, string\nsys.path.insert(0, {wt_dir!r})\nimport wt\n"
+CHILD_HITS = ("import os, sys, time, secrets, string\nsys.path.insert(0, {isr_dir!r})\nimport isr as wt\n"
               "p = sys.argv[1]\nalnum = string.ascii_letters + string.digits\nlines, leaks = [], []\n"
               "for i in range(16000):\n"
               "    s = ''.join(secrets.choice(alnum) for _ in range(41))\n"
@@ -327,7 +327,7 @@ CHILD_HITS = ("import os, sys, time, secrets, string\nsys.path.insert(0, {wt_dir
               "assert os.path.getsize(p) > 780000\ndatas = {{}}\nt = time.perf_counter()\n"
               "out = [wt.gitleaks_example(l, datas, since) for l in leaks]\n"
               "print(sum(1 for x in out if x == ''), time.perf_counter() - t)\n")
-CHILD_ONE_LINE = ("import sys, time\nsys.path.insert(0, {wt_dir!r})\nimport wt\n"
+CHILD_ONE_LINE = ("import sys, time\nsys.path.insert(0, {isr_dir!r})\nimport isr as wt\n"
                   "hx = 'ab12' * 16\nline = ' '.join('sha256:' + hx for _ in range(1380))\ndata = (line + '\\n').encode()\n"
                   "assert len(data) < wt.GITLEAKS_FRAGMENT\nbuf = wt.FileBytes(data)\nt = time.perf_counter()\nn = 0\n"
                   "for i in range(1380):\n"
@@ -342,7 +342,7 @@ CHILD_ONE_LINE = ("import sys, time\nsys.path.insert(0, {wt_dir!r})\nimport wt\n
 class LinearTime(unittest.TestCase):
     def child(self, src, *args, bound=3.0, limit=60):
         try:
-            r = subprocess.run([sys.executable, "-c", src.format(wt_dir=os.path.join(ROOT, "watchtower")), *args], capture_output=True,
+            r = subprocess.run([sys.executable, "-c", src.format(isr_dir=os.path.join(ROOT, "isr_bot")), *args], capture_output=True,
                                text=True, timeout=limit)
         except subprocess.TimeoutExpired:
             self.fail(f"took more than {limit} seconds")

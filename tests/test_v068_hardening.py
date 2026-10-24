@@ -3,8 +3,8 @@ import io, json, os, shutil, sys, tempfile, unittest, warnings
 from contextlib import redirect_stdout, redirect_stderr
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "watchtower"))
-import wt  # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
+import isr as wt  # noqa: E402
 
 warnings.simplefilter("ignore", ResourceWarning)
 
@@ -109,7 +109,7 @@ class RestrictiveRules(Base):
         self.assertNotIn("ISR-M010", {f["rule"] for f in fs})
 
     def test_uninstall_never_suggests_removing_the_ask_first_rules(self):
-        src = open(os.path.join(ROOT, "watchtower", "wt.py")).read()
+        src = open(os.path.join(ROOT, "isr_bot", "isr.py")).read()
         self.assertNotIn("Remove the three Ask-first rules", src)
         self.assertIn("Keep the three Ask-first rules", src)
 
@@ -137,7 +137,7 @@ class SelfCheck(Base):
 
     def run_app(self, app, *argv):
         import subprocess
-        p = subprocess.run([sys.executable, os.path.join(app, "watchtower", "wt.py"), *argv], capture_output=True, text=True,
+        p = subprocess.run([sys.executable, os.path.join(app, "isr_bot", "isr.py"), *argv], capture_output=True, text=True,
                            env=dict(os.environ), timeout=120)
         return p.returncode, p.stdout + p.stderr
 
@@ -226,8 +226,9 @@ class RandomDecoys(Base):
 
     def test_no_doc_or_skill_names_a_decoy(self):
         names = ("customers-export-2025", "aws-credentials.bak", "payments.env", ".archive/", ".backup/")
+        self.assertTrue(os.path.isdir(os.path.join(ROOT, "isr_bot")))   # the engine folder; the walk skips it only in an install
         for dirpath, _, files in os.walk(ROOT):
-            if any(x in dirpath for x in ("/.git", "/tests", "/watchtower/watchtower")):
+            if any(x in dirpath for x in ("/.git", "/tests", "/isr-bot/isr_bot")):
                 continue
             for fn in files:
                 if fn.endswith(".md") and fn != "CHANGELOG.md":

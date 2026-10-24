@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 def is_sample_skill_path(path):
     """True when the path sits under a test/sample/docs folder segment (FIXTURE_PATH spirit for skills)."""
     p = os.path.normpath(os.path.abspath(str(path).split(":")[0])).replace(os.sep, "/")

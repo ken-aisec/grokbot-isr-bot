@@ -1,11 +1,11 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 # ---------------------------------------------------------------- one-time events (history, canaries) stay open
 EVENT_DAYS = 14
 
 
 def remember_events(new):
     """History lines and canary trips happen once. Keep them open for EVENT_DAYS so the next run
-    doesn't report them as fixed; suppress one (wt.py show + suppressions.json) to close it sooner."""
+    doesn't report them as fixed; suppress one (isr.py show + suppressions.json) to close it sooner."""
     store = mask_stored(load_json(state_path("events.json"), []))   # batch 4 (R11): evidence an older version stored unmasked
     known = {e["key"] for e in store}
     for f in new:

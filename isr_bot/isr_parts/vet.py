@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 # ---------------------------------------------------------------- vet
 def vet_folder(path):
     """Batch 4 (FP3): the folder vet reads when given a folder or a SKILL.md, else None (a loose file, stdin)."""

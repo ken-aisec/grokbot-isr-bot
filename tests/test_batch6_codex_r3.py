@@ -57,7 +57,7 @@ class NestedLaunchers(unittest.TestCase):
 
 
 # ---------------------------------------------------------------- H9, H10: linear scans
-TIMED = ("import sys, time; sys.path.insert(0, %r); import wt\n"
+TIMED = ("import sys, time; sys.path.insert(0, %r); import isr as wt\n"
          "def run(n):\n%s\n"
          "    s = time.monotonic(); r = go(t); return time.monotonic() - s, r\n"
          "small, _ = run(%d); large, r = run(%d)\nprint(small); print(large); print(repr(r))")
@@ -66,7 +66,7 @@ TIMED = ("import sys, time; sys.path.insert(0, %r); import wt\n"
 def timed(body, small, large):
     """(seconds for the small input, seconds for the large one, repr of the large result), or None after 30 seconds."""
     try:
-        p = subprocess.run([sys.executable, "-c", TIMED % (os.path.join(ROOT, "watchtower"), body, small, large)],
+        p = subprocess.run([sys.executable, "-c", TIMED % (os.path.join(ROOT, "isr_bot"), body, small, large)],
                            capture_output=True, text=True, timeout=30)
     except subprocess.TimeoutExpired:
         return None

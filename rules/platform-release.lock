@@ -10,12 +10,12 @@
 # lists it: a loose file, a link in or out, a colon in its path, a file over 1 MB, binary or flagged.
 #
 # This file ships with Watchtower's release: it is listed in MANIFEST.sha256 and an installed copy is held to that line,
-# so it is exactly as trustworthy as wt.py itself. None of the vendors publishes these hashes, and anything inside the
+# so it is exactly as trustworthy as isr.py itself. None of the vendors publishes these hashes, and anything inside the
 # home folder is the Bot's to write, so they should come from a freshly created computer no Bot has run on yet. The one
 # accepted exception is the Oct 18 fill below; a clean computer is preferred for every later fill.
 #
 # The platform's own sync bookkeeping is never listed: it is rewritten at every sync with no release, and nothing reads it.
-# The rule is wt.py's platform_churn_file, and the fill command below tests exactly the same things: the path is
+# The rule is isr.py's platform_churn_file, and the fill command below tests exactly the same things: the path is
 # PLATFORM_CHURN's one name (the -regex below is that same pattern: the .bucket-<id>_<id> marker directly in
 # .claude/plugins/synced, whose existence Claude's plugin discovery tests and whose contents it never reads), a regular
 # file, not a link, no exec bit, one name (-links 1: no hardlink), and its real path is that same path under the real home
@@ -24,7 +24,7 @@
 # .marketplaces.json (Claude's plugin loader reads them to decide what loads), and .grok/bundled/manifest.json.
 # Watchtower checks two home folders, the home folder and /home/box; when they differ, run the command from each (the
 # second with HOME=/home/box). A file is bookkeeping when the fill from one of them skips it, so a home folder inside
-# /home/box gets the same answer from wt.py as from the fill run in it.
+# /home/box gets the same answer from isr.py as from the fill run in it.
 #
 # Format: `sha256sum` output, run from the home folder on relative paths:
 #   <sha256>  <path under the home folder>

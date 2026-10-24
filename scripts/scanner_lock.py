@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The one reader of scripts/scanner-bins.lock (hardening batch 3, Codex review round 1).
 
-wt.py loads this file to decide which scanner programs it may run, and publish.sh runs it to refuse a release whose lock
+isr.py loads this file to decide which scanner programs it may run, and publish.sh runs it to refuse a release whose lock
 Watchtower couldn't use. publish.sh used to grep for "<sha256>  <name>  ", so six lines with no architecture passed it while
 the runtime reader skipped every one of them: an empty lock, and no scanner ran anywhere. Both now read the lock the same way.
 
@@ -12,7 +12,7 @@ Any other line is a problem: it is never used, and publish.sh stops on it.
 Codex review round 2: the file is read here too (read_lock), with one size limit and one failure rule for both, so a lock
 Watchtower would refuse whole (too large, not UTF-8, not a plain file) also stops publish.sh. semgrep may be listed (codescan
 runs it only from the checked folder), but a release needs only the scanners in REQUIRED.
-wt.py runs this file from its checked source bytes, never from a bytecode cache. Stdlib only.
+isr.py runs this file from its checked source bytes, never from a bytecode cache. Stdlib only.
 """
 import os
 import re

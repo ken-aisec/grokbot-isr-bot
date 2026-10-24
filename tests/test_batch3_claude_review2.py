@@ -80,7 +80,7 @@ class RepointedApp(Installed):
         home = os.environ["ISR_BOT_HOME"]
         evil = os.path.join(home, "evil-app")
         marker = os.path.join(self.tmp, "reader-ran")
-        for d in ("watchtower", "scripts"):
+        for d in ("isr_bot", "scripts"):
             os.makedirs(os.path.join(evil, d))
         with open(r1.READER) as f, open(os.path.join(evil, "scripts", "scanner_lock.py"), "w") as g:
             g.write(f.read() + f"\nopen({marker!r}, 'w').write('ran')\n")
@@ -202,7 +202,7 @@ class Semgrep(_Scanners):
 
 
 class Isolated(v068.Base):
-    """Finding 9: without -I, Python puts watchtower/ first on sys.path, so a planted watchtower/argparse.py ran before the
+    """Finding 9: without -I, Python puts isr_bot/ first on sys.path, so a planted isr_bot/argparse.py ran before the
     self-check and could print exactly the version and exit 0, and setup skipped the reinstall."""
     install = v068.SelfCheck.install
 
@@ -211,9 +211,9 @@ class Isolated(v068.Base):
             return f.read()
 
     def test_9_the_setup_version_check_ignores_a_planted_module(self):
-        cmd = re.search(r"`(python3[^`]*wt\.py --version)`", self.read("skills", "watchtower-setup", "SKILL.md")).group(1)
+        cmd = re.search(r"`(python3[^`]*isr\.py --version)`", self.read("skills", "watchtower-setup", "SKILL.md")).group(1)
         app = self.install()
-        with open(os.path.join(app, "watchtower", "argparse.py"), "w") as f:
+        with open(os.path.join(app, "isr_bot", "argparse.py"), "w") as f:
             f.write(f"import sys\nprint({wt.VERSION!r})\nsys.exit(0)\n")
         argv = cmd.replace("/workspace/watchtower", os.environ["ISR_BOT_HOME"]).split()
         p = subprocess.run([sys.executable] + argv[1:], capture_output=True, text=True, env=dict(os.environ), timeout=120)
@@ -221,12 +221,12 @@ class Isolated(v068.Base):
         self.assertEqual(p.returncode, 4, p.stdout + p.stderr)                  # the self-check saw the planted file
 
     def test_9_install_and_the_routines_start_wt_isolated(self):
-        lines = [l for l in self.read("scripts", "install.sh").splitlines() if "wt.py\" --version" in l]
+        lines = [l for l in self.read("scripts", "install.sh").splitlines() if "isr.py\" --version" in l]
         self.assertEqual(len(lines), 2)
         for l in lines:
             self.assertIn("python3 -I ", l)
         for rel in (("routines", "daily-watch.md"), ("routines", "weekly-tidy.md"), ("skills", "watchtower-audit", "SKILL.md")):
-            self.assertIn("python3 -I /workspace/watchtower/app/watchtower/wt.py", self.read(*rel), rel)
+            self.assertIn("python3 -I /workspace/watchtower/app/isr_bot/isr.py", self.read(*rel), rel)
 
 
 class PlainNamesOnly(v068.Base):

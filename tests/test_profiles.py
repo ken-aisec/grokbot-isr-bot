@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, wt, ROOT  # noqa: E402
 import profiles  # noqa: E402
 
-WT = os.path.join(ROOT, "watchtower", "wt.py")
+ISR_PY = os.path.join(ROOT, "isr_bot", "isr.py")
 
 
 class Profiles(Box):
@@ -48,12 +48,12 @@ class Profiles(Box):
         self.assertTrue(any("not installed" in n or "SCANNERS" in n.upper() for n in r.get("notes", [])) or r.get("scanners_missing"), r)
 
     def test_old_python(self):
-        src = open(WT).read()
+        src = open(ISR_PY).read()
         ast.parse(src, feature_version=(3, 8))                                     # the grammar is 3.8's
         for api in ("removeprefix(", "removesuffix(", "zip(strict", "math.lcm", "tomllib", "ExceptionGroup", "from zoneinfo"):
             self.assertNotIn(api, src, api)                                         # nothing newer than 3.8 at run time
         p = subprocess.run([sys.executable, "-c", "import sys; sys.version_info = (3, 7, 9, 'final', 0); p = sys.argv[1]; "
-                            "exec(compile(open(p).read(), p, 'exec'), {'__name__': '__main__', '__file__': p})", WT, "audit"],
+                            "exec(compile(open(p).read(), p, 'exec'), {'__name__': '__main__', '__file__': p})", ISR_PY, "audit"],
                            capture_output=True, text=True, timeout=60)
         self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
         self.assertIn("needs Python 3.8", p.stdout + p.stderr); self.assertNotIn("Traceback", p.stderr)

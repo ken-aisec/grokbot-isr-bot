@@ -18,7 +18,7 @@ Batch 6 (B1), two more modes for the spec's `units`:
   file's sha256 ("file_digest"), with the file's path under ROOT. Never a value. That says which unit kind and text mapping a
   spec entry needs.
 --canonical: the release lock line ("canonical <sha256>  <path under the home folder>") of each FILE's canonical form, computed by the
-  checkout's own watchtower/wt.py (canonical_platform_json, with each unit checked against the files on disk now) and the
+  checkout's own isr_bot/isr.py (canonical_platform_json, with each unit checked against the files on disk now) and the
   checkout's rules/platform-normalize.json, or SPEC. Run it on a clean box at release, from the home folder the lock is filled for."""
 import hashlib, json, os, sys
 
@@ -143,7 +143,7 @@ def against(root, files):
 
 
 class OnDisk(dict):
-    """A run's manifest as wt reads it, taken from the disk now: a plain file's sha256 (never through a link)."""
+    """A run's manifest as isr.py reads it, taken from the disk now: a plain file's sha256 (never through a link)."""
     def get(self, p, default=None):
         if p not in self:
             self[p] = (hashlib.sha256(open(p, "rb").read()).hexdigest()
@@ -152,25 +152,25 @@ class OnDisk(dict):
 
 
 def canonical(spec, files):
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "watchtower"))
-    import wt
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "isr_bot"))
+    import isr
     if spec:
-        wt.PLATFORM_NORMALIZE = os.path.abspath(spec)
-    entries, why = wt._platform_normalize_state()
+        isr.PLATFORM_NORMALIZE = os.path.abspath(spec)
+    entries, why = isr._platform_normalize_state()
     if why:
         print(f"# the spec can't be used: {why}")
         return 1
     rc, disk = 0, OnDisk()
     for p in files:
         n = os.path.normpath(os.path.abspath(p))
-        rels = sorted(wt._home_rels(n) & wt._home_rels(os.path.realpath(n)))
+        rels = sorted(isr._home_rels(n) & isr._home_rels(os.path.realpath(n)))
         rel = next((r for r in rels if r in entries), None)
         if rel is None:
             print(f"# {p}: the spec doesn't name it (under the home folder {os.path.expanduser('~')})")
             rc = 1
             continue
-        data = wt._read_plain(n, wt.NORMALIZE_FILE_MAX)
-        c = None if data is None else wt.canonical_platform_json(data, entries[rel]["fields"], entries[rel]["units"], wt._unit_checker(n, disk))
+        data = isr._read_plain(n, isr.NORMALIZE_FILE_MAX)
+        c = None if data is None else isr.canonical_platform_json(data, entries[rel]["fields"], entries[rel]["units"], isr._unit_checker(n, disk))
         if c is None:
             print(f"# {p}: no canonical form (not strict JSON, a field of another type, or a unit that doesn't equal its file)")
             rc = 1

@@ -1,7 +1,7 @@
 """DQ-027: "any" inside an Ask-first clause of a pinned allow is not breadth."""
 import os, sys, unittest
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "watchtower"))
-import wt
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "isr_bot"))
+import isr as wt
 
 
 def a001(t):

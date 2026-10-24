@@ -4,7 +4,7 @@ import base64, json, os, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, SCANNERS, TH_DONE, wt  # noqa: E402
-from test_watchtower import fake_key  # noqa: E402
+from test_isr_bot import fake_key  # noqa: E402
 
 KEY = "sk-ant-api03-" + fake_key(80)
 

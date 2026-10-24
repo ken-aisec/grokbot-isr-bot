@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 # ---------------------------------------------------------------- v0.6.8: the disprove step (decision, Oct 10; after Cloudflare's MIT skill)
 DISMISS_LOG = "dismissed.jsonl"
 # Text that argues the content is safe. A scanner-facing reassurance is what an attacker would write, so it is a reason to KEEP.
@@ -205,7 +205,7 @@ def platform_note_order(fs):
     return unlisted, [f for f in plat if loud_note(f, unlisted)] + [f for f in plat if not loud_note(f, unlisted)]
 
 
-PLATFORM_NOTES_MORE = "`wt.py breakdown` lists every one"
+PLATFORM_NOTES_MORE = "`isr.py breakdown` lists every one"
 
 
 def notes_more(count, loud, shown_):
@@ -219,7 +219,7 @@ def notes_more(count, loud, shown_):
 def cmd_report(args):
     snap = load_json(state_path("last_findings.json"), None)
     if not snap:
-        print("ERROR no audit yet: run `wt audit` first", file=sys.stderr)
+        print("ERROR no audit yet: run `isr.py audit` first", file=sys.stderr)
         return 2
     hist = load_history()
     week = dt.date.today().isocalendar()
@@ -289,7 +289,7 @@ def render_md(snap, hist, tag):
         lines += ["", "Hygiene notes (low): " + "; ".join(f"{t} ×{n}" for (r, t), n in sorted(by_rule.items(), key=lambda x: -x[1]))]
     if warn:
         lines += ["", f"{GUARDED_LABEL}: {len(warn)} line{'' if len(warn) == 1 else 's'} that warn against a risky step or quote it as an "
-                  "example. Not findings, not in the score. `wt.py breakdown` lists them."]
+                  "example. Not findings, not in the score. `isr.py breakdown` lists them."]
     if plat:   # batch 5 (d1): one plain line each, outside every count
         unlisted = {f["where"].split(":")[0] for f in snap["findings"] if f.get("unverified_platform")}
         lead = ("Grok Bot's own files, exactly as ISR Bot's release lists them. They don't count toward your problems or your status."
@@ -306,7 +306,7 @@ def render_md(snap, hist, tag):
     fyi = [f for f in shown(snap["findings"]) if not counts(f)]
     if fyi:
         lines += ["", "## Built-in plugins and skills (for your information, not counted in the score)", "",
-                  f"{len(fyi)} notes about software the platform or a plugin shipped. Nothing here needs you. `wt.py breakdown` lists them."]
+                  f"{len(fyi)} notes about software the platform or a plugin shipped. Nothing here needs you. `isr.py breakdown` lists them."]
     if snap.get("stages_skipped"):
         lines += ["", "## Skipped this run", ""] + [f"- {stage_label(x)}: did not finish, so its last results were kept." for x in snap["stages_skipped"]]
     exc = exceptions_active(snap)

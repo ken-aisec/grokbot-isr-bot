@@ -1,8 +1,8 @@
 """Hardening batch 4, Codex review 3 (fix round 3, the last): the 8 remaining highs on d6f227e.
 
-Every test marked "replay" fails on d6f227e on its assertion (measured with d6f227e's wt.py and docs, this file in place); the
+Every test marked "replay" fails on d6f227e on its assertion (measured with d6f227e's isr.py and docs, this file in place); the
 ones marked "guard" pass there too. Replays go through public paths only (finding(), mask_secrets(), scan_text(), vet, the
-audit and its state files, approved copies, history collection), so none of them errors on an older wt.py. All secrets are fake."""
+audit and its state files, approved copies, history collection), so none of them errors on an older isr.py. All secrets are fake."""
 import gzip, io, json, os, sys, tempfile, unittest
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock

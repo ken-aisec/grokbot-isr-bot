@@ -2,8 +2,8 @@ import datetime as dt, io, json, os, re, shutil, sys, tempfile, time, unittest, 
 from contextlib import redirect_stdout
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "watchtower"))
-import wt  # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
+import isr as wt  # noqa: E402
 # Tests never read this computer's real Grok Bot settings (Oct 11: the owner's live Auto-review rules leaked into the suite).
 wt.NATIVE_SETTINGS[:] = [p for p in wt.NATIVE_SETTINGS if p.startswith("~")]
 
@@ -984,7 +984,7 @@ class Features(unittest.TestCase):
         changed = [os.path.basename(os.path.dirname(f["where"])) for f in wt.load_json(wt.state_path("last_findings.json"), {})["findings"] if f["rule"] == "ISR-I001"]
         self.assertEqual(changed, ["watchtower-audit"])
 
-    def test_watchtowers_own_skills_and_routines_vet_clean(self):
+    def test_isr_bots_own_skills_and_routines_vet_clean(self):
         import glob
         for p in sorted(glob.glob(os.path.join(ROOT, "skills", "*", "SKILL.md")) + glob.glob(os.path.join(ROOT, "routines", "*.md")) + [os.path.join(ROOT, "bot", "description.md")]):
             r = vet(p)[1]
@@ -1005,7 +1005,7 @@ class Features(unittest.TestCase):
         self.assertEqual(mems[8], "If any ISR Bot command prints SELF-CHECK FAILED, stop and tell the owner at once: "
                                   "ISR Bot's own files changed. Don't run it again until they reinstall it from the release.")
         self.assertEqual(mems[9], "You are ISR Bot, the security officer for this Grok Bot roster. Your engine and files keep their "
-                                  "original folder names: /workspace/watchtower, wt.py, the watchtower-* skill files and ISR-* rule IDs. "
+                                  "original folder names: /workspace/watchtower, isr.py, the watchtower-* skill files and ISR-* rule IDs. "
                                   "Never rename or move them; updates expect those paths. Keep it cheap: one pass over script output per "
                                   "run, short replies, no narration of tool calls. Roll-call is off unless the owner asks for it.")
 
@@ -1019,7 +1019,7 @@ class Features(unittest.TestCase):
         self.assertIn("Accepted 2 finding(s)", json.loads(o)["done"][0])
         self.assertEqual([f["where"] for f in wt.active(fs)[0]], ["/home/box/projects/real-token.json:7"])
 
-    def test_watchtower_passes_its_own_prepublish_check(self):
+    def test_isr_bot_passes_its_own_prepublish_check(self):
         import glob
         b = os.path.join(self.tmp, "bundle"); os.makedirs(b)
         for p in glob.glob(os.path.join(ROOT, "skills", "*", "SKILL.md")):
@@ -1165,7 +1165,7 @@ class Features(unittest.TestCase):
         wt.run, sp.run, sp.Popen, os.system = no, no, no, no
         wt.app_commit, wt.VERSION = (lambda: installed), "0.6.6"
         try:
-            app = os.path.join(wt.SELF_ROOT, "watchtower", "wt.py"); before = os.stat(app).st_mtime
+            app = os.path.join(wt.SELF_ROOT, "isr_bot", "isr.py"); before = os.stat(app).st_mtime
             b = wt.gather_brief(cfg, offline=offline)
             self.assertEqual([(u["latest"], u["commit"]) for u in b["updates"]], [("0.6.10", "a" * 40)])   # the highest version, not the last listed
             self.assertIsNone(b["watchtower_tag_moved"])

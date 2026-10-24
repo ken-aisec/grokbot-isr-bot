@@ -1,6 +1,6 @@
 """Hardening batch 4, Codex review 1 (fix round 1): 12 high, 4 medium and 2 low findings on 1f35fd0.
 
-Every test marked "replay" fails on 1f35fd0 on its assertion (measured with 1f35fd0's wt.py, rules and audit skill, this file
+Every test marked "replay" fails on 1f35fd0 on its assertion (measured with 1f35fd0's isr.py, rules and audit skill, this file
 in place: 25 fail, none errors; the 3 guards pass). Mask replays go through public paths (finding(), history collection, the
 audit's state files, incident), so they reach their assertions on 857ab38 as well (the 10 in MaskShapes and MaskedSinks
 fail there on an assertion). All secrets are fake or built at runtime."""
@@ -46,7 +46,7 @@ class Folder(unittest.TestCase):
         return p
 
     def setcap(self, name, value):
-        """Set a vet bound for this test (it may not exist on an older wt.py, where it then does nothing)."""
+        """Set a vet bound for this test (it may not exist on an older isr.py, where it then does nothing)."""
         had, old = hasattr(wt, name), getattr(wt, name, None)
         setattr(wt, name, value)
         self.addCleanup(lambda: setattr(wt, name, old) if had else delattr(wt, name))

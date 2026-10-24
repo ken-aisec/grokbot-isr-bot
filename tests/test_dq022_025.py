@@ -3,8 +3,8 @@ import io, json, os, shutil, sys, tempfile, unittest, warnings
 from contextlib import redirect_stdout, redirect_stderr
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "watchtower"))
-import wt  # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
+import isr as wt  # noqa: E402
 # Tests never read this computer's real Grok Bot settings.
 wt.NATIVE_SETTINGS[:] = [p for p in wt.NATIVE_SETTINGS if p.startswith("~")]
 
@@ -117,7 +117,7 @@ class DQ023QuarantineNotScored(Box):
         self.assertEqual(scored, [], scored)
         self.assertGreaterEqual(r["score"], 90)  # no Ask-first noise when NATIVE_SETTINGS is ~-only
 
-    def test_watchtower_home_quarantine_does_not_score(self):
+    def test_isr_bot_home_quarantine_does_not_score(self):
         q = os.path.join(os.environ["ISR_BOT_HOME"], "quarantine", "held-skill")
         self.write_skill(q)
         # official quarantine renames SKILL.md; leave SKILL.md to prove the path rule alone is enough

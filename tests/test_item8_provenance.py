@@ -6,7 +6,7 @@ grouping, file counts and state the Bot can write; Codex left four highs open (c
 
 Now a new or changed file in a platform folder is a platform update only when its path and exact bytes are on the vendor
 release list Watchtower ships (rules/platform-release.lock, held to MANIFEST.sha256). Anything else is a counted high, daily
-included, until the owner says yes to the exact bytes `wt.py fix` shows (`--approve-platform <code> --owner-said-yes`).
+included, until the owner says yes to the exact bytes `isr.py fix` shows (`--approve-platform <code> --owner-said-yes`).
 A decision (Oct 18) removed that yes: only the release list clears one, and the tests that used the yes now check it is
 refused (tests/test_item8_release_only.py has the replays).
 
@@ -17,7 +17,7 @@ import hashlib, json, os, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, CRASH, wt  # noqa: E402
-from test_watchtower import fake_key  # noqa: E402
+from test_isr_bot import fake_key  # noqa: E402
 import profiles  # noqa: E402
 import test_dq042_vendor_skills as dq042  # noqa: E402
 
@@ -86,7 +86,7 @@ class _Platform(Box):
 
 
 class CtimeGrouping(_Platform):
-    """Codex high 1 (wt.py:1783 on dd27c42): a plant touched within 10 minutes of 2 other pending files became an uncounted Tip,
+    """Codex high 1 (isr.py:1783 on dd27c42): a plant touched within 10 minutes of 2 other pending files became an uncounted Tip,
     and daily said NO_CHANGES."""
 
     def test_1_a_plant_with_two_other_unlisted_platform_changes_is_still_a_counted_high(self):
@@ -132,7 +132,7 @@ class CtimeGrouping(_Platform):
 
 
 class CrossRootMoves(_Platform):
-    """Codex high 2 (wt.py:2220 on dd27c42): all five platform roots were one move boundary, so a deleted bundled SKILL.md hid the
+    """Codex high 2 (isr.py:2220 on dd27c42): all five platform roots were one move boundary, so a deleted bundled SKILL.md hid the
     same bytes planted in .codex/skills/.system."""
 
     def test_2_a_deleted_bundled_skill_never_hides_a_codex_system_plant(self):
@@ -200,7 +200,7 @@ SWAP_ENGINE = ('#!/usr/bin/env python3\nimport json, os, sys\na = sys.argv[1:]; 
 
 
 class EngineBytes(_Platform):
-    """Codex high 3 (wt.py:8484 on dd27c42): the engines scanned a staged copy read after the snapshot, so a swap gave a clean
+    """Codex high 3 (isr.py:8484 on dd27c42): the engines scanned a staged copy read after the snapshot, so a swap gave a clean
     answer for a plant, and a forged engine_cache.json also passed as proof."""
 
     def test_3_a_forged_engine_cache_never_approves_a_platform_change(self):
@@ -258,7 +258,7 @@ class EngineBytes(_Platform):
 
 
 class PlanCantWiden(_Platform):
-    """Codex high 4 (wt.py:8529 on dd27c42): what the yes approved was platform_plan.json ∩ the Tip's file list, both Bot-writable,
+    """Codex high 4 (isr.py:8529 on dd27c42): what the yes approved was platform_plan.json ∩ the Tip's file list, both Bot-writable,
     and the owner saw only a count and skill names."""
 
     def test_4_an_edited_plan_tip_or_findings_file_never_widens_the_yes(self):

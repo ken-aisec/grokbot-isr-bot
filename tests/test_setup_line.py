@@ -9,7 +9,7 @@ class SetupLine(unittest.TestCase):
         text = open(os.path.join(ROOT, "bot", "getting-started.md"), encoding="utf-8").read()
         self.assertIn("I’ll point out some things that turn out to be fine. That’s on purpose. Say ‘that’s fine’ and I’ll set it aside for 90 days.", text)
         audit = open(os.path.join(ROOT, "skills", "watchtower-audit", "SKILL.md"), encoding="utf-8").read()
-        self.assertIn("that’s fine", audit); self.assertIn("wt.py accept", audit)
+        self.assertIn("that’s fine", audit); self.assertIn("isr.py accept", audit)
 
 
 

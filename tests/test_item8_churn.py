@@ -2,24 +2,24 @@
 
 On 7e853c4 every file in the five platform folders was held to rules/platform-release.lock, so the files the platform rewrites
 at every sync with no release (managed-skills/cache.json, 554 KB on the maintainer's box; Claude's plugin sync markers and bucket
-bookkeeping) were a counted high after each sync, and the lock listed seven of them. wt.py's PLATFORM_CHURN names them exactly,
+bookkeeping) were a counted high after each sync, and the lock listed seven of them. isr.py's PLATFORM_CHURN names them exactly,
 the walk skips them (no ISR-I002/ISR-I001 high, no ISR-I011 count, no baseline line), and the lock's fill command skips the same
 pattern. Anything else stays a provenance subject: a link named like one, a lookalike in a skill or plugin folder, an exec bit.
 
-Each test fails on 7e853c4 (watchtower/wt.py and rules/platform-release.lock stashed) by reaching an assertion unless its
+Each test fails on 7e853c4 (isr_bot/isr.py and rules/platform-release.lock stashed) by reaching an assertion unless its
 docstring says it is a contrast.
 
 Codex, lock-trim review 1: (high) the bucket's *.meta.json, manifest.json and .marketplaces.json were skipped too, but Claude's
 plugin loader reads them, so they are provenance subjects again and the lock lists the maintainer's 4 lines for them (620 entries); only the
-two cache.json and the .bucket- marker are bookkeeping. (medium) the fill command and wt.py now test the same things: the name, a
+two cache.json and the .bucket- marker are bookkeeping. (medium) the fill command and isr.py now test the same things: the name, a
 regular file, no exec bit, one name (no hardlink), real path = written path (no linked folder above it); no SKILL.md test. The
-tests marked "lock-trim round 1" fail on 7d906ca (watchtower/wt.py and the lock stashed) by reaching an assertion.
+tests marked "lock-trim round 1" fail on 7d906ca (isr_bot/isr.py and the lock stashed) by reaching an assertion.
 
 Codex, lock-trim review 2: (high) managed-skills/cache.json is read by the host (its skill store takes names, descriptions and
 bodies from it; Run-now sends `@<name>` from it as the prompt), so it is a provenance subject again and the lock lists the maintainer's 2
 lines for it (622 entries); only the .bucket- marker is bookkeeping. (medium) every line the fill writes clears its file as
 written and as its real path, with agent-data a link to sand-data. (medium) with the home folder inside the second home base,
-wt.py and the fill give one answer per file. The tests marked "lock-trim round 2" fail on bda2790 (watchtower/wt.py and the lock
+isr.py and the fill give one answer per file. The tests marked "lock-trim round 2" fail on bda2790 (isr_bot/isr.py and the lock
 stashed) by reaching an assertion unless their docstring says otherwise.
 
 b8i4 (decision, Oct 22: the middle path): a clean rewrite of a file at a path that already exists is the quiet Platform refresh
@@ -32,7 +32,7 @@ import hashlib, os, re, shlex, subprocess, sys, unittest, uuid
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, wt  # noqa: E402
 from test_item8_provenance import CLEAN, LEAKS, put  # noqa: E402
-from test_watchtower import fake_key  # noqa: E402
+from test_isr_bot import fake_key  # noqa: E402
 import profiles  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -169,7 +169,7 @@ class FillCommand(Box):
         with open(out) as f:
             listed = {l.split("  ", 1)[1] for l in f.read().splitlines() if l}
         self.assertEqual(listed, {rel for rel, keep in files.items() if keep})
-        for rel, keep in files.items():                                         # the same answer as wt.py's rule, file by file
+        for rel, keep in files.items():                                         # the same answer as isr.py's rule, file by file
             self.assertEqual(wt.platform_churn_file(os.path.join(self.home, rel)), not keep, rel)
 
     def fill(self):
@@ -181,8 +181,8 @@ class FillCommand(Box):
             return {l.split("  ", 1)[1] for l in f.read().splitlines() if l}
 
     def test_a_the_fill_and_wt_agree_beside_a_skill_md_on_hardlinks_and_through_a_linked_folder(self):
-        """lock-trim round 1 (medium): 7d906ca's fill skipped a cache.json beside a SKILL.md that its wt.py kept (so no lock line
-        could clear it), and its wt.py skipped hardlinked and linked-folder aliases. Fill and wt.py give one answer per file."""
+        """lock-trim round 1 (medium): 7d906ca's fill skipped a cache.json beside a SKILL.md that its isr.py kept (so no lock line
+        could clear it), and its isr.py skipped hardlinked and linked-folder aliases. Fill and isr.py give one answer per file."""
         h = lambda rel: os.path.join(self.home, rel)
         files = {
             "sand-data/managed-skills/cache.json": True,                        # read by the host (round 2), a SKILL.md beside it
@@ -463,7 +463,7 @@ class FillClears(Box):
                                   "agent-data/managed-skills/sync.py"]
 
     def check(self, home, real_too=True):
-        """Fill self.platform_lock from home; the fill and wt.py must agree on each file, and its lines must clear what wt.py walks
+        """Fill self.platform_lock from home; the fill and isr.py must agree on each file, and its lines must clear what isr.py walks
         (and each file's real path too, unless that path isn't in a platform folder as written: platform_skill_path)."""
         rels = self.build(home)
         lines = run_fill(self, home, self.platform_lock)
@@ -649,7 +649,7 @@ class Placeholder(_Churn):
         text = read_lock()
         self.assertNotIn("can only come from a computer no Bot has run on yet", text)
         self.assertIn("accepted exception", text)
-        self.assertNotIn("ships with no entries", open(os.path.join(ROOT, "watchtower", "wt.py"), encoding="utf-8").read())
+        self.assertNotIn("ships with no entries", open(os.path.join(ROOT, "isr_bot", "isr.py"), encoding="utf-8").read())
 
 
 class Labels(unittest.TestCase):

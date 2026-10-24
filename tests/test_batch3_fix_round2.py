@@ -32,7 +32,7 @@ class CachedReader(_Scanners):
         """Finding 1: the reader was imported, so Python ran a scanner_lock.*.pyc with the source's mtime and size instead of the
         checked source, and its parse() decided which programs were scanners."""
         app = os.path.join(self.tmp, "app")
-        os.makedirs(os.path.join(app, "watchtower")); os.makedirs(os.path.join(app, "scripts"))
+        os.makedirs(os.path.join(app, "isr_bot")); os.makedirs(os.path.join(app, "scripts"))
         src = os.path.join(app, "scripts", "scanner_lock.py")
         shutil.copy(READER, src)
         forged = compile("def read_lock(p):\n    return '', None\n"
@@ -45,7 +45,7 @@ class CachedReader(_Scanners):
         self.lock_line("gitleaks", "a" * 64)
         wt._SCANNER_LOCK_CACHE.clear()
         try:
-            with mock.patch.object(wt, "HERE", os.path.join(app, "watchtower")):
+            with mock.patch.object(wt, "HERE", os.path.join(app, "isr_bot")):
                 lock = wt.scanner_lock()
         finally:
             wt._SCANNER_LOCK_CACHE.clear()

@@ -23,12 +23,12 @@ if [[ "${1:-}" != "--scanners" ]]; then
   fi
   (cd "$NEW" && sha256sum --quiet -c MANIFEST.sha256) || { echo "MANIFEST CHECK FAILED - not installing"; exit 1; }
   # Try the new copy before it replaces anything; the working copy and its commit record are only swapped after it runs.
-  python3 -I "$NEW/watchtower/wt.py" --version >/dev/null 2>&1 || { echo "ACTIVATION CHECK FAILED - the new version doesn't start here; the installed copy is unchanged"; exit 1; }
+  python3 -I "$NEW/isr_bot/isr.py" --version >/dev/null 2>&1 || { echo "ACTIVATION CHECK FAILED - the new version doesn't start here; the installed copy is unchanged"; exit 1; }
   [[ -e "$ISR_HOME/app" ]] && mv "$ISR_HOME/app" "$OLD"
   PREV="$(cat "$ISR_HOME/state/installed_commit" 2>/dev/null || true)"
   mv "$NEW" "$ISR_HOME/app"
-  echo "$GOT" > "$ISR_HOME/state/installed_commit"   # wt.py checks itself against this and the manifest before every run
-  if ! python3 -I "$ISR_HOME/app/watchtower/wt.py" --version >/dev/null 2>&1; then
+  echo "$GOT" > "$ISR_HOME/state/installed_commit"   # isr.py checks itself against this and the manifest before every run
+  if ! python3 -I "$ISR_HOME/app/isr_bot/isr.py" --version >/dev/null 2>&1; then
     rm -rf "$ISR_HOME/app"; [[ -e "$OLD" ]] && mv "$OLD" "$ISR_HOME/app"
     if [[ -n "$PREV" ]]; then echo "$PREV" > "$ISR_HOME/state/installed_commit"; else rm -f "$ISR_HOME/state/installed_commit"; fi
     echo "ACTIVATION FAILED - put the previous version back"; exit 1

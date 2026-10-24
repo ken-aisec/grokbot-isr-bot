@@ -225,10 +225,10 @@ class AnsiQuotedUrls(History):
         self.assertEqual([(lo[k], hi[k]) for k in range(len(plain))], [(0, 1), (3, 7), (7, 8), (11, 12)])
 
 
-# ---------------------------------------------------------------- 5: the real folder of the wt.py that runs is the installation
+# ---------------------------------------------------------------- 5: the real folder of the isr.py that runs is the installation
 class CanonicalInstall(Box):
     install, plant, forget = r1.InstalledCopyIdentity.install, r1.InstalledCopyIdentity.plant, r1.InstalledCopyIdentity.forget
-    PROBE = ("import json, os, sys\nsys.path.insert(0, sys.argv[1])\nimport wt\n"
+    PROBE = ("import json, os, sys\nsys.path.insert(0, sys.argv[1])\nimport isr as wt\n"
              "print(json.dumps({'root': wt.installed_root(), 'here': wt.HERE, 'problems': wt.self_check(),"
              " 'reviewed': wt.platform_reviewed_problem()}))\n")
 
@@ -241,12 +241,12 @@ class CanonicalInstall(Box):
 
     def installed_sources(self):
         import shutil
-        dst = os.path.join(self.app, "watchtower")
+        dst = os.path.join(self.app, "isr_bot")
         shutil.rmtree(dst)
-        shutil.copytree(os.path.join(ROOT, "watchtower"), dst, ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copytree(os.path.join(ROOT, "isr_bot"), dst, ignore=shutil.ignore_patterns("__pycache__"))
         alias = os.path.join(self.tmp, "alias")
         os.makedirs(alias)
-        os.symlink(dst, os.path.join(alias, "watchtower"))
+        os.symlink(dst, os.path.join(alias, "isr_bot"))
         return alias
 
     def test_a_folder_linking_to_the_installed_sources_runs_them_as_installed(self):   # replay (13cbfa4: no installation, no check)
@@ -256,9 +256,9 @@ class CanonicalInstall(Box):
         other = os.path.join(self.tmp, "elsewhere")
         os.makedirs(other)
         for home in (self.wth, other):
-            got = self.run_probe(os.path.join(alias, "watchtower"), home)
+            got = self.run_probe(os.path.join(alias, "isr_bot"), home)
             self.assertEqual(got["root"], os.path.realpath(self.app), home)
-            self.assertEqual(got["here"], os.path.realpath(os.path.join(self.app, "watchtower")))
+            self.assertEqual(got["here"], os.path.realpath(os.path.join(self.app, "isr_bot")))
             self.assertIn(f"{wt.PLATFORM_REVIEWED_REL} changed since install", got["problems"], home)
             self.assertIn("MANIFEST.sha256", got["reviewed"], home)
 
@@ -290,9 +290,9 @@ class CanonicalInstall(Box):
             self.assertEqual(wt.self_check(), [])
 
     def test_the_checkout_runs_as_a_checkout(self):   # guard
-        got = self.run_probe(os.path.join(ROOT, "watchtower"), os.environ["ISR_BOT_HOME"])
+        got = self.run_probe(os.path.join(ROOT, "isr_bot"), os.environ["ISR_BOT_HOME"])
         self.assertEqual((got["root"], got["problems"], got["reviewed"]), (None, None, ""))
-        self.assertEqual(got["here"], os.path.realpath(os.path.join(ROOT, "watchtower")))
+        self.assertEqual(got["here"], os.path.realpath(os.path.join(ROOT, "isr_bot")))
 
 
 # ---------------------------------------------------------------- 6: a daily overflow is delivered, today and until it is named

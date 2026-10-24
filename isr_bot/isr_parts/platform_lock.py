@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 # Item 8 (R3, roadmap row 8): vendor provenance for the platform's own folders. None of them ships a manifest, signature or hash
 # list Watchtower can use, and anything inside the home folder is the Bot's to write. The only vendor hash list the Bot can't
 # silently change is one in Watchtower's own release: rules/platform-release.lock, listed in MANIFEST.sha256 and held to it here
@@ -314,7 +314,7 @@ def platform_real_roots():
     return {os.path.normpath(os.path.join(os.path.realpath(b), sub)) for b in home_bases() for sub in PLATFORM_ROOT_SUBS}
 
 
-PLATFORM_HELD = "platform_held.json"   # fix round 2 (Codex 1): the held paths, kept by every run and by `wt.py baseline`
+PLATFORM_HELD = "platform_held.json"   # fix round 2 (Codex 1): the held paths, kept by every run and by `isr.py baseline`
 
 
 def _held_paths(fs):
@@ -332,7 +332,7 @@ def platform_held_before():
     `platform_candidate`: a first run's, or one held while the release list couldn't be used or its folder couldn't be walked),
     with the other places a merged finding names. Such a file isn't new in this run, so it is no "new-skill" or "in-skill"
     candidate: held on a first run, held on every run after. Read from state/last_findings.json and (fix round 2, Codex 1)
-    state/platform_held.json, which `wt.py baseline` writes too (its audit saves no findings), so a first baseline taken by the
+    state/platform_held.json, which `isr.py baseline` writes too (its audit saves no findings), so a first baseline taken by the
     command holds as a first audit does. The Bot can write both (deleting them is like writing a baseline line: the accepted limit)."""
     prev = load_json(state_path("last_findings.json"), {}) or {}
     out = _held_paths(list(prev.get("findings") or []) + list(prev.get("suppressed") or [])) if isinstance(prev, dict) else set()

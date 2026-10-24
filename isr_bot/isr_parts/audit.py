@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 # ---------------------------------------------------------------- audit
 def audit(roots, exports, quick=False):
     rules = load_rules()
@@ -23,7 +23,7 @@ def audit(roots, exports, quick=False):
                           f"{len(inv['non_live_skills'])} SKILL.md file(s) outside the places Grok Bot loads skills from "
                           "(archives, clones, other projects, tests, fixtures, quarantine). Keys are still checked there.",
                           "No action. Only skills the platform loads are checked." +
-                          ("" if SCAN_EVERYTHING else " Say 'scan everything' to include them (`wt.py audit --everything`)."),
+                          ("" if SCAN_EVERYTHING else " Say 'scan everything' to include them (`isr.py audit --everything`)."),
                           ident="not-scanned"))
 
     # 1. skills, plugins, MCP configs on disk
@@ -87,7 +87,7 @@ def audit(roots, exports, quick=False):
     # (settle_platform_updates); every other unproven file is a counted high here. Fix round 1 (Codex 1): new skill folders and
     # new files in one only in an update run, and never one the last run held outside the middle path.
     unproven = platform_unproven(manifest)
-    held_before = platform_held_before()   # fix round 2 (Codex 1): kept by save_platform_held, after any run or `wt.py baseline`
+    held_before = platform_held_before()   # fix round 2 (Codex 1): kept by save_platform_held, after any run or `isr.py baseline`
     cands = platform_update_candidates(unproven, manifest, base, plat_short, established=base_status == "ok",
                                        held_before=held_before)
     for p in sorted(unproven - set(cands)):
@@ -113,10 +113,10 @@ def audit(roots, exports, quick=False):
             elif p in base and base[p] != h:
                 fs.append(finding("ISR-I001", "Reviewed skill or plugin changed", "high", ["AST07"], p,
                                   f"sha256 {base[p][:12]}→{h[:12]}",
-                                  "Tell ISR Bot \"fix it\": it re-scans the skill with every engine and re-approves it if clean. `wt.py diff <skill>` shows what changed."))
+                                  "Tell ISR Bot \"fix it\": it re-scans the skill with every engine and re-approves it if clean. `isr.py diff <skill>` shows what changed."))
             elif p not in base:
                 fs.append(finding("ISR-I002", "New skill or plugin file", "low", ["AST09"], p, h[:12],
-                                  "Vet it (`wt vet`), then run `wt baseline` to accept it."))
+                                  "Vet it (`isr.py vet`), then run `isr.py baseline` to accept it."))
                 fs[-1]["refresh"] = platform_file(p)
                 ck = plugin_file_key("ISR-I002", p, h, versions)   # DQ-047: same bytes, same plugin version, new catalog folder
                 if ck:
@@ -289,7 +289,7 @@ def audit(roots, exports, quick=False):
     soft("saved first-run skill", (), notes, None, saved_skill_notes, notes)
     fs += remember_events(canary_findings() + history_findings(rules) + sign_ins)
     if not load_json(state_path("canaries.json"), {}):
-        notes.append("No canaries planted: run `wt.py canary plant` for zero-cost tripwires.")
+        notes.append("No canaries planted: run `isr.py canary plant` for zero-cost tripwires.")
     rc = load_json(state_path("rollcall_findings.json"), None)
     if rc and rc.get("at", "") >= (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=ROLLCALL_MAX_DAYS)).isoformat():
         rc, gone = prune_removed_bots(rc)

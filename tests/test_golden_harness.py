@@ -1,4 +1,4 @@
-"""The golden check for the wt.py split (tests/golden_split.py, scripts/golden-check.sh) fails loudly instead of passing quietly.
+"""The golden check for the isr.py split (tests/golden_split.py, scripts/golden-check.sh) fails loudly instead of passing quietly.
 
 Codex round 1 on the split: without unshare the check fed the runner's envelope to norm_items and crashed, so nothing was
 compared (H1); an ONLY that matched no scenario printed "post == pre on every tier run" after no comparison (H2); and

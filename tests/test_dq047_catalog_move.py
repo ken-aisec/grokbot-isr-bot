@@ -1,7 +1,7 @@
 """DQ-047 (2026-10-22, Watchtower daily watch): a platform catalog folder move re-raised unchanged plugin files as new, and a
 plugin version bump as a new install.
 
-The real run (`wt.py daily`, 6:00 AM ET, score 85, 55 new): the platform moved nine cursor-public plugins (calendly, excalidraw,
+The real run (`isr.py daily`, 6:00 AM ET, score 85, 55 new): the platform moved nine cursor-public plugins (calendly, excalidraw,
 finance, github, gmail, google-calendar, google-drive, pstack, x) from catalog folder 190d28736eff128ec94f502a22c7fe0c4b56cd37 to
 d1453c11d1dde9714d4c313c97d3a68432265c7f with the same versions. Files with identical hashes were listed as new low ISR-I002 at
 the new path and "fixed" at the old one, e.g. `.../pstack/d1453c11.../plugin.json` evidence 8a5811042556 new and
@@ -52,7 +52,7 @@ def put(p, t):
 
 
 def daily(box):
-    """One `wt.py daily`; returns its new and fixed findings, worked out the way run_audit does (by key, last run's against this's)."""
+    """One `isr.py daily`; returns its new and fixed findings, worked out the way run_audit does (by key, last run's against this's)."""
     prev = box.snap().get("findings", [])
     box.run_cmd("daily", "--roots", *box.roots)
     cur = box.snap().get("findings", [])

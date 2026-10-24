@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 # ---------------------------------------------------------------- canaries (zero-token tripwires)
 # Where the decoys live. Until v0.6.5 they sat in /workspace and the home folder. The platform backs those up after a Bot's turn
 # and reads every file to do it, so the decoys were read within minutes of each reset and could not tell the backup from a snoop.
@@ -397,7 +397,7 @@ def cmd_canary(args):
     if args.action == "remove":
         if not getattr(args, "owner_said_yes", False):   # R10: removing the tripwires is the owner's call, never a Bot's
             print("NOT REMOVED: the decoys are how ISR Bot notices someone going through files. Ask the owner; only after their yes "
-                  "in this conversation run `wt.py canary remove --owner-said-yes`.")
+                  "in this conversation run `isr.py canary remove --owner-said-yes`.")
             return 1
         for v in reg.values():
             p = os.path.expanduser(v["path"])
@@ -416,7 +416,7 @@ def cmd_canary(args):
     fs = canary_findings(record=False)   # status only looks: it never resets a decoy or drops evidence
     print(json.dumps([compact(f) for f in fs], indent=1) if fs else "CANARIES_QUIET")
     if fs:
-        print("Not reset and not logged yet: the next `wt.py daily` or `wt.py audit` records this and re-arms the decoys.")
+        print("Not reset and not logged yet: the next `isr.py daily` or `isr.py audit` records this and re-arms the decoys.")
     return 0
 
 
@@ -460,7 +460,7 @@ def canary_findings(record=True):
             seen = f"; it had been read at {v['read_at'][11:16]} UTC before it disappeared" if v.get("read_at") else ""
             out.append(finding("ISR-K002", "Canary file deleted or moved", "high", ["ASI10"], p, name + seen,
                                "Something removed a decoy" + (" after reading it" if seen else "") + ". It has not been put back, so the evidence stays. "
-                               "Check recent routine runs, then re-plant with `wt.py canary plant`."))
+                               "Check recent routine runs, then re-plant with `isr.py canary plant`."))
             continue
         st = os.lstat(p)
         if decoy_rewritten(v, st):
@@ -470,7 +470,7 @@ def canary_findings(record=True):
                                f"{name}: written {dt.datetime.fromtimestamp(st.st_mtime, dt.timezone.utc).isoformat(timespec='minutes')}, "
                                f"planted {str(v.get('planted', ''))[:16]}",
                                "The decoy on disk is not the one ISR Bot recorded: something rewrote it, or this state was copied from "
-                               "another run. Re-plant with `wt.py canary plant`; if no ISR Bot run or dry run explains it, tell ISR Bot \"incident check\"."))
+                               "another run. Re-plant with `isr.py canary plant`; if no ISR Bot run or dry run explains it, tell ISR Bot \"incident check\"."))
             continue
         if st.st_atime > v["atime"] + 1:
             reads.append((name, p, st.st_atime))
@@ -567,7 +567,7 @@ def cmd_events(args):
         going = [e for e in store if not (args.rule and e["rule"] != args.rule)]
         alarms = sorted({e["rule"] for e in going if e["severity"] in ("critical", "high")})
         if alarms and not getattr(args, "owner_said_yes", False):
-            print(f"NOT CLEARED: {', '.join(alarms)} are alarms. Show them to the owner (`wt.py events list`), and only after their yes "
+            print(f"NOT CLEARED: {', '.join(alarms)} are alarms. Show them to the owner (`isr.py events list`), and only after their yes "
                   "in this conversation run the same command with --owner-said-yes.")
             return 1
         keep = [e for e in store if args.rule and e["rule"] != args.rule]

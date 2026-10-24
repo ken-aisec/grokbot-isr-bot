@@ -300,7 +300,7 @@ def _run(build, timeout=120):
     """Run in a fresh interpreter: build the text, then time scan_text (the result and its seconds) and chat_webhook over every
     ISR-T018 match (seconds). line_of is quadratic in the number of findings (docs/KNOWN-LIMITS.md), so ratios use the second.
     A child that runs past `timeout` gives ("timeout", inf, inf), so a slow reading fails at the caller's assertion."""
-    code = ("import sys, time\nsys.path.insert(0, " + repr(os.path.join(ROOT, "watchtower")) + ")\nimport wt\n"
+    code = ("import sys, time\nsys.path.insert(0, " + repr(os.path.join(ROOT, "isr_bot")) + ")\nimport isr as wt\n"
             "HEAD, HOOK, SLACK = " + repr(HEAD) + ", " + repr(HOOK) + ", " + repr(SLACK) + "\n"
             "t = " + build + "\n"
             "rules = wt.load_rules()\nrx = next(r['rx'] for r in rules['rules'] if r['id'] == 'ISR-T018')\n"

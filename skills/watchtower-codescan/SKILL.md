@@ -5,7 +5,7 @@ description: Review code your Bots wrote (a web app, an API, scripts in /workspa
 
 # Code review for OWASP Top 10
 
-1. Ask which folder, or use the one the user named. Run `python3 /workspace/watchtower/app/watchtower/wt.py codescan <folder>`.
+1. Ask which folder, or use the one the user named. Run `python3 /workspace/watchtower/app/isr_bot/isr.py codescan <folder>`.
 2. Reply with counts by severity, then each critical and high finding: file and line, the OWASP category, the flagged code, and the fix in one sentence. Group repeats. A finding "ISR Bot's copy of semgrep isn't the one it installed" (also listed under `scanner_alerts`, which is never cut short) is about ISR Bot itself, not the code: say it first, with its fix. If the JSON has `not_checked_this_run`, add one line saying semgrep's checks weren't done this time and why.
 3. Offer to fix them, one file at a time, only with the user's yes, and only in that folder. Re-run codescan after.
 

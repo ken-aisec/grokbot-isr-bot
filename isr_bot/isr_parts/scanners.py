@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 # Hardening batch 3 (R7, Oct 16): tool() looked on PATH first, so any program a Bot named skillspector there was Watchtower's
 # second engine, and a copy in Watchtower's folder ran whatever it contained. Now the only candidate is Watchtower's own
 # scanners/bin/<name>, and only when its sha256 is in scripts/scanner-bins.lock for this computer's architecture.
@@ -258,11 +258,11 @@ def remember_manifest(root, text):
 
 
 def installed_root():
-    """The real folder of the installed copy this wt.py runs from, or None in a developer checkout. PR A, Codex round 1 (6): it
+    """The real folder of the installed copy this isr.py runs from, or None in a developer checkout. PR A, Codex round 1 (6): it
     was an installed copy only while ISR_BOT_HOME/app led to it, so changing that variable made one a developer checkout, whose
     rules files (the reviewed list, the normalization spec, the locks) are never held to MANIFEST.sha256. An installed copy is the
     `app` folder install.sh makes, whatever ISR_BOT_HOME says now.
-    PR A, Codex round 2 (5): SELF_ROOT is the real folder of the wt.py that runs (wt.py follows links to itself), so a folder
+    PR A, Codex round 2 (5): SELF_ROOT is the real folder of the isr.py that runs (isr.py follows links to itself), so a folder
     holding only a `watchtower` link to the installed copy runs it as the installed copy; and only that real folder's name
     counts, never a ISR_BOT_HOME whose app leads somewhere.
     PR A, Codex round 3 (3): the name alone made `mv app app.real` (with or without `ln -s app.real app`) a developer checkout:
@@ -288,7 +288,7 @@ def install_home(root):
 
 
 def release_manifest():
-    """{rel: sha256} from the MANIFEST.sha256 of the folder this wt.py runs from ({} when it is missing or unreadable). Claude
+    """{rel: sha256} from the MANIFEST.sha256 of the folder this isr.py runs from ({} when it is missing or unreadable). Claude
     review 1 (2): this was read from disk again at each use, so a MANIFEST.sha256 rewritten after the self-check vouched for
     whatever it listed. It is now the one self_check checked, read once per process.
 
@@ -733,7 +733,7 @@ def scanner_x005():
 
 
 def scanner_check():
-    """For `wt.py doctor`: what Watchtower makes of each scanner's copy, with the full sha256 to fill the lock from."""
+    """For `isr.py doctor`: what Watchtower makes of each scanner's copy, with the full sha256 to fill the lock from."""
     out = {}
     for name in SCANNER_NAMES:
         path, problem = scanner_verdict(name)

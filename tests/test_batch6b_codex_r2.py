@@ -149,7 +149,7 @@ class ExamplesInWatchtowersRules(unittest.TestCase):
         rules = wt.load_rules()
         for v in ("ghp_FAKE" + "x9" * 16, "AKIAFAKE" + "Q7" * 6, "sk-proj-EXAMPLEKEY1234567890abcdefgh"):
             got = [f for f in wt.scan_text(f"Use {v} here.\n", "/s/SKILL.md", rules) if f["rule"].startswith("ISR-T011")]
-            # its own rule id beside ISR-T011, so a placeholder never raises ISR-T011 (test_watchtower's test_placeholder_keys_ignored);
+            # its own rule id beside ISR-T011, so a placeholder never raises ISR-T011 (test_isr_bot's test_placeholder_keys_ignored);
             # round 3 (Codex 1): ISR-T011's title and severity, with the note
             self.assertEqual([(f["rule"], f["title"], f["severity"]) for f in got], [("ISR-T011x", "Secret or key in text", "critical")], v)
 
@@ -403,7 +403,7 @@ class KeyBlockMasking(Box):
 
 
 # ---------------------------------------------------------------- 9, 11: linear time
-CHILD = ("import sys, time\nsys.path.insert(0, {wt_dir!r})\nimport wt\nrules = wt.load_rules()\nworst = 0.0\n"
+CHILD = ("import sys, time\nsys.path.insert(0, {isr_dir!r})\nimport isr as wt\nrules = wt.load_rules()\nworst = 0.0\n"
          "for n in (50, 5000):\n    for f in (lambda: wt.secret_kind('x' * n + 'Z'), lambda: wt.secret_kind('sk-proj-' + 'x' * n + 'Z'),\n"
          "              lambda: wt.scan_text('key sk-proj-' + 'x' * n + 'Z\\n', '/s/SKILL.md', rules)):\n"
          "        t = time.perf_counter(); f(); worst = max(worst, time.perf_counter() - t)\nprint(worst)\n")
@@ -412,7 +412,7 @@ CHILD = ("import sys, time\nsys.path.insert(0, {wt_dir!r})\nimport wt\nrules = w
 class LinearTime(unittest.TestCase):
     def test_placeholder_reading_never_backtracks(self):   # replay 9 (de3b328: 50 x's took longer than any bound)
         try:
-            r = subprocess.run([sys.executable, "-c", CHILD.format(wt_dir=os.path.join(ROOT, "watchtower"))], capture_output=True,
+            r = subprocess.run([sys.executable, "-c", CHILD.format(isr_dir=os.path.join(ROOT, "isr_bot"))], capture_output=True,
                                text=True, timeout=20)
         except subprocess.TimeoutExpired:
             self.fail("placeholder reading took more than 20 seconds")

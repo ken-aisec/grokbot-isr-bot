@@ -598,8 +598,8 @@ class StepZero(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="wt-golden-expect-")
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        os.makedirs(os.path.join(self.tmp, "watchtower", "wt_parts"))
-        with open(os.path.join(self.tmp, "watchtower", "wt.py"), "wb") as f:
+        os.makedirs(os.path.join(self.tmp, "isr_bot", "isr_parts"))
+        with open(os.path.join(self.tmp, "isr_bot", "isr.py"), "wb") as f:
             f.write(b"x = 1\n")
 
     def step0(self, pre_bytes, expect):
@@ -619,7 +619,7 @@ class StepZero(unittest.TestCase):
 
     def test_no_expect_mode_still_compares_bytes(self):
         out, rep = self.step0(b"x = 2\n", None)
-        self.assertTrue(out.startswith("failed: step 0: the reassembled wt.py differs"), out)
+        self.assertTrue(out.startswith("failed: step 0: the reassembled isr.py differs"), out)
         out, rep = self.step0(b"x = 1\n", None)
         self.assertEqual(out, "passed")
         self.assertIn("byte-equal", rep[-1])
@@ -629,8 +629,8 @@ class StepZero(unittest.TestCase):
         self.assertEqual(out, "passed")
         self.assertIn("step 0: behavior-change mode, byte check not applicable", rep[-1])
         out, rep = self.step0(b"x = 2\n", [])
-        self.assertIn("no wt_parts loader block", out)
-        with open(os.path.join(self.tmp, "watchtower", "wt.py"), "wb") as f:
+        self.assertIn("no isr_parts loader block", out)
+        with open(os.path.join(self.tmp, "isr_bot", "isr.py"), "wb") as f:
             f.write(b"x = (\n")
         out, rep = self.step0(gs.LOADER_BEGIN, [])
         self.assertIn("does not compile", out)

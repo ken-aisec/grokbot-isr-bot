@@ -17,7 +17,7 @@
 #
 # How to fill it (before a release; scripts/publish.sh refuses to publish until every name has a line):
 #   1. On the main box, run a fresh `bash /workspace/watchtower/app/scripts/install.sh --scanners`.
-#   2. From the dev checkout: `ISR_BOT_HOME=/workspace/watchtower python3 watchtower/wt.py doctor`.
+#   2. From the dev checkout: `ISR_BOT_HOME=/workspace/watchtower python3 isr_bot/isr.py doctor`.
 #   3. Its scanner_check gives each program's full sha256 ("not listed (sha256 ...)"). Check each against the release
 #      it was installed from, then add one line per program here and commit.
 #

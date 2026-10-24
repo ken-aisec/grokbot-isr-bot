@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 ENGINE_BUDGET = int(os.environ.get("ISR_BOT_ENGINE_BUDGET", "420"))   # seconds of engine time per run; the rest resumes next run
 ENGINE_CHUNK = 20                                                # skills per launch: small enough that a slow computer still saves progress every batch
 ENGINE_MAX_FILES, ENGINE_MAX_BYTES = 400, 2_000_000
@@ -70,7 +70,7 @@ def soft(stage, rules, notes, default, fn, *a, **k):
 
 
 def timed(stage, fn, *a, **k):
-    """Run one audit stage, remember what's running and how long it took, so a slow one is easy to spot with `wt.py status`."""
+    """Run one audit stage, remember what's running and how long it took, so a slow one is easy to spot with `isr.py status`."""
     set_progress(stage, 0, 0)
     t0 = time.monotonic()
     try:
@@ -431,7 +431,7 @@ def engine_findings(skill_dirs, wt_findings, notes, user_root_dirs=(), budget=No
     if left > 0 and not any("failed on a batch" in n for n in notes):
         notes.append(f"SkillSpector and husk checked {scanned} of {len(todo)} new or changed skills in the time budget; "
                      f"the other {left} are picked up by the next runs, daily checks included (results are remembered)"
-                     + (". To check them all now, run `wt.py audit --budget 1800` (up to 30 minutes)." if 300 <= budget < 1800 else "."))
+                     + (". To check them all now, run `isr.py audit --budget 1800` (up to 30 minutes)." if 300 <= budget < 1800 else "."))
     set_progress("done", scanned, len(todo), started)
 
     wt_hits = {}   # v0.7.1 item 2: wording never votes (one word used to give one critical plus one high)

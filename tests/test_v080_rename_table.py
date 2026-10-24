@@ -174,11 +174,31 @@ class RenameTable(unittest.TestCase):
         self.assertEqual(sorted(literals(text)), ["SUBST_KEEP", "SUBST_KEEP_PROSE"])
         mapped = map_units(units, rel, text)
         self.assertEqual(literals(mapped), literals(text))   # h2 converts them, not b-g
+        # unit h2 converts SUBST_KEEP/_PROSE to the helper, so it must update this line (its literals then hold no old name)
         self.assertNotEqual(literals(map_units(units, rel, text, protect=False)), literals(text))   # unprotected, g changes them
         # only the two literals are held: golden_split.py is no reader file, so c, d2b and f still rename the sandbox home line
         self.assertNotIn(os.path.basename(rel), rn.TABLE["source"]["reader_files"])
-        self.assertIn(rn.OLD["env"]["install_home"] + " = " + json.dumps(rn.OLD["home"]), text)
+        # d1 fix 2: the home line may already be part renamed (c made it ISR_HOME), so it must be the old line taken through
+        # some prefix of the unit order, the empty prefix included, whichever unit the tree is at
+        old_line = "%s = %s if SEALED else X + %s" % (rn.OLD["env"]["install_home"], json.dumps(rn.OLD["home"]),
+                                                       json.dumps("/" + rn.OLD["sandbox_home"]))
+        forms = {map_units(order[:k], rel, old_line) for k in range(len(order) + 1)}
+        self.assertIn(old_line, forms)
+        self.assertEqual(len([l for l in text.split("\n") if l in forms]), 1, sorted(forms))
+        home = next(l for l in text.split("\n") if l in forms)
+        bogus = text.replace(home, home.split(" = ")[0] + " = " + json.dumps("/elsewhere"))
+        self.assertEqual([l for l in bogus.split("\n") if l in forms], [])   # an unrelated home line fails the check
         self.assertIn(rn.NEW["env"]["install_home"] + " = " + json.dumps(rn.NEW["home"]), mapped)
+
+    def test_d1_main_file_entry_spares_attributes(self):   # replay (d1 fix 1: the plain main-file entry hit the alias's python_upgrades)
+        order, old, new = rn.TABLE["source"]["order"], rn.OLD["main"], rn.NEW["main"]
+        units = order[:order.index("d1") + 1]
+        attr = "        %s = lambda: []" % (old[:-len("py")] + "python_upgrades")   # the test alias's attribute: d2's entry renames it
+        self.assertEqual(map_units(units, "tests/test_boxes.py", attr), attr)
+        self.assertNotEqual(apply({"old": old, "new": new}, attr), attr)   # a plain entry changes it
+        for before, after in ((f"python3 {old} vet", f"python3 {new} vet"), (f'"{old}"', f'"{new}"'),
+                              (f"'{old}'", f"'{new}'"), (f"({old})", f"({new})"), (f"run {old}", f"run {new}")):
+            self.assertEqual(map_units(units, "tests/test_boxes.py", before), after)
 
 
 if __name__ == "__main__":

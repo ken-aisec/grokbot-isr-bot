@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Golden-output check for the wt.py split into watchtower/wt_parts (no behavior change; D1/D2/D3), and for later changes that
+# Golden-output check for the isr.py split into isr_bot/isr_parts (no behavior change; D1/D2/D3), and for later changes that
 # alter behavior on purpose (expect mode, batch 5).
 #
 #   scripts/golden-check.sh PRE_REF [quick|full] [ONLY] [--expect FILE --items A,B]
@@ -7,14 +7,14 @@
 #                                                           split); mode: full by default; ONLY: a regex of scenario names to run
 #                                                           (to look at one again; one that matches none fails)
 #
-# Step 0 rebuilds the pre-split wt.py from the working tree and compares it byte for byte with PRE_REF's. Then PRE_REF's tree
+# Step 0 rebuilds the pre-split isr.py from the working tree and compares it byte for byte with PRE_REF's. Then PRE_REF's tree
 # (twice, to calibrate) and the working tree's tracked files run the same commands from the same path in a sealed sandbox
 # (unshare -rmn; scratch over /home, /workspace, /var/tmp and /tmp) and must match. quick: tier A from one folder plus one box.
 # full: tier A from three folders, every box (CLI and driver), the forced crash, the state-changing commands, the installed copy
 # and its tamper cases, and startup timing. Without the sandbox it fails. Everything is written under one mkdtemp folder in
 # /tmp (see tests/golden_split.py).
 #
-# --expect FILE (tests/golden_expect/*.json) --items A,B: step 0 only checks that the rebuilt wt.py compiles and that PRE_REF has
+# --expect FILE (tests/golden_expect/*.json) --items A,B: step 0 only checks that the rebuilt isr.py compiles and that PRE_REF has
 # the loader block, and post may differ from pre only by lines an entry of an enabled item expects (an empty --items: none may).
 # Without --expect the check is exactly the split check.
 set -euo pipefail

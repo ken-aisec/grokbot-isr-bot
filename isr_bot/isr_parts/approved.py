@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 # ---------------------------------------------------------------- v0.5.2: approved copies, re-vet in the fix, security-tool exceptions
 APPROVED_FILE_LIMIT, APPROVED_SKILL_LIMIT = 200_000, 1_500_000
 EXC_KIND, EXC_DAYS = "security-tool", 30
@@ -66,7 +66,7 @@ def save_approved(d, snapshot=None, dir_hash=None, keep=None):
     change can be shown as a diff. Other files are remembered by fingerprint. With `snapshot` ({path: (sha256, bytes)}, from
     read_snapshot), the copy is made from exactly those bytes and covers only those files: Codex, item 8 review 2 (medium 2),
     revet saved the digest it checked but read the files again for the copy, so a version swapped in after the check became the
-    "approved copy" and `wt.py diff` called it unchanged. `keep` ({relative name: (sha256, text or None)}) carries those files
+    "approved copy" and `isr.py diff` called it unchanged. `keep` ({relative name: (sha256, text or None)}) carries those files
     over from the copy before, unchanged (save_approved_all)."""
     os.makedirs(state_path("approved"), exist_ok=True)
     files, hashes, total = {}, {}, 0
@@ -146,7 +146,7 @@ def mask_approved_copies():
 
 def save_approved_all(dirs, held=(), base=None):
     """Keep a copy of each skill as just approved. Codex, item 8 review 3 (medium): `baseline --owner-said-yes` kept a platform
-    file it refused at its old baseline line, but still copied its bytes as they are now, so `wt.py diff` called the refused
+    file it refused at its old baseline line, but still copied its bytes as they are now, so `isr.py diff` called the refused
     change "same as the approved copy". A skill holding a `held` file keeps that file's entry from the copy before (none, if it
     had none); its other files are copied from one read, and only when those bytes are the ones `base` now approves. #9 medium b:
     a held file that skill_files doesn't list now (a link, say) keeps its entry too, so the refused change still shows in the diff."""
@@ -328,7 +328,7 @@ def revet(dirs, approve=False):
         elif os.path.normpath(d) in INCOMPLETE_SKILLS:
             r.update(result="not finished", why=f"only {INCOMPLETE_SKILLS[os.path.normpath(d)][0]} of {INCOMPLETE_SKILLS[os.path.normpath(d)][1]} files can be checked, so it can't be re-approved automatically")
         elif installed and (cache.get(d) or {}).get("stuck") and cache[d].get("hash") == h:
-            r.update(result="not finished", why=f"{cache[d]['stuck']} can't get through this skill, so it can't be re-approved automatically; read the change with wt.py diff")
+            r.update(result="not finished", why=f"{cache[d]['stuck']} can't get through this skill, so it can't be re-approved automatically; read the change with isr.py diff")
         elif installed and not entry_current(cache.get(d) or {}, h, installed):
             r.update(result="not finished", why="the scanners didn't finish in time; it stays open and is retried next run")
         else:
@@ -627,7 +627,7 @@ def upgrade_npm(projects):
     return done
 
 
-# Item 8 (R3, Codex highs 3 and 4) bound the owner's yes to the bytes `wt.py fix` showed, and reviews 1 to 3 bounded its reads and
+# Item 8 (R3, Codex highs 3 and 4) bound the owner's yes to the bytes `isr.py fix` showed, and reviews 1 to 3 bounded its reads and
 # pages. Decision, Oct 18: there is no yes. A file in a platform folder is trusted only through the release list, so
 # `fix --approve-platform` and `--platform-from` stay in the parser (a Bot following an older SKILL.md gets a plain answer, not an
 # argparse error) and are refused: nothing is read, written or approved. The preview shows the same read-only list daily does
@@ -673,10 +673,10 @@ def cmd_fix(args):
                    "upgrades": {"python": [f"{u['name']} {u['have']} → {u['want']}+" for u in ups]},
                    "project_upgrades": {"projects": [os.path.basename(d) or d for d in projs],
                                         "cargo": [f"{os.path.basename(d.rstrip('/')) or d}: {c['name']} {c['have']} → {c['want']}" for d, cs in sorted(crates.items()) for c in cs],
-                                        "ask": "Separate question: these are the owner's own projects. Only on a yes to this list, run wt.py fix --upgrade-projects."} if projs or crates else None,
+                                        "ask": "Separate question: these are the owner's own projects. Only on a yes to this list, run isr.py fix --upgrade-projects."} if projs or crates else None,
                    "decisions": fix_decisions([f for f in fs if not in_q(f)]), "quarantine_possible": quarantine_candidates(fs),
                    "ask_first_rules_missing": bool(rules_needed), "only_you": only_you,
-                   "next": "Ask the user one question. On yes run: wt.py fix --apply --owner-said-yes [--skip <cleanup ids or paths they named>] --upgrade --revet --accept <rules they agreed to> "
+                   "next": "Ask the user one question. On yes run: isr.py fix --apply --owner-said-yes [--skip <cleanup ids or paths they named>] --upgrade --revet --accept <rules they agreed to> "
                            "[--quarantine <skills they agreed to take out of use>] [--exception <skill they named>] --reason \"reviewed by owner\""}, limit=6000)
         shown = json.loads(out)                 # R02/DQ-019: what may be applied is exactly what survived trimming, never the full list
         shown_skills = {r.get("name") for r in shown.get("changed_skills", [])}
@@ -736,5 +736,5 @@ def cmd_fix(args):
         done.append(f"Accepted {n} finding(s) as fine on purpose until {exp}" + (f". Left open: {'; '.join(sorted(set(skipped))[:6])}" if skipped else ""))
     ledger({"event": "fix", "steps": len(done)})
     print(fit({"done": done or ["Nothing to do."], "only_you": only_you,
-               "next": "Run `wt.py audit` to confirm, then tell the user the new score and anything in only_you."}))
+               "next": "Run `isr.py audit` to confirm, then tell the user the new score and anything in only_you."}))
     return 0

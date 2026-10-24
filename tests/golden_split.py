@@ -1,10 +1,10 @@
-"""Golden-output check for the wt.py split into watchtower/wt_parts (no behavior change; D1/D2/D3).
+"""Golden-output check for the isr.py split into isr_bot/isr_parts (no behavior change; D1/D2/D3).
 
 Not part of `make test` (the name doesn't match test*.py). Run it as `bash scripts/golden-check.sh PRE_REF [quick|full]`;
 PRE_REF (required, no default: 9b106b9 for this split) is the commit before the split. It also holds the reassembly helpers
 test_split_guard uses.
 
-Step 0 rebuilds the pre-split wt.py from the working tree's wt.py and parts and compares it byte for byte with PRE_REF's.
+Step 0 rebuilds the pre-split isr.py from the working tree's isr.py and parts and compares it byte for byte with PRE_REF's.
 The same commands then run on PRE_REF's tree twice (calibration) and once on the working tree's tracked files, one after the
 other from the same path (/tmp/code inside the sandbox), so no path needs normalizing. They must give the same exit codes,
 output and files (path, type, mode bits, content) after only the normalizations calibration shows are needed (N1-N9; N4,
@@ -18,7 +18,7 @@ The check fails, and never prints its RESULT line, when the sandbox is unavailab
 selects no scenario, and when no scenario was compared. Everything is written under one mkdtemp folder in /tmp, removed when the check passes and kept (path printed) when it fails.
 
 Expect mode (batch 5: changes that alter behavior on purpose; `--expect FILE --items A,B` to golden-check.sh): step 0 only checks
-that the working tree's reassembled wt.py compiles and that PRE_REF's wt.py has the loader block. Calibration and N1-N9 are as
+that the working tree's reassembled isr.py compiles and that PRE_REF's isr.py has the loader block. Calibration and N1-N9 are as
 above; then every line by which a post item differs from pre must match an entry of an enabled item in FILE (see parse_expect),
 and an enabled `must_see` entry that matched nothing, in a run where its scenarios ran, is a problem too (since batch 5 PR B,
 Codex round 3: one that names its scenarios exactly, in each of them that ran, on its own; since batch 6, KL7: in each output of those scenarios its key_rx names; see unmet)."""
@@ -26,17 +26,17 @@ import datetime as dt, difflib, hashlib, json, os, re, shutil, statistics, subpr
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-BANNER = b"# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.\n"
-LOADER_BEGIN = b"# >>> wt_parts loader (reassembly drops this block)\n"
-LOADER_END = b"# <<< wt_parts loader\n"
-CALL = re.compile(rb'_wt_part\("([a-z0-9_]+)"\)\n\Z')
-# Decision D2: the one line of wt.py the split changes (doctor's crash frames). Reassembly maps it back to the line it replaced.
-D2_OLD = (b'    frames = [f"wt.py line {m.group(1)} in {m.group(2)}" for m in re.finditer(r\'File "[^"]*wt\\.py", line (\\d+), in (\\w+)\', text)][-6:]\n')
-D2_NEW = (b'    frames = [f"{m.group(1)}.py line {m.group(2)} in {m.group(3)}" for m in re.finditer(r\'File "[^"]*?(wt|wt_parts/[a-z0-9_]+)\\.py", line (\\d+), in (\\w+)\', text)][-6:]\n')
+BANNER = b"# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.\n"
+LOADER_BEGIN = b"# >>> isr_parts loader (reassembly drops this block)\n"
+LOADER_END = b"# <<< isr_parts loader\n"
+CALL = re.compile(rb'_isr_part\("([a-z0-9_]+)"\)\n\Z')
+# Decision D2: the one line of isr.py the split changes (doctor's crash frames). Reassembly maps it back to the line it replaced.
+D2_OLD = (rb"""    frames = [f"isr.py line {m.group(1)} in {m.group(2)}" for m in re.finditer(r'File "[^"]*isr\.py", line (\d+), in (\w+)', text)][-6:]""" + b"\n")
+D2_NEW = (b'    frames = [f"{m.group(1)}.py line {m.group(2)} in {m.group(3)}" for m in re.finditer(r\'File "[^"]*?(isr|isr_parts/[a-z0-9_]+)\\.py", line (\\d+), in (\\w+)\', text)][-6:]\n')
 
 
 def lines_of(b):
-    """Lines split on b"\\n" only (wt.py holds a literal U+2028, which str.splitlines would split on)."""
+    """Lines split on b"\\n" only (isr.py holds a literal U+2028, which str.splitlines would split on)."""
     parts = b.split(b"\n")
     return [p + b"\n" for p in parts[:-1]] + ([parts[-1]] if parts[-1] else [])
 
@@ -46,10 +46,10 @@ def read(p):
         return f.read()
 
 
-def reassemble(wt_bytes, parts_dir):
-    """(the pre-split wt.py, [(first line, label)]): every `_wt_part("x")` line replaced by x.py after its banner, the loader
+def reassemble(isr_bytes, parts_dir):
+    """(the pre-split isr.py, [(first line, label)]): every `_isr_part("x")` line replaced by x.py after its banner, the loader
     block and the two blank lines after it dropped, and the D2 line mapped back."""
-    out, where, i, L, n = [], [(1, "wt.py")], 0, lines_of(wt_bytes), 1
+    out, where, i, L, n = [], [(1, "isr.py")], 0, lines_of(isr_bytes), 1
     while i < len(L):
         line = L[i]
         if line == LOADER_BEGIN:
@@ -65,10 +65,10 @@ def reassemble(wt_bytes, parts_dir):
             if not body.startswith(BANNER):
                 raise ValueError(f"{name}.py does not start with the banner")
             body = body[len(BANNER):]
-            where.append((n, f"wt_parts/{name}.py"))
+            where.append((n, f"isr_parts/{name}.py"))
             out.append(body)
             n += len(lines_of(body))
-            where.append((n, "wt.py"))
+            where.append((n, "isr.py"))
         else:
             out.append(D2_OLD if line == D2_NEW else line)
             n += 1
@@ -102,8 +102,8 @@ items = {}
 DRIVER = """
 import os, random, sys
 tree, argv = sys.argv[1], sys.argv[2:]
-sys.path.insert(0, os.path.join(tree, "watchtower"))
-import wt
+sys.path.insert(0, os.path.join(tree, "isr_bot"))
+import isr as wt
 b = os.path.join(os.environ["ISR_BOT_HOME"], "scanners", "bin")
 for n in sorted(os.listdir(b)) if os.path.isdir(b) else []:
     if n in wt.SCANNER_NAMES:
@@ -179,9 +179,9 @@ n_cmd = [0]
 
 
 def run(argv, mode="cli", cwd=None, stdin=None, extra=None, label=None, timeout=900, tree=TREE):
-    """One wt.py command; its exit code, stdout and stderr become three items."""
+    """One isr.py command; its exit code, stdout and stderr become three items."""
     if mode == "cli":
-        cmd = [PY, "-I", tree + "/watchtower/wt.py"] + list(argv)
+        cmd = [PY, "-I", tree + "/isr_bot/isr.py"] + list(argv)
     else:
         cmd = [PY, "-I", "-B", "-c", DRIVER, tree] + list(argv)
     p = subprocess.run(cmd, input=stdin if stdin is not None else b"", capture_output=True, env=env(extra, mode == "driver"),
@@ -385,7 +385,7 @@ def timing():
         for t in (trees if r % 2 == 0 else trees[::-1]):
             for a in (["--version"], ["--help"]):
                 t0 = time.perf_counter()
-                subprocess.run([PY, "-I", t + "/watchtower/wt.py"] + a, capture_output=True, env=env(), cwd=X + "/cwd", timeout=60)
+                subprocess.run([PY, "-I", t + "/isr_bot/isr.py"] + a, capture_output=True, env=env(), cwd=X + "/cwd", timeout=60)
                 out.setdefault("%s %s" % (os.path.basename(t), a[0]), []).append(time.perf_counter() - t0)
     return out
 
@@ -470,9 +470,9 @@ def rules():
 STAGE_TIMES = re.compile(r"(?<=: )\d+(?:\.\d+)?(?=[,\n}])")
 STAGE_BLOCK = re.compile(r'("seconds_per_stage": \{)([^{}]*)(\})')
 CHROME_TIME = re.compile(r"(?<!\d)1[34]\d{15}(?!\d)")      # a cookie's creation time, microseconds since 1601 (the box builder's clock)
-# N8 (crash scenario only): a traceback frame or doctor's frame label from wt.py or a part; the function sequence must match.
-FRAME_TB = re.compile(r'File "[^"]*/watchtower/(wt|wt_parts/[a-z0-9_]+)\.py", line \d+, in (\w+)')
-FRAME_DOCTOR = re.compile(r"\b(wt|wt_parts/[a-z0-9_]+)\.py line \d+ in (\w+)")
+# N8 (crash scenario only): a traceback frame or doctor's frame label from isr.py or a part; the function sequence must match.
+FRAME_TB = re.compile(r'File "[^"]*/isr_bot/(isr|isr_parts/[a-z0-9_]+)\.py", line \d+, in (\w+)')
+FRAME_DOCTOR = re.compile(r"\b(isr|isr_parts/[a-z0-9_]+)\.py line \d+ in (\w+)")
 
 
 ALWAYS = {"N4"}   # applied to post whether or not calibration happened to need it (durations: run speed)
@@ -1104,7 +1104,7 @@ class GoldenSplit(unittest.TestCase):
             if rel:
                 os.makedirs(os.path.dirname(os.path.join(cls.post, rel)), exist_ok=True)
                 shutil.copy2(os.path.join(ROOT, rel), os.path.join(cls.post, rel), follow_symlinks=False)
-        cls.untracked = git("ls-files", "--others", "--exclude-standard", "watchtower").decode().split()
+        cls.untracked = git("ls-files", "--others", "--exclude-standard", "isr_bot").decode().split()
         cls.py = os.path.realpath(sys.executable)
         cls.sandbox = (not cls.py.startswith(("/home/", "/workspace/", "/tmp/", "/var/tmp/")) and shutil.which("unshare")
                        and subprocess.run(["unshare", "-rmn", "--propagation", "private", "true"], capture_output=True, timeout=30).returncode == 0)
@@ -1139,27 +1139,27 @@ class GoldenSplit(unittest.TestCase):
     def test_0_reassembly(self):
         self.say(f"golden check: pre={self.PRE} ({git('rev-parse', '--short', self.PRE + '^{commit}').decode().strip()}), post=working tree, mode={self.MODE}")
         if self.untracked:
-            self.fail_with(f"untracked files under watchtower/ (git add them): {self.untracked}")
-        want = git("show", f"{self.PRE}:watchtower/wt.py")
-        wt_post = read(os.path.join(self.post, "watchtower", "wt.py"))
-        got, where = reassemble(wt_post, os.path.join(self.post, "watchtower", "wt_parts"))
-        parts = len([w for w in where if w[1] != "wt.py"])
+            self.fail_with(f"untracked files under isr_bot/ (git add them): {self.untracked}")
+        want = git("show", f"{self.PRE}:isr_bot/isr.py")
+        isr_post = read(os.path.join(self.post, "isr_bot", "isr.py"))
+        got, where = reassemble(isr_post, os.path.join(self.post, "isr_bot", "isr_parts"))
+        parts = len([w for w in where if w[1] != "isr.py"])
         if self.expect is not None:   # behavior changes on purpose: the reassembled file can't equal PRE's
             try:
-                compile(got, "wt.py (reassembled)", "exec", dont_inherit=True)
+                compile(got, "isr.py (reassembled)", "exec", dont_inherit=True)
             except SyntaxError as e:
-                self.fail_with(f"step 0: the reassembled wt.py does not compile: {e}")
+                self.fail_with(f"step 0: the reassembled isr.py does not compile: {e}")
             if LOADER_BEGIN not in want:
-                self.fail_with(f"step 0: {self.PRE}:watchtower/wt.py has no wt_parts loader block (expect mode compares split trees)")
-            self.say(f"step 0: behavior-change mode, byte check not applicable (reassembled wt.py compiles: {len(got)} bytes, {parts} parts; "
+                self.fail_with(f"step 0: {self.PRE}:isr_bot/isr.py has no isr_parts loader block (expect mode compares split trees)")
+            self.say(f"step 0: behavior-change mode, byte check not applicable (reassembled isr.py compiles: {len(got)} bytes, {parts} parts; "
                      f"{self.PRE} has the loader block; items: {','.join(self.ITEMS) or 'none'})")
             return
         if got != want:
             a, b = lines_of(want), lines_of(got)
             k = next((i for i, (x, y) in enumerate(zip(a, b)) if x != y), min(len(a), len(b)))
-            self.fail_with(f"step 0: the reassembled wt.py differs from {self.PRE}:watchtower/wt.py at line {k + 1}")
-        self.say(f"step 0 reassembly: byte-equal to {self.PRE}:watchtower/wt.py ({len(want)} bytes; {parts} parts; "
-                 f"loader block {'present' if LOADER_BEGIN in wt_post else 'absent'}; D2 line {'present' if D2_NEW in wt_post else 'absent'})")
+            self.fail_with(f"step 0: the reassembled isr.py differs from {self.PRE}:isr_bot/isr.py at line {k + 1}")
+        self.say(f"step 0 reassembly: byte-equal to {self.PRE}:isr_bot/isr.py ({len(want)} bytes; {parts} parts; "
+                 f"loader block {'present' if LOADER_BEGIN in isr_post else 'absent'}; D2 line {'present' if D2_NEW in isr_post else 'absent'})")
 
     # -- tiers
     def scenarios(self):

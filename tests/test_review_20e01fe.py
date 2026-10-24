@@ -114,11 +114,11 @@ class InstallInterrupted(R10R11InstallActivation):
         """5: stopped between the two mv calls, the EXIT trap deleted $STAGE with the old working copy inside."""
         self.release(ok=True); r = self.install("a" * 40)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        good = open(os.path.join(self.wt, "app", "watchtower", "wt.py")).read()
+        good = open(os.path.join(self.wt, "app", "isr_bot", "isr.py")).read()
         stub(self.bin, "mv", 'case "$1" in */.stage.*/app) kill -INT $PPID; sleep 1; exit 1;; esac\nexec /bin/mv "$@"\n')
         self.release(ok=True); r = self.install("b" * 40)
         self.assertNotEqual(r.returncode, 0, r.stdout)
-        self.assertEqual(open(os.path.join(self.wt, "app", "watchtower", "wt.py")).read(), good)
+        self.assertEqual(open(os.path.join(self.wt, "app", "isr_bot", "isr.py")).read(), good)
         self.assertFalse([x for x in os.listdir(self.wt) if x.startswith(".stage.")])
 
 

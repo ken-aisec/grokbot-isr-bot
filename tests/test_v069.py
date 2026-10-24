@@ -4,8 +4,8 @@ from contextlib import redirect_stdout, redirect_stderr
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "watchtower"))
-import wt  # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
+import isr as wt  # noqa: E402
 
 warnings.simplefilter("ignore", ResourceWarning)
 
@@ -113,5 +113,5 @@ class DailyListsDismissals(Base):
         code, out, _ = self.run_wt("dismiss", "--list", "--since", "2999-01-01")
         self.assertEqual(out.strip(), "NONE_DISMISSED")
         t = open(os.path.join(ROOT, "routines", "daily-watch.md")).read()
-        self.assertIn("wt.py dismiss --list", t); self.assertIn("Dismissed: <rule> at <where>: <reason>", t)
+        self.assertIn("isr.py dismiss --list", t); self.assertIn("Dismissed: <rule> at <where>: <reason>", t)
         self.assertIn("even when the daily check printed NO_CHANGES", t)

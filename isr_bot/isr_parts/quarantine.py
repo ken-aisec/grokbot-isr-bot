@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 # ---------------------------------------------------------------- quarantine: take a dangerous skill out of use without deleting it
 def PLATFORM_SKILL_DIRS():
     return [os.path.join(b, x) for b in (os.path.expanduser("~"), "/home/box") for x in ("sand-data", "agent-data", ".grok", ".cursor", ".agents")]
@@ -67,7 +67,7 @@ def quarantine(names, reason=""):
             continue
         reg.append({"name": skill_name(d), "from": d, "to": dst, "at": now(), "reason": reason[:200]})
         ledger({"event": "quarantine", "skill": skill_name(d), "from": d, "to": dst})
-        done.append(f"Quarantined {skill_name(d)}: moved out of use to {dst}. Nothing was deleted; `wt.py quarantine --restore {skill_name(d)}` puts it back.")
+        done.append(f"Quarantined {skill_name(d)}: moved out of use to {dst}. Nothing was deleted; `isr.py quarantine --restore {skill_name(d)}` puts it back.")
     save_json(state_path("quarantine.json"), reg)
     return done
 

@@ -1,8 +1,8 @@
 """Hardening batch 4, Codex review 2 (fix round 2, the last): 10 high and 5 medium findings on 73f155b.
 
-Every test marked "replay" fails on 73f155b on its assertion (measured with 73f155b's wt.py and audit skill, this file in
+Every test marked "replay" fails on 73f155b on its assertion (measured with 73f155b's isr.py and audit skill, this file in
 place: 25 fail, none errors); the 3 marked "guard" pass there too. Replays go through public paths only (finding(), mask_secrets(), vet, the
-audit and its state files, `show`, history collection), so none of them errors on an older wt.py. All secrets are fake."""
+audit and its state files, `show`, history collection), so none of them errors on an older isr.py. All secrets are fake."""
 import gzip, hashlib, io, json, os, sys, tempfile, time, unittest
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock

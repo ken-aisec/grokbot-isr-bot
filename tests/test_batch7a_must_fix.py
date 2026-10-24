@@ -119,9 +119,9 @@ def loose_spans(s):
 
 
 def run_child(test, src, limit=60):
-    """Runs `src` (formatted with wt_dir) in a child Python and returns its printed words; fails past `limit` seconds."""
+    """Runs `src` (formatted with isr_dir) in a child Python and returns its printed words; fails past `limit` seconds."""
     try:
-        r = subprocess.run([sys.executable, "-c", src.format(wt_dir=os.path.join(ROOT, "watchtower"))], capture_output=True,
+        r = subprocess.run([sys.executable, "-c", src.format(isr_dir=os.path.join(ROOT, "isr_bot"))], capture_output=True,
                            text=True, timeout=limit)
     except subprocess.TimeoutExpired:
         test.fail(f"took more than {limit} seconds")
@@ -405,7 +405,7 @@ class SerializedArmor(Box):   # assertions on masked text report counts and yes/
         self.assertEqual(int(n), 0)
 
 
-CHILD_RUNS = ("import json, sys, time\nsys.path.insert(0, {wt_dir!r})\nimport wt\n"
+CHILD_RUNS = ("import json, sys, time\nsys.path.insert(0, {isr_dir!r})\nimport isr as wt\n"
               "runs = ('-----BEGIN PRIVATE KEY-----' + '\\\\' * 16000 + 'n-----END PRIVATE KEY-----' + '\\\\' * 16000 + 'n') * 16\n"
               "comments = json.dumps('-----BEGIN PGP PRIVATE KEY BLOCK-----\\n' + 'Comment: \\\\n-----END PGP PRIVATE KEY BLOCK-----\\n' * 4000\n"
               "                      + '\\nFAKEbody\\n-----END PGP PRIVATE KEY BLOCK-----\\n')\n"
@@ -414,7 +414,7 @@ CHILD_RUNS = ("import json, sys, time\nsys.path.insert(0, {wt_dir!r})\nimport wt
 
 
 # ---------------------------------------------------------------- 2: a shared whitespace tail
-CHILD_TAIL = ("import sys, time\nsys.path.insert(0, {wt_dir!r})\nimport wt\n"
+CHILD_TAIL = ("import sys, time\nsys.path.insert(0, {isr_dir!r})\nimport isr as wt\n"
               "def run(n):\n"
               "    text = '-----BEGIN PRIVATE KEY-----\\n' * n + 'x' + '\\n' * (20 * n) + '-----END PRIVATE KEY-----\\n'\n"
               "    t = time.perf_counter()\n    out = wt.mask_secrets(text)\n    return time.perf_counter() - t, 'x' in out\n"
@@ -610,12 +610,12 @@ class IgnoredPackets(_Keys):
 
 
 # ---------------------------------------------------------------- 4: a long saved connector answer
-CHILD_CONNECTORS = ("import sys, time\nsys.path.insert(0, {wt_dir!r})\nimport wt\n"
+CHILD_CONNECTORS = ("import sys, time\nsys.path.insert(0, {isr_dir!r})\nimport isr as wt\n"
                     "def run(n):\n    t = time.perf_counter()\n    wt._ax_said(dict(connectors='Gmail ' * n))\n    return time.perf_counter() - t\n"
                     "run(10)\nprint(run(1000), run(8000))\n")
 
 
-CHILD_SPACES = ("import sys, time\nsys.path.insert(0, {wt_dir!r})\nimport wt\n"
+CHILD_SPACES = ("import sys, time\nsys.path.insert(0, {isr_dir!r})\nimport isr as wt\n"
                 "def run(n, answers=1):\n    t = time.perf_counter()\n"
                 "    for _ in range(answers):\n        wt._ax_said(dict(connectors=' ' * n + 'x'))\n    return time.perf_counter() - t\n"
                 "run(10)\nprint(run(2000), run(16000), run(16000, 40))\n")

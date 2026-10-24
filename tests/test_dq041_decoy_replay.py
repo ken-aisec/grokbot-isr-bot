@@ -4,8 +4,8 @@ raised ISR-K001 "read Oct 13 17:09Z" on a decoy nobody read. The real decoy's at
 import os, shutil, sys, tempfile, time, unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "watchtower"))
-import wt  # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
+import isr as wt  # noqa: E402
 
 
 class Base(unittest.TestCase):

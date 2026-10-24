@@ -111,14 +111,14 @@ class Scaling(unittest.TestCase):
         lines = ["config = {}", "WEBHOOK = '" + HOOK + "'"]
         lines += ["requests.post(config.get('k%d', '%s'), json=p)" % (i, HOOK) for i in range(3000)]
         lines += ["requests.post(WEBHOOK, json=p)"] * 3000
-        code = ("import sys, time; sys.path.insert(0, %r); import wt\n"
+        code = ("import sys, time; sys.path.insert(0, %r); import isr as wt\n"
                 "t = '---\\nname: x\\ndescription: x\\n---\\n```python\\n' + open(%r).read() + '\\n```\\n'\n"
                 "s = time.monotonic(); wt.scan_text(t, '/s/SKILL.md', wt.load_rules()); print(time.monotonic() - s)")
         import tempfile
         with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as f:
             f.write("\n".join(lines))
         self.addCleanup(os.remove, f.name)
-        p = subprocess.run([sys.executable, "-c", code % (os.path.join(ROOT, "watchtower"), f.name)], capture_output=True, text=True, timeout=120)
+        p = subprocess.run([sys.executable, "-c", code % (os.path.join(ROOT, "isr_bot"), f.name)], capture_output=True, text=True, timeout=120)
         self.assertEqual(p.returncode, 0, p.stderr[-2000:])
         self.assertLess(float(p.stdout.strip().splitlines()[-1]), 20.0)
 

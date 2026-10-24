@@ -1,5 +1,5 @@
 """v0.7.4, the display rename (owner decisions, Oct 22 and Oct 23): the product is called ISR Bot in display text only. Paths, the repo,
-WATCHTOWER_*, wt.py, the ISR-* IDs, the watchtower-* slugs, state and report file names, JSON keys and code identifiers keep the old
+WATCHTOWER_*, isr.py, the ISR-* IDs, the watchtower-* slugs, state and report file names, JSON keys and code identifiers keep the old
 name, and so does every engine string listed in ALLOWED below, each with its reason (docs/KNOWN-LIMITS.md "v0.7.4").
 
 Guards: no other engine string, prose file or script message says Watchtower; the name is always written ISR Bot and the first
@@ -10,8 +10,8 @@ from contextlib import redirect_stdout, redirect_stderr
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "watchtower"))
-import wt  # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
+import isr as wt  # noqa: E402
 
 warnings.simplefilter("ignore", ResourceWarning)
 
@@ -19,15 +19,15 @@ NAME = "ISR Bot"
 OLD = "Watchtower"
 # Engine string constants (not docstrings) that keep the old name, by file and exact value.
 ALLOWED = {
-    ("wt.py", "Watchtower rules"): "engine label: the ISR-* rule set's name in engines_used.json and the score fingerprint (decision 1)",
+    ("isr.py", "Watchtower rules"): "engine label: the ISR-* rule set's name in engines_used.json and the score fingerprint (decision 1)",
     ("audit.py", "Watchtower rules"): "engine label (decision 1): renaming it prints a false SCANNERS MISSING after the upgrade",
     ("approved.py", "Watchtower rules"): "engine label (decision 1): revet's checked_by",
     ("engines.py", "Watchtower"): "engine label (decision 1): in the ISR-X003 agreement evidence, part of its finding key",
     ("brief.py", "Watchtower/"): "the User-Agent token Watchtower/<version> (decision 2): a token can't hold spaces",
-    ("wt.py", "Watchtower daily watch"): "LEGACY_ROUTINE_NAMES: routines set up before 0.7.4",
-    ("wt.py", "Watchtower weekly audit"): "LEGACY_ROUTINE_NAMES",
-    ("wt.py", "Watchtower weekly tidy"): "LEGACY_ROUTINE_NAMES",
-    ("wt.py", "Watchtower monthly roll-call"): "LEGACY_ROUTINE_NAMES",
+    ("isr.py", "Watchtower daily watch"): "LEGACY_ROUTINE_NAMES: routines set up before 0.7.4",
+    ("isr.py", "Watchtower weekly audit"): "LEGACY_ROUTINE_NAMES",
+    ("isr.py", "Watchtower weekly tidy"): "LEGACY_ROUTINE_NAMES",
+    ("isr.py", "Watchtower monthly roll-call"): "LEGACY_ROUTINE_NAMES",
     ("plugins.py", "You are Watchtower"): "the legacy getting-started marker: a copy saved before 0.7.4 is still reported as older",
     ("canaries.py", ", during a recorded Watchtower run ("): "ISR-K005 evidence: part of its finding key (no ident)",
     ("scanners.py", "Watchtower's scanner list (scripts/scanner-bins.lock or its reader) changed after the self-check, during this run"):
@@ -51,7 +51,7 @@ CARD_DESCRIPTION = ("A read-only security officer for the shared computer your G
 MEMORY_9 = ("If any ISR Bot command prints SELF-CHECK FAILED, stop and tell the owner at once: ISR Bot's own files "
             "changed. Don't run it again until they reinstall it from the release.")
 MEMORY_10 = ("You are ISR Bot, the security officer for this Grok Bot roster. Your engine and files keep their original folder "
-             "names: /workspace/watchtower, wt.py, the watchtower-* skill files and ISR-* rule IDs. Never rename or move them; updates "
+             "names: /workspace/watchtower, isr.py, the watchtower-* skill files and ISR-* rule IDs. Never rename or move them; updates "
              "expect those paths. Keep it cheap: one pass over script output per run, short replies, no narration of tool calls. "
              "Roll-call is off unless the owner asks for it.")
 SKILLS_LINE = ("Every skill's full text is on this page's Skills tab and at "
@@ -66,7 +66,7 @@ def read(*p):
 
 
 def engine_files():
-    return [os.path.join(ROOT, "watchtower", "wt.py")] + sorted(glob.glob(os.path.join(ROOT, "watchtower", "wt_parts", "*.py")))
+    return [os.path.join(ROOT, "isr_bot", "isr.py")] + sorted(glob.glob(os.path.join(ROOT, "isr_bot", "isr_parts", "*.py")))
 
 
 def engine_strings(path):
@@ -188,6 +188,9 @@ def without_v074_blocks(rel, t):
 # is d2's old value, the alias line d1 writes). A3 (unit b): ISR, a hyphen and then {, [ or *: the f-string rebuild f"ISR-{…}",
 # a regex class ISR-[A-Z] and the glob ISR-*, any file. A4 (unit b): exact lowercase strings, each only in the file of that
 # basename: canonical_rule's case-insensitive regex in baseline.py, and the typed IDs test_hardening_batch1.py feeds it.
+# C (unit d1): the module name, in .py files only: `import isr` as a whole word (so the alias line `import isr as wt` that d2
+# removes), isr followed by a dot and a letter or _ (attributes, and patch targets like "isr.now"; never isr.pyc), isr followed by , or ),
+# and (isr| only where isr_parts/ follows (the doctor and golden frame regexes).
 NAME_RX = re.compile(r"(?i)\bisr\b(?![\s_-]*bot\b)|\bisr[\s_-]+bot[\s_-]+bot\b")   # no lone ISR as the name, no ISR Bot Bot
 RENAME_TABLE = "tests/golden_rename_v080.json"
 A1 = re.compile(r"ISR(?=-[A-Z])")
@@ -200,6 +203,7 @@ A5 = ('"(?i)isr-("', '"isr-t006k"', '"isr-t001R"', '"isr-k001"', '"isr-wsg"', '"
       r'"isr\\.py"', r'"isr\\\\.py"', '"isr."', r'"isr\\1"', '"import isr"', '"import isr as wt"', r'"\\1import isr as wt"',
       r'"\\nimport isr as wt\\n"', r'"; import isr as wt\\n"', r'"\\1\\2\\3\\nimport isr  # noqa: E402"',
       r'"\\1\\2\\nimport isr  # noqa: E402"', r'"import \\1  # noqa: E402\\nimport isr  # noqa: E402"')
+C = re.compile(r"(?:\b|(?<=\\n))import isr\b|\bisr(?=\.[A-Za-z_]|[,)])(?!\.pyc\b)|\(isr(?=\|isr_parts/)")
 
 
 def blank(rel, text):
@@ -207,6 +211,8 @@ def blank(rel, text):
     spans += [m.span() for s in A4.get(os.path.basename(rel), ()) for m in re.finditer(re.escape(s), text)]
     if rel in A2_FILES:
         spans += [m.span() for m in A2.finditer(text)]
+    if rel.endswith(".py"):
+        spans += [m.span() for m in C.finditer(text)]
     if rel == RENAME_TABLE:
         spans += [m.span() for s in A5 for m in re.finditer(re.escape(s), text)]
     out = list(text)
@@ -286,8 +292,20 @@ class NeverShortened(unittest.TestCase):
                        ("engine/baseline.py", "isr-(")):
             self.assertNotEqual(name_hits(rel, f'x = "{s}"\n'), [], (rel, s))
 
+    def test_allowances_module_name(self):   # bounds (v0.8.0 unit d1): C, both sides, on synthetic text
+        allowed = ("import isr", "import isr as wt", "isr.now", '"isr.now"', '(isr, "x")', "f(isr)", "(isr|isr_parts/",
+                   r'"x\nimport isr as wt\n"')
+        for rel in ("tests/test_x.py", "isr_bot/isr.py", "scripts/x.py"):
+            for text in allowed:
+                self.assertEqual(name_hits(rel, text + "\n"), [], (rel, text))
+            for text in ('"isr"', "# isr runs", "isr runs", "(isr|x)", "ISR.now", "import ISR", "isr.pyc"):
+                self.assertNotEqual(name_hits(rel, text + "\n"), [], (rel, text))
+        for rel in ("README.md", "docs/KNOWN-LIMITS.md", "skills/x/SKILL.md", "data.json", "scripts/x.sh"):
+            for text in allowed:
+                self.assertNotEqual(name_hits(rel, text + "\n"), [], (rel, text))
 
-TITLE_COLUMNS = (48, 60)   # wt.py breakdown cuts finding titles at these widths
+
+TITLE_COLUMNS = (48, 60)   # isr.py breakdown cuts finding titles at these widths
 
 
 def renderings(node):

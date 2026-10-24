@@ -64,7 +64,7 @@ class EnginesOnABox(Box):
         self.assertFalse([f for f in fs if f["label"] == wt.CONFIRMED and f["severity"] in ("critical", "high")],
                          [(f["rule"], f["severity"], f["label"]) for f in fs])
 
-    def test_watchtower_joins_an_engine_only_on_the_same_kind_of_risk(self):
+    def test_isr_bot_joins_an_engine_only_on_the_same_kind_of_risk(self):
         a = self.skill("reads-keys", "EVIL", CRED_READ)            # SkillSpector says Exfil; Watchtower says credential read
         b = self.skill("sends-out", "EVIL", CRED_READ, SEND_OUT)   # SkillSpector says Exfil; Watchtower sees a send out
         self.scanners(); self.audit()

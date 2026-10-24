@@ -130,7 +130,7 @@ class EnglishAsBefore(_Settings):
         for text in ENGLISH_CORPUS:                  # makes an English rule set look covered
             self.assertEqual(wt.ask_first_gaps(text), old_gaps(text), text)
 
-    def test_lint_auto_review_is_unchanged_for_english(self):   # guard (test_watchtower's test_auto_review shape)
+    def test_lint_auto_review_is_unchanged_for_english(self):   # guard (test_isr_bot's test_auto_review shape)
         t = open(os.path.join(ROOT, "tests", "fixtures", "exports", "auto-review.txt")).read()
         self.assertIn("ISR-A003", {f["rule"] for f in wt.lint_auto_review(t, "x")})
         self.assertEqual(len(wt.ask_first_gaps("Ask first: before sending email")), 4)

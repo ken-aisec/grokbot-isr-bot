@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 def now():
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
 

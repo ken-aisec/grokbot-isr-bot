@@ -218,7 +218,7 @@ class WebhookDoubt(unittest.TestCase):
 # ---------------------------------------------------------------- D: ISR-T018's Office branch
 OLD_T018 = (r"(?i)(hooks\.slack\.com/(services|workflows|triggers)/|discord(app)?\.com/api/webhooks/|[\w-]+\.webhook\.office\.com/"
             r"|outlook\.office\.com/webhook/|chat\.googleapis\.com/v1/spaces/[^/\s]+/messages|api\.telegram\.org/bot)")
-CHILD_T018 = ("import sys, time\nsys.path.insert(0, {wt_dir!r})\nimport wt\n"
+CHILD_T018 = ("import sys, time\nsys.path.insert(0, {isr_dir!r})\nimport isr as wt\n"
               "rx = next(r['rx'] for r in wt.load_rules()['rules'] if r['id'] == 'ISR-T018')\n"
               "for word in ('a' * 64000, 'a' * 128000, ('ab-' * 43000)[:128000]):\n"
               "    t = time.perf_counter()\n    list(rx.finditer(word))\n    print(time.perf_counter() - t)\n")

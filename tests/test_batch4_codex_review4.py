@@ -3,7 +3,7 @@
 Every test marked "replay" fails on 151e40c on its assertion (measured with 151e40c's watchtower/ sources and this file in place);
 the ones marked "guard" keep what already worked (most pass there too). Replays go through public paths only (finding(),
 mask_secrets(), scan_text(), vet, label_findings(), the audit and its state files, approved copies, history collection), so none
-of them errors on an older wt.py. All secrets are fake."""
+of them errors on an older isr.py. All secrets are fake."""
 import gzip, json, os, random, sys, time, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, wt

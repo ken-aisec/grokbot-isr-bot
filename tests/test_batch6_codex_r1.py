@@ -251,11 +251,11 @@ class EveryServerIsRead(unittest.TestCase):
         self.assertEqual(evidence(t), ["npx pkg (no version)"])
 
     def test_130000_assignments_read_in_linear_time(self):   # replay (68974e3: quadratic, over 20 s)
-        code = ("import sys, json, time; sys.path.insert(0, %r); import wt\n"
+        code = ("import sys, json, time; sys.path.insert(0, %r); import isr as wt\n"
                 "t = json.dumps({'mcpServers': {'s': {'command': '/usr/bin/env', 'args': ['A%%d=1' %% i for i in range(130000)] + ['npx', 'pkg']}}})\n"
                 "s = time.monotonic(); r = wt.mcp_unpinned(t); print(time.monotonic() - s); print(json.dumps(r))")
         try:
-            p = subprocess.run([sys.executable, "-c", code % os.path.join(ROOT, "watchtower")], capture_output=True, text=True, timeout=20)
+            p = subprocess.run([sys.executable, "-c", code % os.path.join(ROOT, "isr_bot")], capture_output=True, text=True, timeout=20)
         except subprocess.TimeoutExpired:
             self.fail("130,000 assignments took over 20 seconds")
         self.assertEqual(p.returncode, 0, p.stderr[-2000:])

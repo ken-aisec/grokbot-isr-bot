@@ -211,7 +211,7 @@ class InstalledCopyIdentity(Box):
     def install(self):
         self.wth = os.environ["ISR_BOT_HOME"]
         self.app = os.path.join(self.wth, "app")
-        for d in ("watchtower", "rules", ".git"):
+        for d in ("isr_bot", "rules", ".git"):
             os.makedirs(os.path.join(self.app, d), exist_ok=True)
         for rel in (wt.PLATFORM_REVIEWED_REL, wt.PLATFORM_NORMALIZE_REL):
             shutil.copyfile(os.path.join(ROOT, rel), os.path.join(self.app, rel))
@@ -223,7 +223,7 @@ class InstalledCopyIdentity(Box):
         os.makedirs(os.path.join(self.wth, "state"), exist_ok=True)
         with open(os.path.join(self.wth, "state", "installed_commit"), "w") as f:
             f.write("a" * 40 + "\n")
-        for name, value in (("SELF_ROOT", self.app), ("HERE", os.path.join(self.app, "watchtower")),
+        for name, value in (("SELF_ROOT", self.app), ("HERE", os.path.join(self.app, "isr_bot")),
                             ("PLATFORM_REVIEWED", os.path.join(self.app, wt.PLATFORM_REVIEWED_REL)),
                             ("PLATFORM_NORMALIZE", os.path.join(self.app, wt.PLATFORM_NORMALIZE_REL))):
             p = mock.patch.object(wt, name, value)
@@ -386,7 +386,7 @@ class OwnerFirst(_SignIn):
         self.assertLess(len(pn["lines"]), 8)
         self.assertIn(f"{8 - len(pn['lines'])} more platform notes not shown here", pn["more"])
         self.assertIn("would call critical or high", pn["more"])
-        self.assertIn("`wt.py breakdown` lists every one", pn["more"])
+        self.assertIn("`isr.py breakdown` lists every one", pn["more"])
         self.assertEqual(r["platform"], pn["lines"][:len(r["platform"])])
         self.assertLessEqual(len(o), 4096 + wt.PLATFORM_NOTES_BYTES + 200)
 
@@ -401,7 +401,7 @@ class OwnerFirst(_SignIn):
         pn = json.loads(out)["platform_notes"]
         self.assertEqual((pn["count"], len(pn["lines"])), (6, 5))
         self.assertIn("1 more platform note not shown here, 1 of them ISR Bot would call critical or high", pn.get("more", ""))
-        self.assertIn("`wt.py breakdown`", pn.get("more", ""))
+        self.assertIn("`isr.py breakdown`", pn.get("more", ""))
         wt.save_json(wt.state_path("last_findings.json"), snap)
         rows = self.breakdown()
         self.assertEqual(sum(1 for i in range(6) if f"/skills/s{i}/SKILL.md (line 3)" in rows), 6)   # where `more` points: every one

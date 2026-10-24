@@ -155,7 +155,7 @@ class RenamedInstall(Box):
         return real
 
     def check(self, real, start):
-        got = self.run_probe(os.path.join(start, "watchtower"), self.wth)
+        got = self.run_probe(os.path.join(start, "isr_bot"), self.wth)
         self.assertEqual(got["root"], os.path.realpath(real))
         self.assertIsNotNone(got["problems"])
         self.assertIn(f"{wt.PLATFORM_REVIEWED_REL} changed since install", got["problems"])

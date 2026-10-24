@@ -3,8 +3,8 @@ import io, json, os, shutil, sys, tempfile, unittest, warnings
 from contextlib import redirect_stdout, redirect_stderr
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "watchtower"))
-import wt  # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
+import isr as wt  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import profiles  # noqa: E402
 wt.NATIVE_SETTINGS[:] = [p for p in wt.NATIVE_SETTINGS if p.startswith("~")]

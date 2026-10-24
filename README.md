@@ -37,7 +37,7 @@ Skills are checked by ISR Bot's own rules, [NVIDIA SkillSpector](https://github.
 
 ## Tripwires
 
-`wt.py canary plant` places three decoys (a fake customer export, fake cloud keys, a fake payments .env). Nothing legitimate reads them. If anything opens, deletes or copies one, the next daily run says so. Zero tokens, and the best early warning a non-Enterprise account can get.
+`isr.py canary plant` places three decoys (a fake customer export, fake cloud keys, a fake payments .env). Nothing legitimate reads them. If anything opens, deletes or copies one, the next daily run says so. Zero tokens, and the best early warning a non-Enterprise account can get.
 
 One decoy read is critical. Several read together are high, unless the platform's file backup proves it was the reader: next to each decoy sits a witness file no Bot can read (mode 000; opening it or faking its read time leaves a trace a Bot can't undo), and only when every witness was read within 2 seconds of its decoy is the sweep the one calm "read by the platform's backup" line. A read during a recorded ISR Bot run is high too, because any Bot can write that record. `canary plant` checks that each decoy folder records reads and names any that doesn't.
 
@@ -64,7 +64,7 @@ mkdir -p /workspace/watchtower && cd /workspace/watchtower
 curl -fsSLO "https://raw.githubusercontent.com/ken-aisec/grokbot-watchtower/$COMMIT/scripts/install.sh"
 head -40 install.sh && bash install.sh v0.7.4 "$COMMIT"
 bash /workspace/watchtower/app/scripts/install.sh --scanners
-python3 /workspace/watchtower/app/watchtower/wt.py audit
+python3 /workspace/watchtower/app/isr_bot/isr.py audit
 ```
 
 ## Built to not break
@@ -74,61 +74,61 @@ Every computer is different, so ISR Bot assumes things will go wrong and is test
 - The audit has a hard time limit. Every scanner gets only the time that is left.
 - A stage that fails is skipped with one line saying so, and its last results are kept. A failure never moves the score and never reports old findings as fixed.
 - Only what you own counts toward the score. Grok Bot's own files never move it (a key there still does). Plugins you installed count when a finding on them is critical or high. Grok Bot's own updates are one Platform line, accepted at the next full audit when nothing flags them.
-- Platform updates need the vendor's release list or ISR Bot's own checks. A new or changed file in the platform's own skill folders (`.grok/bundled`, the managed skills, `.codex/skills/.system`, `.claude/plugins/synced`) is the vendor's when its path and its exact sha256 are listed in `rules/platform-release.lock`, which ships with ISR Bot's release and is checked against `MANIFEST.sha256` like the rest of it. There is no owner's yes and no record on the computer that vouches for one (an owner decision, Oct 18), because anything on the computer is the Bot's to write. None of the vendors publishes such a list, so its hashes are copied from a computer: the list was filled on Oct 18 from the maintainer's Grok Bot box (623 files; Bots had already run on that box, and that was accepted: an owner decision); a `<bucket>` line lists a file in every account's Claude sync bucket. Versions differ per user, so since Oct 22 (an owner decision: the middle path) a new or changed file at a path that already exists (on the release list with any hash, or in `baseline.json`), or in a new platform skill folder, is the quiet Platform refresh line, and a full audit accepts it (the line stays, naming every file, and says so), when ISR Bot's whole rule set finds nothing at medium or above in exactly the bytes it fingerprinted (read as the owner's own file would be; every string value of a metadata file, as decoded, as skill text), no other finding at medium or above is on it (a grouped one, such as gitleaks's single finding for four or more files in one folder, counts for each of its files, a line carried from the last run too, and one that doesn't name all its files, such as a line saved by an earlier version, holds every file under its folder until a scan that finishes names them), no two scanners name a dangerous behavior in its folder, every check of it finished (no scanner ran out of time on its folder, no secret scan failed), and it is no link, has no colon in its path, really sits in the platform folder where the home folder has it (checked when it is chosen, again when it is decided after the scanners, again before the refresh line is made and the audit accepts anything, and once more right before the baseline is written: one that moved by then is a counted high, not in the refresh line, and keeps its old baseline hash; a move after that last check is seen on the next run) and is at most 1 MB. A first run (a brand-new box, or one whose ISR Bot state was wiped) raises nothing for a changed file at a release-list path and leaves it out of its first baseline; a new skill folder is quiet only when it appears in an update run, so one already there when a baseline is taken without one to compare with (a first audit or daily, `wt.py baseline`, or the owner's yes after a reset) is a counted high on that run and every run after. ISR Bot remembers that in `state/last_findings.json` and `state/platform_held.json`, which a Bot can write: deleting both makes such a folder look new on the next run (an accepted limit, like a baseline line a Bot writes). Any other file (a loose one, a flagged or oversized one, a new file in a skill folder nobody updated, everything while the release list can't be used) is a counted high on every box, from the first audit on, daily included ("…isn't on Grok Bot's release list" or "…Grok Bot's release list doesn't include it"), and the status reads "Check this week" until it is fixed or a release lists it. Don't use that skill until someone has looked. Daily and `wt.py fix` show the same read-only list (`platform_unverified`): the exact `open` count, the first 50 files and how to list the rest (`wt.py show ISR-I002 --limit 100000`, `wt.py show ISR-I001 --limit 100000`). Nothing on the computer approves them: `wt.py fix --approve-platform` and `--platform-from` are refused, and `baseline --owner-said-yes`, `accept`, `dismiss` and `fix --revet` don't approve them. The owner removes files they didn't expect; a real vendor update clears when its next version passes the middle path's checks, or when ISR Bot's maintainer lists its hashes from a freshly created computer (the command is in the lock file's header), regenerates `MANIFEST.sha256` and ships a release, and the owner updates ISR Bot. A `state/platform_approved.json` left by an earlier version is no longer read (the audit says so once per run while it exists). Every file in those folders is checked, found by a walk of its own (links, `node_modules` and files outside skill folders included); a folder it can't finish is a high alert (ISR-I011). Grok Bot's own lists of what it loads (`manifest.json`, `cache.json` and the like), which it rewrites at every sync, can also be verified by content (batch 6): `rules/platform-normalize.json` (shipped empty until the spike's data lands) names the fields its loader never reads, each with an exact type, and the skill texts and file checksums the file repeats; a rewrite counts as listed only when those texts and checksums equal the files ISR Bot fingerprinted itself in the same run and the rest, in order, is a release-list line marked `canonical` (a plain line lists raw bytes only, and a canonical line never lists a file's raw bytes). Anything else isn't verified and follows the middle path like any other platform file; a verified rewrite is a Platform refresh Tip that says it was compared. A gitleaks hit in it is a Platform note only when gitleaks gives exactly the same hits on a private copy of the verified bytes, the file still has those bytes when the note is read (report and doctor decide again, from the disk and the release list; nothing stored vouches for it), and every skill or file it repeats is itself on the release list; a key a provider confirms, or any hit in a file that repeats an unlisted skill, stays counted. ISR Bot's own rules files (the lists above, the vocabularies, the scanner lock and its reader) are always held to `MANIFEST.sha256`, whatever the folder's layout; one that isn't its line, or a missing manifest, is ignored with a note.
+- Platform updates need the vendor's release list or ISR Bot's own checks. A new or changed file in the platform's own skill folders (`.grok/bundled`, the managed skills, `.codex/skills/.system`, `.claude/plugins/synced`) is the vendor's when its path and its exact sha256 are listed in `rules/platform-release.lock`, which ships with ISR Bot's release and is checked against `MANIFEST.sha256` like the rest of it. There is no owner's yes and no record on the computer that vouches for one (an owner decision, Oct 18), because anything on the computer is the Bot's to write. None of the vendors publishes such a list, so its hashes are copied from a computer: the list was filled on Oct 18 from the maintainer's Grok Bot box (623 files; Bots had already run on that box, and that was accepted: an owner decision); a `<bucket>` line lists a file in every account's Claude sync bucket. Versions differ per user, so since Oct 22 (an owner decision: the middle path) a new or changed file at a path that already exists (on the release list with any hash, or in `baseline.json`), or in a new platform skill folder, is the quiet Platform refresh line, and a full audit accepts it (the line stays, naming every file, and says so), when ISR Bot's whole rule set finds nothing at medium or above in exactly the bytes it fingerprinted (read as the owner's own file would be; every string value of a metadata file, as decoded, as skill text), no other finding at medium or above is on it (a grouped one, such as gitleaks's single finding for four or more files in one folder, counts for each of its files, a line carried from the last run too, and one that doesn't name all its files, such as a line saved by an earlier version, holds every file under its folder until a scan that finishes names them), no two scanners name a dangerous behavior in its folder, every check of it finished (no scanner ran out of time on its folder, no secret scan failed), and it is no link, has no colon in its path, really sits in the platform folder where the home folder has it (checked when it is chosen, again when it is decided after the scanners, again before the refresh line is made and the audit accepts anything, and once more right before the baseline is written: one that moved by then is a counted high, not in the refresh line, and keeps its old baseline hash; a move after that last check is seen on the next run) and is at most 1 MB. A first run (a brand-new box, or one whose ISR Bot state was wiped) raises nothing for a changed file at a release-list path and leaves it out of its first baseline; a new skill folder is quiet only when it appears in an update run, so one already there when a baseline is taken without one to compare with (a first audit or daily, `isr.py baseline`, or the owner's yes after a reset) is a counted high on that run and every run after. ISR Bot remembers that in `state/last_findings.json` and `state/platform_held.json`, which a Bot can write: deleting both makes such a folder look new on the next run (an accepted limit, like a baseline line a Bot writes). Any other file (a loose one, a flagged or oversized one, a new file in a skill folder nobody updated, everything while the release list can't be used) is a counted high on every box, from the first audit on, daily included ("…isn't on Grok Bot's release list" or "…Grok Bot's release list doesn't include it"), and the status reads "Check this week" until it is fixed or a release lists it. Don't use that skill until someone has looked. Daily and `isr.py fix` show the same read-only list (`platform_unverified`): the exact `open` count, the first 50 files and how to list the rest (`isr.py show ISR-I002 --limit 100000`, `isr.py show ISR-I001 --limit 100000`). Nothing on the computer approves them: `isr.py fix --approve-platform` and `--platform-from` are refused, and `baseline --owner-said-yes`, `accept`, `dismiss` and `fix --revet` don't approve them. The owner removes files they didn't expect; a real vendor update clears when its next version passes the middle path's checks, or when ISR Bot's maintainer lists its hashes from a freshly created computer (the command is in the lock file's header), regenerates `MANIFEST.sha256` and ships a release, and the owner updates ISR Bot. A `state/platform_approved.json` left by an earlier version is no longer read (the audit says so once per run while it exists). Every file in those folders is checked, found by a walk of its own (links, `node_modules` and files outside skill folders included); a folder it can't finish is a high alert (ISR-I011). Grok Bot's own lists of what it loads (`manifest.json`, `cache.json` and the like), which it rewrites at every sync, can also be verified by content (batch 6): `rules/platform-normalize.json` (shipped empty until the spike's data lands) names the fields its loader never reads, each with an exact type, and the skill texts and file checksums the file repeats; a rewrite counts as listed only when those texts and checksums equal the files ISR Bot fingerprinted itself in the same run and the rest, in order, is a release-list line marked `canonical` (a plain line lists raw bytes only, and a canonical line never lists a file's raw bytes). Anything else isn't verified and follows the middle path like any other platform file; a verified rewrite is a Platform refresh Tip that says it was compared. A gitleaks hit in it is a Platform note only when gitleaks gives exactly the same hits on a private copy of the verified bytes, the file still has those bytes when the note is read (report and doctor decide again, from the disk and the release list; nothing stored vouches for it), and every skill or file it repeats is itself on the release list; a key a provider confirms, or any hit in a file that repeats an unlisted skill, stays counted. ISR Bot's own rules files (the lists above, the vocabularies, the scanner lock and its reader) are always held to `MANIFEST.sha256`, whatever the folder's layout; one that isn't its line, or a missing manifest, is ignored with a note.
 - ISR Bot runs only its own scanners, from its own folder, and only when each program file matches the checksum in `scripts/scanner-bins.lock`. For the Python scanners (SkillSpector, husk, pip-audit) that file is the small entry point pip writes; their package code was checked against `scripts/scanners.lock` when it was installed and isn't checked again on each run. It runs a sealed in-memory copy of the bytes it checked, and Python scanners only with the computer's own root-owned Python. A scanner whose copy isn't the one the lock lists is not run, its last results are kept, and that is a high alert; one the lock doesn't list for this computer yet is not run either, and that is a plain note.
-- One run at a time. No stack traces: one plain line, and `wt.py doctor --save` writes a snapshot you can send to the author.
+- One run at a time. No stack traces: one plain line, and `isr.py doctor --save` writes a snapshot you can send to the author.
 - ISR Bot holds its own tools to the same standard: scanners install from a lock file with a checksum for every package (`scripts/scanners.lock`), nothing is unpacked unless its checksum passes, and the audit checks ISR Bot's own scanner packages for known holes.
 
 ## CLI
 
 ```
-wt.py --version               the version, after the self-check (a changed copy exits 4 and prints no version)
-wt.py vet FILE|-|LINK [--json] [--deep] [--page-only]   vet before installing (exit 1 = Do not install, or Could not
+isr.py --version               the version, after the self-check (a changed copy exits 4 and prints no version)
+isr.py vet FILE|-|LINK [--json] [--deep] [--page-only]   vet before installing (exit 1 = Do not install, or Could not
                                          finish checking when part of it wasn't read); --page-only when
                                          the text was copied from a marketplace page and the skill bodies weren't visible
-wt.py audit | daily           full or quick audit (compact JSON for the Bot)
+isr.py audit | daily           full or quick audit (compact JSON for the Bot)
       [--roots DIR..] [--exports DIR] [--budget SECONDS] [--everything | --live-only]
                                          --budget: scanner time for this run; --everything also checks archives, clones and
                                          other projects, --live-only goes back to what the platform loads (both remembered)
-wt.py report                  weekly report + dashboard.html
-wt.py brief [--summary F] [--notes F] [--offline F]   weekly threat brief (HTML)
-wt.py rollcall --question     print the one fixed roll-call question to send, unchanged
-wt.py rollcall --save <Bot>      save one reply (stdin) as a 0600 file in the private 0700 roll-call folder
-wt.py rollcall --owner-said-yes [--dir DIR]  analyze roll-call replies, keep masked findings, delete the replies
-wt.py prepublish PATH [--json]   check a Bot before sharing it as a template
-wt.py fix [--roots DIR..]      preview: the cleanup list (path, file count, whose) and everything else
-wt.py fix --apply --owner-said-yes [--skip N,..] --upgrade --revet --accept RULES [--keep-open NAMES] [--reason "..."]
+isr.py report                  weekly report + dashboard.html
+isr.py brief [--summary F] [--notes F] [--offline F]   weekly threat brief (HTML)
+isr.py rollcall --question     print the one fixed roll-call question to send, unchanged
+isr.py rollcall --save <Bot>      save one reply (stdin) as a 0600 file in the private 0700 roll-call folder
+isr.py rollcall --owner-said-yes [--dir DIR]  analyze roll-call replies, keep masked findings, delete the replies
+isr.py prepublish PATH [--json]   check a Bot before sharing it as a template
+isr.py fix [--roots DIR..]      preview: the cleanup list (path, file count, whose) and everything else
+isr.py fix --apply --owner-said-yes [--skip N,..] --upgrade --revet --accept RULES [--keep-open NAMES] [--reason "..."]
                                          everything in one pass (after your yes); --keep-open leaves those open
-wt.py fix --revet [--only NAMES]   re-scan changed skills with every scanner and re-approve the clean ones
-wt.py fix --exception NAMES    keep skills the owner confirmed as security tools (30 days)
-wt.py fix --quarantine NAMES   move the owner's own skills out of use into ISR Bot's quarantine folder
-wt.py fix --upgrade-projects   npm and Rust lockfile fixes in your own projects (its own yes)
-wt.py fix --approve-platform CODE / --platform-from CURSOR   refused: platform files are trusted only by rules/platform-release.lock
-wt.py quarantine [NAMES] [--restore NAME] [--reason "..."]   list, quarantine or restore the owner's own skills
-wt.py diff SKILL [--lines N]   what changed in a skill since you approved it
-wt.py exception add SKILL --reason "..."   keep one named security-tool skill that two scanners flag (30 days)
-wt.py exception list | exception remove SKILL
-wt.py accept RULE WHERE --reason "..." [--days N]   accept one risk on purpose (90 days unless --days); WHERE is a whole
+isr.py fix --revet [--only NAMES]   re-scan changed skills with every scanner and re-approve the clean ones
+isr.py fix --exception NAMES    keep skills the owner confirmed as security tools (30 days)
+isr.py fix --quarantine NAMES   move the owner's own skills out of use into ISR Bot's quarantine folder
+isr.py fix --upgrade-projects   npm and Rust lockfile fixes in your own projects (its own yes)
+isr.py fix --approve-platform CODE / --platform-from CURSOR   refused: platform files are trusted only by rules/platform-release.lock
+isr.py quarantine [NAMES] [--restore NAME] [--reason "..."]   list, quarantine or restore the owner's own skills
+isr.py diff SKILL [--lines N]   what changed in a skill since you approved it
+isr.py exception add SKILL --reason "..."   keep one named security-tool skill that two scanners flag (30 days)
+isr.py exception list | exception remove SKILL
+isr.py accept RULE WHERE --reason "..." [--days N]   accept one risk on purpose (90 days unless --days); WHERE is a whole
                                          name (the place, skill folder name, or "package version"); decoy alarms and
                                          Confirmed findings are refused
-wt.py accept --list | accept RULE WHERE --remove
-wt.py accept --all-current RULES         accept everything currently open for those rules
-wt.py dismiss KEY --reason "..."   drop a Worth-a-look finding shown to be a false alarm (logged)
-wt.py dismiss --list [--since DATE]   what was dismissed (last 24 hours unless --since)
-wt.py events list|clear [--rule RULE] [--owner-said-yes]   one-time detections
-wt.py canary plant|status [--token-file F]   plant the decoys; see what touched them
-wt.py canary remove --owner-said-yes   remove the decoys (only after the owner's yes)
-wt.py auto-allow [keep IDS --owner-said-yes --reason "..."]   list Allow-automatically lines on consequential actions;
+isr.py accept --list | accept RULE WHERE --remove
+isr.py accept --all-current RULES         accept everything currently open for those rules
+isr.py dismiss KEY --reason "..."   drop a Worth-a-look finding shown to be a false alarm (logged)
+isr.py dismiss --list [--since DATE]   what was dismissed (last 24 hours unless --since)
+isr.py events list|clear [--rule RULE] [--owner-said-yes]   one-time detections
+isr.py canary plant|status [--token-file F]   plant the decoys; see what touched them
+isr.py canary remove --owner-said-yes   remove the decoys (only after the owner's yes)
+isr.py auto-allow [keep IDS --owner-said-yes --reason "..."]   list Allow-automatically lines on consequential actions;
                                          keep exact ones after the owner's yes
-wt.py access [--json]         who can reach what: what every Bot shares on this computer, and what each Bot said in
+isr.py access [--json]         who can reach what: what every Bot shares on this computer, and what each Bot said in
                                          the roll-call (not checked); --json for the Bot (at most 4 KB)
-wt.py incident --note "..."   evidence pack + containment checklist
-wt.py codescan PATH           OWASP Top 10 code review
-wt.py status                  what a running audit is doing and how long each stage took
-wt.py breakdown | show RULE [--limit N]   findings by rule; evidence with context
-wt.py baseline [--owner-said-yes]   accept current skills as reviewed (the first one on a computer needs no flag)
-wt.py doctor [--save]         a support snapshot of this computer, safe to share (no file contents, keys or skill names)
-wt.py uninstall [--apply] [--remove-folder]   preview, then remove what ISR Bot created (after the owner's yes)
+isr.py incident --note "..."   evidence pack + containment checklist
+isr.py codescan PATH           OWASP Top 10 code review
+isr.py status                  what a running audit is doing and how long each stage took
+isr.py breakdown | show RULE [--limit N]   findings by rule; evidence with context
+isr.py baseline [--owner-said-yes]   accept current skills as reviewed (the first one on a computer needs no flag)
+isr.py doctor [--save]         a support snapshot of this computer, safe to share (no file contents, keys or skill names)
+isr.py uninstall [--apply] [--remove-folder]   preview, then remove what ISR Bot created (after the owner's yes)
 ```
 
 State lives in `$ISR_BOT_HOME` (default `/workspace/watchtower`). `state/ledger.jsonl` is an append-only record of every run: the audit trail non-Enterprise accounts don't get.
@@ -158,13 +158,13 @@ Apache-2.0. See `THREAT_MODEL.md`, `EGRESS.md` and `SECURITY.md`.
 ## Accepted auto-allow lines (ISR-A002)
 
 An auto-allow on a consequential action (sending, posting, paying, deleting, an HTTP POST) is always a critical ISR-A002.
-An owner can accept one exact line on purpose: `wt.py auto-allow` lists the lines with an id (the line's whole sha256), and after the owner's yes
-`wt.py auto-allow keep <id> --owner-said-yes` stores its sha256 fingerprint in `state/accepted_auto_allow.json` (this box
+An owner can accept one exact line on purpose: `isr.py auto-allow` lists the lines with an id (the line's whole sha256), and after the owner's yes
+`isr.py auto-allow keep <id> --owner-said-yes` stores its sha256 fingerprint in `state/accepted_auto_allow.json` (this box
 only; nothing is shipped, so a line one owner accepted is never accepted for anyone else). A matching line keeps its critical
 severity but is filed under Accepted risks, shown in the report and not scored. Any new, edited or broader line has a
 different fingerprint and fires.
 
 If ISR Bot ran on a computer before and its baseline is later missing, empty or unreadable, that is a high ISR-I010
 "ISR Bot's memory was reset", never a quiet fresh start: nothing is re-approved until the owner says yes to
-`wt.py baseline --owner-said-yes`.
+`isr.py baseline --owner-said-yes`.
 Several reviewed skills that changed show as one high ISR-I001 line naming every skill.

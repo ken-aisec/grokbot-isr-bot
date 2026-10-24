@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 # ---------------------------------------------------------------- access map: what the Bots on this computer can reach
 # Batch 5 (a): a plain answer to "what can my Bots reach?", built only from what Watchtower already collects. Nothing new is read
 # from memories, messages, transcripts or credential files, and no value is taken from them. Decisions, Oct 18: MCP configs
@@ -892,7 +892,7 @@ def access_roots():
 
 
 def access_map_now():
-    """A map built now from this computer, for a command that runs no audit (report, brief, `wt.py access`; PR B, Codex round 1,
+    """A map built now from this computer, for a command that runs no audit (report, brief, `isr.py access`; PR B, Codex round 1,
     2): Grok Bot's settings, the command-line sign-ins, the MCP and hooks files, plugins, scheduled jobs, the browser's cookie jar
     and (round 2, 1) the platform's cookie seed are looked at again, each the way the audit looks. Chat webhooks and files with
     live-looking keys need the audit's full scan: they come from its last findings, are never taken as "none" (not checked), and
@@ -948,7 +948,7 @@ def last_access_map():
 
 
 def load_access_map():
-    """The access map this command shows (the audit JSON's line, the report section, the dashboard card, the brief, `wt.py
+    """The access map this command shows (the audit JSON's line, the report section, the dashboard card, the brief, `isr.py
     access`): the one this command's audit built, else one built now (access_map_now). Only when that fails, the last audit's
     (last_access_map), with nothing checked. None on a box where no audit has written a map yet (an older box: shown as before)."""
     if _ACCESS_RUN.get("home") == home() and _ACCESS_RUN.get("map") is not None:
@@ -1220,7 +1220,7 @@ def access_summary(m):
     rc = m["rollcall"]
     bots = (f"Each Bot (roll-call, not checked): {len(m['bots']) + m['bots_more']} said, {len(m['bots_silent']) + rc['silent_more']} didn't answer"
             if rc["fresh"] or m["bots"] else "Each Bot: no roll-call in the last 35 days")
-    return clip(f"Shared by every Bot: {'; '.join(bits)}. {bots}. `wt.py access` has the details.", 300)
+    return clip(f"Shared by every Bot: {'; '.join(bits)}. {bots}. `isr.py access` has the details.", 300)
 
 
 def access_json(m):
@@ -1301,7 +1301,7 @@ def _ax_json_doc(m, sh, ok, b, z, rc, every, shown, past, whole, not_listed):
 def cmd_access(args):
     m = load_access_map()
     if m is None:
-        print("ERROR no access map yet: run `wt.py audit` first", file=sys.stderr)
+        print("ERROR no access map yet: run `isr.py audit` first", file=sys.stderr)
         return 2
     if getattr(args, "json", False):
         print(access_json(m))
@@ -1316,9 +1316,9 @@ def cmd_access(args):
             print(f"- {x}")
     print("")
     if m["shared"]["from"] == "last-audit":
-        print(f"From the audit at {m['at']}: ISR Bot couldn't look at this computer just now. Run `wt.py audit` for a fresh one.")
+        print(f"From the audit at {m['at']}: ISR Bot couldn't look at this computer just now. Run `isr.py audit` for a fresh one.")
     else:
-        print(f"Checked at {m['at']}; chat webhooks and files with keys are from the last audit. Run `wt.py audit` for a fresh one.")
+        print(f"Checked at {m['at']}; chat webhooks and files with keys are from the last audit. Run `isr.py audit` for a fresh one.")
     return 0
 
 
@@ -1439,7 +1439,7 @@ def here_sentence(e_, t):
         if len(s) <= HERE_MAX:
             return s
         parts.pop()
-    return f"This is about {label}, and something on this computer reaches it: `wt.py access` says what."
+    return f"This is about {label}, and something on this computer reaches it: `isr.py access` says what."
 
 
 def no_access_sentence(e_, m):

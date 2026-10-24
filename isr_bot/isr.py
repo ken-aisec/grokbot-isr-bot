@@ -43,15 +43,15 @@ TEXT_EXT = {".md", ".txt", ".json", ".jsonl", ".ndjson", ".log", ".yaml", ".yml"
 SECRET_RULE = "ISR-T011"
 
 
-# >>> wt_parts loader (reassembly drops this block)
-_WT_PARTS = os.path.join(HERE, "wt_parts")
+# >>> isr_parts loader (reassembly drops this block)
+_ISR_PARTS = os.path.join(HERE, "isr_parts")
 
 
-def _wt_part(name):
-    """Run watchtower/wt_parts/<name>.py in this module's namespace, compiled from its source bytes: no bytecode cache is
+def _isr_part(name):
+    """Run isr_bot/isr_parts/<name>.py in this module's namespace, compiled from its source bytes: no bytecode cache is
     read or written (a planted __pycache__ file never runs; Codex, batch 3 round 2), and nothing depends on sys.path or the
     current folder, so `python3 -I` works. A part that is missing, a link or not a plain file stops the run in one plain line."""
-    path = os.path.join(_WT_PARTS, name + ".py")
+    path = os.path.join(_ISR_PARTS, name + ".py")
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
         try:
@@ -65,64 +65,64 @@ def _wt_part(name):
                 os.close(fd)
         code = compile(src, path, "exec", dont_inherit=True)
     except (OSError, ValueError, SyntaxError):
-        print(f"SELF-CHECK FAILED - ISR Bot stopped before doing anything. Its own file watchtower/wt_parts/{name}.py is missing"
+        print(f"SELF-CHECK FAILED - ISR Bot stopped before doing anything. Its own file isr_bot/isr_parts/{name}.py is missing"
               " or not a plain file. Tell the owner now. Don't run ISR Bot again until they reinstall it from the release"
               " (setup skill, section 1).")
         sys.exit(4)
     exec(code, globals())   # noqa: S102 - Watchtower's own file, from its bytes; held to MANIFEST.sha256 by self_check
-# <<< wt_parts loader
+# <<< isr_parts loader
 
 
-_wt_part("state")
+_isr_part("state")
 
 
-_wt_part("mask")
+_isr_part("mask")
 
 
-_wt_part("text")
+_isr_part("text")
 
 
-_wt_part("scoring")
+_isr_part("scoring")
 
 
-_wt_part("vet")
+_isr_part("vet")
 
 
-_wt_part("collect")
+_isr_part("collect")
 
 
-_wt_part("platform_lock")
+_isr_part("platform_lock")
 
 
-_wt_part("scope")
+_isr_part("scope")
 
 
-_wt_part("audit")
+_isr_part("audit")
 
 
-_wt_part("settings_lint")
+_isr_part("settings_lint")
 
 
-_wt_part("scanners")
+_isr_part("scanners")
 
 
-_wt_part("engines")
+_isr_part("engines")
 
 
-_wt_part("secrets_pkgs")
+_isr_part("secrets_pkgs")
 
 
-_wt_part("plugins")
+_isr_part("plugins")
 
 
-_wt_part("baseline")
+_isr_part("baseline")
 
 
 def cmd_audit(args):
     try:
         snap, new, fixed = run_audit(args, quick=False)
     except Busy:
-        print("ERROR another ISR Bot run has been going for 15 minutes; try again when it finishes (`wt.py status`)", file=sys.stderr)
+        print("ERROR another ISR Bot run has been going for 15 minutes; try again when it finishes (`isr.py status`)", file=sys.stderr)
         return 2
     all_new, new = new, [f for f in new if not platform_scope(f)]   # batch 5 (d1): Grok Bot's own files are platform notes, never new
     out = {"status": snap_status(snap), "score": snap["score"], "score_line": score_line(snap), "grade": snap_grade(snap), "new": [compact(f) for f in new][:20],
@@ -130,7 +130,7 @@ def cmd_audit(args):
            "top_fixes": [compact(f) for f in snap["findings"] if (f.get("scope") != "platform" or counts(f)) and not f.get("guarded")][:3],   # round 1 (5): a counted key too
            "notes": snap["notes"], "inventory": snap["inventory"]}
     amap = load_access_map()
-    if amap is not None:   # batch 5 (a): one line; `wt.py access` has the map
+    if amap is not None:   # batch 5 (a): one line; `isr.py access` has the map
         out["access"] = access_summary(amap)
     # Codex, batch 4 round 2: the whole delta is kept before anything is cut, in a file of this run's own (a second run writes
     # another), and the counts say how much of it the JSON shows: `truncated` counts from the full lists, not from the first 20.
@@ -152,13 +152,13 @@ def cmd_audit(args):
         out["not_checked_this_run"] = list(snap["stages_skipped"])   # DQ-025: same meaning as daily
     out["not_counted_builtin"] = sum(1 for f in snap["findings"] if not counts(f))
     look = [f for f in snap["findings"] if f.get("class") == "pattern"]
-    if look:   # no severity, not scored: read each in full and try to show it's a false alarm before showing it (wt.py dismiss)
+    if look:   # no severity, not scored: read each in full and try to show it's a false alarm before showing it (isr.py dismiss)
         out["worth_a_look"] = [dict(compact(f), key=f["key"]) for f in look][:15]
     tips = [f for f in snap["findings"] if f.get("class") == "tip"]
     if tips:
         out["tips"] = [compact(f) for f in tips][:10]
     warn = sum(1 for f in snap["findings"] if f.get("guarded"))
-    if warn:   # batch 2 (R1): defensive wording kept as records; `wt.py breakdown` lists them
+    if warn:   # batch 2 (R1): defensive wording kept as records; `isr.py breakdown` lists them
         out["warning_text_count"] = warn
     # v0.7.1 item 4: Grok Bot's own files, one line each, never scored. Batch 5 (d1): plain lines, outside every count; `platform`
     # is the same lines under the old name, for one release. Codex round 1 (9): they take only the room the owner's part leaves.
@@ -239,7 +239,7 @@ def fit_owner_first(obj, notes, limit=4096, keep=(), alias=False, before=None, b
     `limit`, exactly as fit() does without notes; then platform_notes ({count, lines[, more]}, placed before the key `before`)
     takes the room the owner's part left plus its own `budget` bytes, a line at a time (the loud ones first: platform_notes), and
     the `platform` alias (alias=True, audit) gets its copies of those lines last, so its lines go first. What doesn't fit is said:
-    `more` (how many, how many of them Watchtower would call critical or high, and `wt.py breakdown`, which lists every one) and
+    `more` (how many, how many of them Watchtower would call critical or high, and `isr.py breakdown`, which lists every one) and
     `truncated` `platform`."""
     obj = json.loads(fit(obj, limit=limit, keep=keep))
     if not notes:
@@ -293,8 +293,8 @@ def platform_open(snap):
                                       for f in fs[:PLATFORM_OPEN_SHOWN]],
            "next": f"Still open from any earlier day too: files in the platform's own folders that ISR Bot's release list ({PLATFORM_LOCK_REL}) "
                    "doesn't include. Don't use them until someone has looked. Nothing on this computer approves them: remove any the owner "
-                   "didn't expect; a real vendor update clears when an ISR Bot release lists it. `wt.py show ISR-I002 --limit 100000` and "
-                   "`wt.py show ISR-I001 --limit 100000` list every one."}
+                   "didn't expect; a real vendor update clears when an ISR Bot release lists it. `isr.py show ISR-I002 --limit 100000` and "
+                   "`isr.py show ISR-I001 --limit 100000` list every one."}
     if len(fs) > PLATFORM_OPEN_SHOWN:
         out["more"] = len(fs) - PLATFORM_OPEN_SHOWN
     return out
@@ -315,7 +315,7 @@ def cmd_daily(args):
     pending = undelivered_open(snap, new)
     moved = snap.get("plugin_version_changes") or []   # DQ-047 fix round 1: a pending plugin's version bump is said, never NO_CHANGES
     if snap.get("scanners_missing") and not new and not fixed and not plat and not pending and not moved:
-        print("SCANNERS_MISSING " + ", ".join(snap["scanners_missing"]) + ": run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, then `wt.py daily` again")
+        print("SCANNERS_MISSING " + ", ".join(snap["scanners_missing"]) + ": run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, then `isr.py daily` again")
         return 0
     gap = list(snap.get("stages_skipped") or [])
     if not new and not fixed and not plat and not pending and not moved:
@@ -345,7 +345,7 @@ def cmd_daily(args):
     rest = [f for f in new if not f["rule"].startswith("ISR-K") and not platform_scope(f)]
     out["new"] = [dict(compact(f), key=f["key"]) if f.get("class") == "pattern" else compact(f) for f in rest][:10]
     if len(rest) > 10:
-        out["more_new"] = f"{len(rest) - 10} more new findings not shown, none more severe than {rest[10]['severity']}. `wt.py breakdown` lists everything."
+        out["more_new"] = f"{len(rest) - 10} more new findings not shown, none more severe than {rest[10]['severity']}. `isr.py breakdown` lists everything."
     out["fixed"] = [compact(f) for f in fixed][:10]
     alerts = scanner_alerts(snap)
     if alerts:
@@ -432,8 +432,8 @@ def cmd_baseline(args):
     _, status, _ = load_baseline()
     if status != "first" and not getattr(args, "owner_said_yes", False):   # R10: the first baseline on a box needs no yes
         print("NOT SAVED: a new baseline approves every skill and plugin file exactly as it is now, including any that changed. Show the "
-              "owner what changed (`wt.py breakdown`, `wt.py diff <skill>`); only after their yes in this conversation run "
-              "`wt.py baseline --owner-said-yes`.")
+              "owner what changed (`isr.py breakdown`, `isr.py diff <skill>`); only after their yes in this conversation run "
+              "`isr.py baseline --owner-said-yes`.")
         return 1
     roots = args.roots or [os.path.expanduser("~"), "/workspace"]
     fs, meta = audit(roots, None, quick=True)
@@ -494,29 +494,29 @@ def cmd_breakdown(args):
     plat = [f for f in shown(snap["findings"]) if platform_scope(f)]
     if plat:   # batch 5 (d1): Grok Bot's own files are never in the Confirmed list
         print("")
-        print(f"Platform notes (Grok Bot's own files, not counted): {len(plat)}. `wt.py show <rule>` lists them "
+        print(f"Platform notes (Grok Bot's own files, not counted): {len(plat)}. `isr.py show <rule>` lists them "
               f"({', '.join(sorted({f['rule'] for f in plat}))}).")
         for line in platform_notes(snap["findings"], len(plat))["lines"]:   # Codex round 1 (9, 10): every one, where `more` points
             print(f"  {line}")
     return 0
 
 
-_wt_part("report")
+_isr_part("report")
 
 
-_wt_part("history")
+_isr_part("history")
 
 
-_wt_part("canaries")
+_isr_part("canaries")
 
 
-_wt_part("rollcall")
+_isr_part("rollcall")
 
 
-_wt_part("prepublish")
+_isr_part("prepublish")
 
 
-_wt_part("access")
+_isr_part("access")
 
 
 # ---------------------------------------------------------------- OWASP Top 10 (2021) code review for code your Bots write
@@ -627,7 +627,7 @@ CODE_FIX = {
 }
 
 
-_wt_part("brief")
+_isr_part("brief")
 
 
 def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
@@ -678,14 +678,14 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
             return ""
         body = "".join(f"<tr><td><b>{e(r['name'])}</b><span class='w'>{e(r['where'])}</span></td><td>{e(r['reason'])}</td>"
                        f"<td><code class='rule'>{e(r['rule'])}</code></td></tr>" for r in rows[:40])
-        extra = f"<p class='quiet'>And {len(rows) - 40} more. Run <code>wt.py show {e(rows[0]['rule'])}</code> for all of them.</p>" if len(rows) > 40 else ""
+        extra = f"<p class='quiet'>And {len(rows) - 40} more. Run <code>isr.py show {e(rows[0]['rule'])}</code> for all of them.</p>" if len(rows) > 40 else ""
         label = "Show which" if len(rows) > 1 else "Show where"
         if t.get("can_accept"):
             ok = f"Fine on purpose? Tell ISR Bot: <code>accept {e(rows[0]['rule'])} {e(rows[0]['name'])} because …</code>"
         else:   # batch 4 (R10): never suggest an accept that batch 1's gate refuses
             ok = "This one can't be marked as fine. Tell ISR Bot " + ("\"incident check\"." if t.get("decoy") else "\"fix it\".")
         return (f"<details class='dd'><summary>{label}</summary><div class='scroll'><table><tr><th>What</th><th>Why it was flagged</th><th>Rule</th></tr>{body}</table></div>"
-                f"{extra}<p class='quiet'>For the exact lines: <code>wt.py show {e(rows[0]['rule'])}</code>. {ok}</p></details>")
+                f"{extra}<p class='quiet'>For the exact lines: <code>isr.py show {e(rows[0]['rule'])}</code>. {ok}</p></details>")
 
     def todo_item(i, t):
         links = "".join(f"<a class='btn' href='{safe(u)}' target='_blank' rel='noopener'>Turn off {e(n)} keys</a>" for n, u in t.get("links", []))
@@ -847,19 +847,19 @@ def cmd_brief(args):
                "sources_down": [s["name"] for s in b["sources"] if s["status"] != "ok"],
                "next_step": ("Analysis added." if notes else
                              "Required: write notes.json with 'means' and 'do' for each top_stories id (see the watchtower-brief skill, step 2), "
-                             "then run wt.py brief --notes <file>. Until then the stories show generic text." if amap is None else
+                             "then run isr.py brief --notes <file>. Until then the stories show generic text." if amap is None else
                              "Optional: add notes.json with 'means' and 'do' for any top_stories id (see the watchtower-brief skill, step 2), "
-                             "then run wt.py brief --notes <file>. Each story already says what it touches here.")}, limit=6000))
+                             "then run isr.py brief --notes <file>. Each story already says what it touches here.")}, limit=6000))
     return 0
 
 
-_wt_part("fixplan")
+_isr_part("fixplan")
 
 
-_wt_part("approved")
+_isr_part("approved")
 
 
-_wt_part("quarantine")
+_isr_part("quarantine")
 
 
 # ---------------------------------------------------------------- uninstall: leave nothing behind
@@ -887,7 +887,7 @@ def cmd_uninstall(args):
         and owned_path(h, "home", log=False)
     if not args.apply:
         print(fit({"mode": "preview (nothing removed)",
-                   "order": "routines first, then `wt.py uninstall --apply --remove-folder`. Any audit or daily run after the decoys are gone would not re-plant them, but a routine left on would report errors.",
+                   "order": "routines first, then `isr.py uninstall --apply --remove-folder`. Any audit or daily run after the decoys are gone would not re-plant them, but a routine left on would report errors.",
                    "you_do_first_after_the_owners_yes": ["Delete these routines (or tell the owner to, under your Details tab): " + ", ".join(ROUTINE_NAMES)
                                                          + " (set up before 0.7.4: " + ", ".join(LEGACY_ROUTINE_NAMES) + ")"],
                    "this_command_removes": {"decoys": [short_path(p) for p in decoys if os.path.exists(p)],
@@ -896,7 +896,7 @@ def cmd_uninstall(args):
                                             "watchtower_folder": h + " (with --remove-folder: scanners, reports, state, vet copies)"},
                    "not_removed_outside_watchtower": [short_path(p) for p in refused] or None,
                    "quarantined_skills": [e["name"] for e in held] or None,
-                   "quarantine_note": "These go with the folder. Restore any the owner wants first (`wt.py quarantine --restore <name>`)." if held else None,
+                   "quarantine_note": "These go with the folder. Restore any the owner wants first (`isr.py quarantine --restore <name>`)." if held else None,
                    "only_the_owner_can": ["Keep the three Ask-first rules in Auto-review: they protect every Bot, with or without ISR Bot.",
                                           "Delete ISR Bot itself (right-click it in the sidebar → Delete). That also removes its memories and chat.",
                                           "Roll-call messages already sent to other Bots stay in those chats."],
@@ -957,8 +957,8 @@ def shareable_error(text):
     if not text.strip():
         return None
     lines = text.splitlines()
-    head = re.sub(r"(wt\.py \S+).*?(\(v[\d.]+\))", r"\1 \2", lines[0])[:80]
-    frames = [f"{m.group(1)}.py line {m.group(2)} in {m.group(3)}" for m in re.finditer(r'File "[^"]*?(wt|wt_parts/[a-z0-9_]+)\.py", line (\d+), in (\w+)', text)][-6:]
+    head = re.sub(r"(isr\.py \S+).*?(\(v[\d.]+\))", r"\1 \2", lines[0])[:80]
+    frames = [f"{m.group(1)}.py line {m.group(2)} in {m.group(3)}" for m in re.finditer(r'File "[^"]*?(isr|isr_parts/[a-z0-9_]+)\.py", line (\d+), in (\w+)', text)][-6:]
     kind = next((m.group(1) for l in reversed(lines) for m in [re.match(r"^([A-Za-z_][\w.]*(Error|Exception|Exit|Interrupt|Warning)|[A-Z]\w+)(:|$)", l)] if m), "error")
     return {"at_and_command": head, "where": frames, "error_type": kind.split(".")[-1]}
 
@@ -1092,7 +1092,7 @@ def self_check():
 
 # ---------------------------------------------------------------- main
 def main(argv=None):
-    """Never show a stack trace to the Bot or the user: one plain line, the detail saved for `wt.py doctor`."""
+    """Never show a stack trace to the Bot or the user: one plain line, the detail saved for `isr.py doctor`."""
     try:
         return main_inner(argv)
     except SystemExit:
@@ -1103,8 +1103,8 @@ def main(argv=None):
         detail = traceback.format_exc()
         try:
             with open(state_path("last_error.txt"), "w") as f:
-                f.write(f"{now()} wt.py {' '.join((argv or sys.argv[1:])[:3])} (v{VERSION})\n{detail}")
-            where = " The detail is saved; `wt.py doctor --save` makes a file you can send to the author."
+                f.write(f"{now()} isr.py {' '.join((argv or sys.argv[1:])[:3])} (v{VERSION})\n{detail}")
+            where = " The detail is saved; `isr.py doctor --save` makes a file you can send to the author."
         except OSError:
             where = ""
         kind = "ISR Bot can't write to its folder " + home() if isinstance(e, OSError) and not where else f"ISR Bot hit a problem it didn't expect ({type(e).__name__})"
@@ -1164,7 +1164,7 @@ class VersionAction(argparse.Action):
 
 
 def build_parser():
-    ap = argparse.ArgumentParser(prog="wt", description="ISR Bot security watch for Grok Bot")
+    ap = argparse.ArgumentParser(prog="isr.py", description="ISR Bot security watch for Grok Bot")
     ap.add_argument("--version", action=VersionAction)
     sub = ap.add_subparsers(dest="cmd", required=True)
     v = sub.add_parser("vet"); v.add_argument("path"); v.add_argument("--json", action="store_true"); v.add_argument("--deep", action="store_true"); v.add_argument("--page-only", action="store_true", help="the text was copied from a marketplace page; skill bodies were not visible")

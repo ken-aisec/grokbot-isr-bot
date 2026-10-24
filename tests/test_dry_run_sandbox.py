@@ -3,7 +3,7 @@ raised seven critical decoy alarms on their planted decoys and canary registry c
 its own /tmp sandbox and leaves the workspace exactly as it was. No name-based skip was added to the scanner.
 
 These run the real script against a stand-in workspace (outside /tmp, so the sandbox's /tmp can't hide it) and a stand-in dev
-build whose wt.py tries to write everywhere a real audit might."""
+build whose isr.py tries to write everywhere a real audit might."""
 import hashlib, os, shutil, subprocess, tempfile, unittest
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -61,11 +61,11 @@ class DryRunLeavesWorkspaceAlone(unittest.TestCase):
         open(os.path.join(self.install, "state", "seed.json"), "w").write('{"live": true}')
         open(os.path.join(self.install, "state", "canaries.json"), "w").write('{"api-env": "live registry"}')
         open(os.path.join(self.ws, "notes.md"), "w").write("owner file\n")
-        # the dev build: a throwaway git repo holding the real script and a stub wt.py
+        # the dev build: a throwaway git repo holding the real script and a stub isr.py
         self.dev = os.path.join(self.ws, "watchtower-dev")
-        os.makedirs(os.path.join(self.dev, "scripts")); os.makedirs(os.path.join(self.dev, "watchtower"))
+        os.makedirs(os.path.join(self.dev, "scripts")); os.makedirs(os.path.join(self.dev, "isr_bot"))
         shutil.copy(SCRIPT, os.path.join(self.dev, "scripts", "dry-run.sh"))
-        open(os.path.join(self.dev, "watchtower", "wt.py"), "w").write(STUB)
+        open(os.path.join(self.dev, "isr_bot", "isr.py"), "w").write(STUB)
         env = {**os.environ, **GIT_ENV}
         for c in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "stub"]):
             subprocess.run(["git", "-C", self.dev] + c, check=True, env=env, capture_output=True)
@@ -125,7 +125,7 @@ class DryRunLeavesWorkspaceAlone(unittest.TestCase):
 
 class NoNameBasedSkip(unittest.TestCase):
     def test_scanner_has_no_wt_dry_exception(self):
-        src = open(os.path.join(ROOT, "watchtower", "wt.py")).read()
+        src = open(os.path.join(ROOT, "isr_bot", "isr.py")).read()
         self.assertNotIn("wt-dry", src, "a name-based skip for dry-run folders would be a blind spot")
 
 

@@ -1,41 +1,41 @@
-"""wt.py split into watchtower/wt_parts (no behavior change; D1/D2/D3): the guards that keep the split honest.
+"""isr.py split into isr_bot/isr_parts (no behavior change; D1/D2/D3): the guards that keep the split honest.
 
-Each part is a slice of the old wt.py. wt.py runs it inside its own namespace (decision D1) with _wt_part, compiled from the
-part's source bytes, in the order of the _wt_part("<name>") lines. These tests hold that design: one namespace (G1), every part
+Each part is a slice of the old isr.py. isr.py runs it inside its own namespace (decision D1) with _isr_part, compiled from the
+part's source bytes, in the order of the _isr_part("<name>") lines. These tests hold that design: one namespace (G1), every part
 loaded once and only from the explicit list (G2, G13), tracked and in the manifest (G3), no part binding the names the header
-owns (G4), definition-time order (G5), the 3.8 grammar and absence checks the older source tests apply to wt.py alone (G6),
+owns (G4), definition-time order (G5), the 3.8 grammar and absence checks the older source tests apply to isr.py alone (G6),
 paths (G7), `python3 -I` from a hostile folder (G8), the installed copy and its tamper cases (G9-G13), the reassembled source
 (G14), doctor's crash frames (G15, decision D2: a crash inside a part names it), no module import (G16) and no stdlib name (G17). The D3 line for a missing or
 odd part is G12."""
 import ast, builtins, hashlib, importlib.util, json, os, re, shutil, stat, subprocess, sys, tempfile, unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-W = os.path.join(ROOT, "watchtower")
-WT_PY = os.path.join(W, "wt.py")
-PARTS = os.path.join(W, "wt_parts")
+W = os.path.join(ROOT, "isr_bot")
+ISR_PY = os.path.join(W, "isr.py")
+PARTS = os.path.join(W, "isr_parts")
 sys.path.insert(0, W)
-import wt  # noqa: E402
+import isr as wt  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from golden_split import BANNER, CALL, lines_of, read  # noqa: E402  (the reassembly the golden check uses)
 from golden_split import reassemble as _reassemble  # noqa: E402
 
-LOADER_NAMES = {"_WT_PARTS", "_wt_part"}
-D3 =("SELF-CHECK FAILED - ISR Bot stopped before doing anything. Its own file watchtower/wt_parts/{}.py is missing or not a"
+LOADER_NAMES = {"_ISR_PARTS", "_isr_part"}
+D3 =("SELF-CHECK FAILED - ISR Bot stopped before doing anything. Its own file isr_bot/isr_parts/{}.py is missing or not a"
       " plain file. Tell the owner now. Don't run ISR Bot again until they reinstall it from the release (setup skill, section 1).")
 DUNDERS = {"__name__", "__file__", "__doc__", "__builtins__", "__spec__", "__loader__", "__package__", "__cached__", "__annotations__"}
 
 
 def part_calls(src=None):
-    """The part names wt.py loads, in order: its `_wt_part("<name>")` lines."""
-    return [m.group(1).decode() for m in map(CALL.match, lines_of(read(WT_PY) if src is None else src)) if m]
+    """The part names isr.py loads, in order: its `_isr_part("<name>")` lines."""
+    return [m.group(1).decode() for m in map(CALL.match, lines_of(read(ISR_PY) if src is None else src)) if m]
 
 
 def part_files(parts_dir=PARTS):
     return sorted(f[:-3] for f in os.listdir(parts_dir) if f.endswith(".py")) if os.path.isdir(parts_dir) else []
 
 
-def reassemble(wt_bytes, parts_dir=PARTS):
-    return _reassemble(wt_bytes, parts_dir)
+def reassemble(isr_bytes, parts_dir=PARTS):
+    return _reassemble(isr_bytes, parts_dir)
 
 
 def label_of(where, lineno):
@@ -149,9 +149,9 @@ class _Tmp(unittest.TestCase):
 class G01SharedGlobals(unittest.TestCase):
     def test_every_function_runs_in_wt_namespace(self):
         """D1: a monkeypatch of wt.X, `wt.X = ...` and `global X` reach every caller only while every function and method from
-        wt.py and its parts has vars(wt) as its globals."""
+        isr.py and its parts has vars(wt) as its globals."""
         g = vars(wt)
-        files = {os.path.realpath(WT_PY)} | {os.path.realpath(os.path.join(PARTS, n + ".py")) for n in part_files()}
+        files = {os.path.realpath(ISR_PY)} | {os.path.realpath(os.path.join(PARTS, n + ".py")) for n in part_files()}
         seen = {}
         for name, v in list(g.items()):
             for f in [v] + (list(vars(v).values()) if isinstance(v, type) else []):
@@ -164,7 +164,7 @@ class G01SharedGlobals(unittest.TestCase):
             p = os.path.join(PARTS, n + ".py")
             if any(isinstance(s, (ast.FunctionDef, ast.ClassDef)) for s in ast.parse(read(p)).body):
                 self.assertTrue(seen.get(os.path.realpath(p)), f"no function of {n}.py is in wt's namespace")
-        self.assertTrue(seen.get(os.path.realpath(WT_PY)))
+        self.assertTrue(seen.get(os.path.realpath(ISR_PY)))
 
 
 class G02PartsList(unittest.TestCase):
@@ -172,25 +172,25 @@ class G02PartsList(unittest.TestCase):
         calls = part_calls()
         self.assertEqual(len(calls), len(set(calls)), calls)
         self.assertEqual(sorted(calls), part_files())
-        self.assertFalse(os.path.lexists(os.path.join(PARTS, "__init__.py")), "wt_parts is not a package")
+        self.assertFalse(os.path.lexists(os.path.join(PARTS, "__init__.py")), "isr_parts is not a package")
         for n in part_files():
             self.assertTrue(read(os.path.join(PARTS, n + ".py")).startswith(BANNER), n)
-        tree = ast.parse(read(WT_PY))
+        tree = ast.parse(read(ISR_PY))
         top = [s.value.args[0].value for s in tree.body if isinstance(s, ast.Expr) and isinstance(s.value, ast.Call)
-               and getattr(s.value.func, "id", None) == "_wt_part"]
+               and getattr(s.value.func, "id", None) == "_isr_part"]
         self.assertEqual(top, calls)                                            # every call is a plain top-level line
-        anywhere = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "_wt_part"]
+        anywhere = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "_isr_part"]
         self.assertEqual(len(anywhere), len(calls))
         spy = ("import builtins, collections, json, sys\nseen = collections.Counter(); real = builtins.compile\n"
                "def spy(src, fn, *a, **k):\n    seen[fn] += 1\n    return real(src, fn, *a, **k)\n"
-               "builtins.compile = spy\nsys.path.insert(0, sys.argv[1])\nimport wt\nbuiltins.compile = real\n"
+               "builtins.compile = spy\nsys.path.insert(0, sys.argv[1])\nimport isr as wt\nbuiltins.compile = real\n"
                "print(json.dumps(seen))\n")
         p = subprocess.run([sys.executable, "-I", "-B", "-c", spy, W], capture_output=True, text=True, timeout=60)
         self.assertEqual(p.returncode, 0, p.stderr)
         seen = json.loads(p.stdout)
         for n in part_files():
             self.assertEqual(seen.get(os.path.join(PARTS, n + ".py")), 1, n)
-        self.assertFalse([f for f in seen if "wt_parts" in f and os.path.basename(f)[:-3] not in calls], seen)
+        self.assertFalse([f for f in seen if "isr_parts" in f and os.path.basename(f)[:-3] not in calls], seen)
 
 
 class G03TrackedAndListed(unittest.TestCase):
@@ -202,8 +202,9 @@ class G03TrackedAndListed(unittest.TestCase):
         for line in read(os.path.join(ROOT, "MANIFEST.sha256")).decode().splitlines():
             h, rel = line.split(None, 1)
             man[rel.strip()] = h
+        self.assertTrue(part_files())
         for n in part_files():
-            rel = f"watchtower/wt_parts/{n}.py"
+            rel = f"isr_bot/isr_parts/{n}.py"
             self.assertIn(rel, files, f"{rel} is not tracked (git add it)")
             self.assertEqual(man.get(rel), hashlib.sha256(read(os.path.join(ROOT, rel))).hexdigest(), f"{rel}: run scripts/make-manifest.sh")
         stray = [f for f in os.listdir(PARTS) if not f.endswith(".py") and f != "__pycache__"] if os.path.isdir(PARTS) else []
@@ -211,7 +212,7 @@ class G03TrackedAndListed(unittest.TestCase):
 
 
 def publish_walker():
-    """The VERSION walker publish.sh runs on watchtower/wt.py, taken from publish.sh itself."""
+    """The VERSION walker publish.sh runs on isr_bot/isr.py, taken from publish.sh itself."""
     text = read(os.path.join(ROOT, "scripts", "publish.sh")).decode()
     return text.split("<<'PYEOF'", 1)[1].split("\n", 1)[1].split("\nPYEOF\n", 1)[0] + "\n"
 
@@ -219,7 +220,7 @@ def publish_walker():
 class G04HeaderNames(unittest.TestCase):
     def test_no_name_is_bound_in_two_files(self):
         owner = {}
-        for label, src in [("wt.py", read(WT_PY))] + [(n + ".py", read(os.path.join(PARTS, n + ".py"))) for n in part_files()]:
+        for label, src in [("isr.py", read(ISR_PY))] + [(n + ".py", read(os.path.join(PARTS, n + ".py"))) for n in part_files()]:
             for s in ast.parse(src).body:
                 for name in bound_names(s):
                     self.assertIn(owner.setdefault(name, label), (label,), f"{name} is bound in {owner[name]} and {label}")
@@ -240,13 +241,13 @@ class G04HeaderNames(unittest.TestCase):
             self.assertFalse(names & {"VERSION", "HERE", "SELF_ROOT", "__file__"}, n)
             r = subprocess.run([sys.executable, "-I", "-", p], input=walker, capture_output=True, text=True, timeout=30)
             self.assertEqual(r.stdout.strip(), "0", f"publish.sh counts VERSION in {n}.py")
-        r = subprocess.run([sys.executable, "-I", "-", WT_PY], input=walker, capture_output=True, text=True, timeout=30)
+        r = subprocess.run([sys.executable, "-I", "-", ISR_PY], input=walker, capture_output=True, text=True, timeout=30)
         self.assertEqual(r.stdout.strip(), f"1 {wt.VERSION}")
 
 
 class G05DefinitionOrder(unittest.TestCase):
     def test_each_statement_reads_only_names_bound_before_it(self):
-        src, where = reassemble(read(WT_PY))
+        src, where = reassemble(read(ISR_PY))
         have = set(dir(builtins)) | DUNDERS
         for s in ast.parse(src).body:
             missing = deftime_loads(s) - bound_names(s, into_classes=True) - have
@@ -272,17 +273,17 @@ class G06SourceChecksOnEveryPart(unittest.TestCase):
 
 class G07Paths(unittest.TestCase):
     def test_paths_resolve_to_the_checkouts_own_files(self):
-        probe = ("import json, os, sys\nsys.path.insert(0, sys.argv[1])\nimport wt\n"
+        probe = ("import json, os, sys\nsys.path.insert(0, sys.argv[1])\nimport isr as wt\n"
                  "print(json.dumps({k: os.path.realpath(v) for k, v in {'file': wt.__file__, 'here': wt.HERE, 'root': wt.SELF_ROOT,"
                  " 'rules': wt.RULES_PATH, 'platform': wt.PLATFORM_LOCK, 'scanners': wt.SCANNER_LOCK, 'feeds': wt.FEEDS_PATH,"
-                 " 'reader': os.path.join(wt.HERE, '..', wt.LOCK_READER_REL), 'parts': wt._WT_PARTS}.items()}))\n")
+                 " 'reader': os.path.join(wt.HERE, '..', wt.LOCK_READER_REL), 'parts': wt._ISR_PARTS}.items()}))\n")
         p = subprocess.run([sys.executable, "-I", "-B", "-c", probe, W], capture_output=True, text=True, timeout=60)
         self.assertEqual(p.returncode, 0, p.stderr)
         got = json.loads(p.stdout)
         r = os.path.realpath(ROOT)
-        want = {"file": "watchtower/wt.py", "here": "watchtower", "root": "", "rules": "rules/text_rules.json",
+        want = {"file": "isr_bot/isr.py", "here": "isr_bot", "root": "", "rules": "rules/text_rules.json",
                 "platform": "rules/platform-release.lock", "scanners": "scripts/scanner-bins.lock", "feeds": "rules/feeds.json",
-                "reader": "scripts/scanner_lock.py", "parts": "watchtower/wt_parts"}
+                "reader": "scripts/scanner_lock.py", "parts": "isr_bot/isr_parts"}
         self.assertEqual(got, {k: os.path.join(r, v) if v else r for k, v in want.items()})
         for k in ("file", "rules", "platform", "scanners", "feeds", "reader"):
             self.assertTrue(os.path.isfile(got[k]), k)
@@ -293,17 +294,17 @@ class G08HostileFolder(_Tmp):
         cwd = os.path.join(self.tmp, "cwd")
         marker = os.path.join(self.tmp, "MARKER")
         plant = f"open({marker!r}, 'a').write(__name__ + chr(10))\n"
-        os.makedirs(os.path.join(cwd, "wt_parts"))
+        os.makedirs(os.path.join(cwd, "isr_parts"))
         for n in set(part_calls()) | {"state", "zz"}:
-            with open(os.path.join(cwd, "wt_parts", n + ".py"), "w") as f:
+            with open(os.path.join(cwd, "isr_parts", n + ".py"), "w") as f:
                 f.write(BANNER.decode() + plant)
-        for n in ("json", "secrets", "re", "wt", "wt_parts/__init__"):
+        for n in ("json", "secrets", "re", os.path.splitext(os.path.basename(ISR_PY))[0], "isr_parts/__init__"):
             with open(os.path.join(cwd, n + ".py"), "w") as f:
                 f.write(plant)
         self.env["PYTHONPATH"] = cwd                                            # -I ignores it
-        p = self.run_py(WT_PY, "--version", cwd=cwd)
+        p = self.run_py(ISR_PY, "--version", cwd=cwd)
         self.assertEqual((p.returncode, p.stdout, p.stderr), (0, wt.VERSION + "\n", ""))
-        p = self.run_py(WT_PY, "vet", os.path.join(ROOT, "tests", "fixtures", "clean", "meeting-notes", "SKILL.md"), "--json", cwd=cwd)
+        p = self.run_py(ISR_PY, "vet", os.path.join(ROOT, "tests", "fixtures", "clean", "meeting-notes", "SKILL.md"), "--json", cwd=cwd)
         self.assertNotIn("Traceback", p.stderr)
         json.loads(p.stdout)
         self.assertFalse(os.path.exists(marker), "a planted file ran")
@@ -314,10 +315,10 @@ class G09InstalledCopy(_Tmp):
     def test_a_clean_install_runs_and_writes_no_bytecode_cache(self):
         app = self.installed()
         for isolated in (False, True):
-            p = self.run_py(os.path.join(app, "watchtower", "wt.py"), "status", isolated=isolated)
+            p = self.run_py(os.path.join(app, "isr_bot", "isr.py"), "status", isolated=isolated)
             self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
             self.assertNotIn("SELF-CHECK FAILED", p.stdout + p.stderr)
-            p = self.run_py(os.path.join(app, "watchtower", "wt.py"), "--version", isolated=isolated)
+            p = self.run_py(os.path.join(app, "isr_bot", "isr.py"), "--version", isolated=isolated)
             self.assertEqual((p.returncode, p.stdout), (0, wt.VERSION + "\n"))
         self.assertEqual(self.caches(app), [])
 
@@ -327,15 +328,15 @@ class G10TamperedPart(_Tmp):
     def test_a_changed_part_stops_every_run(self):
         app = self.installed()
         n = part_calls()[len(part_calls()) // 2]
-        with open(os.path.join(app, "watchtower", "wt_parts", n + ".py"), "a") as f:
+        with open(os.path.join(app, "isr_bot", "isr_parts", n + ".py"), "a") as f:
             f.write("# changed after install\n")
-        p = self.run_py(os.path.join(app, "watchtower", "wt.py"), "--version")
+        p = self.run_py(os.path.join(app, "isr_bot", "isr.py"), "--version")
         self.assertEqual(p.returncode, 4, p.stdout)
         self.assertIn("SELF-CHECK FAILED", p.stdout); self.assertIn("1 problem (", p.stdout)
         self.assertNotIn(wt.VERSION + "\n", p.stdout)
-        p = self.run_py(os.path.join(app, "watchtower", "wt.py"), "status")
+        p = self.run_py(os.path.join(app, "isr_bot", "isr.py"), "status")
         self.assertEqual(p.returncode, 4, p.stdout)
-        self.assertIn(f"watchtower/wt_parts/{n}.py changed since install", p.stdout)
+        self.assertIn(f"isr_bot/isr_parts/{n}.py changed since install", p.stdout)
 
 
 def forged_pyc(src_path, marker):
@@ -353,11 +354,11 @@ def forged_pyc(src_path, marker):
 @unittest.skipUnless(HAS_PARTS, "no parts yet")
 class G11ForgedBytecode(_Tmp):
     def check(self, top, argvs):
-        script = os.path.join(top, "watchtower", "wt.py")
+        script = os.path.join(top, "isr_bot", "isr.py")
         clean = [self.run_py(script, *a, isolated=False) for a in argvs]
         marker = os.path.join(self.tmp, "FORGED")
         for n in part_calls():
-            forged_pyc(os.path.join(top, "watchtower", "wt_parts", n + ".py"), marker)
+            forged_pyc(os.path.join(top, "isr_bot", "isr_parts", n + ".py"), marker)
         again = [self.run_py(script, *a, isolated=False) for a in argvs]
         self.assertFalse(os.path.exists(marker), "a planted bytecode cache ran")
         self.assertEqual([(p.returncode, p.stdout, p.stderr) for p in again], [(p.returncode, p.stdout, p.stderr) for p in clean])
@@ -365,7 +366,7 @@ class G11ForgedBytecode(_Tmp):
     def test_installed_copy(self):
         app = self.installed()
         self.check(app, (["--version"], ["status"]))
-        p = self.run_py(os.path.join(app, "watchtower", "wt.py"), "status")
+        p = self.run_py(os.path.join(app, "isr_bot", "isr.py"), "status")
         self.assertNotIn("SELF-CHECK FAILED", p.stdout)                        # self-check still skips __pycache__
 
     def test_developer_checkout(self):
@@ -375,14 +376,14 @@ class G11ForgedBytecode(_Tmp):
 @unittest.skipUnless(HAS_PARTS, "no parts yet")
 class G12MissingOrOddPart(_Tmp):
     def stops(self, dev, n, how):
-        p = self.run_py(os.path.join(dev, "watchtower", "wt.py"), "--version", timeout=30)
+        p = self.run_py(os.path.join(dev, "isr_bot", "isr.py"), "--version", timeout=30)
         self.assertEqual((p.returncode, p.stdout, p.stderr), (4, D3.format(n) + "\n", ""), how)
 
     def test_d3_line_for_each_kind(self):
         dev = self.dev_copy()
         calls = part_calls()
         for n in sorted({calls[0], calls[-1]}):
-            p = os.path.join(dev, "watchtower", "wt_parts", n + ".py")
+            p = os.path.join(dev, "isr_bot", "isr_parts", n + ".py")
             good = read(p)
             keep = os.path.join(self.tmp, n + ".good")
             with open(keep, "wb") as f:
@@ -403,7 +404,7 @@ class G12MissingOrOddPart(_Tmp):
                         os.remove(p)
                     with open(p, "wb") as f:
                         f.write(good)
-            p2 = self.run_py(os.path.join(dev, "watchtower", "wt.py"), "--version")
+            p2 = self.run_py(os.path.join(dev, "isr_bot", "isr.py"), "--version")
             self.assertEqual(p2.stdout, wt.VERSION + "\n")
 
 
@@ -411,7 +412,7 @@ class G12MissingOrOddPart(_Tmp):
 class G13RoguePart(_Tmp):
     def plant(self, top):
         marker = os.path.join(self.tmp, "ROGUE")
-        with open(os.path.join(top, "watchtower", "wt_parts", "zz.py"), "w") as f:
+        with open(os.path.join(top, "isr_bot", "isr_parts", "zz.py"), "w") as f:
             f.write(BANNER.decode() + f"open({marker!r}, 'a').write('rogue' + chr(10))\n")
         return marker
 
@@ -419,25 +420,25 @@ class G13RoguePart(_Tmp):
         dev = self.dev_copy()
         marker = self.plant(dev)
         for argv in (["--version"], ["status"]):
-            p = self.run_py(os.path.join(dev, "watchtower", "wt.py"), *argv)
+            p = self.run_py(os.path.join(dev, "isr_bot", "isr.py"), *argv)
             self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         app = self.installed()
         self.plant(app)
-        p = self.run_py(os.path.join(app, "watchtower", "wt.py"), "status")
+        p = self.run_py(os.path.join(app, "isr_bot", "isr.py"), "status")
         self.assertEqual(p.returncode, 4, p.stdout)
-        self.assertIn("watchtower/wt_parts/zz.py is not in the release", p.stdout)
+        self.assertIn("isr_bot/isr_parts/zz.py is not in the release", p.stdout)
         self.assertFalse(os.path.exists(marker), "the rogue part ran")
 
 
 class G14Reassembly(unittest.TestCase):
     def test_reassembled_source_compiles_and_names_match_the_module(self):
-        src, _ = reassemble(read(WT_PY))
+        src, _ = reassemble(read(ISR_PY))
         tree = ast.parse(src)
-        compile(src, "reassembled wt.py", "exec", dont_inherit=True)
+        compile(src, "reassembled isr.py", "exec", dont_inherit=True)
         names = set()
         for s in tree.body:
             names |= bound_names(s)
-        probe = "import json, sys\nsys.path.insert(0, sys.argv[1])\nimport wt\nprint(json.dumps(sorted(vars(wt))))\n"
+        probe = "import json, sys\nsys.path.insert(0, sys.argv[1])\nimport isr as wt\nprint(json.dumps(sorted(vars(wt))))\n"
         p = subprocess.run([sys.executable, "-I", "-B", "-c", probe, W], capture_output=True, text=True, timeout=60)
         self.assertEqual(p.returncode, 0, p.stderr)
         live = set(json.loads(p.stdout)) - DUNDERS
@@ -446,21 +447,21 @@ class G14Reassembly(unittest.TestCase):
 
 
 class G15DoctorFrames(unittest.TestCase):
-    """D2: doctor's last_error.where keeps Watchtower's own frames, from wt.py and from its parts, each labelled with a short
+    """D2: doctor's last_error.where keeps Watchtower's own frames, from isr.py and from its parts, each labelled with a short
     name (never a path prefix); any other frame is dropped (it can carry private paths)."""
 
     def test_part_frames_are_kept_with_a_short_label(self):
-        text = ("2026-10-18T10:00:00 wt.py audit (v0.7.1)\nTraceback (most recent call last):\n"
-                '  File "/workspace/watchtower/app/watchtower/wt.py", line 120, in main\n    x()\n'
-                '  File "/workspace/watchtower/app/watchtower/wt_parts/engines.py", line 5, in engine_findings\n    y()\n'
+        text = ("2026-10-18T10:00:00 isr.py audit (v0.7.1)\nTraceback (most recent call last):\n"
+                '  File "/workspace/watchtower/app/isr_bot/isr.py", line 120, in main\n    x()\n'
+                '  File "/workspace/watchtower/app/isr_bot/isr_parts/engines.py", line 5, in engine_findings\n    y()\n'
                 '  File "/usr/lib/python3.13/json/__init__.py", line 293, in load\n    z()\n'
                 '  File "/home/box/acme-payroll/helper.py", line 7, in salaries\n    w()\n'
                 "RuntimeError: /home/box/acme-payroll/salaries-2026.csv\n")
         d = wt.shareable_error(text)
-        self.assertEqual(d["where"], ["wt.py line 120 in main", "wt_parts/engines.py line 5 in engine_findings"])
+        self.assertEqual(d["where"], ["isr.py line 120 in main", "isr_parts/engines.py line 5 in engine_findings"])
         self.assertEqual(d["error_type"], "RuntimeError")
         self.assertNotIn("acme-payroll", json.dumps(d))
-        self.assertNotIn("/watchtower/", json.dumps(d["where"]))
+        self.assertNotIn("/isr_bot/", json.dumps(d["where"]))
 
     def test_a_real_crash_inside_a_part(self):
         import traceback
@@ -472,18 +473,18 @@ class G15DoctorFrames(unittest.TestCase):
             try:
                 wt.state_path("x")
             except RuntimeError:
-                text = "2026-10-18T10:00:00 wt.py status (v0.7.1)\n" + traceback.format_exc()
-        frame = [ln for ln in text.splitlines() if "wt_parts/state.py" in ln]
+                text = "2026-10-18T10:00:00 isr.py status (v0.7.1)\n" + traceback.format_exc()
+        frame = [ln for ln in text.splitlines() if "isr_parts/state.py" in ln]
         self.assertEqual(len(frame), 1, text)
         n = re.search(r"line (\d+), in state_path", frame[0]).group(1)
-        self.assertEqual(wt.shareable_error(text)["where"], [f"wt_parts/state.py line {n} in state_path"])
+        self.assertEqual(wt.shareable_error(text)["where"], [f"isr_parts/state.py line {n} in state_path"])
 
 
 class G16NoModuleImport(unittest.TestCase):
     def test_parts_are_never_modules(self):
-        self.assertEqual([m for m in sys.modules if "wt_parts" in m], [])
-        probe = ("import json, sys\nsys.path.insert(0, sys.argv[1])\nimport wt\n"
-                 "print(json.dumps([m for m in sys.modules if 'wt_parts' in m or m in sys.argv[2:]]))\n")
+        self.assertEqual([m for m in sys.modules if "isr_parts" in m], [])
+        probe = ("import json, sys\nsys.path.insert(0, sys.argv[1])\nimport isr as wt\n"
+                 "print(json.dumps([m for m in sys.modules if 'isr_parts' in m or m in sys.argv[2:]]))\n")
         p = subprocess.run([sys.executable, "-I", "-B", "-c", probe, W, *part_calls()], capture_output=True, text=True, timeout=60)
         self.assertEqual((p.returncode, json.loads(p.stdout or "null")), (0, []), p.stderr)
 
@@ -492,7 +493,7 @@ class G17NoStdlibName(unittest.TestCase):
     def test_no_part_is_named_like_a_module(self):
         std = set(getattr(sys, "stdlib_module_names", ()))
         for n in part_files():
-            self.assertNotIn(n, std | {"wt"})
+            self.assertNotIn(n, std | {os.path.splitext(os.path.basename(ISR_PY))[0]})
             self.assertIsNone(importlib.util.find_spec(n), n)
 
 

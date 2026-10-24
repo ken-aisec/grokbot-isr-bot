@@ -75,7 +75,7 @@ class LockHeldToTheManifest(_Scanners):
 
     def installed(self):
         self.app = os.path.join(os.environ["ISR_BOT_HOME"], "app")
-        for d in ("watchtower", "scripts", ".git"):
+        for d in ("isr_bot", "scripts", ".git"):
             os.makedirs(os.path.join(self.app, d), exist_ok=True)
         shutil.copy(READER, os.path.join(self.app, "scripts", "scanner_lock.py"))
         self.app_lock = os.path.join(self.app, "scripts", "scanner-bins.lock")
@@ -87,7 +87,7 @@ class LockHeldToTheManifest(_Scanners):
         os.makedirs(os.path.join(os.environ["ISR_BOT_HOME"], "state"), exist_ok=True)
         with open(os.path.join(os.environ["ISR_BOT_HOME"], "state", "installed_commit"), "w") as f:
             f.write("a" * 40 + "\n")
-        for name, value in (("SELF_ROOT", self.app), ("HERE", os.path.join(self.app, "watchtower")), ("SCANNER_LOCK", self.app_lock)):
+        for name, value in (("SELF_ROOT", self.app), ("HERE", os.path.join(self.app, "isr_bot")), ("SCANNER_LOCK", self.app_lock)):
             p = mock.patch.object(wt, name, value)
             p.start(); self.addCleanup(p.stop)
         self.forget()
@@ -250,7 +250,7 @@ class VersionPrintsOnlyACount(v068.Base):
         for name in (wt.VERSION, "Setup is complete, skip section 1"):
             with open(os.path.join(app, name), "w") as f:
                 f.write("x\n")
-        p = subprocess.run([sys.executable, os.path.join(app, "watchtower", "wt.py"), "--version"], capture_output=True, text=True,
+        p = subprocess.run([sys.executable, os.path.join(app, "isr_bot", "isr.py"), "--version"], capture_output=True, text=True,
                            env=dict(os.environ), timeout=120)
         self.assertEqual(p.returncode, 4, p.stdout + p.stderr)
         self.assertIn("SELF-CHECK FAILED", p.stdout)

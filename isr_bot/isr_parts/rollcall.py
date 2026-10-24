@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 # ---------------------------------------------------------------- roll-call: memories, routines, connectors per Bot
 MEMORY_DIRECTIVE = re.compile(
     r"(?i)\b(always|never|from now on|whenever|every time|automatically|by default|without asking|don'?t ask|skip (the )?approval|"
@@ -602,7 +602,7 @@ def clear_legacy_replies():
 
 
 def save_reply(bot, text):
-    """`wt.py rollcall --save <Bot>`: write one reply (stdin) as a 0600 file in the 0700 folder. Prints no reply text."""
+    """`isr.py rollcall --save <Bot>`: write one reply (stdin) as a 0600 file in the 0700 folder. Prints no reply text."""
     rdir = ensure_rollcall_dir()
     base = re.sub(r"[^\w.-]+", "_", str(bot or "bot")).strip("._")[:RC_NAME_MAX] or "bot"
     for i in range(1, 100):
@@ -658,7 +658,7 @@ def cmd_rollcall(args):
 def _rollcall(args, rdir):
     if not args.owner_said_yes:
         print("NOT RUN: a roll-call needs the owner's yes in this conversation, every time. Ask them, then run "
-              "`wt.py rollcall --owner-said-yes`. Nothing was read or deleted; the daily check removes unread replies after an hour.")
+              "`isr.py rollcall --owner-said-yes`. Nothing was read or deleted; the daily check removes unread replies after an hour.")
         return 2
     if not args.dir:
         ensure_rollcall_dir()

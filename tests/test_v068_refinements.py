@@ -3,8 +3,8 @@ import io, json, os, shutil, sys, tempfile, unittest, warnings
 from contextlib import redirect_stdout, redirect_stderr
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "watchtower"))
-import wt  # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
+import isr as wt  # noqa: E402
 
 warnings.simplefilter("ignore", ResourceWarning)
 F = lambda rule, sev, where, source="watchtower", title="t", ev="ev": wt.finding(rule, title, sev, ["X"], where, ev, "fix", source=source)
@@ -143,9 +143,9 @@ class Disprove(Base):
         for p in ("skills/watchtower-audit/SKILL.md", "routines/daily-watch.md", "skills/watchtower-rollcall/SKILL.md"):
             t = open(os.path.join(ROOT, p)).read()
             if p == "routines/daily-watch.md":   # batch 4 (R6): the unattended routine never dismisses; it still reports the owner's dismissals
-                self.assertNotIn("wt.py dismiss <key>", t, p)
+                self.assertNotIn("isr.py dismiss <key>", t, p)
             else:
-                self.assertIn("wt.py dismiss <key>", t, p)
+                self.assertIn("isr.py dismiss <key>", t, p)
             self.assertIn("dismissed.jsonl", t, p); self.assertIn("reason to keep it", t, p)
 
 

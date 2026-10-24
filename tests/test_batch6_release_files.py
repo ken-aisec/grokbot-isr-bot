@@ -37,7 +37,7 @@ class _Copies(Box):
 
     def at(self, real):
         """Run this process as the copy in `real`: its sources' folder and each shipped rules file there (module constants)."""
-        for name, value in (("SELF_ROOT", real), ("HERE", os.path.join(real, "watchtower")),
+        for name, value in (("SELF_ROOT", real), ("HERE", os.path.join(real, "isr_bot")),
                             ("PLATFORM_REVIEWED", os.path.join(real, wt.PLATFORM_REVIEWED_REL)),
                             ("PLATFORM_NORMALIZE", os.path.join(real, wt.PLATFORM_NORMALIZE_REL)),
                             ("PLATFORM_LOCK", os.path.join(real, wt.PLATFORM_LOCK_REL)),
@@ -103,7 +103,7 @@ class NoManifest(_Copies):
         for rel in SHIPPED:
             os.makedirs(os.path.dirname(os.path.join(real, rel)), exist_ok=True)
             shutil.copyfile(os.path.join(ROOT, rel), os.path.join(real, rel))
-        os.makedirs(os.path.join(real, "watchtower"))
+        os.makedirs(os.path.join(real, "isr_bot"))
         if manifest:
             with open(os.path.join(real, "MANIFEST.sha256"), "w") as f:
                 for rel in sorted(SHIPPED):

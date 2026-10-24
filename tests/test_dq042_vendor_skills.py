@@ -1,7 +1,7 @@
 """DQ-042 (decision, Oct 16): vendor skill updates shouldn't be flagged.
 
-`wt.py audit` raised a HIGH "Grok Bot's own learn changed and now Corroborated by multiple engines" for the platform's bundled
-learn skill after a routine platform update. The real line (`wt.py show ISR-X003`, Oct 16):
+`isr.py audit` raised a HIGH "Grok Bot's own learn changed and now Corroborated by multiple engines" for the platform's bundled
+learn skill after a routine platform update. The real line (`isr.py show ISR-X003`, Oct 16):
 
     high ISR-X003 [Confirmed] /home/box/.grok/bundled/skills/learn
       evidence: SkillSpector + husk; Memory Poisoning: Memory Manipulation; analysis-evasion: Incomplete referenced artifact analysis

@@ -12,7 +12,7 @@ VERSIONED_DOCS = ("skills/watchtower-setup/SKILL.md", "README.md", "scripts/inst
 
 
 def real_version():
-    return open(os.path.join(ROOT, "watchtower", "wt.py")).read().split('\nVERSION = "')[1].split('"')[0]
+    return open(os.path.join(ROOT, "isr_bot", "isr.py")).read().split('\nVERSION = "')[1].split('"')[0]
 
 
 def next_version():
@@ -185,13 +185,13 @@ class Publish(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.repo = os.path.join(self.tmp, "repo"); self.remote = os.path.join(self.tmp, "remote.git"); self.bin = os.path.join(self.tmp, "bin")
         self.ghlog = os.path.join(self.tmp, "gh.log")
-        for d in ("scripts", "tests", "bot", "watchtower"):
+        for d in ("scripts", "tests", "bot", "isr_bot"):
             os.makedirs(os.path.join(self.repo, d))
         os.makedirs(self.bin)
         shutil.copy(os.path.join(ROOT, "scripts", "publish.sh"), os.path.join(self.repo, "scripts"))
         shutil.copy(os.path.join(ROOT, "scripts", "scanner_lock.py"), os.path.join(self.repo, "scripts"))   # batch 3 round 1: the lock reader publish.sh runs
-        # Batch 3: publish.sh reads the tag from wt.py's VERSION and needs a checksum for every scanner in the lock.
-        open(os.path.join(self.repo, "watchtower", "wt.py"), "w").write(f'VERSION = "{real_version()}"\n')
+        # Batch 3: publish.sh reads the tag from isr.py's VERSION and needs a checksum for every scanner in the lock.
+        open(os.path.join(self.repo, "isr_bot", "isr.py"), "w").write(f'VERSION = "{real_version()}"\n')
         open(os.path.join(self.repo, "scripts", "scanner-bins.lock"), "w").write(
             "".join(f"{hashlib.sha256(n.encode()).hexdigest()}  {n}  x86_64  test\n" for n in SCANNER_NAMES))
         # Claude review 1 (3): publish.sh holds the setup skill, README and install.sh to VERSION. The real ones, as committed.
@@ -225,7 +225,7 @@ class Publish(unittest.TestCase):
         return r, (open(self.ghlog).read() if os.path.exists(self.ghlog) else "")
 
     def tag(self):
-        return "v" + open(os.path.join(self.repo, "watchtower", "wt.py")).read().split('VERSION = "')[1].split('"')[0]
+        return "v" + open(os.path.join(self.repo, "isr_bot", "isr.py")).read().split('VERSION = "')[1].split('"')[0]
 
     def test_an_existing_tag_is_never_moved(self):
         self.git("tag", "-a", self.tag(), "-m", "old"); self.git("push", "-q", "origin", self.tag()); self.git("tag", "-d", self.tag())
@@ -311,7 +311,7 @@ class Publish(unittest.TestCase):
             with self.subTest(left=left):
                 self.git("reset", "-q", "--hard", self.git("rev-list", "--max-parents=0", "HEAD"))
                 self.bump_docs(next_version(), [d for d in VERSIONED_DOCS if d != left])
-                self.commit_file("watchtower/wt.py", f'VERSION = "{next_version()}"\n')
+                self.commit_file("isr_bot/isr.py", f'VERSION = "{next_version()}"\n')
                 main = self.remote_ref("refs/heads/main")
                 r, gh = self.publish()
                 self.stopped(r, gh, main, f"STOPPED: {left} line ")
@@ -320,18 +320,18 @@ class Publish(unittest.TestCase):
     def test_batch3_the_tag_comes_from_wt_version(self):
         """Batch 3 (docs drift): publish.sh hardcoded v0.7.1, so a new release would have been tagged with the old number."""
         self.bump_docs(next_version())                                                 # Claude review 1 (3): a bump moves these too
-        self.commit_file("watchtower/wt.py", f'import os\nVERSION = "{next_version()}"\n')
+        self.commit_file("isr_bot/isr.py", f'import os\nVERSION = "{next_version()}"\n')
         r, _ = self.publish()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(self.remote_ref(f"refs/tags/v{next_version()}^{{commit}}"), self.git("rev-parse", "HEAD"))
         self.assertIn(f"Publishing ownerx/grokbot-watchtower v{next_version()} at", r.stdout)
 
     def test_batch3_no_version_line_stops(self):
-        self.commit_file("watchtower/wt.py", "# no version here\n")
+        self.commit_file("isr_bot/isr.py", "# no version here\n")
         main = self.remote_ref("refs/heads/main")
         r, gh = self.publish()
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
-        self.assertIn("can't read VERSION from watchtower/wt.py", r.stdout)
+        self.assertIn("can't read VERSION from isr_bot/isr.py", r.stdout)
         self.assertEqual(self.remote_ref("refs/heads/main"), main)                     # nothing pushed
         self.assertEqual(subprocess.run(["git", "--git-dir", self.remote, "tag"], capture_output=True, text=True).stdout.strip(), "")
         self.assertEqual(gh, "")
@@ -371,20 +371,20 @@ class Publish(unittest.TestCase):
 
     def test_batch3_round1_two_version_lines_stop(self):
         """Codex, batch 3 round 1 (11): `head -n 1` took 0.7.2 while Python reports the last assignment, 0.7.3."""
-        self.commit_file("watchtower/wt.py", 'VERSION = "0.7.2"\nVERSION = "0.7.3"\n')
+        self.commit_file("isr_bot/isr.py", 'VERSION = "0.7.2"\nVERSION = "0.7.3"\n')
         main = self.remote_ref("refs/heads/main")
         r, gh = self.publish()
-        self.stopped(r, gh, main, "can't read VERSION from watchtower/wt.py: it is set 2 times")
+        self.stopped(r, gh, main, "can't read VERSION from isr_bot/isr.py: it is set 2 times")
 
     def test_batch3_round2_a_second_version_in_other_syntax_stops(self):
         """Codex, batch 3 round 2 (14): the line count missed valid Python such as `(VERSION) = "0.7.3"`: publish.sh read
         0.7.2 while Python reports 0.7.3."""
         for second in ('(VERSION) = "0.7.3"\n', 'for VERSION in ("0.7.3",):\n    pass\n'):
             with self.subTest(second=second):
-                self.commit_file("watchtower/wt.py", 'VERSION = "0.7.2"\n' + second)
+                self.commit_file("isr_bot/isr.py", 'VERSION = "0.7.2"\n' + second)
                 main = self.remote_ref("refs/heads/main")
                 r, gh = self.publish()
-                self.stopped(r, gh, main, "can't read VERSION from watchtower/wt.py: it is set 2 times")
+                self.stopped(r, gh, main, "can't read VERSION from isr_bot/isr.py: it is set 2 times")
 
 
 if __name__ == "__main__":

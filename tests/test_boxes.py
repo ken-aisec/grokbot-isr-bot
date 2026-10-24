@@ -8,8 +8,8 @@ import datetime as dt, io, json, math, os, shutil, stat, subprocess, sys, tempfi
 from contextlib import redirect_stderr, redirect_stdout
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "watchtower"))
-import wt  # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
+import isr as wt  # noqa: E402
 # Tests never read this computer's real Grok Bot settings (Oct 11: the owner's live Auto-review rules leaked into the suite).
 wt.NATIVE_SETTINGS[:] = [p for p in wt.NATIVE_SETTINGS if p.startswith("~")]
 
@@ -219,7 +219,7 @@ class HostileFiles(Box):
         self.assertIsInstance(r["score"], int)
         self.assertFalse(os.path.exists(wt.state_path("run.lock")))
 
-    def test_watchtower_cannot_write_its_own_folder(self):
+    def test_isr_bot_cannot_write_its_own_folder(self):
         open(os.path.join(self.ws, "watchtower"), "w").write("a file where the folder should be")
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err):
@@ -337,7 +337,7 @@ class BuiltInSoftware(Box):
 
 
 class FactoryBox(Box):
-    """A brand-new Grok Bot computer as it really arrived on 2026-10-06 (from `wt.py doctor` on a fresh account): sand-data is the
+    """A brand-new Grok Bot computer as it really arrived on 2026-10-06 (from `isr.py doctor` on a fresh account): sand-data is the
     real folder and agent-data a link to it, two built-in skill packs and one plugin, the platform's own gateway token, a seeded
     browser login, outdated Python packages that came with the computer, and no Ask-first rules."""
     def build(self):
@@ -1186,7 +1186,7 @@ class MainBoxLessons(Box):
         self.assertIn("ISR-K002", {f["rule"] for f in self.snap()["findings"]})
 
     def test_the_weekly_tidy_is_one_list_and_one_yes(self):
-        """Main box, Oct 8 (DQ-002): `wt.py fix --apply --revet --only ...`, the documented way to re-approve skills, also emptied
+        """Main box, Oct 8 (DQ-002): `isr.py fix --apply --revet --only ...`, the documented way to re-approve skills, also emptied
         /workspace/agent-tools (12 files) and ~/.cursor/projects/workspace/agent-tools (3 files), which nobody had asked for."""
         self.skills(2); self.scanners(); self.audit()
         old = time.time() - 3 * 86400

@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 # ---------------------------------------------------------------- collection
 def _look(path, follow=False):
     """What a lookup of `path` says (batch 6, KL5): its stat result (lstat, or stat with follow=True), False when it is

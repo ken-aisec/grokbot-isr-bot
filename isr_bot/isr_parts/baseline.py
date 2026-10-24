@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 BASELINE_META = "baseline_meta.json"
 RESET_WHY = {"missing": "is missing", "empty": "is empty", "unreadable": "can't be read"}
 
@@ -95,8 +95,8 @@ def baseline_reset_finding(why):
     return finding("ISR-I010", "ISR Bot's memory was reset", "high", ["AST07"], "state/baseline.json",
                    f"baseline.json {RESET_WHY.get(why, why)}{held}",
                    "Something emptied, damaged or deleted the file where ISR Bot remembers the skills you approved, so it can't tell "
-                   "whether any of them changed. It has not approved anything on its own. `wt.py diff <skill>` still compares a skill with "
-                   "the copy you approved. When you've looked, say yes and ISR Bot starts a new baseline (`wt.py baseline --owner-said-yes`).",
+                   "whether any of them changed. It has not approved anything on its own. `isr.py diff <skill>` still compares a skill with "
+                   "the copy you approved. When you've looked, say yes and ISR Bot starts a new baseline (`isr.py baseline --owner-said-yes`).",
                    ident="baseline-reset")
 
 
@@ -439,7 +439,7 @@ def run_audit_locked(args, quick):
         if not quick:   # skills approved before copies were kept: keep one now, but only while they still match what was approved
             drifted = {skill_root(f["where"].split(":")[0]) for f in expand_groups(fs) if f["rule"] in ("ISR-I001", "ISR-I002", "ISR-I003")}
             save_approved_all([d for d in meta.get("skill_dirs", []) if os.path.normpath(d) not in drifted and not os.path.exists(approved_path(d))])
-    # "reset": nothing is saved or approved; ISR-I010 stays open every run until the owner's yes (`wt.py baseline --owner-said-yes`)
+    # "reset": nothing is saved or approved; ISR-I010 stays open every run until the owner's yes (`isr.py baseline --owner-said-yes`)
     snapshot = {"at": now(), "version": VERSION, "status": status_of(scored(live)), "score": s, "grade": g, "previous_score": prev.get("score"), "findings": live, "suppressed": suppressed,
                 "scanners_missing": meta.get("scanners_missing", []), "stages_skipped": list(STAGE_FAILED),
                 "inventory": meta["inventory"], "notes": meta["notes"]}

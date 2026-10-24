@@ -228,14 +228,14 @@ class R12DoctorIsShareable(Box):
         """R12: doctor included the last 1200 characters of a raw traceback (private paths and content)."""
         os.makedirs(os.path.dirname(wt.state_path("x")), exist_ok=True)
         open(wt.state_path("last_error.txt"), "w").write(
-            "2026-10-11T10:00:00 wt.py audit --roots /home/box/acme-payroll (v0.6.8)\nTraceback (most recent call last):\n"
-            '  File "/workspace/watchtower/app/watchtower/wt.py", line 120, in main\n    x()\n'
+            "2026-10-11T10:00:00 isr.py audit --roots /home/box/acme-payroll (v0.6.8)\nTraceback (most recent call last):\n"
+            '  File "/workspace/watchtower/app/isr_bot/isr.py", line 120, in main\n    x()\n'
             "FileNotFoundError: [Errno 2] No such file: '/home/box/acme-payroll/salaries-2026.csv'\n")
         code, o, _ = self.run_cmd("doctor")
         self.assertNotIn("acme-payroll", o); self.assertNotIn("salaries", o)
         d = json.loads(o)["last_error"]
         self.assertEqual(d["error_type"], "FileNotFoundError")
-        self.assertEqual(d["where"], ["wt.py line 120 in main"])
+        self.assertEqual(d["where"], ["isr.py line 120 in main"])
 
 
 class R13ExactInstallerHosts(unittest.TestCase):
@@ -297,10 +297,10 @@ class R10R11InstallActivation(unittest.TestCase):
                               'if [[ "$*" == *"rev-parse HEAD"* ]]; then echo "$FAKE_SHA"; exit 0; fi\nexit 0\n')
 
     def release(self, ok=True):
-        shutil.rmtree(self.src, ignore_errors=True); os.makedirs(os.path.join(self.src, "watchtower"))
-        open(os.path.join(self.src, "watchtower", "wt.py"), "w").write("import sys\nprint('0.6.9')\n" if ok else "import sys\nsys.exit(1)\n")
-        h = hashlib.sha256(open(os.path.join(self.src, "watchtower", "wt.py"), "rb").read()).hexdigest()
-        open(os.path.join(self.src, "MANIFEST.sha256"), "w").write(f"{h}  watchtower/wt.py\n")
+        shutil.rmtree(self.src, ignore_errors=True); os.makedirs(os.path.join(self.src, "isr_bot"))
+        open(os.path.join(self.src, "isr_bot", "isr.py"), "w").write("import sys\nprint('0.6.9')\n" if ok else "import sys\nsys.exit(1)\n")
+        h = hashlib.sha256(open(os.path.join(self.src, "isr_bot", "isr.py"), "rb").read()).hexdigest()
+        open(os.path.join(self.src, "MANIFEST.sha256"), "w").write(f"{h}  isr_bot/isr.py\n")
 
     def install(self, sha):
         e = dict(os.environ, PATH=self.bin + ":" + os.environ["PATH"], ISR_BOT_HOME=self.wt, SRC=self.src, FAKE_SHA=sha)
@@ -310,11 +310,11 @@ class R10R11InstallActivation(unittest.TestCase):
         """R10: install.sh removed the working app and wrote the new commit before checking the new copy even starts."""
         self.release(ok=True); r = self.install("a" * 40)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        good = open(os.path.join(self.wt, "app", "watchtower", "wt.py")).read()
+        good = open(os.path.join(self.wt, "app", "isr_bot", "isr.py")).read()
         self.release(ok=False); r = self.install("b" * 40)
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("ACTIVATION", r.stdout)
-        self.assertEqual(open(os.path.join(self.wt, "app", "watchtower", "wt.py")).read(), good)
+        self.assertEqual(open(os.path.join(self.wt, "app", "isr_bot", "isr.py")).read(), good)
         self.assertEqual(open(os.path.join(self.wt, "state", "installed_commit")).read().strip(), "a" * 40)
 
     def test_staging_is_private_and_a_planted_link_is_ignored(self):

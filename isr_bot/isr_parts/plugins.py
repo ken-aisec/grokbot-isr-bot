@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 def norm_body(t):
     t = re.sub(r"(?s)\A---\n.*?\n---\n", "", t or "")
     return re.sub(r"\s+", " ", t).strip()

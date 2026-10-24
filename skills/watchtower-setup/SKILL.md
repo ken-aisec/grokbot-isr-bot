@@ -10,7 +10,7 @@ The owner's first yes covers everything in sections 1 to 4: the install, the six
 Say once, up front: "Setup only writes inside /workspace/watchtower, plus three decoy files in /tmp and /var/tmp."
 
 ## 1. Install the pinned release
-Skip this section only if `/workspace/watchtower/app/watchtower/wt.py` already exists and `python3 -I /workspace/watchtower/app/watchtower/wt.py --version` exits 0 and its whole output is exactly 0.7.4 (run it with `-I`, exactly as written). Any other exit code or any other output (SELF-CHECK FAILED, an error, extra words) means install it again.
+Skip this section only if `/workspace/watchtower/app/isr_bot/isr.py` already exists and `python3 -I /workspace/watchtower/app/isr_bot/isr.py --version` exits 0 and its whole output is exactly 0.7.4 (run it with `-I`, exactly as written). Any other exit code or any other output (SELF-CHECK FAILED, an error, extra words) means install it again.
 ```bash
 mkdir -p /workspace/watchtower && cd /workspace/watchtower
 # With the commit ID from your Setup check memory (preferred: the script itself is then pinned):
@@ -27,9 +27,9 @@ Your skills are the SKILL.md files under `/workspace/watchtower/app/skills/`. Do
 Run `bash /workspace/watchtower/app/scripts/install.sh --scanners`. Each tool installs on its own from a checksum lock; if one says it did not install, carry on. ISR Bot works without it and the audit says which is missing. If it ends with `CHECKSUM LOCK FAILED`, the Python scanners were skipped and nothing was installed without checksums (gitleaks, TruffleHog and OSV-Scanner still installed from their own): tell the owner the reason it printed and carry on; never install the scanners another way.
 
 ## 3. Baseline, decoys, first audit
-1. `python3 /workspace/watchtower/app/watchtower/wt.py baseline`. On an update, if it prints NOT SAVED, this computer already has a baseline: carry on, and never add `--owner-said-yes` yourself.
-2. `wt.py canary plant`. It picks new random folder and file names for this computer. Tell the owner the three paths it prints, in this chat only; never write them into a memory, a skill, a routine, a file or another Bot's chat. Never open, list or search those files or their folders yourself, now or later: a read by you looks the same as a read by an intruder.
-3. `wt.py audit`. Summarize in five lines: score, counts by severity, the top three fixes.
+1. `python3 /workspace/watchtower/app/isr_bot/isr.py baseline`. On an update, if it prints NOT SAVED, this computer already has a baseline: carry on, and never add `--owner-said-yes` yourself.
+2. `isr.py canary plant`. It picks new random folder and file names for this computer. Tell the owner the three paths it prints, in this chat only; never write them into a memory, a skill, a routine, a file or another Bot's chat. Never open, list or search those files or their folders yourself, now or later: a read by you looks the same as a read by an intruder.
+3. `isr.py audit`. Summarize in five lines: score, counts by severity, the top three fixes.
 
 ## 4. Routines
 The routines usually arrive with the template, paused: daily watch (06:00), weekly audit and report (Sunday 05:00), weekly tidy (Sunday 06:00), in the account's time zone. Don't ask about the time zone. Switch those three on, or tell the user to flip the three switches under your Details tab if you can't. The monthly roll-call reminder stays off: roll-call is opt-in, and it is switched on only if the owner asks for it. If a routine is missing, create it from the matching file in `/workspace/watchtower/app/routines/`.
@@ -43,22 +43,22 @@ You can't change app settings. Never say or imply that you will add these rules.
 - Ask first before publishing, posting, purchasing, or deleting anything
 - Ask first before creating, changing or switching on routines, or changing settings, permissions, or connectors
 
-Once they say the rules are in, save the same three lines, each starting with `Ask first:`, to `/workspace/watchtower/exports/auto-review.txt` so ISR Bot can see them, and run `wt.py audit`. Never write that file before the rules exist. These rules will also pause some of your own commands; when that happens the owner sees an approval card. That is the rules working.
+Once they say the rules are in, save the same three lines, each starting with `Ask first:`, to `/workspace/watchtower/exports/auto-review.txt` so ISR Bot can see them, and run `isr.py audit`. Never write that file before the rules exist. These rules will also pause some of your own commands; when that happens the owner sees an approval card. That is the rules working.
 
 ## 7. First report, then finish
 1. Read the watchtower-brief skill and run it once so the user sees it.
-2. `wt.py report` (builds `/workspace/watchtower/reports/dashboard.html`).
+2. `isr.py report` (builds `/workspace/watchtower/reports/dashboard.html`).
 3. Run the Validate checks below. Setup is not finished until they pass; if one fails, say which.
 
 End with one message: what is on, the score, how many minutes it took, and the one or two things only the owner can do (usually the Ask-first rules and signing out of sites in the Bot browser; say plainly that the score stays where it is until they do). Ask once: "Should the weekly report also go somewhere fixed, such as one Slack channel or one email address? If you name it now, your yes covers that one place each week; otherwise I'll ask for approval each time." Only if the owner names one, save it as your "Report destination" memory, exactly as they wrote it, and send a test only on their yes. Then offer once: "Want a roll-call? It sends each of your other Bots one fixed question that asks only for counts, names and yes/no answers, never memory text, because Bots can't check who's asking. The replies are analyzed and deleted, and it doesn't change the score." Run it only on their yes, following the roll-call skill.
 
 ## If anything goes wrong
-ISR Bot prints one plain line starting with ERROR, never a stack trace. Run `wt.py doctor --save` and tell the user where the file is: it has no file contents, keys or skill names, and they can send it to the template's author.
+ISR Bot prints one plain line starting with ERROR, never a stack trace. Run `isr.py doctor --save` and tell the user where the file is: it has no file contents, keys or skill names, and they can send it to the template's author.
 
 ## Validate
 Run all of these before you say setup is done:
-- `wt.py daily` twice: the second prints NO_CHANGES.
-- `wt.py canary status` prints CANARIES_QUIET, or one low "bulk reader" line (the platform's file backup reads new files once; that is expected and is not an alarm).
+- `isr.py daily` twice: the second prints NO_CHANGES.
+- `isr.py canary status` prints CANARIES_QUIET, or one low "bulk reader" line (the platform's file backup reads new files once; that is expected and is not an alarm).
 - `ls /workspace/watchtower/reports/` shows dashboard.html and a threat-brief HTML file.
 
 ## Approval needed

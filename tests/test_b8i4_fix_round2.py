@@ -1,6 +1,6 @@
 """b8i4 fix round 2: the Codex verify of 47d3aba (fix round 1), 4 high and 1 medium.
 
-1. `wt.py baseline` saved no findings, so a new skill folder its first baseline held was a "new-skill" candidate on the next run
+1. `isr.py baseline` saved no findings, so a new skill folder its first baseline held was a "new-skill" candidate on the next run
    (quiet). Every baseline now keeps what it held outside the middle path (state/platform_held.json, save_platform_held).
 2. A candidate's real path was checked only before the engines ran: a platform folder moved out and replaced by a link while
    they scanned (its bytes kept) stayed quiet and rolled in. Each candidate is bound to its real path and checked again before
@@ -48,7 +48,7 @@ class BaselineCommandHolds(_Middle):
             self.assertNotIn(p, wt.load_baseline()[0], p)
 
     def test_a_first_baseline_command_keeps_a_new_skill_folder_held(self):
-        """R: a clean unlisted helper folder on a new box, then `wt.py baseline` (the first baseline): daily and a full audit
+        """R: a clean unlisted helper folder on a new box, then `isr.py baseline` (the first baseline): daily and a full audit
         both keep its files counted highs outside the baseline (47d3aba: daily said NO_CHANGES, the audit rolled them in)."""
         self.scanners()
         md, ref = self.helper()
@@ -252,7 +252,7 @@ class DailyScannerAlerts(_Middle):
         add(self.md("alpha"), "One more line.\n")
         out = self.daily()
         self.assertEqual(out, "SCANNERS_MISSING gitleaks: run `bash /workspace/watchtower/app/scripts/install.sh --scanners`, "
-                              "then `wt.py daily` again")
+                              "then `isr.py daily` again")
         self.assertEqual([os.path.basename(f["where"]) for f in self.snap()["findings"] if f["rule"] == "ISR-X005"], ["gitleaks"])
         self.assertEqual(self.counted_high(self.md("alpha")), [])
         self.assertEqual(self.unverified(), [])

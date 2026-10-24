@@ -1,4 +1,4 @@
-# Part of wt.py: runs inside wt.py's namespace (loaded by _wt_part); not a module on its own.
+# Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 SHARED_TEMP = re.compile(r"(?<![\w.-])(/tmp|/var/tmp|/dev/shm)/[^\s'\";|&<>]+")
 PLATFORM_HOOKS = ("python3 /tmp/hooks/expand_mcp_file_args.py",)   # ships in ~/.cursor/hooks.json on Grok Bot computers (seen Oct 2026)
 
@@ -212,7 +212,7 @@ def auto_allow_fingerprint(raw):
 
 
 def accepted_auto_allow():
-    """Auto-allow lines this box's owner accepted on purpose (`wt.py auto-allow keep`). Exact fingerprints only, never a
+    """Auto-allow lines this box's owner accepted on purpose (`isr.py auto-allow keep`). Exact fingerprints only, never a
     pattern, so a new, edited or broader rule still fires at full severity. Hardening batch 1 (R8, Oct 16): nothing is shipped;
     a line one owner accepted is never accepted for anyone else."""
     out = {}
@@ -285,7 +285,7 @@ def note_earlier_auto_allow(prev, live):
     for f in live:
         if f["rule"] == "ISR-A002" and f.get("fingerprint") in have:
             f["fix"] = ("ISR Bot used to accept this exact line for you. It needs your yes once more: say \"keep it\" and ISR Bot runs "
-                        f"`wt.py auto-allow keep {f['fingerprint']} --owner-said-yes`. Otherwise change it to Ask first.")
+                        f"`isr.py auto-allow keep {f['fingerprint']} --owner-said-yes`. Otherwise change it to Ask first.")
 
 
 def auto_allow_lines():
@@ -337,23 +337,23 @@ def cmd_auto_allow(args):
             print(f"    {exact_line(x['line'])}")
             if x["sha256"] in earlier and x["sha256"] not in kept:
                 print("    An earlier ISR Bot version accepted this line for you. It needs the owner's yes once more.")
-        print("To keep one exact line: show the owner that line, and only after their yes run `wt.py auto-allow keep <id> --owner-said-yes`. "
+        print("To keep one exact line: show the owner that line, and only after their yes run `isr.py auto-allow keep <id> --owner-said-yes`. "
               "Any edit to a kept line makes it count again.")
         return 0
     ids = [x.strip().lower() for x in (args.ids or "").split(",") if x.strip()]
     if not ids:
-        print("ERROR name the lines to keep by id (`wt.py auto-allow` lists them)", file=sys.stderr)
+        print("ERROR name the lines to keep by id (`isr.py auto-allow` lists them)", file=sys.stderr)
         return 2
     picked = {}
     for ident in ids:
         hits = [x for x in lines if x["sha256"] == ident]
         if len(hits) != 1:
-            print(f"NOT SAVED: “{exact_line(ident[:64])}” isn't one of the lines ISR Bot sees now (`wt.py auto-allow` lists them; an id "
+            print(f"NOT SAVED: “{exact_line(ident[:64])}” isn't one of the lines ISR Bot sees now (`isr.py auto-allow` lists them; an id "
                   "is the whole 64-character sha256). Nothing was kept.")
             return 1
         picked[hits[0]["sha256"]] = hits[0]
     if not args.owner_said_yes:
-        print("NOT SAVED: a kept line lets every Bot do this without asking. Show the owner the exact line (`wt.py auto-allow`); only "
+        print("NOT SAVED: a kept line lets every Bot do this without asking. Show the owner the exact line (`isr.py auto-allow`); only "
               "after their yes in this conversation run the same command with --owner-said-yes.")
         return 1
     data = load_json_regular(state_path("accepted_auto_allow.json"), [])

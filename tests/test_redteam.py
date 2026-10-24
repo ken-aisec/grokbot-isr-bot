@@ -86,7 +86,7 @@ class RedTeam(Box):
         return SelfCheck.install(self)
 
     def run_app(self, app, *argv):
-        p = subprocess.run([sys.executable, os.path.join(app, "watchtower", "wt.py"), *argv], capture_output=True, text=True,
+        p = subprocess.run([sys.executable, os.path.join(app, "isr_bot", "isr.py"), *argv], capture_output=True, text=True,
                            env=dict(os.environ), timeout=120)
         return p.returncode, p.stdout + p.stderr
 
@@ -99,7 +99,7 @@ class RedTeam(Box):
         code, o = self.run_app(app, "status")
         self.assertEqual(code, 4, o); self.assertIn("not in the release", o)
         shutil.rmtree(os.path.join(app, "skills", "watchtower-helper"))
-        open(os.path.join(app, "watchtower", "rules.json") if os.path.exists(os.path.join(app, "watchtower", "rules.json")) else os.path.join(app, "README.md"), "a").write("\n")
+        open(os.path.join(app, "isr_bot", "rules.json") if os.path.exists(os.path.join(app, "isr_bot", "rules.json")) else os.path.join(app, "README.md"), "a").write("\n")
         code, o = self.run_app(app, "status")
         self.assertEqual(code, 4, o)
         os.remove(os.path.join(app, "MANIFEST.sha256"))

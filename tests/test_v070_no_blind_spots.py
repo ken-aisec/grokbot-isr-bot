@@ -2,7 +2,7 @@
 import os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, wt
-from test_watchtower import fake_key
+from test_isr_bot import fake_key
 import profiles
 
 

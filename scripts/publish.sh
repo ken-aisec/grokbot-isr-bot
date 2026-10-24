@@ -7,12 +7,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 REVIEWED="${1:-}"
 stop() { echo "STOPPED: $*. Nothing pushed."; exit 1; }
-# The tag is wt.py's VERSION, which must be set exactly once: with two assignments Python reports the last one, and taking
+# The tag is isr.py's VERSION, which must be set exactly once: with two assignments Python reports the last one, and taking
 # the first would tag the release with a number the installed copy doesn't report (Codex, batch 3 round 1). Round 2: counting
 # matching lines missed valid Python such as `(VERSION) = "0.7.3"`, so the file is parsed: every binding of the name
 # anywhere (assignment in any form, import, def, class, for, with, except, global, walrus, match, del) counts, and the one
 # allowed is a top-level `VERSION = "x.y.z"`. Prints "<count> <version or nothing>".
-VREAD="$(python3 -I - watchtower/wt.py <<'PYEOF' 2>/dev/null || true
+VREAD="$(python3 -I - isr_bot/isr.py <<'PYEOF' 2>/dev/null || true
 import ast, re, sys
 try:
     tree = ast.parse(open(sys.argv[1], encoding="utf-8").read())
@@ -44,9 +44,9 @@ PYEOF
 )"
 VCOUNT="${VREAD%% *}"
 [[ "$VCOUNT" =~ ^[0-9]+$ ]] || VCOUNT=0
-[[ "$VCOUNT" -le 1 ]] || stop "can't read VERSION from watchtower/wt.py: it is set $VCOUNT times. Set it once"
+[[ "$VCOUNT" -le 1 ]] || stop "can't read VERSION from isr_bot/isr.py: it is set $VCOUNT times. Set it once"
 TAG="v${VREAD#* }"
-[[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || stop "can't read VERSION from watchtower/wt.py"
+[[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || stop "can't read VERSION from isr_bot/isr.py"
 # Claude review 1 (3): the setup skill, the README and install.sh name the release to install and the version a good install
 # prints. Nothing checked them, so after a version bump setup would reinstall the old release (or fail COMMIT CHECK) on every
 # computer. Every version they name (in install.sh, on its lines naming install.sh) must be VERSION, and each must name it.
@@ -71,10 +71,10 @@ PYEOF
 )"
 [[ "$DOCS_PROBLEM" == "OK" ]] || stop "${DOCS_PROBLEM:-the versions in the release files could not be checked}: the setup skill, README and install.sh must name VERSION ${TAG#v}; update them, commit, and get that commit reviewed"
 # Watchtower runs a scanner only when its program matches this lock, so a release without every checksum would leave that
-# scanner unrun on every computer. scripts/scanner_lock.py is the same reader wt.py uses, so a line Watchtower would skip
-# stops the release too. Fill the lock from `wt.py doctor` (scanner_check) after a fresh `install.sh --scanners`.
+# scanner unrun on every computer. scripts/scanner_lock.py is the same reader isr.py uses, so a line Watchtower would skip
+# stops the release too. Fill the lock from `isr.py doctor` (scanner_check) after a fresh `install.sh --scanners`.
 LOCK_PROBLEM="$(python3 -I scripts/scanner_lock.py scripts/scanner-bins.lock 2>&1)" \
-  || stop "${LOCK_PROBLEM:-scripts/scanner-bins.lock could not be checked}. Run a fresh install.sh --scanners, then wt.py doctor, and copy each scanner_check sha256 into the lock"
+  || stop "${LOCK_PROBLEM:-scripts/scanner-bins.lock could not be checked}. Run a fresh install.sh --scanners, then isr.py doctor, and copy each scanner_check sha256 into the lock"
 [[ "$REVIEWED" =~ ^[0-9a-f]{40}$ ]] || stop "give the full 40-character commit ID that was reviewed (bash scripts/publish.sh <commit>)"
 [[ "$(git rev-parse --abbrev-ref HEAD)" == "main" ]] || stop "publish from main (this checkout is on $(git rev-parse --abbrev-ref HEAD))"
 [[ "$(git rev-parse HEAD)" == "$REVIEWED" ]] || stop "HEAD is $(git rev-parse HEAD), not the reviewed commit $REVIEWED"
@@ -86,7 +86,7 @@ echo "Publishing $REPO $TAG at $REVIEWED"
 # A published tag is never moved: installed copies and template memories pin its commit.
 if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || \
    { git remote get-url origin >/dev/null 2>&1 && git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; }; then
-  stop "tag $TAG already exists. Choose a new version number and set it as VERSION in watchtower/wt.py and in the release files"
+  stop "tag $TAG already exists. Choose a new version number and set it as VERSION in isr_bot/isr.py and in the release files"
 fi
 PYTHONDONTWRITEBYTECODE=1 python3 -W ignore::ResourceWarning -m unittest discover -s tests -q || stop "the tests failed"
 bash scripts/make-manifest.sh
