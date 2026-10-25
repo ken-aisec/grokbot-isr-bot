@@ -342,6 +342,8 @@ def package_reachable(f):
         return True
     m = re.match(r"Vulnerable package (.+)$", f.get("title") or "")
     dirs = (load_json(state_path("osv_projects.json"), {}) or {}).get("packages", {}).get(m.group(1), []) if m else []
+    if OWNERSHIP_V081 and isinstance(f.get("projects"), list):
+        dirs = f["projects"]   # v0.8.1 (§3.4): only the projects the gate kept (the owner's); its where is the first of them
     projs = set()
     for d in [path] + [x for x in dirs if isinstance(x, str) and x.startswith("/")]:   # the finding names one project; it may sit in several
         if is_loadable_skill_location(d):

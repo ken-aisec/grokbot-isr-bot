@@ -134,7 +134,7 @@ def story_score(text, kind, touches=False):
 
 def account_context():
     """Real numbers from this computer, used to say what a story means here."""
-    snap = load_json(state_path("last_findings.json"), {}) or {}
+    snap = load_snapshot({}) or {}
     inv = snap.get("inventory", {})
     fs = snap.get("findings", [])
     sess = next((f for f in fs if f["rule"] == "ISR-S004"), None)

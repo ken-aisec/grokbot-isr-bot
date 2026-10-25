@@ -369,6 +369,14 @@ def group_dir(fpath):
     return os.path.dirname(fpath)
 
 
+def group_why(d):
+    """The fix line of a grouped ISR-S002 on the folder `d`."""
+    return ("Tool-overflow cache: oversized API results (Notion pages, GitHub payloads) land here and any Bot can read them. "
+            "Hits are often third-party tokens inside those payloads. Check for any of yours, then clear the folder; it refills on its own."
+            if any(x in d for x in TOOL_CACHE_DIRS) else "Check which of these tokens are still live and revoke them, then clear the folder or move it off "
+            "the shared computer. Transcripts and tool output often capture tokens by accident.")
+
+
 def gitleaks_findings(roots, notes):
     exe = tool("gitleaks")
     if not exe:
@@ -422,12 +430,8 @@ def gitleaks_findings(roots, notes):
                 leaks = sorted((l for fp in files for l in per_file.pop(fp)), key=_leak_order)   # named in one order, not gitleaks' listing
                 kinds = sorted({l.get("RuleID", "secret") for l in leaks})
                 generic = all(k.startswith("generic") for k in kinds)
-                cache = any(x in d for x in TOOL_CACHE_DIRS)
                 sev = secret_severity(d + "/", generic)
-                why = ("Tool-overflow cache: oversized API results (Notion pages, GitHub payloads) land here and any Bot can read them. "
-                       "Hits are often third-party tokens inside those payloads. Check for any of yours, then clear the folder; it refills on its own."
-                       if cache else "Check which of these tokens are still live and revoke them, then clear the folder or move it off "
-                       "the shared computer. Transcripts and tool output often capture tokens by accident.")
+                why = group_why(d)
                 # name the files and lines: the folder alone sent the owner re-running gitleaks to find the hit. The files in
                 # these folders come and go, so the finding keeps one name (ident) while its evidence changes
                 locs = [f"{os.path.relpath(l.get('File') or d, d)}:{l.get('StartLine')}" for l in leaks]
@@ -438,6 +442,9 @@ def gitleaks_findings(roots, notes):
                 # b8i4 fix round 2 (Codex 4): every file it stands for, by path (its `where` is their folder), so a platform update
                 # of one of them is held and never rolled in, this run and while a daily carries the line (finding_files)
                 out[-1]["affected_files"] = sorted(os.path.abspath(str(fp)) for fp in files if fp)
+                if OWNERSHIP_V081:   # v0.8.1 (§3.4): each hit's file, line and kind (no secret text), so the gate can split a group by owner
+                    out[-1]["member_hits"] = [{"file": os.path.abspath(str(l.get("File") or d)), "line": l.get("StartLine"),
+                                               "rule_id": l.get("RuleID", "secret"), "example": examples.get(id(l))} for l in leaks]
         bound = metadata_bound(exe, per_file)   # fix round 1 (Codex 2): hits gitleaks also gives on the verified bytes
         for fpath, leaks in per_file.items():
             kinds = sorted({l.get("RuleID", "secret") for l in leaks})
@@ -462,6 +469,25 @@ def _note_examples(f, leaks, examples):
     of its hits looks like an example or checksum value (`examples`: id(hit) -> why); f as it is otherwise."""
     whys = [examples.get(id(l)) for l in leaks]
     return annotate_example(f, whys[0]) if whys and all(whys) else f
+
+
+def regroup_s002(f, kept, status, ran):
+    """v0.8.1 (§3.4): a grouped ISR-S002 made again from only its `kept` member hits (the owner's), as gitleaks_findings makes
+    one: files, title, evidence, kinds, generic-or-real severity, example note, and the key from its kinds (ident). TruffleHog's
+    answers (`status`, applied when `ran`) are those for the kept files only, so another file's live key never makes it live."""
+    d = f["where"]
+    kept = sorted(kept, key=lambda m: (str(m.get("file")), str(m.get("line"))))
+    files = sorted({m["file"] for m in kept})
+    kinds = sorted({m.get("rule_id") or "secret" for m in kept})
+    locs = [f"{os.path.relpath(m['file'], d)}:{m.get('line')}" for m in kept]
+    at = ", ".join(locs[:3]) + (f" and {len(locs) - 3} more" if len(locs) > 3 else "")
+    g = finding("ISR-S002", f"gitleaks: secrets in {len(files)} {'file' if len(files) == 1 else 'files'} under {os.path.basename(d)}",
+                secret_severity(d + "/", all(k.startswith("generic") for k in kinds)), f.get("owasp") or ["ASI03", "LLM02"], d,
+                f"{len(kept)} hit(s): {', '.join(kinds)[:60]} at {at}", group_why(d), source="gitleaks", ident="gitleaks:" + ",".join(kinds))
+    g.update(affected_files=files, member_hits=kept)
+    whys = [m.get("example") for m in kept]
+    g = annotate_example(g, whys[0]) if all(whys) else g
+    return key_status_severity([g], {p: ks for p, ks in status.items() if p in files}, ran)[0]
 
 
 _LEAK_FIELDS = ("RuleID", "StartLine", "EndLine", "StartColumn", "EndColumn", "Match", "Secret", "Entropy")

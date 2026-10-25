@@ -19,8 +19,9 @@ STAGE_FAILED = []        # stages that did not finish in the current run
 
 def carry(rules):
     """Last run's findings for rules whose stage didn't finish this time: unknown is not the same as fixed."""
-    prev = load_json(state_path("last_findings.json"), {}) or {}
-    return [kept_line(f) for f in (prev.get("findings") or []) + (prev.get("suppressed") or []) if f.get("rule") in rules]
+    prev = load_snapshot({}) or {}
+    vendor = (prev.get("vendor") or []) if OWNERSHIP_V081 else []   # v0.8.1: vendor's too, so the count holds; they pass the gate again
+    return [kept_line(f) for f in (prev.get("findings") or []) + (prev.get("suppressed") or []) + vendor if f.get("rule") in rules]
 
 
 def kept_line(f):

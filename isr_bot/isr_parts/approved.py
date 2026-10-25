@@ -210,7 +210,8 @@ def approved_dirs():
         except (OSError, ValueError, EOFError, AttributeError):
             continue
         if isinstance(d, str) and d.startswith("/") and approved_path(d) == state_path("approved", fn):
-            out.add(os.path.normpath(d))
+            if not OWNERSHIP_V081 or owner_of(d) == "user":   # v0.8.1: an old vendor copy is left on disk, never read
+                out.add(os.path.normpath(d))
     return out
 
 
@@ -259,7 +260,7 @@ def find_skill(name, dirs):
 
 
 def cmd_diff(args):
-    snap = load_json(state_path("last_findings.json"), {"findings": []})
+    snap = load_snapshot({"findings": []})
     dirs = {skill_root(f["where"].split(":")[0]) for f in expand_groups(snap.get("findings", [])) if f["rule"] in ("ISR-I001", "ISR-I002")} - {None}
     d = skill_root(args.skill) if os.path.exists(args.skill) else find_skill(args.skill, dirs)
     if not d:
@@ -270,6 +271,9 @@ def cmd_diff(args):
     if not d:
         print(f"ERROR no single skill named “{args.skill}”. Give the full folder path.", file=sys.stderr)
         return 2
+    if OWNERSHIP_V081 and owner_of(d) != "user":   # v0.8.1: approved copies are kept for the owner's skills only
+        print(f"{skill_name(d)}: not tracked: " + ("platform file" if owner_of(d) == "vendor" else "ISR Bot's own files or tool output"))
+        return 0
     r = skill_diff(d)
     print(f"{skill_name(d)}: {r['summary']}" + (f" (approved {r['approved_at'][:10]})" if r.get("approved_at") else ""))
     if r["text"]:
@@ -285,6 +289,8 @@ def changed_skills(findings):
     for f in expand_groups(findings):
         if f["rule"] != "ISR-I001" or f.get("unverified_platform"):   # item 8: never re-approved through the engines
             continue
+        if OWNERSHIP_V081 and owner_of_finding(f) != "user":   # v0.8.1: an old snapshot's vendor I001 is never re-vetted
+            continue
         p = f["where"].split(":")[0]
         d = skill_root(p)
         if d:
@@ -298,7 +304,7 @@ def revet(dirs, approve=False):
     """Re-scan changed skills with every engine that's installed. A skill is clean when nothing critical or high is open on it.
     With approve=True a clean skill is re-approved: its fingerprints go into the baseline and a fresh copy is kept."""
     rules = load_rules()
-    dirs = [os.path.normpath(d) for d in dirs]
+    dirs = [os.path.normpath(d) for d in dirs if not OWNERSHIP_V081 or owner_of(d) == "user"]   # v0.8.1: no vendor copy or fingerprint
     reset_scanner_checks()
     per, all_fs = {}, []
     for d in dirs:
@@ -378,7 +384,7 @@ def exception_candidates(findings):
 def add_exception(name, reason):
     """Owner-confirmed exception for one named security-tool skill that two scanners flag. 30 days, no longer; ends early if
     the skill's files change. Returns (ok, message)."""
-    snap = load_json(state_path("last_findings.json"), {"findings": []})
+    snap = load_snapshot({"findings": []})
     flagged = {os.path.normpath(f["where"]) for f in snap.get("findings", []) + snap.get("suppressed", []) if f["rule"] == "ISR-X003"}
     if any(c in name for c in "*?[],") or not name.strip():
         return False, "Name exactly one skill. Patterns and lists aren't allowed."
@@ -647,7 +653,7 @@ def approve_platform(*_):
 def cmd_fix(args):
     roots = args.roots or [os.path.expanduser("~"), "/workspace"]
     plan, extra = fix_plan(roots)
-    snap = load_json(state_path("last_findings.json"), {"findings": []})
+    snap = load_snapshot({"findings": []})
     fs = snap.get("findings", [])
     ups, projs = python_upgrades(), npm_projects()
     crates = cargo_projects()

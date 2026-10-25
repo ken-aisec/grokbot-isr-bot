@@ -11,7 +11,7 @@ new readings checked against fix round 1's regexes).
 Every URL is an example; every webhook is FAKE; `relay` is a placeholder that is never run."""
 import os, subprocess, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import ROOT
+from test_boxes import ROOT, user_copy
 import isr  # noqa: E402
 from test_batch4_codex_review3 import Folder, HEAD, HOOK, vet_json
 from test_batch5_codex_r2 import rules_of, fenced
@@ -275,7 +275,7 @@ class CodexRound2(unittest.TestCase):   # fix round 2: 1 and 2 time out on 18c3c
 
 class UnchangedElsewhere(Folder):
     def test_bad_fixtures_are_unchanged(self):
-        code, r = vet_json(os.path.join(FIX, "bad", "exfil-helper", "SKILL.md"))
+        code, r = vet_json(user_copy(self, os.path.join(FIX, "bad", "exfil-helper", "SKILL.md")))   # v0.8.1 (r5 b): a copy
         self.assertEqual((r["verdict"], r["risk_score"]), ("Do not install", 80))
 
     def test_a_vetted_literal_send_is_install_with_changes(self):

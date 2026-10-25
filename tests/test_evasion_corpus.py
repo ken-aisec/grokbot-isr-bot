@@ -6,7 +6,7 @@ ordinary skills give no record and nothing at or above high. Every EvasionCorpus
 import glob, io, json, os, sys, unittest
 from contextlib import redirect_stdout
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import ROOT, temp_home
+from test_boxes import ROOT, temp_home, user_copy
 import isr  # noqa: E402
 
 RULES = isr.load_rules()
@@ -70,7 +70,7 @@ class EvasionCorpus(unittest.TestCase):
         self.assertTrue([f for f in lab if f["label"] == isr.CONFIRMED and f["severity"] == "critical"], lab)
         self.assertEqual(isr.score(lab)[1], "F")
         self.assertEqual(isr.status_of(lab), "Act now")
-        self.assertEqual(vet(p)["verdict"], "Do not install")
+        self.assertEqual(vet(user_copy(self, p))["verdict"], "Do not install")   # v0.8.1 (r5 b): a copy; the fixture is ISR Bot's own
 
 
 DEFENSIVE = [

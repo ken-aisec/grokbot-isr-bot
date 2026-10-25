@@ -39,8 +39,8 @@ def dismissed_keys():
 def dismiss(key, reason):
     """Drop a Worth-a-look finding the Bot has shown is a false alarm, and log why. Never an evidence or Confirmed finding; never
     when the content argues it is safe. Every decision, kept or dropped, goes to state/dismissed.jsonl."""
-    snap = load_json(state_path("last_findings.json"), {}) or {}
-    rc = load_json(state_path("rollcall_findings.json"), {}) or {}
+    snap = load_snapshot({}) or {}
+    rc =load_json(state_path("rollcall_findings.json"), {}) or {}
     fs = snap.get("findings", []) + label_findings(rc.get("findings", []))
     f = next((x for x in fs if x.get("key") == key or x.get("key", "").startswith(key) and len(key) >= 8), None)
     entry = {"at": now(), "key": key, "reason": (reason or "")[:300]}
@@ -91,7 +91,7 @@ def cmd_dismiss(args):
 
 
 def cmd_show(args):
-    snap = load_json(state_path("last_findings.json"), None)
+    snap = load_snapshot(None)
     if not snap:
         print("ERROR no audit yet", file=sys.stderr)
         return 2
@@ -187,14 +187,16 @@ def platform_note_line(f, unlisted=()):
             f"If it worries you, tell {v} support; ISR Bot keeps it listed.")
 
 
-def platform_notes(fs, limit):
+def platform_notes(fs, limit, vendor=None):
     """{"count", "loud", "lines"} for the platform notes among `fs`, or None when there are none: `loud` counts those ISR Bot
     would call critical or high, whose lines come first (Codex round 1, 10); `lines` holds at most `limit`. `loud` is for the
-    caller, which says what it leaves out (notes_more) and never prints it."""
+    caller, which says what it leaves out (notes_more) and never prints it. v0.8.1 (§3.5): `vendor` (a snapshot's vendor
+    records) adds its non-warning-text records to the count only; `isr.py breakdown` lists them."""
     unlisted, plat = platform_note_order(fs)
-    if not plat:
+    extra = sum(1 for v in vendor or [] if isinstance(v, dict) and v.get("label") != GUARDED_LABEL) if OWNERSHIP_V081 else 0
+    if not plat and not extra:
         return None
-    return {"count": len(plat), "loud": sum(1 for f in plat if loud_note(f, unlisted)),
+    return {"count": len(plat) + extra, "loud": sum(1 for f in plat if loud_note(f, unlisted)),
             "lines": [platform_note_line(f, unlisted) for f in plat[:limit]]}
 
 
@@ -217,7 +219,7 @@ def notes_more(count, loud, shown_):
 
 # ---------------------------------------------------------------- report
 def cmd_report(args):
-    snap = load_json(state_path("last_findings.json"), None)
+    snap = load_snapshot(None)
     if not snap:
         print("ERROR no audit yet: run `isr.py audit` first", file=sys.stderr)
         return 2
@@ -290,13 +292,17 @@ def render_md(snap, hist, tag):
     if warn:
         lines += ["", f"{GUARDED_LABEL}: {len(warn)} line{'' if len(warn) == 1 else 's'} that warn against a risky step or quote it as an "
                   "example. Not findings, not in the score. `isr.py breakdown` lists them."]
+    vnotes = platform_notes(snap["findings"], 40, snap.get("vendor"))
+    if vnotes and not plat:   # v0.8.1 (§3.5): only vendor records: their count, and where they are listed
+        lines += ["", "## Platform notes", "", "Grok Bot's, Codex's and Claude's own files, never scored.",
+                  f"- {notes_more(vnotes['count'], 0, 0)}"]
     if plat:   # batch 5 (d1): one plain line each, outside every count
         unlisted = {f["where"].split(":")[0] for f in snap["findings"] if f.get("unverified_platform")}
         lead = ("Grok Bot's own files, exactly as ISR Bot's release lists them. They don't count toward your problems or your status."
                 if not any(_unlisted(f["where"].split(":")[0], unlisted) for f in plat) else
                 "Grok Bot's own files. They don't count toward your problems or your status; a file ISR Bot's release list doesn't "
                 "include has its own counted alert above.")
-        notes = platform_notes(snap["findings"], 40)
+        notes = vnotes
         lines += ["", "## Platform notes", "", lead]
         lines += [f"- {l}" for l in notes["lines"]]
         if notes["count"] > len(notes["lines"]):
@@ -338,9 +344,9 @@ def extra_sections(fs):
     return out
 
 
-def platform_details(findings):
+def platform_details(findings, vendor=None):
     """The dashboard's "Platform notes (n)": Grok Bot's own files, one plain line each, outside the tiles and the table."""
-    notes = platform_notes(findings, 40)
+    notes = platform_notes(findings, 40, vendor)
     if not notes:
         return ""
     more = [notes_more(notes["count"], notes["loud"], len(notes["lines"]))] if notes["count"] > len(notes["lines"]) else []
@@ -374,6 +380,6 @@ table{{border-collapse:collapse;width:100%;font-size:13px}}td,th{{border-bottom:
 <div class='row'><div class='card'><div class='mut'>Status</div><div style='font-size:24px;font-weight:700'>{html.escape(status_line(snap))}</div><div class='mut'>Posture score</div><div class='big'>{snap['score']}<span class='mut' style='font-size:18px'>/100 · {snap_grade(snap)}</span></div><div class='mut'>{html.escape(score_line(snap))}</div><div class='mut'>{trend(hist)}</div></div>
 <div class='card'><div class='mut'>Score, last {len(pts)} runs</div><svg width='{w}' height='{h}' viewBox='0 0 {w} {h}' role='img' aria-label='score trend'><polyline fill='none' stroke='#2e86c1' stroke-width='2' points='{poly}'/></svg></div>
 {tiles}</div><h2 style='font-size:16px'>Open findings</h2><div class='wrap'><table><tr><th>Severity</th><th>Finding</th><th>Where</th><th>OWASP</th><th>Fix</th></tr>{rows or "<tr><td colspan=5>Nothing open.</td></tr>"}</table></div>
-{access_card(load_access_map())}{extra_sections(fs)}{platform_details(snap["findings"])}
+{access_card(load_access_map())}{extra_sections(fs)}{platform_details(snap["findings"], snap.get("vendor"))}
 <p style='margin-top:16px'>{f"<a href='threat-brief-{tag}.html'>Open this week's threat brief →</a>" if os.path.exists(os.path.join(home(), "reports", f"threat-brief-{tag}.html")) else ""}</p>
 <p class='mut' style='margin-top:20px'>ISR Bot {VERSION}. Scanners can be bypassed; this is evidence, not proof.</p></body></html>"""

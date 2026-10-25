@@ -53,6 +53,20 @@ def temp_home(test):
     p = mock.patch.dict(os.environ, {"ISR_BOT_HOME": test.isr_home}); p.start(); test.addCleanup(p.stop)
 
 
+def user_copy(test, src):
+    """v0.8.1 (r5 b): a copy of an in-repo fixture in a new temp folder (the owner's: not /tmp/hooks, the workspace or ISR Bot's own
+    checkout), removed when the test ends. A skill folder, or a file inside one, is copied whole, so its references travel with
+    it. Returns the copied path that stands for `src`."""
+    src = os.path.abspath(src)
+    tmp = tempfile.mkdtemp(prefix="isr-bot-fixture-"); test.addCleanup(shutil.rmtree, tmp, True)
+    d = src if os.path.isdir(src) else os.path.dirname(src)
+    if not os.path.isdir(src) and not os.path.isfile(os.path.join(d, "SKILL.md")):   # a loose file: itself only
+        shutil.copy2(src, os.path.join(tmp, os.path.basename(src)))
+        return os.path.join(tmp, os.path.basename(src))
+    shutil.copytree(d, os.path.join(tmp, os.path.basename(d)), symlinks=True)
+    return os.path.normpath(os.path.join(tmp, os.path.basename(d), os.path.relpath(src, d)))
+
+
 class Box(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()

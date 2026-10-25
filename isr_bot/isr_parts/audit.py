@@ -76,6 +76,8 @@ def audit(roots, exports, quick=False):
         if p not in manifest:
             manifest[p] = sha256_file(p)
     fs += [platform_coverage_finding(d, why) for d, why in plat_short]
+    if OWNERSHIP_V081:   # v0.8.1 (§3.3 item 2): drift is tracked for the owner's files only; no vendor hash is kept or compared
+        manifest = owned_dict(manifest)
 
     # 2. integrity drift (AST07)
     base, base_status, base_why = load_baseline()
@@ -86,8 +88,8 @@ def audit(roots, exports, quick=False):
     # candidate (platform_update_candidates) goes through the drift loop like a listed update and is decided after the engines
     # (settle_platform_updates); every other unproven file is a counted high here. Fix round 1 (Codex 1): new skill folders and
     # new files in one only in an update run, and never one the last run held outside the middle path.
-    unproven = platform_unproven(manifest)
-    held_before = platform_held_before()   # fix round 2 (Codex 1): kept by save_platform_held, after any run or `isr.py baseline`
+    unproven = set() if OWNERSHIP_V081 else platform_unproven(manifest)   # v0.8.1: no release list is read (U7a deletes this)
+    held_before = set() if OWNERSHIP_V081 else platform_held_before()   # fix round 2 (Codex 1): kept by save_platform_held, after any run or `isr.py baseline`
     cands = platform_update_candidates(unproven, manifest, base, plat_short, established=base_status == "ok",
                                        held_before=held_before)
     for p in sorted(unproven - set(cands)):
@@ -106,7 +108,7 @@ def audit(roots, exports, quick=False):
                 continue   # ISR Bot's own skill, identical to the checksummed release it was installed from
             if p in moved_to:
                 continue   # the same file under a new folder name (plugins are reinstalled under new folders after a restart)
-            if p in base and base[p] != h and is_vendor(p):
+            if p in base and base[p] != h and is_vendor(p) and not (OWNERSHIP_V081 and owner_link_into_vendor(p)):
                 fs.append(finding("ISR-I001", "Built-in skill or plugin updated", "low", ["AST07"], p, f"sha256 {base[p][:12]}→{h[:12]}",
                                   "Usually the platform or a plugin update. The scanners re-check the new version; the fix re-approves it if clean."))
                 fs[-1]["refresh"] = platform_file(p)
@@ -137,14 +139,14 @@ def audit(roots, exports, quick=False):
                 fs[-1]["refresh"] = platform_file(p)
     else:
         notes.append("No baseline yet: integrity drift starts next run.")
-    if platform_lock_problem():
+    if platform_lock_problem() and not OWNERSHIP_V081:   # v0.8.1: the lists aren't read, so nothing about them is said
         notes.append(f"The platform release list ({PLATFORM_LOCK_REL}) can't be used: {platform_lock_problem()}. So no file in a platform "
                      "folder is verified by it: every new or changed one is a high alert until an ISR Bot release lists it.")
-    for rel, problem in ((PLATFORM_REVIEWED_REL, platform_reviewed_problem()), (PLATFORM_NORMALIZE_REL, platform_normalize_problem()),
-                         (ACCESS_VOCAB_REL, access_vocab_problem()), (ASK_FIRST_VOCAB_REL, ask_first_vocab_problem())):
+    lists = () if OWNERSHIP_V081 else ((PLATFORM_REVIEWED_REL, platform_reviewed_problem()), (PLATFORM_NORMALIZE_REL, platform_normalize_problem()))
+    for rel, problem in lists + ((ACCESS_VOCAB_REL, access_vocab_problem()), (ASK_FIRST_VOCAB_REL, ask_first_vocab_problem())):
         if problem:   # batch 5 (d2, d3b): ignored whole, so nothing in a platform file is checked or normalized by it (b: no story is matched)
             notes.append(f"ISR Bot's {rel} can't be used: {problem}. It is ignored, so nothing it lists applies this run.")
-    if os.path.lexists(state_path(OLD_PLATFORM_APPROVALS)):
+    if os.path.lexists(state_path(OLD_PLATFORM_APPROVALS)) and not OWNERSHIP_V081:
         notes.append(f"state/{OLD_PLATFORM_APPROVALS} is left from an earlier ISR Bot and is no longer read: platform files it listed are "
                      "alerts again unless the release list includes them. You can delete it.")
     for d, (n_done, n_all) in sorted(INCOMPLETE_SKILLS.items()):
@@ -153,10 +155,15 @@ def audit(roots, exports, quick=False):
     new_plugins = note_plugins(inv)
     synced = catalog_sync(new_plugins)
     for market, commit, names in synced:
-        fs.append(finding("ISR-I005", "Platform catalog sync added plugins", "info", ["AST09"], f"plugins/cache/{market}",
+        roots_ = sorted(r for n in names for r in new_plugins.get(n, []))
+        # v0.8.1 (§2, r2 #8): the market folder itself and the synced plugins' folders, so the gate classifies it by where it is
+        at = os.path.dirname(os.path.dirname(roots_[0])) if OWNERSHIP_V081 and roots_ else f"plugins/cache/{market}"
+        fs.append(finding("ISR-I005", "Platform catalog sync added plugins", "info", ["AST09"], at,
                           f"{len(names)} at catalog commit {commit[:12]}: {', '.join(names)}"[:200],
                           "The platform updated its public plugin catalog; nobody installed these. None of them adds hooks, scripts or a "
                           "program that runs on this computer. Their skills are still scanned like any other.", ident=f"{market}@{commit}"))
+        if OWNERSHIP_V081:
+            fs[-1]["roots"] = roots_
         for n in names:
             new_plugins.pop(n, None)
     for f in fs:   # F1: a change is a platform refresh only once the plugin list says whose plugin it is
@@ -170,11 +177,15 @@ def audit(roots, exports, quick=False):
         fs.append(finding("ISR-I004", "New plugin installed", "medium", ["AST02", "AST09"], proots[0], f"{name}: {n_files} files, {n_skills} skills",
                           "A plugin's skills can't be vetted before it is installed, so they are checked now. Anything the scanners flag in it is "
                           "listed and counts until you decide. Tell ISR Bot \"fix it\" to keep it with one yes, or remove it in the app (Marketplace → Your plugins)."))
-        rel = [sorted(os.path.relpath(p, r) for p in manifest if p == r or p.startswith(r + "/")) for r in proots]
+        if OWNERSHIP_V081:   # v0.8.1 (§3.1): classified by its folders
+            fs[-1]["roots"] = list(proots)
+        rel =[sorted(os.path.relpath(p, r) for p in manifest if p == r or p.startswith(r + "/")) for r in proots]
         was = PLUGIN_MOVES.get(name)
         if not was or (len(was[0]) == len(was[1]) and not any(os.path.lexists(r) for r in was[0])):
             fs[-1]["key0"] = plugin_place_key(name, proots, rel)   # DQ-047: the same files in a new version folder, the old one gone
-        if was:
+        if was and OWNERSHIP_V081:   # v0.8.1 (§3.4): data; the gate says it, for the owner's plugins only (owner_gate)
+            version_changes.append({"name": name, "from": list(was[0]), "to": list(was[1]), "roots": list(was[1])})
+        elif was:
             line = (f"Plugin {name} changed version folder ({', '.join(os.path.basename(r) for r in was[0])} → "
                     f"{', '.join(os.path.basename(r) for r in was[1])}); it is still waiting for your decision (ISR-I004).")
             notes.append(line)
@@ -316,9 +327,10 @@ def audit(roots, exports, quick=False):
         ks = soft("TruffleHog (which keys still work)", (), notes, None, trufflehog_status, secret_paths, notes)
         if ks is None or "TruffleHog (which keys still work)" in STAGE_FAILED:
             old = load_json(state_path("key_status.json"), {}) or {}
-            fs = apply_key_status(fs, old.get("files", {}), ran=bool(old.get("ran")))
+            key_status = {"files": old.get("files", {}), "ran": bool(old.get("ran"))}
         else:
-            fs = apply_key_status(fs, ks, ran=bool(tool("trufflehog")))
+            key_status = {"files": ks, "ran": bool(tool("trufflehog"))}
+        fs = apply_key_status(fs, key_status["files"], ran=key_status["ran"])
         other_dirs = sorted(os.path.dirname(x) for x in inv["skills"] if skill_tier(x) != "user")
         fs += soft("SkillSpector and husk", ("ISR-X001", "ISR-X002", "ISR-X003", "ISR-X004"), notes, [], engine_findings,
                    user_dirs + sorted(changed) + other_dirs, fs, notes, user_roots, budget=max(0, min(ENGINE_BUDGET, time_left() - 20)))
@@ -331,7 +343,8 @@ def audit(roots, exports, quick=False):
                    budget=max(0, min(ENGINE_BUDGET, 120, time_left() - 10)))
     if quick:
         ks = load_json(state_path("key_status.json"), {}) or {}
-        fs = apply_key_status(fs, ks.get("files", {}), ran=bool(ks.get("ran")))
+        key_status = {"files": ks.get("files", {}), "ran": bool(ks.get("ran"))}
+        fs = apply_key_status(fs, key_status["files"], ran=key_status["ran"])
     prev_used = load_json(state_path("engines_used.json"), {}) or {}
     prev_used = prev_used if isinstance(prev_used, dict) else {}
     # Codex, batch 3 round 1: `expected` was only last run's expectation while one scanner was missing, so a scanner that first
@@ -351,7 +364,8 @@ def audit(roots, exports, quick=False):
     fs = merge_managed_mirrors(settle_platform_updates(fs, cands, manifest, base, rules), manifest)   # b8i4
     fs = sort_findings(dedupe(fs))
     meta = {"inventory": {k: len(v) for k, v in inv.items() if k not in ("non_live_skills", "platform_aliases")}, "notes": notes, "plugin_version_changes": version_changes, "manifest": manifest, "persistence": snap, "scanners_missing": gone,
-            "skill_dirs": [os.path.dirname(x) for x in inv["skills"]], "baseline_status": base_status, "platform_held_before": sorted(held_before),
+            "skill_dirs": [os.path.dirname(x) for x in inv["skills"] if not OWNERSHIP_V081 or owner_of(os.path.dirname(x)) == "user"],   # v0.8.1: approved copies are the owner's only
+            "key_status": key_status, "baseline_status": base_status, "platform_held_before": sorted(held_before),
             "access_sources": {"roots": list(roots), "mcp": list(inv["mcp_configs"]), "plugin_files": list(inv["plugin_files"]),
                                "browser": jar.get("hosts"),   # batch 5 (a); PR B, Codex round 1 (2): this run's own look at the jar
                                # round 2 (1, 3): the jar and the cookie seed looked at whole (or said not to be), the crontab's

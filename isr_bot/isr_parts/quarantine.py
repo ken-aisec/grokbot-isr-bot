@@ -40,7 +40,7 @@ def quarantine_candidates(findings):
 
 
 def quarantine(names, reason=""):
-    snap = load_json(state_path("last_findings.json"), {"findings": []})
+    snap = load_snapshot({"findings": []})
     dirs = {d for d in map(quarantinable, snap.get("findings", [])) if d}   # exactly what quarantine_candidates offers
     reg, done = load_json(state_path("quarantine.json"), []), []
     for name in names:

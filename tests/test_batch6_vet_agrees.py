@@ -17,7 +17,7 @@ Tests marked "replay" fail on 1aed58a on their assertion (measured with 1aed58a'
 a temp folder (never under tests/fixtures)."""
 import hashlib, json, os, sys, tempfile, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_boxes import ROOT, temp_home
+from test_boxes import ROOT, temp_home, user_copy
 import isr  # noqa: E402
 from test_batch4_codex_review3 import Folder, vet_json
 
@@ -245,13 +245,13 @@ class SharedLabels(Folder):
         self.assertEqual(vet_json(self.write("SKILL.md", self.WORDING))[1]["verdict"], "Install with changes")
         self.assertEqual(vet_json(self.write("SKILL.md", HEAD + "Never run `cat ~/.ssh/id_rsa`.\n"))[1]["verdict"], "Install with changes")
         for name, verdict in (("exfil-helper", "Do not install"), ("silent-sender", None), ("hidden-unicode", None)):
-            r = vet_json(os.path.join(ROOT, "tests", "fixtures", "bad", name))[1]
+            r = vet_json(user_copy(self, os.path.join(ROOT, "tests", "fixtures", "bad", name)))[1]   # v0.8.1 (r5 b): a copy
             self.assertNotEqual(r["verdict"], "Install", name)
             if verdict:
                 self.assertEqual(r["verdict"], verdict, name)
 
     def test_confirmed_findings_keep_their_severity(self):   # guard
-        r = vet_json(os.path.join(ROOT, "tests", "fixtures", "bad", "exfil-helper"))[1]
+        r = vet_json(user_copy(self, os.path.join(ROOT, "tests", "fixtures", "bad", "exfil-helper")))[1]
         self.assertTrue(any(f["label"] == "Confirmed" and f["severity"] == "critical" and "severity_was" not in f for f in r["findings"]))
 
 

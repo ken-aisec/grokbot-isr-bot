@@ -898,7 +898,7 @@ def access_map_now():
     live-looking keys need the audit's full scan: they come from its last findings, are never taken as "none" (not checked), and
     each line from them says it is the last audit's, with its date."""
     roots = access_roots()
-    snap = _ax_json_file(state_path("last_findings.json"), [home()], 64 * ACCESS_JSON_MAX_BYTES)
+    snap = normalize_snapshot(_ax_json_file(state_path("last_findings.json"), [home()], 64 * ACCESS_JSON_MAX_BYTES))
     snap = snap if isinstance(snap, dict) else {}
     last = [f for k in ("findings", "suppressed") for f in (snap.get(k) if isinstance(snap.get(k), list) else []) if isinstance(f, dict)]
     errors, skipped = [], []

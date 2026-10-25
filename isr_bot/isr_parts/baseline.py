@@ -48,8 +48,8 @@ def load_baseline():
     finds nothing, and once that empty scan is saved as the baseline the next audit approves everything (Codex, round 1)."""
     path = state_path("baseline.json")
     base = load_json_regular(path, None)
-    if isinstance(base, dict) and base:
-        return base, "ok", ""
+    if isinstance(base, dict) and base:   # v0.8.1 (§3.3 item 2): the owner's lines only; ok/first/reset still from the file as it is
+        return (owned_dict(base) if OWNERSHIP_V081 else base), "ok", ""
     try:
         st = os.lstat(path)
         why = "empty" if isinstance(base, dict) or (stat.S_ISREG(st.st_mode) and st.st_size == 0) else "unreadable"
@@ -83,7 +83,7 @@ def save_first_baseline(manifest):
     raised nothing on this first run and rolls in on a later full audit (the middle path). Fix round 1 (Codex 1): a new skill
     folder, or a new file in one, is a counted high on a first run and on every run after (platform_held_before), like the rest,
     until an ISR Bot release lists it."""
-    held = platform_unproven(manifest)
+    held = set() if OWNERSHIP_V081 else platform_unproven(manifest)   # v0.8.1: the manifest is the owner's files only
     save_baseline({p: h for p, h in manifest.items() if p not in held})
     return held
 
@@ -291,8 +291,8 @@ def cmd_accept(args):
         print("ERROR give a rule, the name or path it applies to, and --reason in your own words", file=sys.stderr)
         return 2
     rule = args.rule
-    snap = load_json(state_path("last_findings.json"), {}) or {}
-    hits = [f for f in (snap.get("findings") or []) + (snap.get("suppressed") or [])
+    snap = load_snapshot({}) or {}
+    hits =[f for f in (snap.get("findings") or []) + (snap.get("suppressed") or [])
             if isinstance(f, dict) and f.get("rule") == rule and args.where in accept_names(f)]
     why = accept_rule_refused(rule) or next((w for w in map(accept_refused, hits) if w), None)
     if why:
@@ -391,10 +391,10 @@ def run_audit_locked(args, quick):
     finally:
         ENGINE_BUDGET, DEADLINE = saved, None
     if quick:  # the daily run skips the slow engines; keep their last results instead of calling them fixed
-        prev_snap = load_json(state_path("last_findings.json"), {"findings": []})
+        prev_snap = load_snapshot({"findings": []})
         have = keys_of(fs)
         rescanned = {f["where"] for f in fs if f["rule"].startswith("ISR-X")} | ENGINE_CURRENT   # these have an up-to-date answer, flagged or clean
-        for f in prev_snap.get("findings", []):
+        for f in prev_snap.get("findings", []) + (prev_snap.get("vendor") or [] if OWNERSHIP_V081 else []):   # v0.8.1: and vendor's, gated again
             if f["rule"] in SLOW_RULES and not known(f, have) and f["where"] not in rescanned:
                 fs.append(kept_line(f))
         fs = sort_findings(merge_managed_mirrors(hold_on_kept_votes(fs, meta["manifest"]), meta["manifest"]))   # b8i4
@@ -403,6 +403,9 @@ def run_audit_locked(args, quick):
     fs = sort_findings(hold_unbound_updates(fs, meta["manifest"]))
     if not quick and "SkillSpector and husk" not in STAGE_FAILED:
         fs = roll_builtin(fs, meta, meta["notes"])
+    vendor = []
+    if OWNERSHIP_V081:   # v0.8.1 (§3.3 item 1): the one gate; only the owner's findings go on to be scored
+        fs, vendor = owner_gate(fs, meta)
     fs = split_facts(platform_owned(fs))
     for f in fs:
         # batch 6 (B2), fix round 1 (Codex 2, 3): whether a gitleaks hit in a metadata file is a platform note is decided where it
@@ -423,12 +426,13 @@ def run_audit_locked(args, quick):
     fs = sort_findings(group_changed_skills(group_root_causes(fs)))
     live, suppressed = active(fs)
     suppressed = sort_findings(gone + suppressed)
-    prev = load_json(state_path("last_findings.json"), {"findings": []})
+    prev = load_snapshot({"findings": []})
     note_earlier_auto_allow(prev, live)
     prev_keys, cur_keys = keys_of(prev.get("findings", [])), keys_of(live)
     new = [f for f in live if not known(f, prev_keys) and (f["severity"] != "info" or f.get("class") == "pattern")]
     fixed = [f for f in prev.get("findings", []) if not known(f, cur_keys) and f["rule"] != REFRESH_RULE   # a summary going away fixes nothing
-             and not f.get("guarded")]                                                                # nor does a warning-text record
+             and not f.get("guarded")                                                                 # nor does a warning-text record
+             and (not OWNERSHIP_V081 or owner_of_finding(f) == "user")]                                # nor one that isn't the owner's (v0.8.1)
     s, g = score(scored(live))
     if meta["baseline_status"] == "first":
         held = save_first_baseline(meta["manifest"])
@@ -445,6 +449,8 @@ def run_audit_locked(args, quick):
                 "inventory": meta["inventory"], "notes": meta["notes"]}
     if meta.get("plugin_version_changes"):   # DQ-047 fix round 1: cmd_daily says them; only when there are any
         snapshot["plugin_version_changes"] = meta["plugin_version_changes"]
+    if OWNERSHIP_V081:   # v0.8.1 (§3.5): vendor records, never scored; the platform-notes count and `isr.py breakdown` read them
+        snapshot["vendor"] = mask_stored(vendor)
     # PR A, Codex round 2 (6): critical or high findings a daily run had no room to name stay owed while they are open, whatever
     # run comes next (cmd_daily names them and clears them)
     owed = prev.get("undelivered") if isinstance(prev.get("undelivered"), list) else []

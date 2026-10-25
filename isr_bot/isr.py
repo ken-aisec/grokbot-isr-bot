@@ -165,7 +165,7 @@ def cmd_audit(args):
         out["warning_text_count"] = warn
     # v0.7.1 item 4: Grok Bot's own files, one line each, never scored. Batch 5 (d1): plain lines, outside every count; `platform`
     # is the same lines under the old name, for one release. Codex round 1 (9): they take only the room the owner's part leaves.
-    notes = platform_notes(snap["findings"], 8)
+    notes = platform_notes(snap["findings"], 8, snap.get("vendor"))
     alerts = scanner_alerts(snap)
     if alerts:
         out["scanner_alerts"] = alerts
@@ -450,7 +450,7 @@ def cmd_baseline(args):
         # file the release list doesn't include. Such a file keeps the line it had (so it still shows as changed) or stays out, and
         # only an ISR Bot release that lists it clears it (decision, Oct 18).
         old = load_baseline()[0]
-        held = platform_unproven(meta["manifest"])
+        held = set() if OWNERSHIP_V081 else platform_unproven(meta["manifest"])   # v0.8.1: the manifest is the owner's files only
         base = {p: h for p, h in meta["manifest"].items() if p not in held}
         base.update({p: old[p] for p in held if p in old})
         save_baseline(base)
@@ -464,7 +464,7 @@ def cmd_baseline(args):
 
 
 def cmd_breakdown(args):
-    snap = load_json(state_path("last_findings.json"), None)
+    snap = load_snapshot(None)
     if not snap:
         print("ERROR no audit yet", file=sys.stderr)
         return 2
@@ -501,6 +501,12 @@ def cmd_breakdown(args):
               f"({', '.join(sorted({f['rule'] for f in plat}))}).")
         for line in platform_notes(snap["findings"], len(plat))["lines"]:   # Codex round 1 (9, 10): every one, where `more` points
             print(f"  {line}")
+    vend = [v for v in snap.get("vendor") or [] if isinstance(v, dict) and v.get("label") != GUARDED_LABEL] if OWNERSHIP_V081 else []
+    if vend:   # v0.8.1 (§3.5): Grok Bot's, Codex's and Claude's own files, never scored; every one, by where it is
+        print("")
+        print(f"Platform notes (Grok Bot's, Codex's and Claude's own files, never scored): {len(vend)}")
+        for v in sorted(vend, key=lambda x: (SEV_ORDER.index(x["severity"]) if x.get("severity") in SEV_ORDER else 9, x.get("rule", ""), x.get("where", ""))):
+            print(f"  {v.get('severity', ''):8} {v.get('rule', ''):8} {str(v.get('where', ''))}  {str(v.get('title', ''))[:60]}")
     return 0
 
 
@@ -825,7 +831,7 @@ def cmd_brief(args):
     b = last if (reuse and last and last.get("tag") == tag and offline is None) else gather_brief(cfg, offline)
     for r in (b or {}).get("research", []) or []:
         r.pop("summary", None)                            # a brief saved before v0.6.8 kept article text; it is never passed on
-    snap = load_json(state_path("last_findings.json"), None)
+    snap = load_snapshot(None)
     pkg = load_json(state_path("package_vulns.json"), None)
     hist = load_history()
     note = open(args.summary).read().strip() if getattr(args, "summary", None) else None
@@ -977,7 +983,7 @@ def cmd_doctor(args):
             return "ok"
         except (OSError, ValueError):
             return "damaged (ignored and rebuilt on the next run)"
-    snap = load_json(state_path("last_findings.json"), {}) or {}
+    snap = load_snapshot({}) or {}
     folders = {}
     for d in ("sand-data", "agent-data", ".agents", ".grok", ".cursor"):
         p = os.path.join(h, d)

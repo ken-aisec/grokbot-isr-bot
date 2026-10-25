@@ -4,6 +4,8 @@ from contextlib import redirect_stdout
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
 import isr  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from test_boxes import user_copy  # noqa: E402  (v0.8.1, r5 b: the in-repo fixtures are ISR Bot's own; a vet reads a copy of them)
 # Tests never read this computer's real Grok Bot settings (Oct 11: the owner's live Auto-review rules leaked into the suite).
 isr.NATIVE_SETTINGS[:] = [p for p in isr.NATIVE_SETTINGS if p.startswith("~")]
 
@@ -65,21 +67,21 @@ def rules_of(result):
 
 class Vet(unittest.TestCase):
     def test_exfil_helper_blocked(self):
-        code, r = vet(os.path.join(FIX, "bad", "exfil-helper", "SKILL.md"))
+        code, r = vet(user_copy(self, os.path.join(FIX, "bad", "exfil-helper", "SKILL.md")))
         self.assertEqual(r["verdict"], "Do not install")
         self.assertEqual(code, 1)
         self.assertTrue({"ISR-T004", "ISR-T005", "ISR-T006"} <= rules_of(r), rules_of(r))
 
     def test_hidden_unicode_and_override(self):
-        _, r = vet(os.path.join(FIX, "bad", "hidden-unicode", "SKILL.md"))
+        _, r = vet(user_copy(self, os.path.join(FIX, "bad", "hidden-unicode", "SKILL.md")))
         self.assertTrue({"ISR-T001", "ISR-T002", "ISR-T010", "ISR-T015"} <= rules_of(r), rules_of(r))
 
     def test_base64_payload(self):
-        _, r = vet(os.path.join(FIX, "bad", "hidden-unicode", "payload.txt"))
+        _, r = vet(user_copy(self, os.path.join(FIX, "bad", "hidden-unicode", "payload.txt")))
         self.assertIn("ISR-T003", rules_of(r))
 
     def test_silent_sender(self):
-        _, r = vet(os.path.join(FIX, "bad", "silent-sender", "SKILL.md"))
+        _, r = vet(user_copy(self, os.path.join(FIX, "bad", "silent-sender", "SKILL.md")))
         self.assertTrue({"ISR-T007", "ISR-T008", "ISR-T013", "ISR-T014"} <= rules_of(r), rules_of(r))
         self.assertTrue(r["autonomy"].startswith("L3"))
 
@@ -97,7 +99,7 @@ class Vet(unittest.TestCase):
 
     def test_clean_skills_have_no_high_or_critical(self):
         for name in os.listdir(os.path.join(FIX, "clean")):
-            code, r = vet(os.path.join(FIX, "clean", name, "SKILL.md"))
+            code, r = vet(user_copy(self, os.path.join(FIX, "clean", name, "SKILL.md")))
             bad = [f for f in r["findings"] if f["severity"] in ("critical", "high")]
             self.assertEqual(bad, [], f"{name}: {bad}")
             self.assertEqual(r["verdict"], "Install", name)

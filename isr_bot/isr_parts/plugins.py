@@ -718,7 +718,8 @@ def note_plugins(inv):
             st[name] = {"since": now(), "status": "known" if first and in_baseline(name) else "new"}
             # Already there on ISR Bot's first run, inside the platform's catalog cache, and runs no code: the catalog's, as a
             # catalog sync would have filed it. One that runs code stays "known" and counts like any installed plugin (F1).
-            if first and st[name]["status"] == "known" and all(any(x in r + "/" for x in CATALOG_CACHE) and not runs_code(r) for r in roots):
+            # v0.8.1 (r2 #4): gone; plugins/cache is vendor by location, so a first-run plugin is filed known or new like any other
+            if not OWNERSHIP_V081 and first and st[name]["status"] == "known" and all(any(x in r + "/" for x in CATALOG_CACHE) and not runs_code(r) for r in roots):
                 st[name].update(status="catalog", filed="first-run")
         st[name]["roots"] = sorted(set(roots))
     if not first:
@@ -1077,6 +1078,8 @@ def platform_file(f, catalog=True):
     if platform_config_finding(f) or (catalog and in_catalog_plugin(w)) or w.startswith("system python package "):
         return True
     path = lit or (w.split(":")[0] if isinstance(w, str) else "")
+    if OWNERSHIP_V081:   # v0.8.1 (§2): a platform folder is the classifier's vendor class, by location
+        return bool(path.startswith("/")) and owner_of(path) == "vendor"
     return bool(path.startswith("/")) and under_platform_root(path)
 
 
@@ -1120,7 +1123,10 @@ def counts(f):
     agreeing a plugin is dangerous still matters); the rest are listed for information.
     DQ-022/023/024/028–030: true quarantine, sample/test folders outside loadable locations, and fiction inside
     built-in templates never move the score. Sample-named folders inside a loadable skill still count.
-    R3: keys and decoy copies (SECRET_RULES) count wherever they sit, including quarantine and sample folders."""
+    R3: keys and decoy copies (SECRET_RULES) count wherever they sit, including quarantine and sample folders.
+    v0.8.1: never a finding about a place that isn't the owner's (owner_of_finding), first."""
+    if OWNERSHIP_V081 and owner_of_finding(f) != "user":
+        return False
     if f.get("unverified_platform"):
         return True   # Codex, item 8 review 2 (high 1): a platform name is loaded from where it is, even when it leads into quarantine
     w = f.get("where", "")

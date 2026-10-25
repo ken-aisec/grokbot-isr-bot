@@ -538,6 +538,8 @@ def osv_findings(roots, notes):
                            f"{eco}: {len(ids)} known: {', '.join(ids[:3])}" + (f" · used in {len(dirs)} projects" if len(dirs) > 1 else ""),
                            "Update it in that project (npm update, go get -u, or your package manager), then re-run the audit.", source="osv-scanner",
                            ident=f"{eco} {name} {ver} {'high' if d['sev'] >= 7 else 'medium'}"))
+        if OWNERSHIP_V081:   # v0.8.1 (§3.4): every project, so the gate keeps the owner's and makes the key again from its ident
+            out[-1].update(projects=dirs, ident=f"{eco} {name} {ver} {'high' if d['sev'] >= 7 else 'medium'}")
     return out
 
 
@@ -547,7 +549,7 @@ CHAT_EXT = {".json", ".jsonl", ".md", ".txt", ".log", ".html", ".ndjson"}
 
 def scrub_targets_from_findings():
     """Files ISR Bot flagged for keys that are conversation or log data, never code or config."""
-    snap = load_json(state_path("last_findings.json"), {"findings": []})
+    snap = load_snapshot({"findings": []})
     files = set()
     for f in snap.get("findings", []):
         if f["rule"] not in ("ISR-S001", "ISR-S002") or f.get("example"):   # batch 6 fix round 3: an example-looking one is checked, never cleared
@@ -716,7 +718,7 @@ def accept_match(f):
 
 
 def accept_current(rules, reason, days=90, skip=()):
-    snap = load_json(state_path("last_findings.json"), {"findings": []})
+    snap = load_snapshot({"findings": []})
     sup = load_json(state_path("suppressions.json"), [])
     exp = (dt.date.today() + dt.timedelta(days=max(1, min(days, 365)))).isoformat()
     added, skipped = 0, []

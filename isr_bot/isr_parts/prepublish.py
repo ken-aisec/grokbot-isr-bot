@@ -142,7 +142,7 @@ def cmd_incident(args):
     ts = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%MZ")
     idir = os.path.join(home(), "incidents")
     os.makedirs(idir, exist_ok=True)
-    snap = load_json(state_path("last_findings.json"), {"findings": []})
+    snap = load_snapshot({"findings": []})
     secret = next(r["rx"] for r in rules["rules"] if r["id"] == SECRET_RULE)
     # batch 4 (R11): tokens and passwords too. Codex, round 1: masked before the T011 pass, so a private key's header is still
     # there to find its body by, and over the whole text, so a body on the lines after its header is found as well

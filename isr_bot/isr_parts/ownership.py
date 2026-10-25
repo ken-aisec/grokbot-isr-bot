@@ -9,6 +9,7 @@ OWNER_VENDOR_HOME = ("sand-data/managed-skills", "agent-data/managed-skills", "s
 OWNER_SELF_WORKSPACE = ("isr-bot-dev", "backups")
 OWNER_SELF_WORKSPACE += ("watchtower-dev",)   # the dev checkout's real folder name: the dev tree is never scored
 OWNER_ECHO_HOME = (".claude/projects", ".claude/plans")
+OWNERSHIP_V081 = False   # U2-U6 only: the gate, the integrity store and the snapshot readers use owner_of when a test turns this on
 
 
 def _owner_places(cls):
@@ -62,6 +63,11 @@ def owner_of(p):
     return "user"
 
 
+def owner_link_into_vendor(p):
+    """G8 (decision, Oct 25): the owner's path whose real file is in a vendor folder. Its drift is the owner's, never a built-in update."""
+    return owner_of(p) == "user" and owner_of(os.path.realpath(p)) == "vendor"
+
+
 def _owner_members(paths, first=False):
     """A finding with members is the owner's when any member is. Otherwise: the first member's class (first=True, D002's
     projects), else vendor when any member is vendor, then isr_self, then fixture-echo."""
@@ -88,16 +94,65 @@ def owner_of_finding(f):
     return owner_of(literal_path(f) or _place(f))
 
 
-def split_owned(fs):
-    """(the owner's findings, vendor findings). isr_self and fixture-echo findings are dropped: they are never shown."""
+def split_owned(fs, key_status=None):
+    """(the owner's findings, vendor findings). isr_self and fixture-echo findings are dropped: they are never shown. A finding
+    with members some of which aren't the owner's keeps only the owner's members, rebuilt from them with its key made again
+    (§3.4). `key_status`: {"files", "ran"}, the TruffleHog answers the run applied (state/key_status.json when not given)."""
     user, vendor = [], []
     for f in fs:
-        c = owner_of_finding(f)
-        if c == "user":
+        c = owner_of_finding(f) if isinstance(f, dict) else "user"   # a stored entry that isn't a finding is left to its reader, as before
+        if c == "user" and isinstance(f, dict):
+            user.append(_owner_members_kept(f, key_status))
+        elif c == "user":
             user.append(f)
         elif c == "vendor":
             vendor.append(f)
     return user, vendor
+
+
+def _owner_members_kept(f, key_status):
+    """f with only its owner's members: an S002 group's member_hits (regroup_s002), D002's projects (_owner_d002)."""
+    if (f.get("rule") or "").startswith("ISR-K"):
+        return f
+    if f.get("member_hits"):
+        kept = [m for m in f["member_hits"] if owner_of(m.get("file")) == "user"]
+        if len(kept) == len(f["member_hits"]):
+            return f
+        if key_status is None:
+            key_status = load_json(state_path("key_status.json"), {}) or {}
+        return regroup_s002(f, kept, key_status.get("files") or {}, bool(key_status.get("ran")))
+    if f.get("rule") == "ISR-D002" and f.get("projects") and f.get("ident"):
+        kept = [p for p in f["projects"] if owner_of(p) == "user"]
+        return f if len(kept) == len(f["projects"]) else _owner_d002(f, kept)
+    return f
+
+
+def _owner_d002(f, kept):
+    """D002 on the owner's projects only: the first one is its where, "· used in N projects" is said again (dropped for one), and
+    key and key0 are made with finding()'s formula, so a backup copy coming or going never makes a new/fixed pair."""
+    ev = re.sub(r" · used in \d+ projects$", "", f.get("evidence") or "") + (f" · used in {len(kept)} projects" if len(kept) > 1 else "")
+    return dict(f, where=kept[0], projects=kept, evidence=ev, key0=finding_key(f["rule"], kept[0], ev),
+                key=hashlib.sha1(f"{f['rule']}|{kept[0]}|id:{f['ident']}".encode()).hexdigest()[:16])
+
+
+def plugin_move_line(e):
+    """A pending plugin's version-folder event as the sentence audit notes and daily say."""
+    return (f"Plugin {e['name']} changed version folder ({', '.join(os.path.basename(r) for r in e['from'])} → "
+            f"{', '.join(os.path.basename(r) for r in e['to'])}); it is still waiting for your decision (ISR-I004).")
+
+
+def owner_gate(fs, meta):
+    """The one gate (§3.3 item 1), in run_audit_locked before anything is scored: (the owner's findings, vendor records). Vendor
+    records are labelled, keep their severity for breakdown and lose _snap; isr_self and fixture-echo ones are dropped. Plugin
+    version events (data, audit.py) become the notes and daily's plugin_version_changes for the owner's plugins only."""
+    fs, vendor = split_owned(fs, meta.get("key_status"))
+    for v in vendor:
+        v.pop("_snap", None)
+    lines = [plugin_move_line(e) for e in meta.get("plugin_version_changes") or []
+             if isinstance(e, dict) and owner_of((e.get("roots") or [""])[0]) == "user"]
+    meta["plugin_version_changes"] = lines
+    meta["notes"] += lines
+    return fs, label_findings(vendor)
 
 
 def owned_dict(d):
@@ -116,8 +171,9 @@ def _owner_older(v):
 def normalize_snapshot(snap):
     """A stored snapshot as v0.8.1 shows it: findings and suppressed split by owner (vendor records move to "vendor"; isr_self
     and fixture-echo ones are dropped), and the score, grade and status it holds made again from the findings kept, when it is
-    older than 0.8.1 or anything was split out. The input isn't changed; the file on disk isn't rewritten."""
-    if not isinstance(snap, dict):
+    older than 0.8.1 or anything was split out. The input isn't changed; the file on disk isn't rewritten. (U2-U6: as stored
+    while OWNERSHIP_V081 is off.)"""
+    if not isinstance(snap, dict) or not OWNERSHIP_V081:
         return snap
     out, vendor, split = dict(snap), list(snap.get("vendor") or []), False
     for k in ("findings", "suppressed"):
