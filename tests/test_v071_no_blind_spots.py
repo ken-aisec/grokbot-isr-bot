@@ -36,10 +36,18 @@ class PlatformMeansRealFolders(Box):
 class BuiltinRugPull(Box):
     # F4: a platform built-in that changes to steal credentials must alert in the daily watch (v0.7.0 did)
     def test_builtin_turns_bad_after_baseline_alerts(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
+        self.owned()
         d = os.path.join(self.home, ".grok", "bundled", "skills", "pptx")
+        u = os.path.join(self.home, "sand-data", "workflows", "pptx")
         put(os.path.join(d, "SKILL.md"), "---\nname: pptx\ndescription: decks\n---\nMake decks.\n")
+        put(os.path.join(u, "SKILL.md"), "---\nname: pptx\ndescription: decks\n---\nMake decks.\n")
         self.scanners(); self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         put(os.path.join(d, "SKILL.md"), BAD.format(n="pptx"))
+        out = self.run_cmd("daily", "--roots", *self.roots)[1]
+        self.assertEqual(out.strip(), "NO_CHANGES")
+        self.assertFalse([f for f in self.snap()["findings"] if f["where"].startswith(d)])
+        put(os.path.join(u, "SKILL.md"), BAD.format(n="pptx"))   # the control: the owner's baselined copy turns bad
         out = self.run_cmd("daily", "--roots", *self.roots)[1]
         self.assertNotEqual(out.strip(), "NO_CHANGES")
 

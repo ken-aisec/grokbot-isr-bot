@@ -14,12 +14,21 @@ import isr  # noqa: E402
 from test_precision_item4 import BAD  # noqa: E402
 
 
-class P1MarketplacePluginInCatalogCache(Box):
+class _P1:
+    """F1's plugin and its asserts, kept as they were. v0.8.1: they run on a plugin in the owner's plugin folder
+    (P1OwnerPluginOutsideTheCache, the control); in a marketplace cache folder nothing is scored."""
     market = "claude-plugins-official"
     meta = ".claude-plugin"
 
+    def setUp(self):
+        super().setUp()
+        self.owned()
+
+    def place(self):
+        return ("sand-data", "plugins", "cache", self.market)
+
     def plugin(self, body):
-        root = os.path.join(self.home, "sand-data", "plugins", "cache", self.market, "acme-tools", "1.2.0")
+        root = os.path.join(self.home, *self.place(), "acme-tools", "1.2.0")
         os.makedirs(os.path.join(root, self.meta), exist_ok=True)
         open(os.path.join(root, self.meta, "plugin.json"), "w").write(json.dumps({"name": "acme-tools", "version": "1.2.0"}))
         d = os.path.join(root, "skills", "helper"); os.makedirs(d, exist_ok=True)
@@ -50,6 +59,41 @@ class P1MarketplacePluginInCatalogCache(Box):
         mine = [f for f in fs if f["rule"] in ("ISR-I001", "ISR-I002") and f["where"].startswith(root)]
         self.assertTrue(mine)
         self.assertFalse([f for f in mine if f.get("refresh") or f.get("scope") == "platform"])
+
+
+class P1OwnerPluginOutsideTheCache(_P1, Box):
+    """v0.8.1 control: the same plugin in the owner's plugin folder keeps every F1 assert."""
+    def place(self):
+        return ("sand-data", "plugins", "installed")
+
+
+class P1MarketplacePluginInCatalogCache(_P1, Box):
+    def test_known_marketplace_plugin_with_a_bad_skill_still_scores(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. A plugin in
+        a marketplace cache folder is the platform's: its bad skill is a vendor record (the control: P1OwnerPluginOutsideTheCache)."""
+        self.skills(2); self.scanners()
+        root, d = self.plugin("Summarize notes.")
+        before = self.audit()["score"]
+        open(os.path.join(d, "SKILL.md"), "w").write("---\nname: helper\ndescription: h.\n---\n" + BAD)
+        r = self.audit()
+        bad = [f for f in self.snap().get("vendor", []) if f["where"].startswith(root) and f["severity"] in ("critical", "high")]
+        self.assertTrue(bad)
+        self.assertFalse([f for f in self.snap()["findings"] if f["where"].startswith(root)])
+        self.assertEqual(r["score"], before)
+
+    def test_a_change_to_a_known_marketplace_plugin_is_not_a_platform_refresh(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
+        self.skills(2); self.scanners()
+        root, d = self.plugin("Summarize notes.")
+        self.audit()
+        open(os.path.join(d, "SKILL.md"), "w").write("---\nname: helper\ndescription: h.\n---\nSummarize notes. Keep them short.\n")
+        open(os.path.join(d, "extra.md"), "w").write("More notes.\n")
+        self.run_cmd("daily", "--roots", *self.roots)
+        fs = self.snap()["findings"]
+        self.assertFalse([f for f in fs if f["rule"] == isr.REFRESH_RULE], "the owner's plugin changing is not Grok Bot refreshing itself")
+        mine = [f for f in fs + self.snap().get("vendor", []) if f["rule"] in ("ISR-I001", "ISR-I002") and f["where"].startswith(root)]
+        self.assertEqual(mine, [])
+        self.assertFalse([p for p in isr.load_baseline()[0] if p.startswith(root)])
 
 
 class P1MarketplacePluginInCursorPublic(P1MarketplacePluginInCatalogCache):

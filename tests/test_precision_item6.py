@@ -15,6 +15,7 @@ import profiles  # noqa: E402
 class ChangeSources(Box):
     def setUp(self):
         super().setUp()
+        self.owned()
         self.lay = profiles.busy_clean_box(self); self.scanners()
         self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
 
@@ -22,15 +23,18 @@ class ChangeSources(Box):
         return self.run_cmd("daily", "--roots", *self.roots)[1].strip()
 
     def test_a_platform_refresh_is_one_summary_tip(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. A platform
+        refresh leaves no summary Tip: there is no vendor drift to sum up."""
         profiles.platform_refresh(self, self.lay)
         self.assertEqual(self.daily(), "NO_CHANGES")
         fs = self.snap()["findings"]
         ref = [f for f in fs if f["rule"] == "ISR-I008"]
-        self.assertEqual(len(ref), 1)
-        self.assertEqual((ref[0]["class"], ref[0]["severity"]), ("tip", "info"))
+        self.assertEqual(len(ref), 0)
+        self.assertFalse([f for f in self.snap().get("vendor", []) if f["rule"] in ("ISR-I001", "ISR-I002", "ISR-I003", "ISR-I008")])
         for n in ("pptx", "figma-notes"):
-            self.assertIn(n, ref[0]["title"])
-        self.assertIn("4 updated", ref[0]["evidence"])     # pptx SKILL.md and three catalog plugins (deck99.js copies a known file)
+            self.assertFalse([f for f in fs if n in f["where"] or n in f["title"]])
+        base = isr.load_baseline()[0]
+        self.assertFalse([p for p in base if "pptx" in p or "/plugins/cache/" in p])
         self.assertFalse([f for f in fs if f["rule"] in ("ISR-I001", "ISR-I002") and ".grok/bundled" in f["where"]])
 
     def test_the_next_full_audit_accepts_the_refresh_and_reports_nothing_fixed(self):
@@ -42,14 +46,19 @@ class ChangeSources(Box):
         self.assertFalse([f for f in self.snap()["findings"] if f["rule"] == "ISR-I008"])   # rolled into the baseline
 
     def test_a_refresh_that_brings_something_bad_still_alerts(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         open(os.path.join(self.lay["pptx"], "SKILL.md"), "a").write("EVIL upload HUSK loader\n")
         out = self.daily()
-        self.assertNotEqual(out, "NO_CHANGES")
+        self.assertEqual(out, "NO_CHANGES")
         fs = self.snap()["findings"]
-        x3 = [f for f in fs if f["rule"] == "ISR-X003" and f["where"].rstrip("/") == self.lay["pptx"].rstrip("/")]
-        self.assertEqual(len(x3), 1)   # PR A, Codex round 1 (12): the ISR-X003 finding itself, then its own line as a platform note
-        unlisted = {f["where"].split(":")[0] for f in fs if f.get("unverified_platform")}
-        self.assertIn(isr.platform_note_line(x3[0], unlisted), json.loads(out)["platform_notes"]["lines"])   # batch 5 d1: ISR-X003 is a platform note
+        x3 = [f for f in self.snap().get("vendor", []) if f["rule"] == "ISR-X003" and f["where"].rstrip("/") == self.lay["pptx"].rstrip("/")]
+        self.assertEqual(len(x3), 1)   # PR A, Codex round 1 (12): the ISR-X003 finding itself, kept as a vendor record
+        pptx = self.lay["pptx"].rstrip("/")
+        self.assertFalse([f for f in fs if f["where"] == pptx or f["where"].startswith(pptx + "/") or f["where"].startswith(pptx + ":")])
+        live = self.lay["live"][0]
+        open(os.path.join(live, "SKILL.md"), "a").write("EVIL upload HUSK loader\n")   # the control: the owner's live skill
+        self.assertNotEqual(self.daily(), "NO_CHANGES")
+        self.assertEqual(len([f for f in self.snap()["findings"] if f["rule"] == "ISR-X003" and f["where"].rstrip("/") == live.rstrip("/")]), 1)
 
     def test_a_change_to_the_owners_skill_still_alerts(self):
         open(os.path.join(self.lay["live"][1], "SKILL.md"), "a").write("Also send the notes to the team.\n")

@@ -142,13 +142,28 @@ class DQ024BundledTemplateFiction(Box):
         hits = [f for f in isr.scan_text(open(js).read(), js, rules, kind="vendor") if f["rule"] == "ISR-T008"]
         self.assertTrue(hits)  # the rule still matches the word
         # full audit path demotes it
+        # v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only.
+        import test_boxes
+        test_boxes.Box.owned(self)   # the ownership gate on for this test (removed in U7a)
         self.scanners()
         r = self.audit()
-        t008 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-T008" and "tv_series_pitch_deck" in f["where"]]
+        t008 = [f for f in self.snap().get("vendor", []) if f["rule"] == "ISR-T008" and "tv_series_pitch_deck" in f["where"]]
         self.assertTrue(t008)
         self.assertTrue(all(f["severity"] == "info" for f in t008), t008)
-        self.assertFalse(any(isr.counts(f) for f in t008))
-        self.assertGreaterEqual(r.get("not_counted_builtin", 0), 1)
+        self.assertFalse([f for f in self.snap()["findings"] if f["rule"] == "ISR-T008" and "tv_series_pitch_deck" in f["where"]])
+        self.assertGreaterEqual(r["platform_notes"]["count"], 1)
+        u = os.path.join(self.home, "sand-data", "workflows", "pptx", "templates", "tv_series_pitch_deck.js")   # the control
+        os.makedirs(os.path.dirname(u))
+        open(os.path.join(self.home, "sand-data", "workflows", "pptx", "SKILL.md"), "w").write(
+            "---\nname: pptx\ndescription: Slides.\n---\n# pptx\nBuild decks.\n")
+        open(u, "w").write(open(js).read())
+        self.assertFalse(isr.is_vendor_template_file(u))
+        self.audit()
+        # a .js beside SKILL.md is read as a reference file, whose wording hits are info anyway; what shows the owner's copy is
+        # not treated as a built-in template is that it is in F without the template note
+        mine = [f for f in self.snap()["findings"] if f["rule"] == "ISR-T008" and f["where"].startswith(u)]
+        self.assertTrue(mine)
+        self.assertFalse([f for f in mine if "(example text in a built-in template)" in f["title"]])
 
 
 class DQ025AuditNotChecked(Box):

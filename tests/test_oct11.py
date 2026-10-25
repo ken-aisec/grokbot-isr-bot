@@ -56,9 +56,19 @@ class BrowserSessions(Box):
 
 class DQ017CatalogSync(Box):
     COMMIT = "4bf3e083c6dec126e254f96181b84a105b6e3e70"
+    PLACE = "cache"   # v0.8.1: the platform's catalog cache; the control runs the same plants under "installed", the owner's
+
+    def setUp(self):
+        super().setUp()
+        self.owned()
+
+    def again_in_the_owners_folder(self):
+        """v0.8.1 control: a fresh box (the gate still on), the plugins planted under sand-data/plugins/installed."""
+        self.tearDown(); self.setUp()
+        self.PLACE = "installed"
 
     def cat_plugin(self, name, commit=None, market="cursor-public", scripts=False, local_mcp=False, mtime=None):
-        root = os.path.join(self.home, "sand-data", "plugins", "cache", market, name, commit or self.COMMIT)
+        root = os.path.join(self.home, "sand-data", "plugins", self.PLACE, market, name, commit or self.COMMIT)
         os.makedirs(os.path.join(root, ".cursor-plugin"), exist_ok=True)
         open(os.path.join(root, ".cursor-plugin", "plugin.json"), "w").write(json.dumps({"name": name}))
         srv = {"command": "npx", "args": [name + "-mcp@1.0.0"]} if local_mcp else {"url": f"https://mcp.{name}.example/mcp"}
@@ -76,35 +86,54 @@ class DQ017CatalogSync(Box):
 
     def test_a_catalog_sync_is_a_note_not_six_new_installs(self):
         """Main box, Oct 11 00:42 ET: calendly, excalidraw, finance, gmail, google-calendar and tinyfish appeared under
-        cursor-public at one catalog commit in the same minute; each was raised as ISR-I004 "A new plugin was installed"."""
-        self.skills(1); self.scanners()
-        self.cat_plugin("notion-workspace", commit="cf1324609edba6d617164f1dec138aeb43f26735")
-        self.audit()                                                                  # first run: what is there is known
-        t = time.time()
-        for n in ("calendly", "excalidraw", "finance", "gmail", "google-calendar", "tinyfish"):
-            self.cat_plugin(n, mtime=t)
-        self.cat_plugin("helper-kit", scripts=True, mtime=t)                       # same sync, but it brings scripts: still a new install
-        self.cat_plugin("local-runner", local_mcp=True, mtime=t)                    # starts a local program: still a new install
-        self.cat_plugin("side-load", commit="aaaa1111", market="someone-else", mtime=t)
-        r = self.audit()
-        fs = self.snap()["findings"]
-        i4 = sorted(f["evidence"].split(":")[0] for f in fs if f["rule"] == "ISR-I004")
+        cursor-public at one catalog commit in the same minute; each was raised as ISR-I004 "A new plugin was installed".
+
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The catalog
+        cache is the platform's: the same I004 names and the one I005 are vendor records, none in the owner's findings."""
+        def plant():
+            self.skills(1); self.scanners()
+            self.cat_plugin("notion-workspace", commit="cf1324609edba6d617164f1dec138aeb43f26735")
+            self.audit()                                                              # first run: what is there is known
+            t = time.time()
+            for n in ("calendly", "excalidraw", "finance", "gmail", "google-calendar", "tinyfish"):
+                self.cat_plugin(n, mtime=t)
+            self.cat_plugin("helper-kit", scripts=True, mtime=t)                   # same sync, but it brings scripts: still a new install
+            self.cat_plugin("local-runner", local_mcp=True, mtime=t)                # starts a local program: still a new install
+            self.cat_plugin("side-load", commit="aaaa1111", market="someone-else", mtime=t)
+            return self.audit()
+        r = plant()
+        fs, vs = self.snap()["findings"], self.snap().get("vendor", [])
+        i4 = sorted(f["evidence"].split(":")[0] for f in vs if f["rule"] == "ISR-I004")
         self.assertEqual(i4, ["helper-kit", "local-runner", "side-load"])
-        i5 = [f for f in fs if f["rule"] == "ISR-I005"]
+        self.assertFalse([f for f in fs if f["rule"] == "ISR-I004"])
+        i5 = [f for f in vs if f["rule"] == "ISR-I005"]
         self.assertEqual(len(i5), 1)
         self.assertEqual(i5[0]["severity"], "info")
         for n in ("calendly", "excalidraw", "finance", "gmail", "google-calendar", "tinyfish"):
             self.assertIn(n, i5[0]["evidence"])
+        self.assertFalse([f for f in fs if f["rule"] == "ISR-I005"])
         self.assertNotIn("ISR-I004", [d["rule"] for d in json.loads(self.run_cmd("fix", "--roots", *self.roots)[1])["decisions"]
                                      if "calendly" in json.dumps(d)])
         self.audit()
-        self.assertEqual(sorted(f["evidence"].split(":")[0] for f in self.snap()["findings"] if f["rule"] == "ISR-I004"), i4)
+        self.assertEqual(sorted(f["evidence"].split(":")[0] for f in self.snap().get("vendor", []) if f["rule"] == "ISR-I004"), i4)
+        self.assertFalse([f for f in self.snap()["findings"] if f["rule"] == "ISR-I004"])
+        self.again_in_the_owners_folder()                                             # the control: the owner's plugin folder
+        plant()
+        mine = {f["evidence"].split(":")[0] for f in self.snap()["findings"] if f["rule"] == "ISR-I004"}
+        self.assertLessEqual(set(i4), mine)   # the original names; outside the cache there is no catalog sync, so the six are installs too
 
     def test_one_plugin_alone_is_still_a_new_install(self):
-        self.skills(1); self.scanners()
-        self.cat_plugin("notion-workspace", commit="cf13"); self.audit()
-        self.cat_plugin("gmail")
-        self.audit()
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
+        def plant():
+            self.skills(1); self.scanners()
+            self.cat_plugin("notion-workspace", commit="cf13"); self.audit()
+            self.cat_plugin("gmail")
+            self.audit()
+        plant()
+        self.assertEqual([f["evidence"].split(":")[0] for f in self.snap().get("vendor", []) if f["rule"] == "ISR-I004"], ["gmail"])
+        self.assertFalse([f for f in self.snap()["findings"] if f["rule"] == "ISR-I004"])
+        self.again_in_the_owners_folder()                                             # the control: the owner's plugin folder
+        plant()
         self.assertEqual([f["evidence"].split(":")[0] for f in self.snap()["findings"] if f["rule"] == "ISR-I004"], ["gmail"])
 
 

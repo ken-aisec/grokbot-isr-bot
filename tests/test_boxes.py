@@ -789,28 +789,39 @@ class MainBoxLessons(Box):
 
     def test_a_key_hit_in_a_tool_cache_names_its_file_and_line(self):
         """Main box, v0.6.7 (DQ-012): ISR-S002 on /workspace/agent-tools said "1 hit(s): generic-api-key" and nothing else, so the
-        owner had to re-run gitleaks by hand to find 9cb25c53-56f1-4ffd-9441-51638d121499.txt:1."""
-        self.skills(1)
-        cache = os.path.join(self.ws, "agent-tools"); os.makedirs(cache)
-        report = os.path.join(self.tmp, "leaks.json")
-        stub = SCANNERS["gitleaks"].replace('open(a[a.index("--report-path") + 1], "w").write("[]")',
-                                            f'open(a[a.index("--report-path") + 1], "w").write(open({report!r}).read() if a[a.index("--source") + 1].endswith("workspace") else "[]")')
-        self.scanners(gitleaks=stub)
-        def hit(name):
-            open(os.path.join(cache, name), "w").write('{"meta":{"result_count":1}}\n')
-            json.dump([{"File": os.path.join(cache, name), "StartLine": 1, "RuleID": "generic-api-key", "Match": 'next_token":"REDACTED"'}], open(report, "w"))
-        hit("9cb25c53-56f1-4ffd-9441-51638d121499.txt")
-        r = self.audit()
-        f1 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-S002"]
-        self.assertEqual([f["where"] for f in f1], [cache])                                       # one finding for the folder, as before
-        self.assertIn("9cb25c53-56f1-4ffd-9441-51638d121499.txt:1", f1[0]["evidence"])          # and it names the file and line
-        os.remove(os.path.join(cache, "9cb25c53-56f1-4ffd-9441-51638d121499.txt"))
-        hit("0d4e7a19-2b3c-4d5e-8f60-718293a4b5c6.txt")                                          # the cache refills with a new file
-        r = self.audit()
-        f2 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-S002"]
-        self.assertIn("0d4e7a19-2b3c-4d5e-8f60-718293a4b5c6.txt:1", f2[0]["evidence"])
-        self.assertEqual(f2[0]["key"], f1[0]["key"])                                              # the same finding, not fixed and new
-        self.assertFalse([f for f in r["new"] if f["rule"] == "ISR-S002"], r["new"])
+        owner had to re-run gitleaks by hand to find 9cb25c53-56f1-4ffd-9441-51638d121499.txt:1.
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The workspace's
+        own agent-tools cache is tool output, never shown; the same cache inside the owner's project still names its file and line."""
+        self.owned()
+        for echo in (True, False):
+            if not echo:
+                self.tearDown(); self.setUp()
+            self.skills(1)
+            cache = os.path.join(self.ws, "agent-tools") if echo else os.path.join(self.ws, "projects", "x", "agent-tools")
+            os.makedirs(cache)
+            report = os.path.join(self.tmp, "leaks.json")
+            stub = SCANNERS["gitleaks"].replace('open(a[a.index("--report-path") + 1], "w").write("[]")',
+                                                f'open(a[a.index("--report-path") + 1], "w").write(open({report!r}).read() if a[a.index("--source") + 1].endswith("workspace") else "[]")')
+            self.scanners(gitleaks=stub)
+            def hit(name):
+                open(os.path.join(cache, name), "w").write('{"meta":{"result_count":1}}\n')
+                json.dump([{"File": os.path.join(cache, name), "StartLine": 1, "RuleID": "generic-api-key", "Match": 'next_token":"REDACTED"'}], open(report, "w"))
+            hit("9cb25c53-56f1-4ffd-9441-51638d121499.txt")
+            r = self.audit()
+            f1 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-S002"]
+            if echo:
+                self.assertEqual(f1 + [f for f in self.snap().get("vendor", []) if f["rule"] == "ISR-S002"], [])
+                self.assertFalse([f for f in r["new"] if f["rule"] == "ISR-S002"], r["new"])
+                continue
+            self.assertEqual([f["where"] for f in f1], [cache])                                       # one finding for the folder, as before
+            self.assertIn("9cb25c53-56f1-4ffd-9441-51638d121499.txt:1", f1[0]["evidence"])          # and it names the file and line
+            os.remove(os.path.join(cache, "9cb25c53-56f1-4ffd-9441-51638d121499.txt"))
+            hit("0d4e7a19-2b3c-4d5e-8f60-718293a4b5c6.txt")                                          # the cache refills with a new file
+            r = self.audit()
+            f2 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-S002"]
+            self.assertIn("0d4e7a19-2b3c-4d5e-8f60-718293a4b5c6.txt:1", f2[0]["evidence"])
+            self.assertEqual(f2[0]["key"], f1[0]["key"])                                              # the same finding, not fixed and new
+            self.assertFalse([f for f in r["new"] if f["rule"] == "ISR-S002"], r["new"])
 
     # The lines from the platform's own site playbooks on a fresh account, word for word except the key values: those are the
     # sites' real public client keys, replaced here by made-up values of the same shape (32 letters and digits; 40 hex).
@@ -819,8 +830,9 @@ class MainBoxLessons(Box):
     TARGET = ("Target's search page is a shell over a public JSON aggregation at `redsky.target.com`. The key is a static public token from Target's JS bundles. The call is unreliable from the box, where it usually returns HTTP 435 (PerimeterX). Dispatch the snippet in the same round as any shell attempt; the snippet tries the call once and falls back to the search page in the browser.\n"
               "\n```\nGET https://redsky.target.com/redsky_aggregations/v1/web/plp_search_v2\n    ?key=3c9e1f7a2b8d4e6f0a5c1b9d7e3f2a8c6b4d0e1f\n    &channel=WEB\n    &keyword=<URL-encoded query>\n    &page=%2Fs%2F<URL-encoded query>\n```\n")
 
-    def playbook_keys(self, where, trufflehog=None):
-        """Write the two playbooks under `where` (relative to home), with gitleaks reporting the key line in each, as it did."""
+    def playbook_keys(self, where, trufflehog=None, bucket="findings"):
+        """Write the two playbooks under `where` (relative to home), with gitleaks reporting the key line in each, as it did.
+        `bucket`: the snapshot list read ("vendor" for the platform's own playbooks, v0.8.1)."""
         report, hits = os.path.join(self.tmp, "leaks.json"), []
         for name, text, key_line in (("site-playbooks-resy", self.RESY, 'ResyAPI api_key="REDACTED"'), ("site-playbooks-target", self.TARGET, "key=REDACTED")):
             d = os.path.join(self.home, where, name); os.makedirs(d, exist_ok=True)
@@ -833,29 +845,45 @@ class MainBoxLessons(Box):
                                             f'open(a[a.index("--report-path") + 1], "w").write(open({report!r}).read() if a[a.index("--source") + 1] == {self.home!r} else "[]")')
         self.scanners(gitleaks=stub, **({"trufflehog": trufflehog} if trufflehog else {}))
         self.audit()
-        return {f["where"].split("/")[-2]: f.get("severity_was", f["severity"]) for f in self.snap()["findings"] if f["rule"] == "ISR-S002"}
+        return {f["where"].split("/")[-2]: f.get("severity_was", f["severity"]) for f in self.snap().get(bucket, []) if f["rule"] == "ISR-S002"}
+
+    def no_s002(self):
+        self.assertFalse([f for f in self.snap()["findings"] if f["rule"] == "ISR-S002"])
 
     def test_a_key_in_a_built_in_site_playbook_is_low_when_only_gitleaks_sees_it(self):
-        """Fresh v0.6.7 account (DQ-012 batch): every first run raised these two platform lines as medium "looks like a key"."""
+        """Fresh v0.6.7 account (DQ-012 batch): every first run raised these two platform lines as medium "looks like a key".
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
+        self.owned()
         self.skills(1)
-        self.assertEqual(self.playbook_keys("sand-data/managed-skills/skills"), {"site-playbooks-resy": "low", "site-playbooks-target": "low"})
+        self.assertEqual(self.playbook_keys("sand-data/managed-skills/skills", bucket="vendor"), {"site-playbooks-resy": "low", "site-playbooks-target": "low"})
+        self.no_s002()
+        self.tearDown(); self.setUp(); self.skills(1)   # the control: the owner's own skill
+        self.assertEqual(self.playbook_keys("sand-data/workflows"), {"site-playbooks-resy": "medium", "site-playbooks-target": "medium"})
 
     def test_a_built_in_site_playbook_key_a_second_engine_agrees_on_keeps_its_severity(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
+        self.owned()
         self.skills(1)
         resy = os.path.join(self.home, "sand-data", "managed-skills", "skills", "site-playbooks-resy", "SKILL.md")
         th = ("#!/bin/sh\necho '" + json.dumps({"SourceMetadata": {"Data": {"Filesystem": {"file": resy, "line": 8}}}, "DetectorName": "Resy",
                                                  "Verified": False, "VerificationError": "provider timed out"}) + "'\necho '" + TH_DONE + "' >&2\n")
-        self.assertEqual(self.playbook_keys("sand-data/managed-skills/skills", trufflehog=th),
+        self.assertEqual(self.playbook_keys("sand-data/managed-skills/skills", trufflehog=th, bucket="vendor"),
                          {"site-playbooks-resy": "medium", "site-playbooks-target": "low"})   # TruffleHog agrees on Resy only
+        self.no_s002()
+        self.tearDown(); self.setUp(); self.skills(1)   # the control: the owner's own skill
+        self.assertEqual(self.playbook_keys("sand-data/workflows"), {"site-playbooks-resy": "medium", "site-playbooks-target": "medium"})
 
     def test_the_same_key_line_outside_the_platforms_playbooks_is_unchanged(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
+        self.owned()
         self.skills(1)
         self.assertEqual(self.playbook_keys("sand-data/workflows"), {"site-playbooks-resy": "medium", "site-playbooks-target": "medium"})   # the owner's own skill
         self.tearDown(); self.setUp(); self.skills(1)
         self.assertEqual(self.playbook_keys("projects/copy/sand-data/managed-skills/skills"),   # the folder names, somewhere else
                          {"site-playbooks-resy": "medium", "site-playbooks-target": "medium"})
         self.tearDown(); self.setUp(); self.skills(1)
-        self.assertEqual(self.playbook_keys("sand-data/managed-skills/skills"), {"site-playbooks-resy": "low", "site-playbooks-target": "low"})
+        self.assertEqual(self.playbook_keys("sand-data/managed-skills/skills", bucket="vendor"), {"site-playbooks-resy": "low", "site-playbooks-target": "low"})
+        self.no_s002()
 
     def test_a_skill_with_a_slide_deck_is_scanned_on_its_own(self):
         ds = self.skills(30)

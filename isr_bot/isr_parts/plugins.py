@@ -1081,6 +1081,7 @@ def platform_file(f, catalog=True):
         return True
     path = lit or (w.split(":")[0] if isinstance(w, str) else "")
     if OWNERSHIP_V081:   # v0.8.1 (§2): a platform folder is the classifier's vendor class, by location
+        path = lit or _place(f if isinstance(f, dict) else {"where": w})   # §3.1: never cut at the first colon (skills:escape, learn:3)
         return bool(path.startswith("/")) and owner_of(path) == "vendor"
     return bool(path.startswith("/")) and under_platform_root(path)
 

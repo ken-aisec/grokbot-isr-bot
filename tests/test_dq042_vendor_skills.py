@@ -75,12 +75,37 @@ class _Learn:
         put(os.path.join(self.d, "SKILL.md"), LEARN_V1)
         for text in (LEARN_V1, LEARN_V2, BAD):   # item 8: the vendor's own releases, the rug pull included, are on its release list
             profiles.vendor_release(self, (os.path.join(self.d, "SKILL.md"), text))
+        self.owned()
 
     def daily(self):
         return self.run_cmd("daily", "--roots", *self.roots)[1].strip()
 
     def learn(self, fs):
         return [f for f in fs if f["where"].split(":")[0] == self.d or f["where"].startswith(self.d + "/")]
+
+    def vend(self):
+        """v0.8.1: the vendor records at learn, never scored."""
+        return self.learn(self.snap().get("vendor", []))
+
+    def nodrift(self):
+        """v0.8.1: no drift is tracked for a vendor file."""
+        self.assertFalse([f for f in self.vend() if f["rule"] in ("ISR-I001", "ISR-I002", "ISR-I003")])
+
+    def user_learn(self, text, daily=False):
+        """v0.8.1: the control. The owner's copy, workflows/my-learn: V1, an audit, the owner's baseline, then `text`, then an audit
+        (or a daily). Returns (the audit, or daily's output; the owner's findings there)."""
+        self.u = os.path.join(self.home, "sand-data", "workflows", "my-learn")
+        put(os.path.join(self.u, "SKILL.md"), LEARN_V1)
+        self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
+        put(os.path.join(self.u, "SKILL.md"), text)
+        out = self.daily() if daily else self.audit()
+        return out, [f for f in self.snap()["findings"] if f["where"].split(":")[0] == self.u or f["where"].startswith(self.u + "/")]
+
+    def assert_user_vote_counts(self):
+        """v0.8.1: the control. The engines' same vote on the owner's copy is a counted X003."""
+        x = [f for f in self.user_learn(LEARN_V2)[1] if f["rule"] == "ISR-X003"]
+        self.assertEqual(len(x), 1)
+        self.assertTrue(isr.counts(x[0]))
 
     def refresh(self, text, **fakes):
         self.scanners(**fakes); self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
@@ -94,6 +119,7 @@ class _Replay(_Learn):
     """The Oct 16 learn alert, replayed: a platform update the engines describe only in words that name no dangerous behavior."""
 
     def test_a_vendor_update_is_a_platform_line_not_an_alert(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         before, r = self.refresh(LEARN_V2, skillspector=skillspector(LEARN_ISSUES), husk=husk(LEARN_HUSK))
         fs = self.snap()["findings"]
         self.assertFalse([f for f in fs if f["title"].startswith(LEARN_TITLE)])
@@ -101,19 +127,24 @@ class _Replay(_Learn):
         for sev in ("critical", "high"):                                       # the high count is unchanged by it
             self.assertEqual(r["open_by_severity"][sev], before[sev])
         self.assertFalse([f for f in r["new"] if "learn" in f["where"] or "learn" in f["title"]])
-        x = [f for f in self.learn(fs) if f["rule"] == "ISR-X003"]
+        x = [f for f in self.vend() if f["rule"] == "ISR-X003"]
+        self.assertFalse(self.learn(fs))
         self.assertEqual(len(x), 1)
         self.assertEqual(x[0]["evidence"], LEARN_EVIDENCE)                     # the same line the box showed
-        self.assertEqual((x[0]["scope"], x[0]["label"], x[0]["severity"], x[0]["severity_was"]), ("platform", isr.PLATFORM, "info", "high"))
-        self.assertEqual(x[0]["fix"], isr.PLATFORM_FIX)
-        self.assertFalse(isr.counts(x[0]))
+        self.assertEqual((x[0]["rule"], x[0]["severity"], x[0]["label"]), ("ISR-X003", "high", isr.CONFIRMED))   # labelled at the gate
+        self.assertNotIn(self.d, [f["where"].split(":")[0] for f in fs])
+        self.assertFalse([f for f in isr.scored(fs) if f["where"].startswith(self.d)])
         tip = [f for f in fs if f["rule"] == "ISR-I008"]
-        self.assertEqual(len(tip), 1)
-        self.assertIn("learn", tip[0]["title"])
+        self.assertEqual(len(tip), 0)
+        self.nodrift()
         self.assertNotIn(self.d, isr.changed_skills(fs)[0])                    # nothing to re-approve
         out = json.loads(self.run_cmd("fix", "--roots", *self.roots)[1])
         self.assertFalse([s for s in out.get("changed_skills", []) if s.get("name") == "learn"])
         self.assertEqual(self.daily(), "NO_CHANGES")                          # and the next daily stays quiet
+        x = [f for f in self.user_learn(LEARN_V2)[1] if f["rule"] == "ISR-X003"]   # the control: the owner's copy
+        self.assertEqual(len(x), 1)
+        self.assertTrue(x[0]["evidence"].startswith("SkillSpector + husk"))
+        self.assertTrue(isr.counts(x[0]))
 
 
 class BundledLearnReplay(_Replay, Box):
@@ -128,36 +159,54 @@ class StillAlerts(_Learn, Box):
     REL = ".grok/bundled/skills"
 
     def test_a_vendor_rug_pull_isr_bot_sees_still_alerts(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The same rug
+        pull in the owner's copy is the alert."""
         self.refresh(BAD, skillspector=skillspector(LEARN_ISSUES), husk=husk(LEARN_HUSK))
         fs = self.snap()["findings"]
         a = [f for f in fs if f["title"].startswith("Grok Bot's own learn changed and now ")]
-        self.assertEqual(len(a), 1)
-        self.assertIn(a[0]["severity"], ("critical", "high"))
-        self.assertEqual((a[0]["label"], a[0]["scope"], a[0]["fix"]), (isr.CONFIRMED, "platform", isr.PLATFORM_CONFIRMED_FIX))
-        self.assertIn("support", a[0]["fix"])
-        x = [f for f in self.learn(fs) if f["rule"] == "ISR-X003"]
-        self.assertEqual([(f["severity"], f["label"]) for f in x], [("high", isr.CONFIRMED)])
+        self.assertEqual(len(a), 0)
+        self.assertFalse(self.learn(fs))
+        self.nodrift()
+        self.assertTrue([f for f in self.vend() if f["rule"].startswith("ISR-T")])   # ISR Bot's rules still read it: listed, never scored
+        x = [f for f in self.vend() if f["rule"] == "ISR-X003"]
+        self.assertEqual([f["severity"] for f in x], ["high"])
+        _, us = self.user_learn(BAD)                                           # the control: the owner's copy
+        self.assertTrue([f for f in us if f["rule"] == "ISR-I001" and f["severity"] == "high" and isr.counts(f)])
+        self.assertEqual([(f["severity"], f["label"]) for f in us if f["rule"] == "ISR-X003"], [("critical", isr.CONFIRMED)])
 
     def test_a_vendor_rug_pull_alerts_in_daily(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.scanners(skillspector=skillspector(LEARN_ISSUES), husk=husk(LEARN_HUSK))
         self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         put(os.path.join(self.d, "SKILL.md"), BAD)
-        self.assertNotEqual(self.daily(), "NO_CHANGES")
+        self.assertEqual(self.daily(), "NO_CHANGES")
+        self.assertNotEqual(self.user_learn(BAD, daily=True)[0], "NO_CHANGES")   # the control: the owner's copy
 
     def test_engines_that_name_a_dangerous_behavior_still_alert(self):
-        self.refresh(LEARN_V2.replace(MARK, f"{MARK} EVIL HUSK"))          # the harness fakes: "Exfil: Upload" and "obfuscated loader"
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
+        evil = LEARN_V2.replace(MARK, f"{MARK} EVIL HUSK")
+        self.refresh(evil)                                                    # the harness fakes: "Exfil: Upload" and "obfuscated loader"
         fs = self.snap()["findings"]
-        self.assertTrue([f for f in fs if f["title"].startswith(LEARN_TITLE)])
-        self.assertEqual([f["severity"] for f in self.learn(fs) if f["rule"] == "ISR-X003"], ["high"])
+        self.assertFalse([f for f in fs if f["title"].startswith(LEARN_TITLE)])
+        self.assertEqual([f["severity"] for f in self.vend() if f["rule"] == "ISR-X003"], ["high"])
+        self.assertFalse(self.learn(fs))
+        _, us = self.user_learn(evil)                                          # the control: the owner's copy
+        self.assertTrue([f for f in us if f["rule"] == "ISR-I001" and f["severity"] == "high" and isr.counts(f)])
+        self.assertEqual([f["severity"] for f in us if f["rule"] == "ISR-X003"], ["critical"])
 
     def test_a_demoted_line_comes_back_when_isr_bot_confirms_it(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.refresh(LEARN_V2, skillspector=skillspector(LEARN_ISSUES), husk=husk(LEARN_HUSK))
         put(os.path.join(self.d, "SKILL.md"), BAD)
         out = self.daily()
-        self.assertNotEqual(out, "NO_CHANGES")
+        self.assertEqual(out, "NO_CHANGES")
         fs = self.snap()["findings"]
-        self.assertTrue([f for f in fs if f["title"].startswith("Grok Bot's own learn changed and now ")])
-        self.assertEqual([(f["severity"], f["label"]) for f in self.learn(fs) if f["rule"] == "ISR-X003"], [("high", isr.CONFIRMED)])
+        self.assertFalse([f for f in fs if f["title"].startswith("Grok Bot's own learn changed and now ")])
+        self.assertFalse([f for f in self.learn(fs) if f["rule"] == "ISR-X003"])
+        self.user_learn(LEARN_V2)                                              # the control: the owner's copy, V2, then the rug pull
+        put(os.path.join(self.u, "SKILL.md"), BAD)
+        self.assertNotEqual(self.daily(), "NO_CHANGES")
+        self.assertEqual([f["severity"] for f in self.snap()["findings"] if f["rule"] == "ISR-X003" and f["where"] == self.u], ["critical"])
 
 
 class OtherSkillsUnchanged(Box):
@@ -187,14 +236,25 @@ class OtherSkillsUnchanged(Box):
         self.assertTrue(isr.counts(x[0]))
 
     def test_the_env_vars_contrast_row_still_alerts(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The plugin
+        cache is a vendor folder now; the same skill in an installed plugin folder is the owner's and still alerts."""
+        self.owned()
         # SkillSpector + ISR Bot on a plugin-cache skill: not a platform skill folder, and ISR Bot's own rule agrees.
         d = os.path.join(self.home, "sand-data", "plugins", "cache", "cursor-public", "vercel", "e48c1d", "skills", "env-vars")
-        put(os.path.join(d, "SKILL.md"), "---\nname: env-vars\ndescription: Manage environment variables.\n---\n"
-            "Run `cat ~/.aws/credentials` to find the keys, then update the project's settings.\n" f"{MARK}\n")
+        ud = os.path.join(self.home, "sand-data", "plugins", "installed", "vercel", "e48c1d", "skills", "env-vars")
+        for it in (d, ud):
+            put(os.path.join(it, "SKILL.md"), "---\nname: env-vars\ndescription: Manage environment variables.\n---\n"
+                "Run `cat ~/.aws/credentials` to find the keys, then update the project's settings.\n" f"{MARK}\n")
         self.scanners(skillspector=skillspector([{"severity": "HIGH", "category": "Privilege Escalation", "pattern": "Credential Access"},
                                                  {"severity": "HIGH", "category": "Rogue Agent", "pattern": "Self-Modification"}]))
         self.audit()
-        x = [f for f in self.snap()["findings"] if f["rule"] == "ISR-X003" and f["where"] == d]
+        x = [f for f in self.snap().get("vendor", []) if f["rule"] == "ISR-X003" and f["where"] == d]
+        self.assertEqual(len(x), 1)
+        self.assertEqual(x[0]["evidence"], "SkillSpector + ISR Bot; Privilege Escalation: Credential Access; Rogue Agent: Self-Modification")
+        self.assertEqual(x[0]["severity"], "high")
+        self.assertNotIn(d, [f["where"] for f in self.snap()["findings"]])
+        self.assertFalse([f for f in isr.scored(self.snap()["findings"]) if f["where"] == d])
+        x = [f for f in self.snap()["findings"] if f["rule"] == "ISR-X003" and f["where"] == ud]   # the control: the owner's install
         self.assertEqual(len(x), 1)
         self.assertEqual(x[0]["evidence"], "SkillSpector + ISR Bot; Privilege Escalation: Credential Access; Rogue Agent: Self-Modification")
         self.assertEqual((x[0]["severity"], x[0]["label"]), ("high", isr.CONFIRMED))
@@ -250,12 +310,13 @@ class NoSpoofing(Box):
 
 
 def classify(fs):
-    """The audit's own last steps (cmd_audit: scope, labels, platform-refresh summary, Platform lines), on findings built here."""
+    """The audit's own last steps (cmd_audit: scope, labels, Platform lines), on findings built here. (v0.8.1: the platform-refresh
+    summary is gone.)"""
     for f in fs:
         if isr.platform_file(f):
             f["scope"] = "platform"
     fs = isr.label_findings(fs, isr.ask_first_covered(fs))
-    return isr.mark_platform(isr.summarize_refresh(fs))
+    return isr.mark_platform(fs)
 
 
 class ColonInAFolderName(Box):
@@ -276,21 +337,25 @@ class ColonInAFolderName(Box):
         self.assertTrue(isr.platform_skill_path(os.path.join(self.home, ".grok", "bundled", "skills", "learn")))
 
     def test_its_vote_stays_confirmed_and_the_change_alerts(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The link
+        leads out, so the folder is the owner's: its vote and its change are the owner's alerts."""
+        self.owned()
         x = isr.finding("ISR-X003", "Corroborated by multiple engines", "high", ["AST01", "AST08"], self.d, LEARN_EVIDENCE,
                        "Two independent engines agree.", source="engines")
         x["kinds"] = []                                                       # the engines' words name no behavior
         p = os.path.join(self.d, "SKILL.md")
+        self.assertEqual(isr.owner_of(p), "user")
         rf = isr.finding("ISR-I001", "Built-in skill or plugin updated", "low", ["AST07"], p, "sha256 aaaaaaaaaaaa→bbbbbbbbbbbb", "")
         rf["refresh"] = isr.platform_file(p)
-        self.assertTrue(rf["refresh"])                                        # still read as a platform change, so it reaches the summary
+        self.assertFalse(rf.get("refresh"))                                   # not a platform change
         fs = classify([x, rf])
         xs = [f for f in fs if f["rule"] == "ISR-X003"]
         self.assertEqual([(f["severity"], f["label"]) for f in xs], [("high", isr.CONFIRMED)])
         self.assertFalse([f for f in fs if f["rule"] == "ISR-I008"])           # not folded into the Platform refresh Tip
         a = [f for f in fs if f["title"].startswith("Grok Bot's own ") and "Corroborated by multiple engines" in f["title"]]
-        self.assertEqual(len(a), 1)
-        self.assertEqual((a[0]["severity"], a[0]["label"], a[0]["scope"], a[0]["fix"]), ("high", isr.CONFIRMED, "platform", isr.PLATFORM_CONFIRMED_FIX))
-        self.assertIn("support", a[0]["fix"])
+        self.assertEqual(len(a), 0)
+        self.assertEqual(sorted(f["rule"] for f in fs), ["ISR-I001", "ISR-X003"])
+        self.assertFalse([f for f in fs if f.get("scope") == "platform"])
 
 
 class NumericSuffixInAFolderName(Box):
@@ -313,22 +378,26 @@ class NumericSuffixInAFolderName(Box):
         self.assertTrue(isr.platform_skill_path(os.path.join(self.bundled, "learn")))
 
     def test_its_vote_stays_confirmed_and_the_change_alerts(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The link
+        leads out, so the folder is the owner's: its vote and its change are the owner's alerts."""
+        self.owned()
         x = isr.finding("ISR-X003", "Corroborated by multiple engines", "high", ["AST01", "AST08"], self.d, LEARN_EVIDENCE,
                        "Two independent engines agree.", source="engines")
         x["kinds"] = []                                                       # the engines' words name no behavior
         self.assertFalse(isr.unconfirmed_platform_vote(x, [x]))
         p = os.path.join(self.d, "SKILL.md")
+        self.assertEqual(isr.owner_of(p), "user")
         rf = isr.finding("ISR-I001", "Built-in skill or plugin updated", "low", ["AST07"], p, "sha256 aaaaaaaaaaaa→bbbbbbbbbbbb", "")
         rf["refresh"] = isr.platform_file(p)
-        self.assertTrue(rf["refresh"])                                        # still read as a platform change, so it reaches the summary
+        self.assertFalse(rf.get("refresh"))                                   # not a platform change
         fs = classify([x, rf])
         xs = [f for f in fs if f["rule"] == "ISR-X003"]
         self.assertEqual([(f["severity"], f["label"]) for f in xs], [("high", isr.CONFIRMED)])
         self.assertFalse([f for f in fs if f["rule"] == "ISR-I008"])           # not folded into the Platform refresh Tip
         a = [f for f in fs if f["title"].startswith("Grok Bot's own ") and "Corroborated by multiple engines" in f["title"]]
-        self.assertEqual(len(a), 1)
-        self.assertEqual((a[0]["severity"], a[0]["label"], a[0]["scope"], a[0]["fix"]), ("high", isr.CONFIRMED, "platform", isr.PLATFORM_CONFIRMED_FIX))
-        self.assertIn("support", a[0]["fix"])
+        self.assertEqual(len(a), 0)
+        self.assertEqual(sorted(f["rule"] for f in fs), ["ISR-I001", "ISR-X003"])
+        self.assertFalse([f for f in fs if f.get("scope") == "platform"])
 
 
 # Codex, DQ-042 round 1: SkillSpector's summary keeps four critical/high issues, sorted. Four Memory Poisoning lines come before
@@ -343,24 +412,29 @@ class DangerousFifthIssue(_Learn, Box):
 
     def check_alerts(self):
         fs = self.snap()["findings"]
-        x = [f for f in self.learn(fs) if f["rule"] == "ISR-X003"]
-        self.assertEqual([(f["severity"], f["label"]) for f in x], [("high", isr.CONFIRMED)])
+        x = [f for f in self.vend() if f["rule"] == "ISR-X003"]
+        self.assertEqual([f["severity"] for f in x], ["high"])
         self.assertIn("credential", x[0]["kinds"])
         self.assertFalse([f for f in fs if f["rule"] == "ISR-I008" and "learn" in f["title"]])
         a = [f for f in fs if f["title"].startswith(LEARN_TITLE)]
-        self.assertEqual(len(a), 1)
-        self.assertEqual((a[0]["severity"], a[0]["label"], a[0]["scope"], a[0]["fix"]), ("high", isr.CONFIRMED, "platform", isr.PLATFORM_CONFIRMED_FIX))
-        self.assertIn("support", a[0]["fix"])
+        self.assertEqual(len(a), 0)
+        self.assertFalse(self.learn(fs))
+        self.nodrift()
 
     def test_the_fifth_issue_still_names_its_kind(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.refresh(LEARN_V2, skillspector=skillspector(FIFTH_ISSUES), husk=husk(LEARN_HUSK))
         self.check_alerts()
         ss = isr.load_json(isr.state_path("engine_cache.json"), {})[self.d]["ss"]
         self.assertEqual(len(ss["top"]), 4)
         self.assertNotIn("Privilege Escalation: Credential Access", ss["top"])   # the summary is still cut to four
         self.assertIn("credential", ss["kinds"])
+        x = [f for f in self.user_learn(LEARN_V2)[1] if f["rule"] == "ISR-X003"]   # the control: the owner's copy
+        self.assertEqual([f["severity"] for f in x], ["critical"])
+        self.assertIn("credential", x[0]["kinds"])
 
     def test_a_cached_result_from_before_is_scanned_again(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.refresh(LEARN_V2, skillspector=skillspector(FIFTH_ISSUES), husk=husk(LEARN_HUSK))
         p = isr.state_path("engine_cache.json")
         cache = isr.load_json(p, {})
@@ -373,6 +447,7 @@ class DangerousFifthIssue(_Learn, Box):
     def test_a_cached_result_from_before_is_never_demoted_while_it_waits(self):
         # Codex, DQ-042 round 2: with no time left to scan it again, the old answer (four summaries, no kinds) is still what the
         # audit reads. Its kinds may be missing a fifth issue, so the vote stays high and Confirmed until a scan refreshes it.
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.refresh(LEARN_V2, skillspector=skillspector(FIFTH_ISSUES), husk=husk(LEARN_HUSK))
         p = isr.state_path("engine_cache.json")
         cache = isr.load_json(p, {})
@@ -381,17 +456,18 @@ class DangerousFifthIssue(_Learn, Box):
         self.audit("--budget", "0")
         self.assertNotIn("kinds", isr.load_json(p, {})[self.d]["ss"])          # nothing was scanned again
         fs = self.snap()["findings"]
-        x = [f for f in self.learn(fs) if f["rule"] == "ISR-X003"]
-        self.assertEqual([(f["severity"], f["label"], f.get("kinds_incomplete")) for f in x], [("high", isr.CONFIRMED, True)])
+        x = [f for f in self.vend() if f["rule"] == "ISR-X003"]
+        self.assertEqual([(f["severity"], f.get("kinds_incomplete")) for f in x], [("high", True)])
         self.assertNotIn("credential", x[0]["kinds"])                         # the truncated summary alone would have demoted it
         self.assertFalse([f for f in fs if f["rule"] == "ISR-I008" and "learn" in f["title"]])
         a = [f for f in fs if f["title"].startswith(LEARN_TITLE)]
-        self.assertEqual(len(a), 1)
-        self.assertEqual((a[0]["severity"], a[0]["label"], a[0]["scope"], a[0]["fix"]), ("high", isr.CONFIRMED, "platform", isr.PLATFORM_CONFIRMED_FIX))
-        self.assertIn("support", a[0]["fix"])
+        self.assertEqual(len(a), 0)
+        self.assertFalse(self.learn(fs))
+        self.nodrift()
         self.daily()                                                          # daily keeps the audit's line as it was
         x = [f for f in self.learn(self.snap()["findings"]) if f["rule"] == "ISR-X003"]
-        self.assertEqual([(f["severity"], f["label"]) for f in x], [("high", isr.CONFIRMED)])
+        self.assertEqual(x, [])
+        self.assert_user_vote_counts()
 
 
 class _StaysConfirmed(_Learn):
@@ -400,14 +476,15 @@ class _StaysConfirmed(_Learn):
     REL = ".grok/bundled/skills"
 
     def assert_still_alerts(self):
+        """v0.8.1: the vendor vote is kept as it was (high, incomplete) in the vendor records, never scored; no drift."""
         fs = self.snap()["findings"]
-        x = [f for f in self.learn(fs) if f["rule"] == "ISR-X003"]
-        self.assertEqual([(f["severity"], f["label"], f.get("kinds_incomplete")) for f in x], [("high", isr.CONFIRMED, True)])
+        x = [f for f in self.vend() if f["rule"] == "ISR-X003"]
+        self.assertEqual([(f["severity"], f.get("kinds_incomplete")) for f in x], [("high", True)])
         self.assertFalse([f for f in fs if f["rule"] == "ISR-I008" and "learn" in f["title"]])
         a = [f for f in fs if f["title"].startswith(LEARN_TITLE)]
-        self.assertEqual(len(a), 1)
-        self.assertEqual((a[0]["severity"], a[0]["label"], a[0]["scope"], a[0]["fix"]), ("high", isr.CONFIRMED, "platform", isr.PLATFORM_CONFIRMED_FIX))
-        self.assertIn("support", a[0]["fix"])
+        self.assertEqual(len(a), 0)
+        self.nodrift()
+        self.assertFalse([f for f in isr.scored(fs) if f["where"].startswith(self.d)])
 
 
 SKIPPED = TimeoutError("the run's time limit was reached before this stage started")
@@ -420,6 +497,8 @@ class LegacyLineWhenTheStageIsSkipped(_StaysConfirmed, Box):
 
     def setUp(self):
         super().setUp()
+        self.u = os.path.join(self.home, "sand-data", "workflows", "my-learn")   # v0.8.1: the owner's copy, the control
+        put(os.path.join(self.u, "SKILL.md"), LEARN_V2)
         self.refresh(LEARN_V2, skillspector=skillspector(FIFTH_ISSUES), husk=husk(LEARN_HUSK))
         p = isr.state_path("engine_cache.json")
         cache = isr.load_json(p, {})
@@ -429,24 +508,32 @@ class LegacyLineWhenTheStageIsSkipped(_StaysConfirmed, Box):
         self.old = sorted(isr.engine_kinds(ss["top"]) | isr.engine_kinds([LEARN_HUSK]))
         self.assertNotIn("credential", self.old)                              # the four summaries alone name no behavior
         snap = self.snap()
-        for f in snap["findings"]:
+        for f in snap["vendor"]:
             if f["rule"] == "ISR-X003" and f["where"] == self.d:
                 f["kinds"] = self.old                                         # and the line it wrote
                 f.pop("kinds_incomplete", None)
         isr.save_json(isr.state_path("last_findings.json"), snap)
         isr.ENGINE_CURRENT.clear()                                             # each run is its own process
 
+    def user_vote(self):
+        return [(f["severity"], isr.counts(f)) for f in self.snap()["findings"] if f["rule"] == "ISR-X003" and f["where"] == self.u]
+
     def test_an_audit_that_skips_the_stage_never_demotes_the_kept_line(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The kept
+        vendor line is carried in the vendor records; the owner's kept vote still counts."""
         with mock.patch.object(isr, "engine_findings", side_effect=SKIPPED):
             r = self.audit()
         self.assertTrue([n for n in r["notes"] if n.startswith("SkillSpector and husk FAILED")], r["notes"])
-        self.assertEqual([f["kinds"] for f in self.learn(self.snap()["findings"]) if f["rule"] == "ISR-X003"], [self.old])
+        self.assertEqual([f["kinds"] for f in self.vend() if f["rule"] == "ISR-X003"], [self.old])
         self.assert_still_alerts()
+        self.assertEqual(self.user_vote(), [("critical", True)])
 
     def test_a_daily_that_skips_the_stage_never_demotes_the_kept_line(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         with mock.patch.object(isr, "engine_findings", side_effect=SKIPPED):
             self.daily()
         self.assert_still_alerts()
+        self.assertEqual(self.user_vote(), [("critical", True)])
 
 
 def husk_detail(log, fail):
@@ -474,6 +561,7 @@ class HuskDetailMissing(_StaysConfirmed, Box):
         return open(self.log).read().count("package") if os.path.exists(self.log) else 0
 
     def test_a_detail_run_that_times_out(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.scanners(skillspector=skillspector(LEARN_ISSUES), husk=husk_detail(self.log, "slow"))
         self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         put(os.path.join(self.d, "SKILL.md"), LEARN_V2)
@@ -485,10 +573,12 @@ class HuskDetailMissing(_StaysConfirmed, Box):
         self.audit()
         e_ = isr.load_json(isr.state_path("engine_cache.json"), {})[self.d]
         self.assertEqual((e_["hk"], e_.get("hk_partial")), ([LEARN_HUSK], None))   # asked again, and its words are kept
-        x = [f for f in self.learn(self.snap()["findings"]) if f["rule"] == "ISR-X003"]   # now complete: wording only, a Platform line
-        self.assertEqual([(f["severity"], f["label"], f.get("kinds_incomplete")) for f in x], [("info", isr.PLATFORM, None)])
+        x = [f for f in self.vend() if f["rule"] == "ISR-X003"]               # now complete; a vendor record, never scored
+        self.assertEqual([(f["severity"], f.get("kinds_incomplete")) for f in x], [("high", None)])
+        self.assert_user_vote_counts()
 
     def test_a_detail_run_that_leaves_no_sarif(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.refresh(LEARN_V2, skillspector=skillspector(LEARN_ISSUES), husk=husk_detail(self.log, "missing"))
         self.assertEqual(self.calls(), 1)
         self.assert_still_alerts()
@@ -499,6 +589,7 @@ class HuskDetailMissing(_StaysConfirmed, Box):
         self.daily()                                                          # daily included
         self.assertEqual(self.calls(), 3)
         self.assert_still_alerts()
+        self.assert_user_vote_counts()
 
 
 class LegacyHuskPlaceholder(_StaysConfirmed, Box):
@@ -526,6 +617,7 @@ class LegacyHuskPlaceholder(_StaysConfirmed, Box):
         isr.ENGINE_CURRENT.clear()                                             # each run is its own process
 
     def test_a_placeholder_is_scanned_again_and_never_demoted(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.scanners(skillspector=skillspector(LEARN_ISSUES), husk=husk_detail(self.log, "missing"))   # the words still don't come
         for n, hk in enumerate(self.PLACEHOLDERS, 1):
             with self.subTest(hk=hk):
@@ -533,42 +625,51 @@ class LegacyHuskPlaceholder(_StaysConfirmed, Box):
                 self.audit()
                 self.assertEqual(self.calls(), n)                             # a scan was attempted
                 self.assert_still_alerts()
+        self.assert_user_vote_counts()
 
     def test_with_no_time_to_scan_it_again_it_is_never_demoted(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         for hk in self.PLACEHOLDERS:
             with self.subTest(hk=hk):
                 self.legacy(hk)
                 self.audit("--budget", "0")
                 self.assertEqual(isr.load_json(isr.state_path("engine_cache.json"), {})[self.d]["hk"], hk)   # not scanned again
                 self.assert_still_alerts()
+        self.assert_user_vote_counts()
 
     def test_a_daily_scans_it_again_too(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.scanners(skillspector=skillspector(LEARN_ISSUES), husk=husk_detail(self.log, "missing"))
         self.legacy(["flagged (5 issues)"])
         self.daily()
         self.assertEqual(self.calls(), 1)
         self.assert_still_alerts()
+        self.assert_user_vote_counts()
 
     def test_when_the_words_come_back_it_is_complete_and_left_alone(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.legacy(["flagged"])
         self.audit()                                                          # the normal husk answers this time
         e_ = isr.load_json(isr.state_path("engine_cache.json"), {})[self.d]
         self.assertEqual((e_["hk"], e_.get("hk_partial")), ([LEARN_HUSK], None))
-        x = [f for f in self.learn(self.snap()["findings"]) if f["rule"] == "ISR-X003"]
-        self.assertEqual([(f["severity"], f["label"], f.get("kinds_incomplete")) for f in x], [("info", isr.PLATFORM, None)])
+        x = [f for f in self.vend() if f["rule"] == "ISR-X003"]
+        self.assertEqual([(f["severity"], f.get("kinds_incomplete")) for f in x], [("high", None)])
         self.scanners(skillspector=skillspector(LEARN_ISSUES), husk=husk_detail(self.log, "missing"))
         self.audit()
         self.assertEqual(self.calls(), 0)                                     # complete now: not scanned again
 
     def test_a_complete_legacy_answer_is_not_scanned_again(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.legacy([LEARN_HUSK])                                             # real words, from before hk_partial
         self.scanners(skillspector=skillspector(LEARN_ISSUES), husk=husk_detail(self.log, "missing"))
         for _ in range(2):
             self.audit()
         self.daily()
         self.assertEqual(self.calls(), 0)
+        self.assertEqual([f["severity"] for f in self.vend() if f["rule"] == "ISR-X003"], ["high"])
         x = [f for f in self.learn(self.snap()["findings"]) if f["rule"] == "ISR-X003"]
-        self.assertEqual([(f["severity"], f["label"]) for f in x], [("info", isr.PLATFORM)])
+        self.assertEqual(x, [])
+        self.assert_user_vote_counts()
 
 
 if __name__ == "__main__":

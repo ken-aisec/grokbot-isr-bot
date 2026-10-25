@@ -778,6 +778,24 @@ class LinkedPlaces(_Owned):
         self.assertFalse([f for f in self.F() if f["rule"] in ("ISR-I001", "ISR-I002", "ISR-I011") and f.get("unverified_platform")])
         self.assertEqual(isr.owner_of(ypath), "user")
 
+    def test_u6fix_replay_platform_file_never_cuts_at_the_first_colon(self):   # U6 fix (§3.1: literal_path, else _place)
+        """platform_file with the gate on cut the path at its first colon, so ~/.grok/bundled/skills:escape/learn (a link leading
+        out) was read as ~/.grok/bundled/skills, a platform folder, and the owner's folder was marked platform (DQ-042 rounds 1-2)."""
+        out = os.path.join(self.tmp, "elsewhere")
+        self.put(os.path.join(out, "escape", "learn", "SKILL.md"))
+        self.put(os.path.join(out, "learn", "SKILL.md"))
+        bundled = self.h(".grok", "bundled", "skills")
+        real = os.path.dirname(self.put(os.path.join(bundled, "learn", "SKILL.md")))
+        os.symlink(os.path.join(out, "escape"), self.h(".grok", "bundled", "skills:escape"))
+        os.symlink(os.path.join(out, "learn"), os.path.join(bundled, "learn:3"))
+        vote = lambda d: isr.finding("ISR-X003", "Corroborated by multiple engines", "high", ["AST01"], d, "e", "fix", source="engines")
+        for d in (self.h(".grok", "bundled", "skills:escape", "learn"), os.path.join(bundled, "learn:3")):
+            self.assertEqual(isr.owner_of_finding(vote(d)), "user", d)
+            self.assertFalse(isr.platform_file(vote(d)), d)
+            self.assertFalse(isr.platform_file(os.path.join(d, "SKILL.md")), d)
+        self.assertTrue(isr.platform_file(vote(real)))   # control: the real platform folder, its folder verdict and a line in its file
+        self.assertTrue(isr.platform_file(isr.finding("ISR-T008", "t", "critical", ["AST01"], os.path.join(real, "SKILL.md") + ":3", "e", "fix")))
+
 
 class StoredSnapshots(_Owned):
     """A hand-written v0.8.0 snapshot read before any v0.8.1 audit: every reader shows only the owner's findings."""

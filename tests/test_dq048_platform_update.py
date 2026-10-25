@@ -51,7 +51,11 @@ class DQ048VendorPlatformUpdate(_Middle):
         return root
 
     def test_the_dq048_vendor_update_is_the_quiet_refresh_line(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The vendor
+        update leaves no refresh line, no drift record and no baseline line; the owner's changed copy is the counted high."""
         fs = self.files()
+        u = self.user("sign-in")   # the control, in the first baseline: the owner's own sign-in skill
+        put(u, CLEAN.format(n="sign-in"))
         for p in fs["managed"]:
             put(p, CLEAN.format(n=os.path.basename(os.path.dirname(p))))
         put(fs["managed_cache"], '{"version": 7, "skills": {"sign-in": {"name": "sign-in", "body": "Sign the user in."}}}\n')
@@ -88,13 +92,17 @@ class DQ048VendorPlatformUpdate(_Middle):
             self.assertEqual((daily_out.get("platform_unverified") or {}).get("open", 0), 0, daily_out.get("platform_unverified"))
         self.assertGreaterEqual(after["score"], before["score"], (before["score"], after["score"]))
         tip = self.tip()
-        self.assertEqual(len(tip), 1, [f["title"] for f in after["findings"]])
-        self.assertEqual(tip[0]["severity"], "info")
-        self.assertIn("Grok Bot's own files changed", tip[0]["title"])
-        self.assertIn("Codex's", tip[0]["title"])
-        named = set(tip[0].get("files", []))
+        self.assertEqual(tip, [], [f["title"] for f in after["findings"]])
+        self.assertEqual(out, "NO_CHANGES")
+        self.assertFalse([f for f in after["findings"] if "Grok Bot's own files changed" in f["title"]])
+        self.assertFalse([f for f in after.get("vendor", []) if f["rule"] in ("ISR-I001", "ISR-I002", "ISR-I003", "ISR-I011", "ISR-I008")])
+        named = isr.load_baseline()[0]
         for p in fs["learn"] + fs["openai_docs"] + [fs["bundled_manifest"]] + fs["managed"][:len(MANAGED)]:
-            self.assertIn(self.rel(p), named, p)
+            self.assertNotIn(p, named, p)
+        add(u, "Also sign in to the second account.\n")   # the control: the owner's baselined copy changes
+        self.daily()
+        self.assertEqual(len(self.counted_high(u)), 1, self.ints(u))
+        self.assertIn(u, isr.load_baseline()[0])
 
 
 if __name__ == "__main__":
