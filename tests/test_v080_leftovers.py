@@ -14,6 +14,10 @@ WHOLE = ("tests/golden_expect/*.json", TABLE_REL)   # whole files
 FROM = {"CHANGELOG.md": "## 0.7.4", "docs/KNOWN-LIMITS.md": MARKER}   # from this exact line to the end of the file
 KEEP = [re.compile(k["re"]) for k in rn.TABLE["source"]["keep_spans"]]
 MODE = '"%s"' % rn.kept("file_mode")
+# owner's decision, Oct 25: the dev checkout's real folder name; ownership.py must name it so the dev tree is never scored.
+# This one line of that one file, matched whole, and nothing else.
+DEV_LINE = ("isr_bot/isr_parts/ownership.py",
+            'OWNER_SELF_WORKSPACE += ("%s-dev",)   # the dev checkout\'s real folder name: the dev tree is never scored' % rn.OLD["pkg"])
 
 
 def tracked():
@@ -54,7 +58,8 @@ def unmode(line):
 def hits(rel, text):
     """The line numbers at which rel's text says an old name outside its exempt part."""
     lines = text.split("\n")
-    return [i + 1 for i, l in enumerate(lines[:exempt_from(rel, lines)]) if any(rx.search(unmode(l)) for rx in rn.old_patterns())]
+    return [i + 1 for i, l in enumerate(lines[:exempt_from(rel, lines)])
+            if (rel, l) != DEV_LINE and any(rx.search(unmode(l)) for rx in rn.old_patterns())]
 
 
 class Leftovers(unittest.TestCase):

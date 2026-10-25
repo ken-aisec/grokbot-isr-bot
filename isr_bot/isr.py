@@ -91,6 +91,9 @@ _isr_part("vet")
 _isr_part("collect")
 
 
+_isr_part("ownership")
+
+
 _isr_part("platform_lock")
 
 

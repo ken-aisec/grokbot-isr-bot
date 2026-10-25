@@ -109,6 +109,18 @@ class Box(unittest.TestCase):
             out.append(d)
         return out
 
+    def agent_data_link(self):
+        """v0.8.1: a real Grok Bot computer's layout: sand-data the real folder, agent-data a link to it."""
+        sd = os.path.join(self.home, "sand-data"); os.makedirs(sd, exist_ok=True)
+        os.symlink(sd, os.path.join(self.home, "agent-data"))
+        return sd
+
+    def owned(self):
+        """v0.8.1 (U2-U6): the ownership gate on for this test. Removed in U7a, when it is always on."""
+        had, was = hasattr(isr, "OWNERSHIP_V081"), getattr(isr, "OWNERSHIP_V081", None)
+        isr.OWNERSHIP_V081 = True
+        self.addCleanup(lambda: setattr(isr, "OWNERSHIP_V081", was) if had else vars(isr).pop("OWNERSHIP_V081", None))
+
     def scanners(self, **override):
         # Batch 3: ISR Bot runs only its own checked copies (scanners/bin, listed in the lock); the fakes are registered
         # in this process only.
