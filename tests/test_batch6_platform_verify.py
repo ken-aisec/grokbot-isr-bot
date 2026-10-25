@@ -372,9 +372,9 @@ class StillCounted(_Units):
     def test_the_shipped_spec_is_still_empty_and_verifies_nothing(self):   # guard: no change until the spike's data lands
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The library
         check, asked directly."""
-        with open(os.path.join(ROOT, "rules", "platform-normalize.json")) as f:
+        with open(os.path.join(ROOT, isr.PLATFORM_NORMALIZE_REL)) as f:   # v0.8.1: the frozen copy in tests/fixtures/platform_v080
             self.assertEqual(json.load(f)["entries"], [])
-        isr.PLATFORM_NORMALIZE = os.path.join(ROOT, "rules", "platform-normalize.json")
+        isr.PLATFORM_NORMALIZE = os.path.join(ROOT, isr.PLATFORM_NORMALIZE_REL)
         vars(isr)["_PLATFORM_NORMALIZE_CACHE"].clear()
         self.write_cache(cache_doc())
         self.list_canon(CACHE, cache_doc(), CACHE_SPEC)

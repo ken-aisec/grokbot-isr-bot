@@ -335,25 +335,25 @@ class CheckedPlatformFiles(_SignIn):
 
 class ShippedReviewedList(unittest.TestCase):
     def test_every_entry_is_on_the_release_list_and_the_file_is_in_the_manifest(self):   # guard (docs)
-        with open(os.path.join(ROOT, "rules", "platform-reviewed.json")) as f:
+        with open(os.path.join(ROOT, isr.PLATFORM_REVIEWED_REL)) as f:   # v0.8.1: the frozen copies in tests/fixtures/platform_v080
             doc = json.load(f)
-        with open(os.path.join(ROOT, "rules", "platform-release.lock")) as f:
+        with open(os.path.join(ROOT, isr.PLATFORM_LOCK_REL)) as f:
             lock = set(f.read().splitlines())
         self.assertEqual(len(doc["entries"]), 4)
         for e in doc["entries"]:
             for rel in e["paths"]:
                 self.assertIn(f"{e['sha256']}  {rel}", lock, rel)
         with open(os.path.join(ROOT, "MANIFEST.sha256")) as f:
-            self.assertIn("  rules/platform-reviewed.json", f.read())
-        old, isr.PLATFORM_REVIEWED = isr.PLATFORM_REVIEWED, os.path.join(ROOT, "rules", "platform-reviewed.json")
+            self.assertIn("  tests/fixtures/platform_v080/platform-reviewed.json", f.read())
+        old, isr.PLATFORM_REVIEWED = isr.PLATFORM_REVIEWED, os.path.join(ROOT, isr.PLATFORM_REVIEWED_REL)
         try:
             self.assertEqual(isr.platform_reviewed_problem(), "")
         finally:
             isr.PLATFORM_REVIEWED = old
 
     def test_the_notes_say_what_line_12_does(self):   # guard: the owner read line 12 on the maintainer's box (Oct 18); these are its two findings
-        with open(os.path.join(ROOT, "rules", "platform-reviewed.json")) as f:
-            notes = {e["rule"]: e["note"] for e in json.load(f)["entries"]}
+        with open(os.path.join(ROOT, isr.PLATFORM_REVIEWED_REL)) as f:
+            notes ={e["rule"]: e["note"] for e in json.load(f)["entries"]}
         self.assertEqual(notes["ISR-T008"], "Grok Bot's sign-in skill tells the Bot not to bring up 1Password with people who don't use it. "
                                            "It's about not pushing a product, not about hiding anything.")
         self.assertEqual(notes["ISR-T004"], "Grok Bot's sign-in skill uses the platform's own sign-in tool, which can use logins saved in "

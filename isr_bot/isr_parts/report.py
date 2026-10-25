@@ -143,6 +143,22 @@ def _platform_place(where):
     return ("~/" + path[len(h):] if path.startswith(h) else path), ln
 
 
+def platform_vendor(p):
+    """Whose platform folder p is in, for the owner: Codex, Claude, or Grok Bot. v0.8.1 (§2): moved here from platform_lock.py."""
+    n = _path_part(p, line=False)
+    try:
+        places = (n, os.path.realpath(n))
+    except OSError:
+        places = (n,)
+    for q in places:
+        for b in home_bases():
+            if _under(q, {os.path.normpath(os.path.join(b, ".codex/skills/.system"))}, strict=True):
+                return "Codex"
+            if _under(q, {os.path.normpath(os.path.join(b, ".claude/plugins/synced"))}, strict=True):
+                return "Claude"
+    return "Grok Bot"
+
+
 def _note_kind(f):
     """Which line a platform note gets: "pattern" or "said" (ISR Bot would call it <severity>)."""
     if f.get("class") == "platform" and not f.get("platform_hook"):

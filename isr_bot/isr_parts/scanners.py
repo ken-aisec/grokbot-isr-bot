@@ -340,6 +340,59 @@ def release_want(path, rel):
     return want
 
 
+# v0.8.1 (§2): moved here from platform_lock.py, beside release_want; the access and Ask-first vocabularies read through them.
+def _release_file(path, rel, max_bytes):
+    """(bytes, why it can't be used or "") of one of ISR Bot's own rules files: a plain file (never a link), at most max_bytes,
+    and in an installed copy exactly the bytes MANIFEST.sha256 lists for it."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    except OSError as e:
+        return b"", f"it can't be opened as a plain file ({errno.errorcode.get(e.errno, 'error')})"
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return b"", "it isn't a plain file"
+        data = b""
+        while len(data) <= max_bytes:
+            chunk = os.read(fd, max_bytes + 1 - len(data))
+            if not chunk:
+                break
+            data += chunk
+    except OSError as e:
+        return b"", f"it can't be read ({errno.errorcode.get(e.errno, 'error')})"
+    finally:
+        os.close(fd)
+    if len(data) > max_bytes:
+        return b"", f"it is larger than {max_bytes // 1024} KB"
+    want = release_want(path, rel)   # batch 6 (KL4): held to MANIFEST.sha256 in every layout, a developer checkout included
+    if want is not None and hashlib.sha256(data).hexdigest() != want:
+        return b"", _not_shipped(want)
+    return data, ""
+
+
+def _not_shipped(want):
+    """Why a rules file that isn't its MANIFEST.sha256 line is refused."""
+    if not want and release_files_unchecked():
+        return "ISR Bot's release files can't be checked (its MANIFEST.sha256 is missing or unreadable)"
+    if not want:
+        return "MANIFEST.sha256 doesn't list it, so it can't be checked"
+    return "it isn't the file this release of ISR Bot shipped (MANIFEST.sha256)"
+
+
+def _stat_key(path):
+    """What says a rules file is unchanged since it was last read (its path, size, change time and inode), or None."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return None
+    return (path, st.st_size, st.st_mtime_ns, st.st_ino, st.st_mode)
+
+
+def _plain_rel(rel):
+    return (isinstance(rel, str) and rel and not rel.startswith("/") and ":" not in rel and ".." not in rel.split("/")
+            and os.path.normpath(rel) == rel and not any(ord(c) < 32 or 127 <= ord(c) < 160 for c in rel)
+            and rel.startswith(tuple(sub + "/" for sub in PLATFORM_ROOT_SUBS)))
+
+
 def _lock_reader():
     """scripts/scanner_lock.py as a namespace, run from its source bytes. Codex, batch 3 round 2: importing it let Python load a
     bytecode cache (scripts/__pycache__/scanner_lock.*.pyc) instead, which self_check never looks at, so a planted cache

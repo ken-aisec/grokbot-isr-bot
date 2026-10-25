@@ -657,7 +657,7 @@ class Docs(unittest.TestCase):
     def test_the_release_list_is_well_formed_and_is_in_the_manifest(self):
         """Filled from the maintainer's box (Oct 18): every line is `<sha256>  <path>` inside a platform folder, and isr.py reads it whole."""
         import re
-        t = self.read("rules/platform-release.lock")
+        t = self.read("tests/fixtures/platform_v080/platform-release.lock")   # v0.8.1: the frozen copy, bytes unchanged
         lines = [l for l in t.splitlines() if l.strip() and not l.lstrip().startswith("#")]
         self.assertTrue(lines)
         roots = tuple(sub + "/" for sub in isr.PLATFORM_ROOT_SUBS)
@@ -675,13 +675,15 @@ class Docs(unittest.TestCase):
             pairs.append((rel, m.group(1)))
         self.assertEqual(len(pairs), len(set(pairs)))
         saved = isr.PLATFORM_LOCK
-        isr.PLATFORM_LOCK = os.path.join(ROOT, "rules", "platform-release.lock")
+        isr.PLATFORM_LOCK = os.path.join(ROOT, "tests", "fixtures", "platform_v080", "platform-release.lock")
         try:
             self.assertEqual(isr.platform_lock_problem(), "")
             self.assertEqual({(p, h) for p, hs in isr.platform_lock().items() for h in hs}, set(pairs))
         finally:
             isr.PLATFORM_LOCK = saved
-        self.assertIn("rules/platform-release.lock", self.read("MANIFEST.sha256"))
+        manifest = self.read("MANIFEST.sha256")
+        self.assertIn("  tests/fixtures/platform_v080/platform-release.lock", manifest)
+        self.assertNotIn("rules/platform-release.lock", manifest)
 
     def test_the_docs_name_the_release_list_and_the_yes(self):
         unreleased = self.read("CHANGELOG.md").split("\n## v")[0]

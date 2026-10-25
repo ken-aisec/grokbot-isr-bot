@@ -28,13 +28,13 @@ def sha(text):
 
 
 def shipped_entries(digest):
-    with open(os.path.join(ROOT, "rules", "platform-reviewed.json")) as f:
+    with open(os.path.join(ROOT, "tests", "fixtures", "platform_v080", "platform-reviewed.json")) as f:   # v0.8.1: frozen copy
         return [e for e in json.load(f)["entries"] if e["sha256"] == digest]
 
 
 class ShippedLists(unittest.TestCase):
     def test_the_shipped_lists_pin_b06512e7_at_line_11(self):   # replay (c1bf625: no b06512e7 lock line)
-        with open(os.path.join(ROOT, "rules", "platform-release.lock")) as f:
+        with open(os.path.join(ROOT, "tests", "fixtures", "platform_v080", "platform-release.lock")) as f:
             lock = set(f.read().splitlines())
         for rel in (REL, AGENT_REL):
             self.assertIn(f"{NEW}  {rel}", lock, rel)

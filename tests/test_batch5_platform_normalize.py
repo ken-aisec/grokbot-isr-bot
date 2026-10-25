@@ -243,10 +243,10 @@ class Normalized(_Meta):
         self.assertIn("MANIFEST.sha256", problem)
 
     def test_the_shipped_spec_is_empty(self):   # guard: no behavior change until the spike's data lands
-        with open(os.path.join(ROOT, "rules", "platform-normalize.json")) as f:
+        with open(os.path.join(ROOT, isr.PLATFORM_NORMALIZE_REL)) as f:   # v0.8.1: the frozen copy in tests/fixtures/platform_v080
             self.assertEqual(json.load(f)["entries"], [])
         with open(os.path.join(ROOT, "MANIFEST.sha256")) as f:
-            self.assertIn("  rules/platform-normalize.json", f.read())
+            self.assertIn("  tests/fixtures/platform_v080/platform-normalize.json", f.read())
 
 
 class ShapeScript(unittest.TestCase):

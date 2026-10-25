@@ -227,7 +227,7 @@ class InstalledCopyIdentity(Box):
     def install(self):
         self.wth = os.environ["ISR_BOT_HOME"]
         self.app = os.path.join(self.wth, "app")
-        for d in ("isr_bot", "rules", ".git"):
+        for d in ("isr_bot", "rules", os.path.join("tests", "fixtures", "platform_v080"), ".git"):   # v0.8.1: the lists' frozen copies
             os.makedirs(os.path.join(self.app, d), exist_ok=True)
         for rel in (isr.PLATFORM_REVIEWED_REL, isr.PLATFORM_NORMALIZE_REL):
             shutil.copyfile(os.path.join(ROOT, rel), os.path.join(self.app, rel))

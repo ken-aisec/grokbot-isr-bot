@@ -282,7 +282,7 @@ class G07Paths(unittest.TestCase):
         got = json.loads(p.stdout)
         r = os.path.realpath(ROOT)
         want = {"file": "isr_bot/isr.py", "here": "isr_bot", "root": "", "rules": "rules/text_rules.json",
-                "platform": "rules/platform-release.lock", "scanners": "scripts/scanner-bins.lock", "feeds": "rules/feeds.json",
+                "platform": "tests/fixtures/platform_v080/platform-release.lock", "scanners": "scripts/scanner-bins.lock", "feeds": "rules/feeds.json",
                 "reader": "scripts/scanner_lock.py", "parts": "isr_bot/isr_parts"}
         self.assertEqual(got, {k: os.path.join(r, v) if v else r for k, v in want.items()})
         for k in ("file", "rules", "platform", "scanners", "feeds", "reader"):

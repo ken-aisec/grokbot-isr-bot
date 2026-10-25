@@ -6,8 +6,9 @@
 # whose path and exact bytes are listed is the vendor's. Filled Oct 18 from the maintainer's box (see its header); a `<bucket>`
 # line lists a file in every account's sync bucket; the platform's sync bookkeeping (PLATFORM_CHURN) is never listed and never
 # needs to be. v0.8.1 (§2): ownership is decided by location (ownership.py), so nothing in an audit, daily or vet reads these
-# lists any more. The parsers below are kept as a library for their own tests until v0.8.2.
-PLATFORM_LOCK_REL = "rules/platform-release.lock"
+# lists any more. The parsers below are kept as a library for their own tests until v0.8.2, and the three lists are frozen
+# copies under tests/fixtures/platform_v080/ (bytes unchanged).
+PLATFORM_LOCK_REL = "tests/fixtures/platform_v080/platform-release.lock"
 PLATFORM_LOCK = os.path.join(HERE, "..", PLATFORM_LOCK_REL)   # tests point this at a file in their box; never read from the environment
 PLATFORM_LOCK_MAX_BYTES = 4 * 1024 * 1024
 _PLATFORM_LOCK_CACHE = {}
@@ -184,80 +185,12 @@ def platform_ish(p):
         return True
 
 
-def platform_vendor(p):
-    """Whose platform folder p is in, for the owner: Codex, Claude, or Grok Bot."""
-    n = _path_part(p, line=False)
-    try:
-        places = (n, os.path.realpath(n))
-    except OSError:
-        places = (n,)
-    for q in places:
-        for b in home_bases():
-            if _under(q, {os.path.normpath(os.path.join(b, ".codex/skills/.system"))}, strict=True):
-                return "Codex"
-            if _under(q, {os.path.normpath(os.path.join(b, ".claude/plugins/synced"))}, strict=True):
-                return "Claude"
-    return "Grok Bot"
-
-
-def _release_file(path, rel, max_bytes):
-    """(bytes, why it can't be used or "") of one of ISR Bot's own rules files: a plain file (never a link), at most max_bytes,
-    and in an installed copy exactly the bytes MANIFEST.sha256 lists for it."""
-    try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
-    except OSError as e:
-        return b"", f"it can't be opened as a plain file ({errno.errorcode.get(e.errno, 'error')})"
-    try:
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
-            return b"", "it isn't a plain file"
-        data = b""
-        while len(data) <= max_bytes:
-            chunk = os.read(fd, max_bytes + 1 - len(data))
-            if not chunk:
-                break
-            data += chunk
-    except OSError as e:
-        return b"", f"it can't be read ({errno.errorcode.get(e.errno, 'error')})"
-    finally:
-        os.close(fd)
-    if len(data) > max_bytes:
-        return b"", f"it is larger than {max_bytes // 1024} KB"
-    want = release_want(path, rel)   # batch 6 (KL4): held to MANIFEST.sha256 in every layout, a developer checkout included
-    if want is not None and hashlib.sha256(data).hexdigest() != want:
-        return b"", _not_shipped(want)
-    return data, ""
-
-
-def _not_shipped(want):
-    """Why a rules file that isn't its MANIFEST.sha256 line is refused."""
-    if not want and release_files_unchecked():
-        return "ISR Bot's release files can't be checked (its MANIFEST.sha256 is missing or unreadable)"
-    if not want:
-        return "MANIFEST.sha256 doesn't list it, so it can't be checked"
-    return "it isn't the file this release of ISR Bot shipped (MANIFEST.sha256)"
-
-
-def _stat_key(path):
-    """What says a rules file is unchanged since it was last read (its path, size, change time and inode), or None."""
-    try:
-        st = os.lstat(path)
-    except OSError:
-        return None
-    return (path, st.st_size, st.st_mtime_ns, st.st_ino, st.st_mode)
-
-
-def _plain_rel(rel):
-    return (isinstance(rel, str) and rel and not rel.startswith("/") and ":" not in rel and ".." not in rel.split("/")
-            and os.path.normpath(rel) == rel and not any(ord(c) < 32 or 127 <= ord(c) < 160 for c in rel)
-            and rel.startswith(tuple(sub + "/" for sub in PLATFORM_ROOT_SUBS)))
-
-
 # Batch 5 (d2, decision 1, Oct 18): findings ISR Bot's team read in exact versions of the platform's own files. One entry
 # names the paths (under the home folder), the file's sha256, the rule and the line; it applies only to those bytes there, so any
 # change to the file (another sha256) ends it. The list ships in ISR Bot's release and is held to MANIFEST.sha256 like the
 # release lock; its path is a constant tests point at their own file, never read from the environment or from state/. Nothing on
 # the computer can add an entry.
-PLATFORM_REVIEWED_REL = "rules/platform-reviewed.json"
+PLATFORM_REVIEWED_REL = "tests/fixtures/platform_v080/platform-reviewed.json"
 PLATFORM_REVIEWED = os.path.join(HERE, "..", PLATFORM_REVIEWED_REL)
 PLATFORM_REVIEWED_MAX_BYTES = 256 * 1024
 _PLATFORM_REVIEWED_CACHE = {}
@@ -292,7 +225,7 @@ def _platform_reviewed_state():
 
 
 def platform_reviewed_problem():
-    """Why rules/platform-reviewed.json can't be used, or ""."""
+    """Why the reviewed list (PLATFORM_REVIEWED_REL) can't be used, or ""."""
     return _platform_reviewed_state()[1]
 
 
@@ -326,7 +259,7 @@ def platform_reviewed(f, manifest, snap=None):
 # compactly in its own key order. The release list then holds the sha256 of that canonical form for the path, like any other
 # line. Any other difference gives another digest, so it stays a counted ISR-I001. The spec ships EMPTY: nothing is normalized until
 # a spike (the maintainer's shape diff with scripts/platform-json-shape.py, then a check of the host loader) proves which fields are unused.
-PLATFORM_NORMALIZE_REL = "rules/platform-normalize.json"
+PLATFORM_NORMALIZE_REL = "tests/fixtures/platform_v080/platform-normalize.json"
 PLATFORM_NORMALIZE = os.path.join(HERE, "..", PLATFORM_NORMALIZE_REL)
 PLATFORM_NORMALIZE_MAX_BYTES = 64 * 1024
 NORMALIZE_FILE_MAX = 1024 * 1024
@@ -403,7 +336,7 @@ def _platform_normalize_state():
 
 
 def platform_normalize_problem():
-    """Why rules/platform-normalize.json can't be used, or ""."""
+    """Why the normalization spec (PLATFORM_NORMALIZE_REL) can't be used, or ""."""
     return _platform_normalize_state()[1]
 
 

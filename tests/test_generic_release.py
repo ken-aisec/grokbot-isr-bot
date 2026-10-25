@@ -49,7 +49,8 @@ ALLOW = frozenset({"363a7d48f615cc538634ee46c83655545f415c1ab50de82afb8629e036e0
 # Item 4 could not edit these two rules files, and the lock still names a vendor skill path (.grok/bundled/skills/...) whose
 # words join into a keyed entry (decision D9: the owner decides any ALLOW); remove each when it is clean
 # (test_item4_exemptions_still_needed fails then).
-ITEM4_PENDING = frozenset({"rules/platform-release.lock", "rules/platform-normalize.json", "rules/platform-reviewed.json"})
+ITEM4_PENDING = frozenset({"tests/fixtures/platform_v080/platform-release.lock", "tests/fixtures/platform_v080/platform-normalize.json",
+                           "tests/fixtures/platform_v080/platform-reviewed.json"})   # v0.8.1: frozen copies, bytes unchanged
 CHANGELOG_CUT = re.compile(r"^## 0\.7\.3$")   # CHANGELOG.md from this header down is history (owner decision, b8i5)
 NO_CUT = "no-0.7.3-header"
 BINARY = (".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".bmp", ".zip", ".gz", ".tgz", ".bz2", ".xz", ".pdf",

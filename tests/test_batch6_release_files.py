@@ -14,8 +14,8 @@ from test_boxes import Box, ROOT
 import isr  # noqa: E402
 import test_batch5_codex_r1 as r1
 
-SHIPPED = ("rules/platform-reviewed.json", "rules/platform-normalize.json", "rules/platform-release.lock", "rules/access_vocab.json",
-           "scripts/scanner-bins.lock", "scripts/scanner_lock.py")
+SHIPPED = (isr.PLATFORM_REVIEWED_REL, isr.PLATFORM_NORMALIZE_REL, isr.PLATFORM_LOCK_REL, "rules/access_vocab.json",
+           "scripts/scanner-bins.lock", "scripts/scanner_lock.py")   # v0.8.1: the platform lists are frozen copies in tests/fixtures/platform_v080
 CACHES = ("_RELEASE", "_PLATFORM_REVIEWED_CACHE", "_PLATFORM_NORMALIZE_CACHE", "_PLATFORM_LOCK_CACHE", "_ACCESS_VOCAB_CACHE",
           "_SCANNER_LOCK_CACHE")
 

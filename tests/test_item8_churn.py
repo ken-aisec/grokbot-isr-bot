@@ -37,7 +37,7 @@ from test_isr_bot import fake_key  # noqa: E402
 import profiles  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOCK = os.path.join(ROOT, "rules", "platform-release.lock")
+LOCK = os.path.join(ROOT, "tests", "fixtures", "platform_v080", "platform-release.lock")   # v0.8.1: the frozen copy
 BUCKET = "11111111-2222-3333-4444-555555555555_66666666-7777-8888-9999-000000000000"
 BUCKET2 = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee_ffffffff-0000-1111-2222-333333333333"
 BUCKET3 = "12121212-3434-5656-7878-909090909090_abababab-cdcd-efef-0101-232323232323"
