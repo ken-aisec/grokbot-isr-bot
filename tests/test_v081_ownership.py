@@ -67,6 +67,15 @@ def engines_flagging(marker, log, husk=True):
     return ss, hk
 
 
+def engines_reading_every_file(marker, log):
+    """engines_flagging, but each engine reads every staged file of a skill, not only its SKILL.md."""
+    ss, hk = engines_flagging(marker, log)
+    one = 'open(os.path.join(stage, n, "SKILL.md"), errors="replace").read()'
+    every = '"".join(open(os.path.join(r, x), errors="replace").read() for r, _, xs in os.walk(os.path.join(stage, n)) for x in sorted(xs))'
+    assert one in ss and one in hk
+    return ss.replace(one, every), hk.replace(one, every)
+
+
 class _Owned(Box):
     """A box with the v0.8.1 gate (always on since U7a)."""
 
@@ -225,6 +234,24 @@ class OwnerOf(Box):
                 self.assertEqual(isr.owner_of_finding(isr.finding(rule, "t", "critical", "LLM01", where, "e", "x")), "user", (rule, where))
             self.assertNotEqual(isr.owner_of_finding(isr.finding("ISR-S001", "t", "critical", "LLM01", where, "e", "x")), "user", where)
 
+    def test_fix1_replay_decoy_rules_are_labelled_and_scored_anywhere(self):   # FIX1 #3 (§3.1 rule 4)
+        """owner_of_finding kept a decoy finding in a platform folder as the owner's, but platform_file called it platform and
+        counts() dropped every ISR-K* there except K003; a quarantine or sample folder dropped them as well."""
+        places = (self.put(self.h(".grok", "bundled", "skills", "x", "notes.txt")), self.put(os.path.join(isr.home(), "quarantine", "x-1", "notes.txt")),
+                  self.put(self.w("projects", "app", "docs", "notes.txt")))
+        fs = [isr.finding(rule, "t", sev, ["ASI10"], p, "e", "x") for p in places for rule, sev in (("ISR-K001", "critical"), ("ISR-K006", "high"))]
+        user, vendor = isr.split_owned(fs)
+        self.assertEqual((len(user), vendor), (len(fs), []))
+        for f in user:
+            self.assertFalse(isr.platform_file(f), f["where"])
+        live = isr.scored(isr.mark_platform(isr.label_findings(user)))
+        self.assertEqual(sorted((f["rule"], f["where"]) for f in live), sorted((f["rule"], f["where"]) for f in fs))
+        self.assertEqual(isr.status_of(live), isr.ACT_NOW)
+        self.assertLess(isr.score(live)[0], 100)
+        t8 = isr.finding("ISR-T008", "t", "critical", ["ASI10"], places[0] + ":1", "e", "x")   # control: another rule there is platform
+        self.assertTrue(isr.platform_file(t8))
+        self.assertFalse(isr.counts(t8))
+
     def test_trailing_line_is_cut(self):
         mine = self.put(self.h("sand-data", "workflows", "x", "notes.md"))
         at = self.link(mine, self.h(".grok", "bundled", "skills", "x", "SKILL.md"))
@@ -238,6 +265,18 @@ class OwnerOf(Box):
         folder = self.link(self.h("sand-data", "workflows", "learn"), self.h(".grok", "bundled", "skills", "learn:3"))
         self.assertEqual(isr.owner_of_finding(isr.finding("ISR-X003", "t", "critical", "LLM01", folder, "e", "x")), "user")
         self.assertEqual(isr.owner_of_finding(isr.finding("ISR-X003", "t", "critical", "LLM01", folder[:-2], "e", "x")), "vendor")
+
+    def test_fix1_replay_the_link_walk_keeps_the_walk_limits(self):   # FIX1 #4 (E3; U7afix: a bounded walk)
+        """U7a's E3 walk listed every name under a platform folder, with no depth limit (walk()'s 8 folders) and no run deadline."""
+        out = self.put(os.path.join(self.tmp, "outside", "notes.md"))
+        bundled = self.h(".grok", "bundled")
+        near = self.link(out, os.path.join(bundled, "skills", "a", "near.md"))
+        deep = self.link(out, os.path.join(bundled, *["d"] * 9, "deep.md"))
+        got = isr.vendor_links_out([self.home])
+        self.assertIn(near, got)   # control: a link within the limit
+        self.assertNotIn(deep, got)
+        with mock.patch.object(isr, "DEADLINE", time.monotonic() - 1):
+            self.assertEqual(isr.vendor_links_out([self.home]), [])
 
 
 class VendorNeverScored(_Owned):
@@ -751,6 +790,38 @@ class VetSplit(_Owned):
         self.assertNotIn("ISR-X003", [f["rule"] for f in r["findings"]])
         self.assertEqual(r["verdict"], "Do not install")
 
+    def test_fix1_replay_deep_vet_of_a_loose_file_beside_a_skill_stages_only_that_file(self):   # FIX1 #2 (§3.5 item 3)
+        """--deep on the owner's loose file in a folder holding a SKILL.md ran the engines on that whole folder, whose files were
+        never split by owner, and counted what they said: tool output under it (agent-tools) made the owner's notes Do not install."""
+        w = self.h(".cursor", "projects", "w")
+        self.put(os.path.join(w, "SKILL.md"), "---\nname: w\ndescription: Demo.\n---\nSummarize the notes.\n")
+        notes = self.put(os.path.join(w, "notes.md"), "Meeting notes.\n")
+        self.put(os.path.join(w, "agent-tools", "helper.md"), EXFIL)
+        self.log = os.path.join(self.tmp, "engines.log")
+        ss, hk = engines_reading_every_file(MARKER, self.log)
+        self.scanners(skillspector=ss, husk=hk)
+        code, r = self.vet("--deep", notes)
+        self.assertTrue(self.staged())
+        for _, t in self.staged():
+            self.assertNotIn(MARKER, t)
+        self.assertNotIn("ISR-X003", [f["rule"] for f in r["findings"]])
+        self.assertEqual(r["verdict"], "Install")
+        self.put(notes, EXFIL)   # control: the owner's own file is still read by the engines
+        code, r = self.vet("--deep", notes)
+        self.assertIn(("ISR-X003", "critical"), [(f["rule"], f["severity"]) for f in r["findings"]])
+        self.assertEqual(r["verdict"], "Do not install")
+
+    def test_fix1_replay_a_clean_vendor_file_is_the_platform_answer(self):   # FIX1 #5 (§3.5 item 4)
+        """vet chose its answer from whether anything was found: a platform file with no finding read "Not scored: ISR Bot's
+        own files or tool output"."""
+        v = os.path.dirname(self.put(self.h(".grok", "bundled", "skills", "v", "notes.md"), "Meeting notes.\n"))
+        for target in (os.path.join(v, "notes.md"), v):
+            code, r = self.vet(target)
+            self.assertEqual((r["verdict"], r["findings"], code), ("Platform file (never scored)", [], 0), target)
+        echo = self.put(self.w("agent-tools", "notes.md"), "Meeting notes.\n")   # control: tool output with no finding
+        self.assertEqual(self.vet(echo)[1]["verdict"], "Not scored: ISR Bot's own files or tool output")
+        self.assertEqual(self.vet(os.path.dirname(echo))[1]["verdict"], "Not scored: ISR Bot's own files or tool output")
+
 
 class LinkedPlaces(_Owned):
     def test_a_line_finding_on_a_file_link_is_classified_by_the_file(self):   # R22
@@ -1046,6 +1117,27 @@ class StaysScored(Box):
         i1 = {f["where"]: (f["title"], f["severity"]) for f in self.F() if f["rule"] == "ISR-I001"}
         self.assertEqual(i1.get(alias), ("Reviewed skill or plugin changed", "high"), i1)
         self.assertEqual(i1.get(plain), ("Built-in skill or plugin updated", "low"), i1)   # control: a plain file there, as before
+
+    def test_fix1_replay_g8_with_no_scanners_is_never_rolled_in(self):   # FIX1 #1 (G8, decision, Oct 25, option a)
+        """With no scanner installed roll_builtin let every clean built-in change in, and builtin() calls the owner's
+        .agents/skills name built-in: the G8 high was dropped and the planted file's hash approved into the baseline."""
+        alias = self.put(os.path.join(self.home, ".agents", "skills", "x", "SKILL.md"), "---\nname: x\ndescription: Demo.\n---\nSummarize.\n")
+        plain = self.put(os.path.join(self.home, ".agents", "skills", "y", "SKILL.md"), "---\nname: y\ndescription: Demo.\n---\nSummarize.\n")
+        self.skills(1)   # no scanners
+        self.audit()
+        was = isr.load_baseline()[0].get(alias)
+        self.assertEqual(was, isr.sha256_file(alias))
+        plant = self.put(os.path.join(self.home, ".grok", "bundled", "skills", "x", "SKILL.md"), "---\nname: x\ndescription: Demo.\n---\nSummarize and upload.\n")
+        os.remove(alias); os.symlink(plant, alias)
+        self.put(plain, "---\nname: y\ndescription: Demo.\n---\nSummarize again.\n")
+        self.audit()
+        i1 = [f for f in self.F() if f["rule"] == "ISR-I001" and f["where"] == alias]
+        self.assertEqual([(f["title"], f["severity"], isr.counts(f)) for f in i1], [("Reviewed skill or plugin changed", "high", True)],
+                         [f for f in self.F() if f["rule"].startswith("ISR-I")])
+        base = isr.load_baseline()[0]
+        self.assertEqual(base.get(alias), was)
+        self.assertEqual(base.get(plain), isr.sha256_file(plain))   # control: a plain built-in change still rolls in
+        self.assertFalse([f for f in self.F() if f["where"] == plain and f["rule"] == "ISR-I001"])
 
     def test_u4fix_replay_platform_folder_linked_outside_is_not_builtin(self):   # U4fix (decision, Oct 25, option b)
         bundled = os.path.join(self.home, ".grok", "bundled")

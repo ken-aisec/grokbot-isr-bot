@@ -110,12 +110,12 @@ VET_NOT_SCORED = "Not scored: ISR Bot's own files or tool output"
 VET_PLATFORM_ANSWER = "Platform file (never scored)"
 
 
-def vet_owner_answer(args, name, fs, absolute, not_scored):
+def vet_owner_answer(args, name, fs, absolute, not_scored, platform):
     """v0.8.1 (§3.5): vet read nothing of the owner's. Platform files' findings are listed, never scored; ISR Bot's own files
-    and tool output are counted only. No score, exit 0."""
+    and tool output are counted only. No score, exit 0. `platform`: any of it was a platform file (found anything or not)."""
     vendor = [dict(lf, where=f["where"], label=VET_PLATFORM, vet_owner="vendor")
               for f, lf in zip(fs, label_findings([dict(f, where=absolute.get(f["key"], f["where"])) for f in fs]))]
-    result = {"tool": "isr-bot", "version": VERSION, "target": name, "verdict": VET_PLATFORM_ANSWER if vendor else VET_NOT_SCORED,
+    result = {"tool": "isr-bot", "version": VERSION, "target": name, "verdict": VET_PLATFORM_ANSWER if platform else VET_NOT_SCORED,
               "risk_score": None, "posture_score": None, "grade": None, "findings": sort_findings(vendor), "engines": {},
               "not_scored": not_scored,
               "boundary_line": "Never send, post, buy, publish, delete, or change settings without my approval in this conversation. If a source is unavailable, report the failure."}
@@ -166,7 +166,8 @@ def cmd_vet(args):
         except OSError:
             fs = None
         if fs is not None and owners_ and "user" not in owners_.values():
-            return vet_owner_answer(args, os.path.basename(args.path.rstrip("/")) or "vetted", fs, absolute, not_scored)
+            return vet_owner_answer(args, os.path.basename(args.path.rstrip("/")) or "vetted", fs, absolute, not_scored,
+                                    "vendor" in owners_.values())
         if fs is None or (main_ is None and not parts):
             print(f"ERROR could not read {args.path}", file=sys.stderr)
             return 2
@@ -183,12 +184,12 @@ def cmd_vet(args):
         c = owner_of(os.path.abspath(args.path)) if args.path != "-" and not getattr(args, "page_only", False) else "user"
         if c in ("isr_self", "fixture-echo"):
             not_scored["isr_self" if c == "isr_self" else "tool_output"] += 1
-            return vet_owner_answer(args, name, [], absolute, not_scored)
+            return vet_owner_answer(args, name, [], absolute, not_scored, False)
         fs = scan_text(text, name, rules, kind="template", limit=VET_FINDINGS_CAP, cut=cut, stop=stop)
         if args.path != "-":
             absolute.update((f["key"], os.path.abspath(args.path) + f["where"][len(name):]) for f in fs)
         if c == "vendor":
-            return vet_owner_answer(args, name, fs, absolute, not_scored)
+            return vet_owner_answer(args, name, fs, absolute, not_scored, True)
     # Codex, round 3: what was kept and what was read are said apart. Past the findings cap repeats aren't kept, but every match
     # was read; past the match budget a file was not read to its end, and then vet gives no installation verdict (below).
     if stop:
@@ -212,9 +213,9 @@ def cmd_vet(args):
                 q = os.path.join(d, os.path.relpath(p, folder))
                 os.makedirs(os.path.dirname(q), exist_ok=True)
                 shutil.copyfile(p, q)
-        elif not os.path.isfile(os.path.join(d, "SKILL.md")):
+        elif folder is None or not os.path.isfile(os.path.join(d, "SKILL.md")):
             # SkillSpector and husk only read folders with a SKILL.md. Page text or a loose file is staged as one,
-            # so "deep" never quietly means "ISR Bot's own rules only".
+            # so "deep" never quietly means "ISR Bot's own rules only". v0.8.1: a loose file always, never its folder.
             staged = tempfile.mkdtemp(prefix="isr-bot-vet-")
             d = os.path.join(staged, re.sub(r"[^A-Za-z0-9_.-]+", "_", os.path.splitext(name)[0])[:40] or "vetted")
             os.makedirs(d)

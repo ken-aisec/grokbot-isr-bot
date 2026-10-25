@@ -118,7 +118,7 @@ def roll_builtin(fs, meta, notes):
     keep, rolled = [], 0
     for f in fs:
         w = f["where"].split(":")[0]
-        if f["rule"] in ("ISR-I001", "ISR-I002", "ISR-I003") and builtin(f) and passes(w):
+        if f["rule"] in ("ISR-I001", "ISR-I002", "ISR-I003") and builtin(f) and passes(w) and not owner_link_into_vendor(w):   # G8: the owner's drift
             if f["rule"] == "ISR-I003":
                 base.pop(w, None)
             elif w in meta["manifest"]:

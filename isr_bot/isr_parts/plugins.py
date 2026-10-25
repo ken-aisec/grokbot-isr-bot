@@ -925,7 +925,7 @@ def platform_file(f):
     the platform's hook, or system packages. A user skill whose path merely contains a platform-looking segment is never
     platform (Claude v0.7.1 F3)."""
     w = f.get("where", "") if isinstance(f, dict) else str(f)
-    if in_pending_plugin(w):
+    if in_pending_plugin(w) or (isinstance(f, dict) and str(f.get("rule") or "").startswith("ISR-K")):   # v0.8.1 (§3.1): a decoy is the owner's
         return False
     if isinstance(f, dict) and f.get("platform_hook"):
         return True
@@ -968,12 +968,13 @@ def counts(f):
         return False
     w = f.get("where", "")
     path = w.split(":")[0]
-    if path and not w.startswith(("rollcall:", "system python package ")) and f["rule"] not in SECRET_RULES:
+    decoy = f["rule"].startswith("ISR-K")   # v0.8.1 (§3.1 rule 4): every decoy finding is the owner's, wherever it is
+    if path and not w.startswith(("rollcall:", "system python package ")) and f["rule"] not in SECRET_RULES and not decoy:
         if is_quarantined_path(path):
             return False
         if is_sample_skill_path(path) and not is_loadable_skill_location(path):
             return False
-    if f.get("scope") == "platform" or platform_file(f):   # v0.7.1 item 4: never, except a real key outside Grok Bot's config
+    if not decoy and (f.get("scope") == "platform" or platform_file(f)):   # v0.7.1 item 4: never, except a real key outside Grok Bot's config
         return f["rule"] in SECRET_RULES and not platform_config_finding(f)
     return not builtin(f) or f["severity"] in ("critical", "high")
 

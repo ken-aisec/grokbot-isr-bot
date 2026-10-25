@@ -88,8 +88,13 @@ def vendor_links_out(roots):
     for s in starts:
         if _under(s, set(starts) - {s}, strict=True):
             continue   # walked under the outer one
-        links = [s] if vendor_link_out(s) else [p for d, ds, fs in os.walk(s) for p in (os.path.join(d, n) for n in ds + fs)
-                                                 if os.path.islink(p) and vendor_link_out(p)]
+        links, base = ([s] if vendor_link_out(s) else []), s.rstrip("/").count("/")
+        for d, ds, fs in ([] if links else os.walk(s)):   # walk()'s limits: 8 folders deep, and never past the run's deadline
+            if time_left() <= 0:
+                break
+            links += [p for p in (os.path.join(d, n) for n in ds + fs) if os.path.islink(p) and vendor_link_out(p)]
+            if d.count("/") - base >= 8:
+                ds[:] = []
         for p in links:
             out += list(walk([p])) if os.path.isdir(p) else [p] if os.path.isfile(p) else []
     return out

@@ -295,7 +295,7 @@ class LinkToTheOwnersFile(_Quiet):
         self.start()
         add(own, "Changed through the link.\n")
         self.audit()
-        self.assertEqual(len(self.counted(own, plat)), 1)
+        self.assertEqual((len(self.counted(own, plat)), len(self.counted_high(plat))), (1, 1))   # FIX1 #6: on the name kept
         self.assertEqual(isr.owner_of(plat), "user")
         return own, plat
 
@@ -306,10 +306,10 @@ class LinkToTheOwnersFile(_Quiet):
         self.assertEqual(self.vend(plat), [])
         self.assertIn(NOTHING, self.approve("0" * 20))                        # Decision, Oct 18: no yes approves it
         self.audit()
-        self.assertEqual(len(self.counted(own, plat)), 1)
+        self.assertEqual((len(self.counted(own, plat)), len(self.counted_high(plat))), (1, 1))
         add(own, "Changed again.\n")                                            # other bytes: a new alert
         self.audit()
-        self.assertEqual(len(self.counted(own, plat)), 1)
+        self.assertEqual((len(self.counted(own, plat)), len(self.counted_high(plat))), (1, 1))
 
     def test_6_a_link_moved_at_any_time_grants_nothing(self):
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
@@ -323,7 +323,7 @@ class LinkToTheOwnersFile(_Quiet):
         self.assertEqual(self.vend(plat), [])
         self.assertIn(NOTHING, self.approve("0" * 20))
         self.audit()
-        self.assertEqual(len(self.counted(own, plat)), 1)
+        self.assertEqual((len(self.counted(own, plat)), len(self.counted_high(plat))), (1, 1))
 
 
 class Docs(unittest.TestCase):
