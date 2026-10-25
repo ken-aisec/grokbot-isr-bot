@@ -102,7 +102,7 @@ def roll_builtin(fs, meta, notes):
     for f in fs:
         if f["rule"].startswith("ISR-I") or f["severity"] not in ("critical", "high", "medium"):
             continue
-        w = f["where"].split(":")[0]
+        w = literal_path(f) or _place(f)   # FIX2: never cut at the first colon (helper:alias), the same key as below
         flagged.update({w, skill_root(w) or w})
         # fix round 2 (Codex 4): a grouped finding (gitleaks's ISR-S002 on a folder) holds every file it stands for
         for q in f.get("affected_files") or []:
@@ -117,7 +117,7 @@ def roll_builtin(fs, meta, notes):
 
     keep, rolled = [], 0
     for f in fs:
-        w = f["where"].split(":")[0]
+        w = literal_path(f) or _place(f)
         if f["rule"] in ("ISR-I001", "ISR-I002", "ISR-I003") and builtin(f) and passes(w) and not owner_link_into_vendor(w):   # G8: the owner's drift
             if f["rule"] == "ISR-I003":
                 base.pop(w, None)
