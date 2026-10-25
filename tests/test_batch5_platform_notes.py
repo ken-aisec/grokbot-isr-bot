@@ -75,37 +75,70 @@ class _SignIn(Box):
     def entry(self, sha, rule="ISR-T008", line=12, paths=(REL,), note="Checked note for the test."):
         return {"paths": list(paths), "sha256": sha, "rule": rule, "line": line, "note": note}
 
+    # v0.8.1 (PLAN §5b): the snapshot's scored findings, its vendor records, and the drift and vendor rows at one path
+    def fs(self):
+        return self.snap()["findings"]
+
+    def vs(self):
+        return self.snap().get("vendor", [])
+
+    def drift(self, p):
+        return [f for f in self.fs() + self.vs() if f["where"].split(":")[0] == p and f["rule"] in ("ISR-I001", "ISR-I002", "ISR-I003", "ISR-I011")]
+
+    def vend(self, p):
+        return [f for f in self.vs() if f["where"].split(":")[0] == p]
+
+    def user(self, n, fn="SKILL.md"):
+        return os.path.join(self.home, "sand-data", "workflows", n, fn)
+
+    @property
+    def u0(self):
+        return self.user("skill000")                                           # the owner's skill self.skills(1) made
+
 
 # ---------------------------------------------------------------- d1: Platform notes
 class PlatformNotes(_SignIn):
+    def setUp(self):
+        super().setUp()
+        self.owned()
+
     def test_grok_bots_sign_in_skill_is_not_counted_anywhere(self):   # replay (151e40c: critical 1, high 1)
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.skills(1)
         p = self.put(REL, SIGNIN)
         r = self.audit_json()
-        self.assertEqual({f["rule"] for f in self.mine(p) if f.get("label") == isr.CONFIRMED}, {"ISR-T008", "ISR-T004"})   # inside, as before
+        self.assertEqual({v["rule"] for v in self.vend(p) if v["label"] == isr.CONFIRMED}, {"ISR-T008", "ISR-T004"})   # kept as vendor records
+        self.assertEqual(self.mine(p), [])
         self.assertEqual((r["open_by_severity"]["critical"], r["open_by_severity"]["high"]), (0, 0))
         self.assertFalse([f for f in r["new"] if p in f["where"]])
-        self.assertEqual(r["platform_notes"]["count"], 2)
-        self.assertTrue(any("(line 12)" in l and "Secrecy or concealment instruction" in l for l in r["platform_notes"]["lines"]))
+        self.assertEqual(r["platform_notes"]["count"], 2)                       # the non-warning-text vendor records
+        self.assertTrue(any(v["where"] == p + ":12" and "Secrecy or concealment instruction" in v["title"] for v in self.vend(p)))
         self.assertEqual(r["platform"], r["platform_notes"]["lines"])   # the old key, one release, the same lines
         self.assertEqual(r["status"], isr.ALL_GOOD)
 
     def test_breakdown_lists_it_as_a_platform_note_not_confirmed(self):   # replay (151e40c listed both under Confirmed)
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.skills(1)
         p = self.put(REL, SIGNIN)
         self.audit()
         out = self.breakdown()
         conf = out.split("Confirmed (critical/high/medium):", 1)[1].split("\n\n")[0] if "Confirmed (critical" in out else ""
         self.assertNotIn("sign-in", conf)
-        self.assertIn("Platform notes (Grok Bot's own files, not counted): 2.", out)
+        self.assertIn("Platform notes", out)
+        self.assertIn("sign-in/SKILL.md", out.split("Platform notes", 1)[1])
 
     def test_daily_says_a_new_one_as_a_platform_note(self):   # replay (151e40c put it in `new`)
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The vendor
+        file alone is quiet; the same text over the owner's skill is new."""
         self.skills(1)
         self.audit()
         p = self.put(REL, SIGNIN)
+        self.assertEqual(self.run_cmd("daily", "--roots", *self.roots)[1].strip(), "NO_CHANGES")
+        q = self.put("sand-data/workflows/skill000/SKILL.md", SIGNIN, listed=False)
         r = self.daily_json()
         self.assertFalse([f for f in r.get("new", []) if p in f["where"]])
-        self.assertTrue(any("sign-in/SKILL.md (line 12)" in l for l in r["platform_notes"]["lines"]), r)
+        self.assertTrue([f for f in r["new"] if q in f["where"] and f["rule"] == "ISR-T008"], r)
+        self.assertTrue([v for v in self.vend(p) if v["where"] == p + ":12" and v["rule"] == "ISR-T008"])
 
     def test_the_dashboard_tiles_and_table_are_the_owners(self):   # replay (151e40c: 1 critical tile)
         self.skills(1)
@@ -118,12 +151,13 @@ class PlatformNotes(_SignIn):
         self.assertNotIn("sign-in", table)
 
     def test_the_report_has_a_platform_notes_section(self):   # replay (151e40c: "## Platform", rule-and-label lines)
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.skills(1)
         self.put(REL, SIGNIN)
         self.audit()
         md = self.report_md()
-        self.assertIn("## Platform notes\n\nGrok Bot's own files, exactly as ISR Bot's release lists them. They don't count toward "
-                      "your problems or your status.", md)
+        self.assertIn("## Platform notes\n\n", md)
+        self.assertNotIn("release list", md)
         self.assertIn("Open findings: 0 critical, 0 high", md)
 
     def test_the_same_text_in_the_owners_skill_still_counts(self):   # guard
@@ -138,15 +172,23 @@ class PlatformNotes(_SignIn):
         self.assertNotIn("platform_notes", r)
 
     def test_the_same_text_not_on_the_release_list_is_a_counted_high(self):   # guard
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. Off the
+        release list, the vendor file is still only a platform note; the same text over the owner's skill is a counted high."""
         self.skills(1)
         p = self.put(REL, SIGNIN, listed=False)
         r = self.audit_json()
-        i2 = [f for f in self.mine(p) if f["rule"] == "ISR-I002"]
-        self.assertEqual([(f["severity"], isr.counts(f)) for f in i2], [("high", True)])
-        self.assertEqual(r["status"], isr.CHECK_WEEK)
-        self.assertGreaterEqual(r["open_by_severity"]["high"], 1)
-        self.assertTrue(any("Not on ISR Bot's release list: its own alert counts" in l for l in r["platform_notes"]["lines"]))
-        self.assertIn("a file ISR Bot's release list doesn't include has its own counted alert above", self.report_md())
+        self.assertEqual(self.drift(p), [])
+        self.assertEqual(r["status"], isr.ALL_GOOD)
+        self.assertEqual(r["open_by_severity"]["high"], 0)
+        self.assertFalse([l for l in r["platform_notes"]["lines"] if "release list" in l])
+        self.assertEqual(r["platform_notes"]["count"], 2)
+        self.assertNotIn("release list", self.report_md())
+        with open(self.u0, "w") as f:                                           # the control: the owner's baselined skill
+            f.write(SIGNIN)
+        r2 = self.audit_json()
+        self.assertEqual([(f["severity"], isr.counts(f)) for f in self.mine(self.u0) if f["rule"] == "ISR-I001"], [("high", True)])
+        self.assertEqual(r2["status"], isr.ACT_NOW)
+        self.assertGreaterEqual(r2["open_by_severity"]["high"], 1)
 
     def test_the_owners_other_findings_are_still_counted(self):   # guard
         lay = profiles.busy_clean_box(self)
@@ -161,31 +203,47 @@ class PlatformNotes(_SignIn):
         self.assertGreaterEqual(r["open_by_severity"]["high"], 1)
 
     def test_a_vendor_rug_pull_still_alerts_as_a_platform_note(self):   # guard (test_dq042 StillAlerts, with its words)
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The vendor
+        rug pull is a vendor record, never new; the same rug pull of the owner's learn skill is new and a counted high."""
         import test_dq042_vendor_skills as dq
         d = os.path.join(self.home, ".grok", "bundled", "skills", "learn")
         os.makedirs(d)
         with open(os.path.join(d, "SKILL.md"), "w") as f:
+            f.write(dq.LEARN_V1)
+        u = self.user("learn")                                                  # the control: the owner's learn skill
+        os.makedirs(os.path.dirname(u))
+        with open(u, "w") as f:
             f.write(dq.LEARN_V1)
         for text in (dq.LEARN_V1, dq.BAD):
             profiles.vendor_release(self, (os.path.join(d, "SKILL.md"), text))
         self.scanners(skillspector=dq.skillspector(dq.LEARN_ISSUES), husk=dq.husk(dq.LEARN_HUSK))
         self.audit()
         self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
-        with open(os.path.join(d, "SKILL.md"), "w") as f:
-            f.write(dq.BAD)
+        for p in (os.path.join(d, "SKILL.md"), u):
+            with open(p, "w") as f:
+                f.write(dq.BAD)
         r = self.daily_json()
-        self.assertTrue(any("learn" in l for l in r["platform_notes"]["lines"]), r)
-        a = [f for f in self.snap()["findings"] if f["title"].startswith("Grok Bot's own learn changed and now ")]
-        self.assertEqual([(f["label"], f["scope"]) for f in a], [(isr.CONFIRMED, "platform")])
+        self.assertTrue([f for f in r["new"] if f["where"].startswith(os.path.dirname(u))], r)
+        self.assertFalse([f for f in r["new"] if f["where"].startswith(d)], r)
+        self.assertFalse([f for f in self.fs() if f["title"].startswith("Grok Bot's own learn changed and now ")])
+        self.assertEqual([v["label"] for v in self.vend(d) if v["rule"] == "ISR-X003"], [isr.CONFIRMED])
+        self.assertEqual(self.drift(os.path.join(d, "SKILL.md")), [])
+        self.assertIn(("ISR-I001", "high"), [(f["rule"], f["severity"]) for f in self.mine(u)])
 
 
 # ---------------------------------------------------------------- d2: exact-bytes checked findings
 class CheckedPlatformFiles(_SignIn):
+    def setUp(self):
+        super().setUp()
+        self.owned()
+
     def sha(self, text):
         import hashlib
         return hashlib.sha256(text.encode()).hexdigest()
 
     def test_a_checked_finding_is_a_quiet_platform_note(self):   # replay (151e40c: Confirmed critical and high, in `new`)
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The
+        reviewed list isn't read: both findings are plain vendor records."""
         self.skills(1)
         self.audit()
         self.reviewed_file([self.entry(self.sha(SIGNIN), "ISR-T008", note="Sign-in: not pushing a product."),
@@ -193,24 +251,29 @@ class CheckedPlatformFiles(_SignIn):
         p = self.put(REL, SIGNIN)
         out = self.run_cmd("daily", "--roots", *self.roots)[1]
         self.assertNotIn("sign-in", out)
-        got = {(f["rule"], f["label"], f["severity"], f.get("severity_was"), f["fix"]) for f in self.mine(p) if not f.get("guarded")}
-        self.assertEqual(got, {("ISR-T008", "Platform note (checked)", "info", "critical", "Sign-in: not pushing a product."),
-                               ("ISR-T004", "Platform note (checked)", "info", "high", "Sign-in: the platform's own sign-in tool.")})
+        got = {(v["rule"], v["label"], v["severity"]) for v in self.vend(p) if v["rule"] in ("ISR-T008", "ISR-T004") and v["label"] != isr.GUARDED_LABEL}
+        self.assertEqual(got, {("ISR-T008", isr.CONFIRMED, "critical"), ("ISR-T004", isr.CONFIRMED, "high")})
+        self.assertNotIn("Platform note (checked)", json.dumps(self.snap()))
         self.assertNotIn("sign-in", self.breakdown().split("Platform notes")[0].split("Confirmed (critical/high/medium)")[-1])
         r = self.audit_json()
-        self.assertTrue(any(l.startswith("Sign-in: not pushing a product. ISR Bot checked this exact text (line 12)")
-                            for l in r["platform_notes"]["lines"]), r["platform_notes"])
+        self.assertFalse([l for l in r["platform_notes"]["lines"] if "checked this exact text" in l], r["platform_notes"])
+        self.assertEqual(r["platform_notes"]["count"], 2)
 
     def test_one_byte_more_and_no_entry_applies(self):   # guard
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.skills(1)
         self.reviewed_file([self.entry(self.sha(SIGNIN))])
         p = self.put(REL, SIGNIN + " ")
         self.audit()
-        self.assertEqual([f["label"] for f in self.mine(p) if f["rule"] == "ISR-T008"], [isr.CONFIRMED])
+        self.assertEqual([f["label"] for f in self.vend(p) if f["rule"] == "ISR-T008"], [isr.CONFIRMED])
         q = self.put("agent-data/managed-skills/skills/sign-in/SKILL.md", SIGNIN, listed=False)   # the right bytes, not on the release list
         self.audit()
-        self.assertEqual([f["label"] for f in self.mine(q) if f["rule"] == "ISR-T008"], [isr.CONFIRMED])
-        self.assertTrue([f for f in self.mine(q) if f["rule"] == "ISR-I002" and isr.counts(f)])
+        self.assertEqual([f["label"] for f in self.vend(q) if f["rule"] == "ISR-T008"], [isr.CONFIRMED])
+        self.assertEqual(self.drift(q), [])
+        with open(self.u0, "w") as f:                                           # the control: the owner's baselined skill
+            f.write(SIGNIN)
+        self.audit()
+        self.assertEqual([(f["severity"], isr.counts(f)) for f in self.mine(self.u0) if f["rule"] == "ISR-I001"], [("high", True)])
 
     def test_the_same_bytes_in_the_owners_skill_still_count(self):   # guard
         self.skills(1)
@@ -221,13 +284,17 @@ class CheckedPlatformFiles(_SignIn):
         self.assertEqual([(f["label"], f["severity"], isr.counts(f)) for f in self.mine(p) if f["rule"] == "ISR-T008"], [(isr.CONFIRMED, "critical", True)])
 
     def test_the_right_bytes_with_another_rule_or_line_is_not_checked(self):   # guard
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.skills(1)
         self.reviewed_file([self.entry(self.sha(SIGNIN), "ISR-T008", line=11), self.entry(self.sha(SIGNIN), "ISR-T005", line=12)])
         p = self.put(REL, SIGNIN)
         self.audit()
-        self.assertEqual({f["label"] for f in self.mine(p) if f["rule"] in ("ISR-T008", "ISR-T004") and not f.get("guarded")}, {isr.CONFIRMED})
+        self.assertEqual({f["label"] for f in self.vend(p) if f["rule"] in ("ISR-T008", "ISR-T004") and not f.get("guarded")}, {isr.CONFIRMED})
+        self.assertEqual(self.mine(p), [])
 
     def test_a_list_that_isnt_the_released_one_is_ignored_with_a_note(self):   # guard
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The list
+        isn't read, so the audit says nothing about it; the library still refuses it."""
         self.skills(1)
         self.reviewed_file([self.entry(self.sha(SIGNIN))])
         p = self.put(REL, SIGNIN)
@@ -235,13 +302,16 @@ class CheckedPlatformFiles(_SignIn):
         with mock.patch.object(isr, "release_digest", lambda rel: "0" * 64 if rel == isr.PLATFORM_REVIEWED_REL else real(rel)):
             vars(isr)["_PLATFORM_REVIEWED_CACHE"].clear()
             self.audit()
+            vars(isr)["_PLATFORM_REVIEWED_CACHE"].clear()
+            problem = isr.platform_reviewed_problem()
         vars(isr)["_PLATFORM_REVIEWED_CACHE"].clear()
-        self.assertEqual([f["label"] for f in self.mine(p) if f["rule"] == "ISR-T008"], [isr.CONFIRMED])
+        self.assertEqual([f["label"] for f in self.vend(p) if f["rule"] == "ISR-T008"], [isr.CONFIRMED])
         notes = [n for n in self.snap()["notes"] if isr.PLATFORM_REVIEWED_REL in n]
-        self.assertEqual(len(notes), 1)
-        self.assertIn("MANIFEST.sha256", notes[0])
+        self.assertEqual(notes, [])
+        self.assertIn("MANIFEST.sha256", problem)
 
     def test_nothing_on_the_computer_adds_an_entry(self):   # guard
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.skills(1)
         self.reviewed_file([])
         os.makedirs(isr.state_path(""), exist_ok=True)
@@ -251,15 +321,18 @@ class CheckedPlatformFiles(_SignIn):
         p = self.put(REL, SIGNIN)
         with mock.patch.dict(os.environ, {"ISR_BOT_PLATFORM_REVIEWED": isr.state_path("platform-reviewed.json")}):
             self.audit()
-        self.assertEqual([f["label"] for f in self.mine(p) if f["rule"] == "ISR-T008"], [isr.CONFIRMED])
+        self.assertEqual([f["label"] for f in self.vend(p) if f["rule"] == "ISR-T008"], [isr.CONFIRMED])
 
     def test_a_malformed_entry_makes_the_list_unusable(self):   # guard
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The list
+        isn't read, so the audit says nothing about it; the library still refuses it."""
         self.skills(1)
         self.reviewed_file([self.entry(self.sha(SIGNIN)), dict(self.entry(self.sha(SIGNIN)), paths=["/etc/passwd"])])
         p = self.put(REL, SIGNIN)
         self.audit()
-        self.assertEqual([f["label"] for f in self.mine(p) if f["rule"] == "ISR-T008"], [isr.CONFIRMED])
-        self.assertTrue([n for n in self.snap()["notes"] if "platform-reviewed.json can't be used" in n])
+        self.assertEqual([f["label"] for f in self.vend(p) if f["rule"] == "ISR-T008"], [isr.CONFIRMED])
+        self.assertFalse([n for n in self.snap()["notes"] if "platform-reviewed.json" in n])
+        self.assertIn("entry 2", isr.platform_reviewed_problem())
 
 
 class ShippedReviewedList(unittest.TestCase):

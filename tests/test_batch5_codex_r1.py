@@ -172,26 +172,37 @@ class EscapedSchemeSeparators(History):
 class CountedPlatformSecret(_SignIn):
     KEY = "ghp_" + "Fq7Kx2Lm9Pn4Rs8Tv1Wy3Za6Bc5De0Gh2Jk4"
 
+    def setUp(self):
+        super().setUp()
+        self.owned()
+
     def setup_key(self):
         self.skills(1)
         self.audit()
-        p = self.put(".grok/bundled/skills/helper/SKILL.md", "---\nname: helper\ndescription: Helps.\n---\n# Helper\n\nUse the token " + self.KEY + " to call the API.\n")
+        body = "---\nname: helper\ndescription: Helps.\n---\n# Helper\n\nUse the token " + self.KEY + " to call the API.\n"
+        p = self.put(".grok/bundled/skills/helper/SKILL.md", body)
+        self.q = self.put("sand-data/workflows/helper/SKILL.md", body, listed=False)   # v0.8.1: the owner's copy, where it counts
         return p
 
     def test_it_is_in_new_and_the_counts_with_its_own_fix(self):   # replay (aa771f5: only a platform note)
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The key in
+        Grok Bot's own file is a vendor record; the same key in the owner's skill is new, counted, with its own fix."""
         p = self.setup_key()
         r = self.audit_json()
-        s1 = [f for f in self.mine(p) if f["rule"] == "ISR-S001"]
+        s1 = [v for v in self.vend(p) if v["rule"] == "ISR-S001"]
         self.assertEqual(len(s1), 1)
-        self.assertTrue(isr.counts(s1[0]))
-        self.assertEqual(s1[0]["scope"], "platform")
-        mine = [f for f in r["new"] if f["rule"] == "ISR-S001" and p in f["where"]]
+        self.assertFalse([f for f in self.mine(p) if f["rule"] == "ISR-S001"])
+        self.assertEqual(isr.owner_of(p), "vendor")
+        self.assertFalse([f for f in r["new"] if f["rule"] == "ISR-S001" and p in f["where"]])
+        mine = [f for f in r["new"] if f["rule"] == "ISR-S001" and self.q in f["where"]]
         self.assertEqual(len(mine), 1)
         self.assertIn("Revoke the key", mine[0]["fix"])
-        self.assertGreaterEqual(r["open_by_severity"][s1[0]["severity"]], 1)
+        self.assertGreaterEqual(r["open_by_severity"][mine[0]["severity"]], 1)
         self.assertFalse([l for l in r.get("platform_notes", {}).get("lines", []) if "Secret stored" in l])
 
     def test_and_in_breakdown_the_report_and_the_dashboard(self):   # replay (aa771f5 left it out of each)
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. Each list
+        holds the owner's copy, never Grok Bot's."""
         p = self.setup_key()
         self.audit()
         rows = self.breakdown()
@@ -199,13 +210,17 @@ class CountedPlatformSecret(_SignIn):
         md = self.report_md()
         table = md.split("## All open findings", 1)[1].split("\n## ", 1)[0]
         self.assertIn("ISR-S001", table)
+        self.assertNotIn(".grok/bundled/skills/helper", table)
         page = self.dashboard()
         self.assertIn("Secret stored in a file", page.split("<h2", 1)[1].split("</table>", 1)[0])
+        self.assertNotIn(".grok/bundled/skills/helper", page.split("<h2", 1)[1].split("</table>", 1)[0])
 
     def test_daily_says_it_in_new(self):   # replay (aa771f5: a platform note)
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         p = self.setup_key()
         r = self.daily_json()
-        self.assertTrue([f for f in r["new"] if f["rule"] == "ISR-S001" and p in f["where"]], r)
+        self.assertFalse([f for f in r["new"] if f["rule"] == "ISR-S001" and p in f["where"]], r)
+        self.assertEqual(len([f for f in r["new"] if f["rule"] == "ISR-S001" and self.q in f["where"]]), 1, r)
 
 
 # ---------------------------------------------------------------- 6: the installed copy is the one that runs
@@ -278,6 +293,10 @@ class InstalledCopyIdentity(Box):
 
 # ---------------------------------------------------------------- 7: a "catalog" plugin in state/ is not provenance
 class CatalogProvenance(_SignIn):
+    def setUp(self):
+        super().setUp()
+        self.owned()
+
     def test_an_owner_workflow_filed_as_catalog_still_counts(self):   # replay (aa771f5: an uncounted platform note)
         from test_precision_item4 import BAD
         self.skills(1)
@@ -296,22 +315,26 @@ class CatalogProvenance(_SignIn):
         self.assertFalse([l for l in r.get("platform_notes", {}).get("lines", []) if "workflows/red" in l])
 
     def test_the_catalog_check_refuses_an_owner_folder(self):   # replay (aa771f5: True)
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. Ownership
+        is by location: a plugins/cache folder inside the owner's workflow is the owner's."""
         root = os.path.join(self.home, "sand-data", "workflows", "red", "plugins", "cache", "cursor-public", "p", "v1")
         os.makedirs(root)
         isr.save_json(isr.state_path("plugins.json"), {"p": {"since": isr.now(), "status": "catalog", "roots": [root]}})
-        self.assertFalse(isr.in_catalog_plugin(os.path.join(root, "SKILL.md")))
+        self.assertEqual(isr.owner_of(root), "user")
         self.assertFalse(isr.platform_file({"where": os.path.join(root, "SKILL.md") + ":3"}))
 
     def test_a_note_needs_a_place_isr_bot_vouches_for(self):   # replay (aa771f5: a platform note)
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. Ownership
+        is by location: sand-data/plugins/cache is the vendor's, whatever state/plugins.json says."""
         root = os.path.join(self.home, "sand-data", "plugins", "cache", "cursor-public", "p", "v1")
         os.makedirs(root)
         isr.save_json(isr.state_path("plugins.json"), {"p": {"since": isr.now(), "status": "catalog", "roots": [root]}})
         f = dict(isr.finding("ISR-T005", "Known exfiltration or tunnel host", "critical", [], os.path.join(root, "SKILL.md") + ":3", "e", "fix"),
                  scope="platform", label=isr.CONFIRMED)
-        self.assertTrue(isr.in_catalog_plugin(f["where"]))   # the catalog's, as before: never scored
+        self.assertEqual(isr.owner_of(root), "vendor")   # the vendor's, by location: never scored
         self.assertFalse(isr.counts(f))
-        self.assertFalse(isr.platform_scope(f))               # but only state/plugins.json says so: it stays in the owner's lists
-        self.assertEqual(isr.owners([f]), [f])
+        self.assertTrue(isr.platform_scope(f))                # v0.8.1: platform_file asks owner_of, so a platform note by location
+        self.assertEqual(isr.owners([f]), [])                 # and out of the owner's lists
 
     def test_a_platform_root_is_still_a_note(self):   # guard
         f = dict(isr.finding("ISR-T008", "Secrecy or concealment instruction", "critical", [], os.path.join(self.home, REL) + ":12", "e", "fix"),
@@ -325,27 +348,38 @@ MALICIOUS12 = LINE12.replace("first call ListCredentials with the exact current 
 
 
 class ScannedBytes(_SignIn):
+    def setUp(self):
+        super().setUp()
+        self.owned()
+
     def sha(self, text):
         return hashlib.sha256(text.encode()).hexdigest()
 
     def test_bytes_swapped_back_before_hashing_are_not_checked(self):   # replay (aa771f5: both checked notes)
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The swapped
+        file's findings are vendor records, never checked notes; the same bad text over the owner's copy is a counted high."""
         self.skills(1)
         good = self.sha(SIGNIN)
         self.reviewed_file([self.entry(good, "ISR-T008"), self.entry(good, "ISR-T004")])
         bad_text = SIGNIN.replace(LINE12, MALICIOUS12)
+        q = self.put("sand-data/workflows/sign-in/SKILL.md", SIGNIN, listed=False)   # the control: the owner's copy
         p = self.put(REL, SIGNIN)                 # the release lists the good bytes
         with open(p, "w") as f:
             f.write(bad_text)                     # the scan reads these
         real = isr.sha256_file
         with mock.patch.object(isr, "sha256_file", lambda q: good if q == p else real(q)):   # the good bytes are back for the hash
             self.audit()
-        got = {f["rule"]: f for f in self.mine(p) if f["rule"] in ("ISR-T008", "ISR-T004") and not f.get("guarded")}
+        got = {f["rule"]: f for f in self.vend(p) if f["rule"] in ("ISR-T008", "ISR-T004") and not f.get("guarded")}
         self.assertEqual(set(got), {"ISR-T008", "ISR-T004"})
         for f in got.values():
             self.assertNotEqual(f["label"], "Platform note (checked)")
             self.assertNotEqual(f["severity"], "info")
-        self.assertTrue([f for f in self.mine(p) if f["rule"] in ("ISR-I001", "ISR-I002") and isr.counts(f)])
+        self.assertEqual(self.drift(p), [])
         self.assertNotIn("_snap", json.dumps(self.snap()))
+        with open(q, "w") as f:
+            f.write(bad_text)
+        self.audit()
+        self.assertIn(("ISR-I001", "high"), [(f["rule"], f["severity"]) for f in self.mine(q) if isr.counts(f)])
 
     def test_one_read_gives_the_text_and_its_hash(self):   # guard
         p = os.path.join(self.tmp, "x.md")

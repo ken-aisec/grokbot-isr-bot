@@ -442,26 +442,37 @@ import test_batch5_platform_normalize as pn
 class NormalizedScannedBytes(pn._Meta):
     SPEC, baseline_with = pn.Normalized.SPEC, pn.Normalized.baseline_with
 
+    def setUp(self):
+        super().setUp()
+        self.owned()
+
     def test_bytes_swapped_back_for_the_normalization_read_are_not_vouched_for(self):   # replay (13cbfa4: an empty set)
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The library
+        check, asked directly; in the audit the vendor file leaves no drift row, and the owner's changed copy is the counted high."""
         self.baseline_with(pn.V1)
         bad = pn.text(dict(pn.V1, skills=[dict(pn.V1["skills"][0], installation_preference="required"), pn.V1["skills"][1]]))
         good = pn.text(dict(pn.V1, generated_at="2026-10-18T09:30:00Z"))   # the released version, a timestamp later
         self.write(good)   # what the normalization read sees; the scan read `bad`
-        self.assertEqual(isr.platform_unproven({self.p: hashlib.sha256(bad.encode()).hexdigest()}), {self.p})
+        self.assertFalse(isr.platform_verified(self.p, hashlib.sha256(bad.encode()).hexdigest(), {}))
         real = isr.platform_listed_normalized
         self.write(bad)
+        with open(self.u, "w") as f:   # the control: the owner's copy gets the same bad bytes
+            f.write(bad)
         def swap(*a):
             self.write(good)   # swapped in between the scan and the normalization read
             return real(*a)
         with mock.patch.object(isr, "platform_listed_normalized", swap):
             self.audit()
-        self.assertEqual([(f["rule"], f["severity"]) for f in self.counted()], [("ISR-I001", "high")])
+        self.assertEqual(self.drift(self.p), [])
+        self.assertIn(("ISR-I001", "high", True), self.ints(self.u))
 
     def test_the_scanned_bytes_are_still_normalized(self):   # guard
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The library
+        check, asked directly."""
         self.baseline_with(pn.V1)
         good = pn.text(dict(pn.V1, generated_at="2026-10-18T09:30:00Z"))
         self.write(good)
-        self.assertEqual(isr.platform_unproven({self.p: hashlib.sha256(good.encode()).hexdigest()}), set())
+        self.assertTrue(isr.platform_verified(self.p, hashlib.sha256(good.encode()).hexdigest(), {}))
         self.audit()
         self.assertEqual(self.counted(), [])
 

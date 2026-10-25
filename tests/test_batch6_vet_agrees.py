@@ -168,6 +168,7 @@ class ReleasedBytes(Folder):
             patch = mock.patch.object(isr, name, p)
             patch.start()
             self.addCleanup(patch.stop)
+        self.setcap("OWNERSHIP_V081", True)   # v0.8.1 (U2-U6): the ownership gate on; removed in U7a, when it is always on
 
     def release(self, text, reviewed=((("ISR-T008", 12), "Grok Bot's sign-in skill tells the Bot not to bring up 1Password with people "
                                                           "who don't use it."), (("ISR-T004", 12), "It names the password manager it signs in with."))):
@@ -182,20 +183,24 @@ class ReleasedBytes(Folder):
         return vet_json(self.write(os.path.join("sign-in", "SKILL.md"), text))[1]
 
     def test_the_sign_in_bytes_install_with_checked_notes(self):   # replay (1aed58a: Do not install, critical T008 :12)
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The release
+        list gives no discount any more: these bytes outside a platform folder are vetted as anyone's; in one, they aren't scored."""
         self.release(self.text)
         r = self.vet(self.text)
-        self.assertEqual(r["verdict"], "Install")
-        got = sorted((f["rule"], f["where"], f["severity"], f["label"]) for f in r["findings"])
-        # :16 is Confirmed (two credential reads in one file), as the audit labels it in Grok Bot's own file: shown, never counted
-        self.assertEqual(got, [("ISR-T004", "SKILL.md:12", "info", "Platform note (checked)"),
-                               ("ISR-T004", "SKILL.md:16", "high", "Confirmed"),
-                               ("ISR-T008", "SKILL.md:12", "info", "Platform note (checked)")])
-        self.assertIn("not to bring up 1Password", next(f["fix"] for f in r["findings"] if f["rule"] == "ISR-T008"))
-        self.assertEqual(next(f["fix"] for f in r["findings"] if f["where"] == "SKILL.md:16"), isr.PLATFORM_CONFIRMED_FIX)
+        self.assertEqual(r["verdict"], "Do not install")
+        self.assertIn(("ISR-T008", "SKILL.md:12", "critical"), [(f["rule"], f["where"], f["severity"]) for f in r["findings"]])
+        self.assertFalse([f for f in r["findings"] if f["label"] == "Platform note (checked)"])
+        self.assertNotIn("not to bring up 1Password", json.dumps(r))
+        self.assertNotEqual(next(f["fix"] for f in r["findings"] if f["where"] == "SKILL.md:16"), isr.PLATFORM_CONFIRMED_FIX)
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"HOME": self.d}):                    # the control: the same bytes in a platform folder
+            it = self.write(os.path.join(".grok", "bundled", "skills", "sign-in", "SKILL.md"), self.text)
+            self.assertEqual(vet_json(it)[1]["verdict"], "Platform file (never scored)")
 
     def test_as_a_loose_file_too(self):   # replay (1aed58a: Do not install)
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.release(self.text)
-        self.assertEqual(vet_json(self.write("SKILL.copy.md", self.text))[1]["verdict"], "Install")
+        self.assertEqual(vet_json(self.write("SKILL.copy.md", self.text))[1]["verdict"], "Do not install")
 
     def test_one_byte_more_is_vetted_as_before(self):   # guard
         self.release(self.text)

@@ -65,73 +65,122 @@ class _Meta(Box):
     def counted(self):
         return [f for f in self.mine() if isr.counts(f)]
 
+    # v0.8.1 (PLAN §5b): the drift and vendor rows at one path, and the owner's own metadata file (the user control)
+    def drift(self, p):
+        snap = self.snap()
+        return [f for f in snap["findings"] + snap.get("vendor", []) if f["where"].split(":")[0] == p
+                and f["rule"] in ("ISR-I001", "ISR-I002", "ISR-I003", "ISR-I011")]
+
+    def vend(self, p):
+        return [f for f in self.snap().get("vendor", []) if f["where"].split(":")[0] == p]
+
+    @property
+    def u(self):
+        return os.path.join(self.home, "sand-data", "workflows", "skill000", "manifest.json")
+
+    def ints(self, p):
+        """(rule, severity, counted) of the integrity findings at `p`."""
+        return [(f["rule"], f["severity"], isr.counts(f)) for f in self.snap()["findings"] if f["where"].split(":")[0] == p
+                and f["rule"] in ("ISR-I001", "ISR-I002")]
+
+    def put_u(self, doc):
+        with open(self.u, "w") as f:
+            f.write(text(doc))
+
 
 # ---------------------------------------------------------------- d3a: the wording
 class MetadataWording(_Meta):
+    def setUp(self):
+        super().setUp()
+        self.owned()
+
     def test_a_changed_metadata_file_says_what_it_is(self):   # replay (151e40c: "Don't use this skill … remove it")
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. No held
+        wording is made for a vendor file; the owner's own changed metadata file is a counted high."""
         self.write(text(V1))
         profiles.vendor_release(self, self.p)
-        self.skills(1); self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
-        was = isr.sha256_file(self.p)
+        self.skills(1); self.put_u(V1)
+        self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         self.write(text(dict(V1, generated_at="2026-10-18T08:00:00Z")))
         self.audit()
-        i1 = [f for f in self.mine() if f["rule"] == "ISR-I001"]
-        self.assertEqual([(f["severity"], isr.counts(f)) for f in i1 if isr.counts(f)], [])   # b8i4: the middle path's quiet line
+        self.assertEqual(self.drift(self.p), [])
         self.assertNotIn(self.p, isr.VERIFIED_METADATA)                         # not compared with the released version
-        held = isr.unverified_platform_finding(self.p, isr.sha256_file(self.p), was)   # the wording a held version gets
-        self.assertEqual(held["title"], "ISR Bot's release list doesn't have Grok Bot's changed list of what it loads yet")
-        self.assertIn("Don't delete it (Grok Bot needs it)", held["fix"])
-        self.assertIn("tell ISR Bot support", held["fix"])
-        self.assertNotIn("remove it", held["fix"])
+        snap = self.snap()
+        self.assertFalse([f for f in snap["findings"] if f["title"].startswith("ISR Bot's release list doesn't have")])
+        self.assertNotIn("Don't delete it (Grok Bot needs it)", json.dumps(snap))
+        self.assertNotIn("tell ISR Bot support", json.dumps(snap))
+        self.assertNotIn(self.p, isr.load_baseline()[0])
         self.assertEqual(self.snap()["status"], isr.ALL_GOOD)
+        self.put_u(dict(V1, generated_at="2026-10-18T08:00:00Z"))               # the control: the owner's own file changed
+        self.audit()
+        self.assertEqual(self.ints(self.u), [("ISR-I001", "high", True)])
 
     def test_a_new_metadata_file_too(self):   # replay (151e40c: "A new file appeared …")
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.skills(1)
         self.write(text(V1))
         self.audit()
-        i2 = [f for f in self.mine() if f["rule"] == "ISR-I002"]
-        self.assertEqual([(f["severity"], isr.counts(f)) for f in i2], [("high", True)])
-        self.assertTrue(i2[0]["title"].startswith("ISR Bot's release list doesn't have Grok Bot's new list of what it loads"))
+        self.assertEqual(self.drift(self.p), [])
+        self.assertNotIn(self.p, isr.load_baseline()[0])
+        self.put_u(V1)                                                          # the control: a new file of the owner's
+        self.audit()
+        self.assertEqual([(s, c) for r, s, c in self.ints(self.u) if r == "ISR-I002"], [("low", True)])
 
     def test_a_skill_file_keeps_its_wording(self):   # guard
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.skills(1)
         q = os.path.join(self.home, ".grok", "bundled", "skills", "learn", "SKILL.md")
         os.makedirs(os.path.dirname(q))
         with open(q, "w") as f:
             f.write("---\nname: learn\n---\nLearn.\n")
         self.audit()
-        i2 = [f for f in self.snap()["findings"] if f["where"] == q and f["rule"] == "ISR-I002"]
-        self.assertIn("treat it like a file someone added", i2[0]["fix"])
+        self.assertEqual(self.drift(q), [])
+        self.assertNotIn("treat it like a file someone added", json.dumps(self.snap()))
+        self.put_u(V1)                                                          # the control: a new file of the owner's
+        self.audit()
+        self.assertEqual([(s, c) for r, s, c in self.ints(self.u) if r == "ISR-I002"], [("low", True)])
 
 
 # ---------------------------------------------------------------- d3b: the normalization machinery
 class Normalized(_Meta):
     SPEC = [{"path": REL, "fields": [{"key": ["generated_at"], "type": "iso8601"}]}]
 
+    def setUp(self):
+        super().setUp()
+        self.owned()
+
     def baseline_with(self, doc):
         self.spec(self.SPEC)
         self.write(text(doc))
         with open(self.platform_lock, "a") as f:
             f.write(f"canonical {canonical(doc)}  {REL}\n")   # what a release lists: the digest of the canonical form (batch 6 fix round 1: on a line that says so)
-        self.skills(1); self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
+        self.skills(1); self.put_u(doc)                                         # v0.8.1: the owner's own copy, the control
+        self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         self.assertEqual(self.counted(), [])
 
     def test_a_timestamp_only_sync_is_a_tip(self):   # replay (151e40c: a counted high ISR-I001)
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. No refresh
+        Tip either: nothing about the vendor file is kept."""
         self.baseline_with(V1)
         self.write(text(dict(V1, generated_at="2026-10-18T09:30:00.123Z")))
         self.assertEqual(self.run_cmd("daily", "--roots", *self.roots)[1].strip(), "NO_CHANGES")
         tip = [f for f in self.snap()["findings"] if f["rule"] == "ISR-I008"]
-        self.assertEqual([(f["label"], f["severity"]) for f in tip], [(isr.TIP, "info")])
-        self.assertIn("Platform refresh: 1 of Grok Bot's own files changed", tip[0]["title"])
+        self.assertEqual(tip, [])
+        self.assertNotIn(self.p, isr.load_baseline()[0])
+        self.assertEqual(self.drift(self.p), [])
         r = json.loads(self.run_cmd("audit", "--roots", *self.roots)[1])   # the full audit accepts it like any listed platform update
         self.assertEqual(self.counted(), [])
         self.assertFalse([f for f in self.mine() if f.get("unverified_platform")])
         self.assertEqual(r["status"], isr.ALL_GOOD)
 
     def assert_counted(self, data, why):
+        """v0.8.1: the vendor change leaves no drift row; the owner's own file changed is the counted high."""
         self.write(data)
         self.audit()
-        self.assertEqual([(f["rule"], f["severity"]) for f in self.counted()], [("ISR-I001", "high")], why)
+        self.assertEqual(self.drift(self.p), [], why)
+        self.put_u(dict(V1, generation=why))
+        self.audit()
+        self.assertIn(("ISR-I001", "high", True), self.ints(self.u), why)
 
     def assert_quiet_unverified(self, data, why):
         """b8i4: not normalized (so never verified), and the middle path lets it through: no counted finding, not compared."""
@@ -139,8 +188,10 @@ class Normalized(_Meta):
         self.audit()
         self.assertEqual([(f["rule"], f["severity"]) for f in self.counted()], [], why)
         self.assertNotIn(self.p, isr.VERIFIED_METADATA, why)
+        self.assertEqual(self.drift(self.p), [], why)
 
     def test_any_other_change_stays_counted(self):   # guard
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         changes = {"installation_preference available -> required": dict(V1, skills=[dict(V1["skills"][0], installation_preference="required"), V1["skills"][1]]),
                    "an added skill": dict(V1, skills=V1["skills"] + [{"name": "evil", "installation_preference": "required"}]),
                    "a changed name": dict(V1, skills=[dict(V1["skills"][0], name="pptx2"), V1["skills"][1]]),
@@ -152,6 +203,7 @@ class Normalized(_Meta):
             self.assert_quiet_unverified(text(doc), why)
 
     def test_files_that_are_not_strict_json_stay_counted(self):   # guard
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.baseline_with(V1)
         body = text(dict(V1, generated_at="2026-10-18T09:30:00Z"))
         for why, data in (("a duplicate key", body.replace('"generation": 7,', '"generation": 7, "generation": 9,')),
@@ -162,6 +214,7 @@ class Normalized(_Meta):
             self.assert_counted(data, why)
 
     def test_a_link_stays_counted(self):   # guard
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.baseline_with(V1)
         real = os.path.join(self.tmp, "elsewhere.json")
         with open(real, "w") as f:
@@ -170,18 +223,26 @@ class Normalized(_Meta):
         os.symlink(real, self.p)
         self.audit()
         self.assertTrue(self.counted())
+        self.assertEqual(isr.owner_of(self.p), "user")                          # v0.8.1: a link out of the vendor folder is the owner's
+        self.assertEqual(self.vend(self.p), [])
 
     def test_a_spec_that_isnt_the_released_one_is_ignored(self):   # guard
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The spec
+        isn't read, so the audit says nothing about it; the library still refuses it."""
         self.baseline_with(V1)
         self.write(text(dict(V1, generated_at="2026-10-18T09:30:00Z")))
         real = isr.release_digest
         vars(isr)["_PLATFORM_NORMALIZE_CACHE"].clear()
         with mock.patch.object(isr, "release_digest", lambda rel: "0" * 64 if rel == isr.PLATFORM_NORMALIZE_REL else real(rel)):
             self.audit()
+            vars(isr)["_PLATFORM_NORMALIZE_CACHE"].clear()
+            problem = isr.platform_normalize_problem()
         vars(isr)["_PLATFORM_NORMALIZE_CACHE"].clear()
         self.assertEqual([(f["rule"], f["severity"]) for f in self.counted()], [])   # b8i4: the middle path's quiet line
+        self.assertEqual(self.drift(self.p), [])
         self.assertNotIn(self.p, isr.VERIFIED_METADATA)                         # the spec was ignored: nothing was verified
-        self.assertTrue([n for n in self.snap()["notes"] if isr.PLATFORM_NORMALIZE_REL in n and "MANIFEST.sha256" in n])
+        self.assertFalse([n for n in self.snap()["notes"] if isr.PLATFORM_NORMALIZE_REL in n])
+        self.assertIn("MANIFEST.sha256", problem)
 
     def test_the_shipped_spec_is_empty(self):   # guard: no behavior change until the spike's data lands
         with open(os.path.join(ROOT, "rules", "platform-normalize.json")) as f:
