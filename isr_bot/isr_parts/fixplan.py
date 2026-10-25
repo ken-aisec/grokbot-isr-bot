@@ -636,20 +636,49 @@ def refusal(rule, title=""):
     return out
 
 
-def accept_refused(f):
+# v0.8.1 U-ACC (decision, Oct 24): two checks agreeing on what a skill's text says (ISR-X003, or a finding of
+# class corroborated) is the owner's call, with their yes and a reason, one finding at a time. What ISR Bot saw happen and a
+# working key never are: today's refusal set, minus ISR-X003.
+REFUSED_RULES = EVIDENCE_RULES - set(ACCEPTABLE_RULES) - ACCEPT_ONE_ALSO - {"ISR-X003"}
+NEEDS_YES = ("two checks agree on this; accept it only with the owner's yes (`--owner-said-yes`) and a reason")
+
+
+def hard_refused(f):
+    """A decoy alarm, a working key or something ISR Bot saw happen: never accepted, whatever an entry says."""
+    return (f["rule"].startswith("ISR-K") or f["rule"] in REFUSED_RULES
+            or (f["rule"] in ("ISR-S001", "ISR-S002") and f.get("title") == KEY_LIVE))
+
+
+def needs_yes(f):
+    """Corroborated static: acceptable only with the owner's yes (nothing was seen running)."""
+    return (not acceptable(f) and f["rule"] not in ACCEPT_ONE_ALSO and not hard_refused(f)
+            and (f["rule"] == "ISR-X003" or f.get("class") == "corroborated"))
+
+
+def accept_refused(f, owner_said_yes=False):
     """Why this finding can't be accepted (a plain sentence), or None."""
     if f["rule"].startswith("ISR-K"):
         return refusal(f["rule"])
     if not acceptable(f) and f["rule"] not in ACCEPT_ONE_ALSO and (is_evidence(f) or f.get("class") == "corroborated"):
+        if needs_yes(f):
+            return None if owner_said_yes else NEEDS_YES
         return refusal(f["rule"], (PLAIN_BY_TITLE.get(f.get("title")) or PLAIN.get(f["rule"]) or (f.get("title") or "",))[0])
     return None
 
 
 def accept_rule_refused(rule):
-    """The same, when only the rule is known: every finding under it is refused."""
-    if rule.startswith("ISR-K") or rule in EVIDENCE_RULES - set(ACCEPTABLE_RULES) - ACCEPT_ONE_ALSO:
+    """The same, when only the rule is known: every finding under it is refused (ISR-X003 is decided per finding)."""
+    if rule.startswith("ISR-K") or rule in REFUSED_RULES:
         return refusal(rule, (PLAIN.get(rule) or ("",))[0])
     return None
+
+
+def accept_hash(f):
+    """What a corroborated acceptance was judged on: the skill folder's files for a folder verdict, else the file's bytes."""
+    p = accept_place(f)
+    if not p.startswith("/"):
+        return None
+    return skill_dir_hash(p) if os.path.isdir(p) else sha256_file(p)
 
 
 def accept_place(f):
@@ -722,7 +751,7 @@ def accept_current(rules, reason, days=90, skip=()):
             continue
         w = f["where"].split(":")[0]
         if not acceptable(f):
-            skipped.append(f"{plain(f)['title']} ({short_path(w)}): can't be accepted")
+            skipped.append(f"{plain(f)['title']} ({short_path(w)}): " + ("needs the owner's yes, one at a time" if needs_yes(f) else "can't be accepted"))
             continue
         if (skill_root(w) or w) in bad_roots:
             skipped.append(f"{skill_name(skill_root(w) or w)}: has a critical finding, so nothing in it is accepted")

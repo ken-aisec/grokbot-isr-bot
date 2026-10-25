@@ -387,13 +387,19 @@ class Flow(unittest.TestCase):
     def test_suppression(self):
         json.loads(self.call("audit", "--roots", self.root, "--exports", self.exports))
         snap = json.load(open(os.path.join(os.environ["ISR_BOT_HOME"], "state", "last_findings.json")))
-        target = snap["findings"][0]
-        json.dump([{"key": target["key"], "reason": "accepted for test", "expires": "2999-01-01"}],
+        # v0.8.1 U-ACC (PLAN §3.6): a key line never hides what ISR Bot saw happen (the hard refusal runs before the key branch),
+        # so the accepted finding is the first one that can be accepted, and the first observed one stays open
+        target = next(f for f in snap["findings"] if not isr.hard_refused(f))
+        observed = next(f for f in snap["findings"] if isr.hard_refused(f))
+        json.dump([{"key": target["key"], "reason": "accepted for test", "expires": "2999-01-01"},
+                   {"key": observed["key"], "reason": "accepted for test", "expires": "2999-01-01"}],
                   open(os.path.join(os.environ["ISR_BOT_HOME"], "state", "suppressions.json"), "w"))
         self.call("audit", "--roots", self.root, "--exports", self.exports)
         snap = json.load(open(os.path.join(os.environ["ISR_BOT_HOME"], "state", "last_findings.json")))
         self.assertNotIn(target["key"], {f["key"] for f in snap["findings"]})
         self.assertIn(target["key"], {f["key"] for f in snap["suppressed"]})
+        self.assertIn(observed["key"], {f["key"] for f in snap["findings"]})
+        self.assertNotIn(observed["key"], {f["key"] for f in snap["suppressed"]})
 
 
 class Features(unittest.TestCase):

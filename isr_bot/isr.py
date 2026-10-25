@@ -1171,6 +1171,7 @@ def build_parser():
     xc = sub.add_parser("exception"); xc.add_argument("action", choices=["add", "list", "remove"]); xc.add_argument("name", nargs="?"); xc.add_argument("--reason")
     ac = sub.add_parser("accept"); ac.add_argument("rule", nargs="?"); ac.add_argument("where", nargs="?")
     ac.add_argument("--reason"); ac.add_argument("--days", type=int, default=90); ac.add_argument("--list", action="store_true"); ac.add_argument("--remove", action="store_true"); ac.add_argument("--all-current", action="store_true")
+    ac.add_argument("--owner-said-yes", action="store_true", help="the owner said yes to accepting this one finding two checks agree on")
     ev = sub.add_parser("events"); ev.add_argument("action", choices=["list", "clear"]); ev.add_argument("--rule"); ev.add_argument("--owner-said-yes", action="store_true")
     r = sub.add_parser("rollcall"); r.add_argument("--dir"); r.add_argument("--owner-said-yes", action="store_true", help="the owner said yes to this roll-call in this conversation")
     r.add_argument("--question", action="store_true", help="print the one fixed roll-call question to send, unchanged")

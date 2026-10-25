@@ -165,19 +165,21 @@ class RevetOneRead(_Platform):
 
 class KeySuppressions(_Platform):
     def test_4_a_key_in_suppressions_json_never_accepts_an_unverified_platform_file(self):
-        # v0.8.1 (U3): converted with the ownership gate once U-ACC's hard refusal (PLAN §3.6) runs before the key branch: until
-        # then is_accepted honours a hand-written key line for the owner's own I001, so the converted L131 can't hold yet.
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. A hand-written
+        key line never accepts the owner's own drift either (U-ACC: the hard refusal runs before the key branch)."""
         self.start()
         plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
+        add(self.own, "x\n")
         self.audit()
-        f = self.counted_high(plant)[0]
+        f = self.counted_high(self.own)[0]
         isr.save_json(isr.state_path("suppressions.json"),
                      [{"key": f["key"], "rule": f["rule"], "reason": "fine", "expires": "9999-12-31"}])
         self.assertFalse(isr.is_accepted(f, isr.load_json(isr.state_path("suppressions.json"), []), "2026-10-17"))
         self.audit()
-        self.assertEqual(len(self.counted_high(plant)), 1)
-        self.assertFalse([g for g in self.snap().get("suppressed", []) if g.get("where") == plant])
+        self.assertEqual(len(self.counted_high(self.own)), 1)
+        self.assertFalse([g for g in self.snap().get("suppressed", []) if g.get("where") == self.own])
+        self.assertEqual(self.drift(plant), [])
 
     def test_4_contrast_dismiss_and_accept_refuse_it_too(self):
         """Contrast: passes on base too (ISR-I00x is not acceptable, and these findings aren't Worth-a-look lines).
@@ -193,6 +195,8 @@ class KeySuppressions(_Platform):
         self.audit()
         self.assertEqual(len(self.counted_high(self.own)), 1)
         self.assertEqual(self.drift(plant), [])
+        # v0.8.1 U-ACC: the owner's yes doesn't change that; a change to an approved skill is something ISR Bot saw happen
+        self.assertIn("NOT ACCEPTED", self.run_cmd("accept", f["rule"], self.own, "--reason", "fine", "--owner-said-yes")[1])
 
 
 class OwnReleaseAfterProvenance(_Platform):

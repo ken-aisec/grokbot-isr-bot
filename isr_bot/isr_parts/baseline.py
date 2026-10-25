@@ -136,6 +136,8 @@ def roll_builtin(fs, meta, notes):
 def is_accepted(f, sup, today):
     if f.get("rule") == "ISR-A002" and f.get("accepted_exact"):
         return True   # exact owner-accepted line (state/accepted_auto_allow.json); severity untouched
+    if hard_refused(f):
+        return False  # v0.8.1 U-ACC: before every entry below, so a key later proven live counts again whatever was accepted
     names = refused = None
     for s_ in sup:
         if s_.get("expires", "9999") < today:
@@ -151,11 +153,12 @@ def is_accepted(f, sup, today):
         if s_.get("rule") == f["rule"] and s_.get("match") and isinstance(s_["match"], str):
             if refused is None:
                 refused = bool(accept_refused(f))
-            if refused:
+            if refused and not s_.get("corroborated"):
                 continue
             if names is None:
                 names = accept_names(f)
-            if s_["match"] in names:
+            # a corroborated entry (the owner's yes) applies only while what was judged is unchanged
+            if s_["match"] in names and (not s_.get("corroborated") or (s_.get("hash") and accept_hash(f) == s_["hash"])):
                 return True
     return False
 
@@ -228,8 +231,9 @@ def cmd_accept(args):
     if args.list or not args.rule:
         ignored = 0
         for s_ in sup:
-            state = "expired" if s_.get("expires", "9999") < today else "active"
-            if s_.get("kind") != EXC_KIND and s_.get("match") and accept_rule_refused(str(s_.get("rule", ""))):
+            state = "expired" if s_.get("expires", "9999") < today else ("active (corroborated)" if s_.get("corroborated") else "active")
+            rule_ = str(s_.get("rule", ""))   # an unmarked ISR-X003 entry (an earlier version's) still applies to nothing
+            if s_.get("kind") != EXC_KIND and s_.get("match") and (accept_rule_refused(rule_) or (rule_ == "ISR-X003" and not s_.get("corroborated"))):
                 state, ignored = "ignored", ignored + 1
             what = (s_.get("where") or "") + " [SECURITY-TOOL EXCEPTION]" if s_.get("kind") == EXC_KIND else (s_.get("match") or s_.get("key", "")[:12])
             print(f"{state:8} {s_.get('rule', '-'):9} {what:40} until {s_.get('expires')}  {s_.get('reason', '')}")
@@ -255,16 +259,21 @@ def cmd_accept(args):
     snap = load_snapshot({}) or {}
     hits =[f for f in (snap.get("findings") or []) + (snap.get("suppressed") or [])
             if isinstance(f, dict) and f.get("rule") == rule and args.where in accept_names(f)]
-    why = accept_rule_refused(rule) or next((w for w in map(accept_refused, hits) if w), None)
+    yes = bool(getattr(args, "owner_said_yes", False))
+    why = accept_rule_refused(rule) or next((w for w in (accept_refused(f, yes) for f in hits) if w), None)
     if why:
         print(f"NOT ACCEPTED: {why}")
         return 1
     days = max(1, min(args.days, 365))
     exp = (dt.date.today() + dt.timedelta(days=days)).isoformat()
     sup = [s_ for s_ in sup if not (s_.get("rule") == rule and s_.get("match") == args.where)]
-    sup.append({"rule": rule, "match": args.where, "reason": args.reason[:200], "expires": exp, "added": now()})
+    entry = {"rule": rule, "match": args.where, "reason": args.reason[:200], "expires": exp, "added": now()}
+    judged = next((f for f in hits if needs_yes(f)), None)   # v0.8.1 U-ACC: bound to what the owner said yes to
+    if judged:
+        entry.update(corroborated=True, hash=accept_hash(judged))
+    sup.append(entry)
     save_json(state_path("suppressions.json"), sup)
-    ledger({"event": "accept", "rule": rule, "match": args.where, "expires": exp})
+    ledger(dict({"event": "accept", "rule": rule, "match": args.where, "expires": exp}, **({"corroborated": True} if judged else {})))
     n_open = sum(1 for f in hits if f in (snap.get("findings") or []))
     print(f"Accepted {rule} for “{args.where}” until {exp}. It will show under accepted risks, then come back for a re-check. " +
           (f"It covers {n_open} open finding(s) now." if n_open else

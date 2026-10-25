@@ -108,11 +108,12 @@ isr.py quarantine [NAMES] [--restore NAME] [--reason "..."]   list, quarantine o
 isr.py diff SKILL [--lines N]   what changed in a skill since you approved it
 isr.py exception add SKILL --reason "..."   keep one named security-tool skill that two scanners flag (30 days)
 isr.py exception list | exception remove SKILL
-isr.py accept RULE WHERE --reason "..." [--days N]   accept one risk on purpose (90 days unless --days); WHERE is a whole
-                                         name (the place, skill folder name, or "package version"); decoy alarms and
-                                         Confirmed findings are refused
+isr.py accept RULE WHERE --reason "..." [--days N] [--owner-said-yes]   accept one risk on purpose (90 days unless
+                                         --days); WHERE is a whole name (the place, skill folder name, or "package version");
+                                         a finding two checks agree on only with --owner-said-yes, one at a time, until its
+                                         files change; decoy alarms, what ISR Bot saw happen and working keys are refused
 isr.py accept --list | accept RULE WHERE --remove
-isr.py accept --all-current RULES         accept everything currently open for those rules
+isr.py accept --all-current RULES         accept everything currently open for those rules (never a finding two checks agree on)
 isr.py dismiss KEY --reason "..."   drop a Worth-a-look finding shown to be a false alarm (logged)
 isr.py dismiss --list [--since DATE]   what was dismissed (last 24 hours unless --since)
 isr.py events list|clear [--rule RULE] [--owner-said-yes]   one-time detections

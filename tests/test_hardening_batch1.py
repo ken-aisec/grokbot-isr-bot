@@ -151,6 +151,26 @@ class AcceptLockdown(Batch):
         self.refused(F("ISR-H003", "A command opened a remote shell", "critical", ["ASI05"], "/home/box/.bash_history:12", "bash -i", "f"),
                      "/home/box/.bash_history")
         self.assertTrue(isr.accept_refused({"rule": "ISR-T004", "title": "x", "class": "corroborated"}))   # two votes, one risk
+        # v0.8.1 U-ACC (decision, Oct 24): two checks agreeing on text is the owner's call, with their yes.
+        # What ISR Bot saw happen and a working key stay refused with the yes too.
+        self.assertIsNone(isr.accept_refused({"rule": "ISR-T004", "title": "x", "class": "corroborated"}, owner_said_yes=True))
+        for f, where in ((F("ISR-S002", isr.KEY_LIVE, "critical", ["ASI03"], "/home/box/notes/keys.txt:3", "sk-…a1b2", "f"), "/home/box/notes/keys.txt"),
+                         (F("ISR-A002", "Auto-allow on a consequential action", "critical", ["ASI02"], "settings.json:3",
+                            "Allow automatically: Send email to anyone", "f"), "settings.json:3"),
+                         (F("ISR-H003", "A command opened a remote shell", "critical", ["ASI05"], "/home/box/.bash_history:12", "bash -i", "f"),
+                          "/home/box/.bash_history")):
+            isr.save_json(isr.state_path("last_findings.json"), {"findings": isr.label_findings([f]), "suppressed": []})
+            code, o, _ = self.run_cmd("accept", f["rule"], where, "--reason", "x", "--owner-said-yes")
+            self.assertEqual(code, 1, (f["rule"], o))
+            self.assertIn("NOT ACCEPTED", o)
+            self.assertFalse(os.path.exists(self.sup_path()), f["rule"])
+        isr.save_json(isr.state_path("last_findings.json"), {"findings": isr.label_findings(
+            [F("ISR-X003", "Two scanners agree", "critical", ["AST01"], skill, "SkillSpector + husk", "f")]), "suppressed": []})
+        code, o, _ = self.run_cmd("accept", "ISR-X003", "skill000", "--reason", "r", "--owner-said-yes")
+        self.assertEqual(code, 0, o)
+        sup = isr.load_json(self.sup_path(), [])
+        self.assertEqual(len(sup), 1, sup)
+        self.assertIs(sup[0].get("corroborated"), True)
 
     def test_a_key_accepted_while_unconfirmed_comes_back_once_it_works(self):   # replay
         maybe = isr.finding("ISR-S001", isr.KEY_MAYBE, "medium", ["ASI03"], "/home/box/notes/keys.txt:3", "sk-…a1b2", "f")
@@ -160,6 +180,19 @@ class AcceptLockdown(Batch):
         self.assertEqual(isr.active(isr.label_findings([maybe]))[0], [])
         live = dict(maybe, title=isr.KEY_LIVE, severity="critical")
         self.assertEqual(len(isr.active(isr.label_findings([live]))[0]), 1)
+        # v0.8.1 U-ACC: a marked, hash-bound acceptance of the same file (bytes unchanged) never hides it once it works either
+        # (the hard refusal runs before the hash match)
+        p = os.path.join(self.home, "notes", "keys.txt"); os.makedirs(os.path.dirname(p)); open(p, "w").write("token = sk-a1b2\n")
+        sup = [{"rule": "ISR-S001", "match": p, "reason": "r", "expires": "2999-01-01", "added": isr.now(), "corroborated": True,
+                "hash": isr.sha256_file(p)}]
+        isr.save_json(self.sup_path(), sup)
+        before = dict(maybe, title="Possible API key in a file", severity="high", where=f"{p}:1", **{"class": "corroborated"})
+        self.assertTrue(isr.is_accepted(before, sup, "2026-10-16"))                       # control: the entry applies while it may not work
+        live = isr.label_findings([dict(maybe, title=isr.KEY_LIVE, severity="critical", where=f"{p}:1")])[0]
+        self.assertFalse(isr.is_accepted(live, sup, "2026-10-16"))
+        open_, _ = isr.active([live])
+        self.assertEqual([g["key"] for g in isr.scored(open_)], [live["key"]])
+        self.assertEqual(open_[0]["severity"], "critical")
 
     def test_whole_names_only(self):   # replay
         skill = self.skills(1)[0]
