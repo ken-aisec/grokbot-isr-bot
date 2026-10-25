@@ -1031,6 +1031,32 @@ class StaysScored(Box):
         self.assertEqual(i1.get(alias), ("Reviewed skill or plugin changed", "high"), i1)
         self.assertEqual(i1.get(plain), ("Built-in skill or plugin updated", "low"), i1)   # control: a plain file there, as before
 
+    def test_u4fix_replay_platform_folder_linked_outside_is_not_builtin(self):   # U4fix (decision, Oct 25, option b)
+        bundled = os.path.join(self.home, ".grok", "bundled")
+        alpha = self.put(os.path.join(bundled, "skills", "alpha", "SKILL.md"), "---\nname: alpha\ndescription: Demo.\n---\nSummarize.\n")
+        plain = self.put(os.path.join(self.home, ".agents", "skills", "y", "SKILL.md"), "---\nname: y\ndescription: Demo.\n---\nSummarize.\n")
+        self.skills(1); self.scanners()
+        self.audit()
+        outside = os.path.join(self.tmp, "outside", "bundled")
+        os.makedirs(os.path.dirname(outside))
+        shutil.move(bundled, outside); os.symlink(outside, bundled)
+        self.put(alpha, "---\nname: alpha\ndescription: Demo.\n---\nSummarize again.\n")
+        self.put(plain, "---\nname: y\ndescription: Demo.\n---\nSummarize again.\n")
+        drift = lambda p: isr.finding("ISR-I002", "New skill or plugin file", "low", ["AST09"], p, "h", "fix")
+        self.assertTrue(isr.vendor_root_path(alpha))   # the vendor test still follows the root's own link; only built-in asks
+        self.assertTrue(isr.vendor_link_out(alpha))
+        self.assertFalse(isr.builtin(drift(alpha)))
+        for p in (plain, os.path.join(outside, "skills", "alpha", "SKILL.md")):   # control: no path written in a platform folder
+            self.assertFalse(isr.vendor_link_out(p), p)
+        self.assertTrue(isr.builtin(drift(plain)))   # control: a plain .agents/skills file is still built-in
+        self.audit()
+        self.audit()
+        i = {f["where"]: (f["rule"], f["title"], f["severity"], isr.counts(f)) for f in self.F() if f["rule"] in ("ISR-I001", "ISR-I002")}
+        self.assertEqual(i.get(alpha), ("ISR-I002", "New skill or plugin file", "low", True), i)
+        base = isr.load_baseline()[0]
+        self.assertNotIn(alpha, base)
+        self.assertEqual((base.get(plain), i.get(plain)), (isr.sha256_file(plain), None), i)   # control: its clean change rolled in
+
 
 if __name__ == "__main__":
     unittest.main()

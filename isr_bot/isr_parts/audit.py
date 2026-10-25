@@ -108,7 +108,7 @@ def audit(roots, exports, quick=False):
                 continue   # ISR Bot's own skill, identical to the checksummed release it was installed from
             if p in moved_to:
                 continue   # the same file under a new folder name (plugins are reinstalled under new folders after a restart)
-            if p in base and base[p] != h and is_vendor(p) and not (OWNERSHIP_V081 and owner_link_into_vendor(p)):
+            if p in base and base[p] != h and is_vendor(p) and not (OWNERSHIP_V081 and (owner_link_into_vendor(p) or vendor_link_out(p))):
                 fs.append(finding("ISR-I001", "Built-in skill or plugin updated", "low", ["AST07"], p, f"sha256 {base[p][:12]}→{h[:12]}",
                                   "Usually the platform or a plugin update. The scanners re-check the new version; the fix re-approves it if clean."))
                 fs[-1]["refresh"] = platform_file(p)

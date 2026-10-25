@@ -25,48 +25,64 @@ class SyncedMarketplacePluginNeverQuiet(_Middle):
         return os.path.join(self.home, ".claude", "plugins", "synced", "a1_b2", name, "skills", "x", "SKILL.md")
 
     def test_new_marketplace_plugin_is_counted(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.start()
         p = self.plug()
         put(p, CLEAN.format(n="x"))
-        self.assertNotEqual(self.daily(), "NO_CHANGES")
+        self.assertEqual(self.daily(), "NO_CHANGES")
+        u = self.user("x")
+        put(u, CLEAN.format(n="x"))
         self.audit()
-        self.assertIn(p, self.unverified())
+        self.assertEqual(self.ints(u), [("ISR-I002", "low")])
+        self.assertEqual(self.drift(p), [])
         self.assertNotIn(p, isr.load_baseline()[0])
+        self.assertNotIn(u, isr.load_baseline()[0])
         self.assertFalse(any(self.rel(p) in (t.get("files") or []) for t in self.tip()))
 
     def test_new_file_in_marketplace_plugin_after_update_is_counted(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.start()
         p = self.plug()
         put(p, CLEAN.format(n="x"))
         self.audit(); self.audit()
         q = os.path.join(os.path.dirname(p), "extra.md")
         add(p, "See extra.md.\n"); put(q, "More notes.\n")
+        uq = self.user("skill000", "extra.md")
+        add(self.own, "See extra.md.\n"); put(uq, "More notes.\n")
         self.audit()
-        self.assertIn(p, self.unverified())
-        self.assertIn(q, self.unverified())
+        self.assertEqual(self.ints(self.own), [("ISR-I001", "high")])
+        self.assertEqual(self.drift(p), [])
+        self.assertEqual(self.ints(uq), [("ISR-I002", "low")])
+        self.assertEqual(self.drift(q), [])
 
     def test_baseline_only_marketplace_plugin_update_is_counted(self):
         """R: a marketplace plugin that got into the baseline (an older run rolled it, or the Bot wrote the line) and is then
         updated cleanly: daily isn't quiet, the audit holds it as a counted high outside the Platform refresh line, and the
-        baseline keeps its old bytes (4872a9b: the baseline-only "update" made it quiet and rolled it in)."""
+        baseline keeps its old bytes (4872a9b: the baseline-only "update" made it quiet and rolled it in).
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. A forged vendor
+        baseline line is dropped on read."""
         self.start()
         p = self.plug()
         put(p, CLEAN.format(n="x"))
         v1 = sha(p)
         isr.save_baseline(dict(isr.load_baseline()[0], **{p: v1}))
         add(p, "Version 2.\n")
-        self.assertNotEqual(self.daily(), "NO_CHANGES")
+        self.assertEqual(self.daily(), "NO_CHANGES")
+        u1 = sha(self.own)
+        add(self.own, "Version 2.\n")
         self.audit()
-        self.assertEqual(len(self.counted_high(p)), 1)
-        self.assertIn(p, self.unverified())
-        self.assertEqual(isr.load_baseline()[0][p], v1)
+        self.assertEqual(self.drift(p), [])
+        self.assertEqual(len(self.counted_high(self.own)), 1)
+        self.assertNotIn(p, isr.load_baseline()[0])
+        self.assertEqual(isr.load_baseline()[0][self.own], u1)
         self.assertFalse(any(self.rel(p) in (t.get("files") or []) for t in self.tip()))
 
 
 class SyncedReleaseListedStaysQuiet(_Middle):
     def test_listed_cowork_file_update_in_any_bucket_is_quiet(self):
         """G: cowork-plugin-management's SKILL.md in two buckets, both listed by one `<bucket>` line: a clean update of each is
-        the quiet Platform refresh line, and the next full audit rolls both in."""
+        the quiet Platform refresh line, and the next full audit rolls both in.
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         synced = os.path.join(self.home, ".claude", "plugins", "synced")
         rel = os.path.join("cowork-plugin-management", "skills", "manage", "SKILL.md")
         a, b = os.path.join(synced, A_PAIR, rel), os.path.join(synced, B_PAIR, rel)
@@ -77,7 +93,7 @@ class SyncedReleaseListedStaysQuiet(_Middle):
         self.assertEqual(self.daily(), "NO_CHANGES")
         self.quiet(a, b)
         self.audit()
-        self.assertEqual((isr.load_baseline()[0][a], isr.load_baseline()[0][b]), (sha(a), sha(b)))
+        self.assertEqual((isr.load_baseline()[0].get(a), isr.load_baseline()[0].get(b)), (None, None))
 
 
 class ManagedSkillsStayPlatform(_Middle):
@@ -99,12 +115,13 @@ class ManagedSkillsStayPlatform(_Middle):
 
     def test_new_then_baseline_only_managed_skill_update_is_quiet(self):
         """G: an unlisted new managed skill in an update run is quiet and rolls in; its next clean update (a path only the
-        baseline has) is quiet too: the synced rule doesn't reach managed-skills."""
+        baseline has) is quiet too: the synced rule doesn't reach managed-skills.
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.start()
         s, g = self.pair()
         self.assertEqual(self.daily(), "NO_CHANGES")
         self.audit()
-        self.assertEqual((isr.load_baseline()[0].get(s), isr.load_baseline()[0].get(g)), (sha(s), sha(g)))
+        self.assertEqual((isr.load_baseline()[0].get(s), isr.load_baseline()[0].get(g)), (None, None))
         add(s, "Version 2.\n"); add(g, "Version 2.\n")
         self.assertEqual(self.daily(), "NO_CHANGES")
         self.quiet(s)

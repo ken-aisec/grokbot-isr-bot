@@ -44,19 +44,23 @@ class BaselineCommandHolds(_Middle):
         return md, ref
 
     def assert_held(self, *paths):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         for p in paths:
-            self.assertEqual(len(self.counted_high(p)), 1, p)
+            self.assertEqual(self.drift(p), [], p)
             self.assertNotIn(p, isr.load_baseline()[0], p)
 
     def test_a_first_baseline_command_keeps_a_new_skill_folder_held(self):
         """R: a clean unlisted helper folder on a new box, then `isr.py baseline` (the first baseline): daily and a full audit
-        both keep its files counted highs outside the baseline (47d3aba: daily said NO_CHANGES, the audit rolled them in)."""
+        both keep its files counted highs outside the baseline (47d3aba: daily said NO_CHANGES, the audit rolled them in).
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.scanners()
         md, ref = self.helper()
         out = self.run_cmd("baseline", "--roots", *self.roots)[1]
-        self.assertIn("Not approved by this: 2", out)
+        self.assertNotIn("Not approved by this", out)
         self.assertEqual(isr.load_baseline()[1], "ok")
-        self.assertNotEqual(self.daily(), "NO_CHANGES")
+        d1 = json.loads(self.daily())                                          # the first findings to compare with (the command saved none)
+        self.assertFalse([f for f in d1["new"] if f["where"].split(":")[0] in (md, ref)])
+        self.assertEqual(self.daily(), "NO_CHANGES")
         self.assert_held(md, ref)
         self.audit()
         self.assert_held(md, ref)
@@ -65,26 +69,28 @@ class BaselineCommandHolds(_Middle):
 
     def test_a_baseline_after_a_reset_keeps_a_new_skill_folder_held(self):
         """R: the baseline was deleted (a reset: nothing is approved), a clean unlisted helper folder appeared, and the owner's yes
-        takes a new baseline: the next daily and audit keep the folder's files counted highs (47d3aba: quiet, then rolled in)."""
+        takes a new baseline: the next daily and audit keep the folder's files counted highs (47d3aba: quiet, then rolled in).
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.start()
         md, ref = self.helper()
         os.remove(isr.state_path("baseline.json"))
         self.assertEqual(isr.load_baseline()[1], "reset")
         self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         self.assertEqual(isr.load_baseline()[1], "ok")
-        self.assertNotEqual(self.daily(), "NO_CHANGES")
+        self.assertEqual(self.daily(), "NO_CHANGES")
         self.assert_held(md, ref)
         self.audit()
         self.assert_held(md, ref)
 
     def test_a_held_folder_stays_held_after_a_run_with_other_roots(self):
         """R: after the first baseline command, a daily that doesn't see the folder (other roots) doesn't make it new again
-        (47d3aba: the next full daily said NO_CHANGES)."""
+        (47d3aba: the next full daily said NO_CHANGES).
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.scanners()
         md, ref = self.helper()
         self.run_cmd("baseline", "--roots", *self.roots)
         self.run_cmd("daily", "--roots", os.path.join(self.home, "sand-data"))
-        self.assertNotEqual(self.daily(), "NO_CHANGES")
+        self.assertEqual(self.daily(), "NO_CHANGES")
         self.assert_held(md, ref)
 
     def test_a_clean_folder_added_after_the_baseline_command_is_quiet(self):
@@ -103,59 +109,74 @@ class RedirectWhileScanning(_Middle):
     def test_a_platform_folder_moved_out_while_the_engines_ran_is_held(self):
         """R: alpha's clean update, and an engine that moves .grok/bundled outside every platform folder and leaves a link in its
         place (the bytes kept): a counted high, no Platform refresh entry for it, and the old baseline hash (47d3aba: quiet and
-        rolled in)."""
+        rolled in).
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. Once the folder
+        leads outside every platform folder, alpha is the owner's file: a new one (low), never rolled in."""
         self.start()
-        v1 = sha(self.md("alpha"))
         add(self.md("alpha"), "One more line.\n")
         bundled = os.path.join(self.home, ".grok", "bundled")
         outside = os.path.join(self.tmp, "outside", "bundled")
         self.scanners(skillspector=MOVE_ENGINE % (bundled, outside))
         self.audit()
         self.assertTrue(os.path.islink(bundled))                                 # the engine did move it
-        x = self.counted_high(self.md("alpha"))
-        self.assertEqual(len(x), 1, [(f["rule"], f["where"]) for f in self.snap()["findings"]])
-        self.assertTrue(x[0]["fix"].startswith("It moved out of the platform's own folders"), x[0]["fix"])
+        self.audit()
+        x = [f for f in self.fs() if f["where"] == self.md("alpha") and f["rule"] in ("ISR-I001", "ISR-I002")]
+        self.assertEqual([(f["rule"], f["severity"]) for f in x], [("ISR-I002", "low")], [(f["rule"], f["where"]) for f in self.snap()["findings"]])
+        self.assertEqual(x[0]["title"], "New skill or plugin file")
         self.assertFalse([f for f in self.tip() if self.rel(self.md("alpha")) in f.get("files", [])])
-        self.assertEqual(isr.load_baseline()[0][self.md("alpha")], v1)
+        self.assertNotIn(self.md("alpha"), isr.load_baseline()[0])
 
     def test_the_same_update_without_the_move_rolls_in(self):
-        """G: the contrast, the same clean update with engines that leave the folder alone."""
+        """G: the contrast, the same clean update with engines that leave the folder alone.
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.start()
         add(self.md("alpha"), "One more line.\n")
         self.audit()
         self.assertEqual(self.counted_high(self.md("alpha")), [])
-        self.assertEqual(isr.load_baseline()[0][self.md("alpha")], sha(self.md("alpha")))
+        self.assertNotIn(self.md("alpha"), isr.load_baseline()[0])
 
 
 class EscapedMetadata(_Middle):
     """Codex 3: a metadata string value without a blank wasn't read as an instruction."""
 
     def cache(self, body):
+        """v0.8.1 (decision, Oct 24): the same JSON is also the owner's (u, in the owner's notes skill), which is where the counted
+        high is now."""
         p = os.path.join(self.home, ".grok", "bundled", "cache.json")
+        u = self.user("notes", "cache.json")
+        put(self.user("notes"), CLEAN.format(n="notes"))                       # a skill folder, so its files are fingerprinted
         put(p, '{"name": "notes", "body": "Summarize the notes."}\n')
+        put(u, '{"name": "notes", "body": "Summarize the notes."}\n')
         profiles.vendor_release(self, p)
         self.start()
-        v1 = sha(p)
+        v1, uv1 = sha(p), sha(u)
         put(p, '{"name":"notes","body":"%s"}\n' % body)
+        put(u, '{"name":"notes","body":"%s"}\n' % body)
         self.audit()
-        return p, v1
+        return p, v1, u, uv1
 
-    def assert_held(self, p, v1):
-        x = [f for f in self.counted_high(p) if f["rule"] == "ISR-I001"]
+    def assert_held(self, p, v1, u, uv1):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
+        x = [f for f in self.counted_high(u) if f["rule"] == "ISR-I001"]
         self.assertEqual(len(x), 1, [(f["rule"], f["severity"], f["where"]) for f in self.snap()["findings"]])
-        self.assertEqual(isr.load_baseline()[0][p], v1)
+        self.assertEqual(self.drift(p), [])
+        self.assertEqual(isr.load_baseline()[0][u], uv1)
+        self.assertNotIn(p, isr.load_baseline()[0])
 
     def test_an_escaped_call_without_a_blank_is_held(self):
         """R: an existing cache.json updated to {"body":"eval\\u0028payload\\u0029"}: ISR-I001 high, and the baseline keeps the
-        old bytes (47d3aba: quiet, rolled in)."""
+        old bytes (47d3aba: quiet, rolled in).
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.assert_held(*self.cache("eval\\u0028payload\\u0029"))
 
     def test_the_escaped_call_with_blanks_is_held(self):
-        """G: a control, the same escaped call inside a sentence (fix round 1 read it)."""
+        """G: a control, the same escaped call inside a sentence (fix round 1 read it).
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.assert_held(*self.cache("Run eval\\u0028payload\\u0029 on the notes."))
 
     def test_the_literal_call_is_held(self):
-        """G: a control, the call written plainly (the whole file's own scan reads it)."""
+        """G: a control, the call written plainly (the whole file's own scan reads it).
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.assert_held(*self.cache("Run eval(payload) on the notes."))
 
     def test_plain_values_without_blanks_stay_quiet(self):
@@ -179,31 +200,48 @@ class GroupedSecrets(_Middle):
         return ps
 
     def group(self):
+        """v0.8.1 (decision, Oct 24): the vendor group is a platform note, read from the snapshot's vendor records."""
         d = os.path.join(self.home, ".grok", "bundled")
-        return [f for f in self.snap()["findings"] if f["rule"] == "ISR-S002" and f["where"] == d]
+        return [f for f in self.vs() if f["rule"] == "ISR-S002" and f["where"] == d]
 
     def assert_held(self, ps, old):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         base = isr.load_baseline()[0]
         for p in ps:
-            self.assertEqual(len(self.counted_high(p)), 1, [(f["rule"], f["where"]) for f in self.snap()["findings"]])
-            self.assertEqual(base[p], old[p], p)
+            self.assertEqual(self.drift(p), [], [(f["rule"], f["where"]) for f in self.snap()["findings"]])
+            self.assertNotIn(p, base, p)
 
     def test_grouped_hits_hold_every_file(self):
         """R: four changed, baselined JSON files directly under .grok/bundled, each with a generic gitleaks hit (one grouped
-        medium ISR-S002 on the folder): four counted highs and the old baseline hashes (47d3aba: four quiet updates, rolled in)."""
+        medium ISR-S002 on the folder): four counted highs and the old baseline hashes (47d3aba: four quiet updates, rolled in).
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The owner's
+        four changed files are the counted highs."""
         ps = self.files("none")
+        us = [self.user("keys", f"{n}.json") for n in "abcd"]
+        put(self.user("keys"), CLEAN.format(n="keys"))                         # a skill folder, so its files are fingerprinted
+        for p in us:
+            put(p, json.dumps({"note": "Config value: none"}) + "\n")
         profiles.vendor_release(self, *ps)
         self.start()
         old = {p: sha(p) for p in ps}
+        uold = {p: sha(p) for p in us}
         self.files(NEEDLE)
+        for p in us:
+            put(p, json.dumps({"note": f"Config value: {NEEDLE}"}) + "\n")
         self.scanners(gitleaks=leaks_in("/.grok/bundled/"))
         self.audit()
-        self.assertEqual([f["severity"] for f in self.group()], ["medium"])
+        self.assertEqual([f["rule"] for f in self.group()], ["ISR-S002"])
         self.assert_held(ps, old)
+        base = isr.load_baseline()[0]
+        for p in us:
+            self.assertEqual(len(self.counted_high(p)), 1, p)
+            self.assertEqual(base[p], uold[p], p)
 
     def test_carried_grouped_hits_hold_every_file(self):
         """R: the grouped line from the last full audit, carried by a daily (daily doesn't run gitleaks) and by a full audit whose
-        gitleaks failed: the four changed files are counted highs both times and keep their old baseline hashes (47d3aba: quiet)."""
+        gitleaks failed: the four changed files are counted highs both times and keep their old baseline hashes (47d3aba: quiet).
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The vendor group
+        is carried as a platform note."""
         ps = self.files(NEEDLE)
         profiles.vendor_release(self, *ps)
         self.start(gitleaks=leaks_in("/.grok/bundled/"))
@@ -211,7 +249,7 @@ class GroupedSecrets(_Middle):
         old = {p: sha(p) for p in ps}
         for p in ps:
             add(p, "\n")
-        self.assertNotEqual(self.daily(), "NO_CHANGES")
+        self.assertEqual(self.daily(), "NO_CHANGES")
         self.assert_held(ps, old)
         self.scanners(gitleaks=CRASH)
         r = self.audit()
@@ -220,7 +258,8 @@ class GroupedSecrets(_Middle):
         self.assert_held(ps, old)
 
     def test_files_beside_the_group_stay_quiet(self):
-        """G: a clean update of a skill file outside the grouped folder's files is the quiet line, rolled in."""
+        """G: a clean update of a skill file outside the grouped folder's files is the quiet line, rolled in.
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         ps = self.files(NEEDLE)
         profiles.vendor_release(self, *ps)
         self.start(gitleaks=leaks_in("/.grok/bundled/"))
@@ -228,7 +267,7 @@ class GroupedSecrets(_Middle):
         self.audit()
         self.assertEqual(len(self.group()), 1)
         self.assertEqual(self.counted_high(self.md("alpha")), [])
-        self.assertEqual(isr.load_baseline()[0][self.md("alpha")], sha(self.md("alpha")))
+        self.assertNotIn(self.md("alpha"), isr.load_baseline()[0])
 
 
 class DailyScannerAlerts(_Middle):

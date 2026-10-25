@@ -976,6 +976,8 @@ def builtin(f):
     w = f.get("where", "")
     if in_pending_plugin(w):
         return False
+    if OWNERSHIP_V081 and str(w).startswith("/") and vendor_link_out(w.split(":")[0]):   # U4fix: a platform folder linked outside
+        return False
     # item 8 (R3): a real vendor folder or Grok Bot's config at exactly its place, never a name anywhere in the path
     return bool(vendor_root_path(w) or platform_config_finding(f) or w.startswith("system python package "))
 

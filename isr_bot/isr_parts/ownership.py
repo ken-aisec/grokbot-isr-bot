@@ -68,6 +68,12 @@ def owner_link_into_vendor(p):
     return owner_of(p) == "user" and owner_of(os.path.realpath(p)) == "vendor"
 
 
+def vendor_link_out(p):
+    """U4fix (decision (b), Oct 25): a path written in a platform folder whose real file is outside every one. Never built-in."""
+    written, real = _owner_roots("vendor")
+    return _owner_in(os.path.normpath(os.path.abspath(p)), written) and not _owner_in(os.path.realpath(p), real)
+
+
 def _owner_members(paths, first=False):
     """A finding with members is the owner's when any member is. Otherwise: the first member's class (first=True, D002's
     projects), else vendor when any member is vendor, then isr_self, then fixture-echo."""

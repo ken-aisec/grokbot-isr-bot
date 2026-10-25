@@ -16,6 +16,7 @@ from test_batch5_platform_notes import _SignIn, LINE12, SIGNIN, REL
 OLD = "329d4f59c94da1e42737230253bbb671183546d2ce82e04af9c304a46e759071"
 NEW = "b06512e770076a989724a0aac84961a993089aca44cbfc5e79774c4f16055724"
 AGENT_REL = "agent-data/managed-skills/skills/sign-in/SKILL.md"
+USER_REL = "sand-data/workflows/sign-in/SKILL.md"   # v0.8.1: the owner's copy, where a changed sign-in skill still counts
 # sha256 of line 11 of the b06512e7 bytes with its line end (`sed -n 11p SKILL.md | sha256sum`, measured on the maintainer's copy, Oct 20)
 NEW_LINE11 = "195407c010ae686c473a4c75fc353c88b1bbcdc9d7ea3a46799d9825a7d8a39b"
 # the synthetic new version: one line fewer above the reviewed line, which is now line 11
@@ -55,6 +56,7 @@ class NewVersion(_SignIn):
 
     def setUp(self):
         super().setUp()
+        self.owned()
         self.skills(1)
         self.reviewed_file([dict(e, sha256=sha(SIGNIN)) for e in shipped_entries(OLD)]
                            + [dict(e, sha256=sha(SIGNIN11)) for e in shipped_entries(NEW)])
@@ -65,36 +67,50 @@ class NewVersion(_SignIn):
     def counted_change(self, p):
         return [f for f in self.mine(p) if f["rule"] in ("ISR-I001", "ISR-I002") and f["severity"] == "high" and isr.counts(f)]
 
+    def vs(self):
+        """v0.8.1: the snapshot's vendor records (never scored)."""
+        return self.snap().get("vendor", [])
+
     def test_the_vendor_update_is_a_checked_platform_note_only(self):   # replay (c1bf625: both Confirmed, not checked)
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. Both
+        findings are platform notes at line 11, and no drift row is kept."""
         ps = [self.put(rel, SIGNIN) for rel in (REL, AGENT_REL)]
         self.audit()                                                     # the old version, baselined
         for rel in (REL, AGENT_REL):
             self.put(rel, SIGNIN11)                                      # the vendor update, on the release list
         r = self.audit_json()
         for p in ps:
-            got = self.checks(p)
-            self.assertEqual({(k, f["label"], f["severity"], f["where"].rsplit(":", 1)[1]) for k, f in got.items()},
-                             {("ISR-T008", isr.REVIEWED_LABEL, "info", "11"), ("ISR-T004", isr.REVIEWED_LABEL, "info", "11")}, p)
+            self.assertEqual({(f["rule"], f["where"].rsplit(":", 1)[1]) for f in self.vs()
+                              if f["where"].split(":")[0] == p and f["rule"] in ("ISR-T008", "ISR-T004")},
+                             {("ISR-T008", "11"), ("ISR-T004", "11")}, p)
             self.assertFalse([f for f in self.mine(p) if isr.counts(f)], p)
-            self.assertFalse(self.counted_change(p), p)
+            self.assertFalse([f for f in self.snap()["findings"] + self.vs() if f["where"].split(":")[0] == p and f["rule"].startswith("ISR-I")], p)
             self.assertFalse([f for f in r["new"] if p in f["where"]], p)
         self.assertEqual((r["open_by_severity"]["critical"], r["open_by_severity"]["high"]), (0, 0))
         self.assertEqual(r["status"], isr.ALL_GOOD)
 
     def tampered_counts(self, p, text, line):
         """Not the reviewed bytes, so not on the release list: the change is the file's own counted high ISR-I001, and its
-        ISR-T008/ISR-T004 are not checked notes: they keep their severity as Confirmed platform findings (batch 5 d1)."""
+        ISR-T008/ISR-T004 are not checked notes: they keep their severity as Confirmed platform findings (batch 5 d1).
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The same text in
+        the owner's sign-in skill is where it counts; at p the two findings are platform notes."""
         self.put(REL, text, listed=False)
+        u = self.put(USER_REL, text, listed=False)
         r = self.audit_json()
-        got = self.checks(p)
+        got = self.checks(u)
         self.assertEqual({(k, f["label"], f["severity"], f["where"]) for k, f in got.items()},
-                         {("ISR-T008", isr.CONFIRMED, "critical", f"{p}:{line}"), ("ISR-T004", isr.CONFIRMED, "high", f"{p}:{line}")})
-        self.assertEqual([f["rule"] for f in self.counted_change(p)], ["ISR-I001"])
+                         {("ISR-T008", isr.CONFIRMED, "critical", f"{u}:{line}"), ("ISR-T004", isr.CONFIRMED, "high", f"{u}:{line}")})
+        self.assertEqual({f["rule"] for f in self.vs() if f["where"].split(":")[0] == p and f["rule"] in ("ISR-T008", "ISR-T004")},
+                         {"ISR-T008", "ISR-T004"})
+        self.assertEqual([f["rule"] for f in self.counted_change(u)], ["ISR-I001"])
+        self.assertFalse(self.counted_change(p))
         self.assertGreaterEqual(r["open_by_severity"]["high"], 1)
         self.assertNotEqual(r["status"], isr.ALL_GOOD)
 
     def test_one_byte_changed_anywhere_still_counts(self):   # guard
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         p = self.put(REL, SIGNIN11)
+        self.put(USER_REL, SIGNIN11, listed=False)
         self.audit()                                                     # the reviewed version, baselined
         for old, new in (("Sign the user", "sign the user"), ("current URL.", "current URl."), ("themselves.\n", "themselves!\n")):
             with self.subTest(old):
@@ -105,7 +121,9 @@ class NewVersion(_SignIn):
                 self.tampered_counts(p, bad, 11)
 
     def test_the_reviewed_line_moved_still_counts(self):   # guard
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         p = self.put(REL, SIGNIN11)
+        self.put(USER_REL, SIGNIN11, listed=False)
         self.audit()
         lines = SIGNIN11.split("\n")
         lines[10], lines[11] = lines[11], lines[10]                      # the reviewed line is now line 12
