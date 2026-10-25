@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
 import isr  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import profiles  # noqa: E402
+import test_boxes  # noqa: E402  (v0.8.1: Box.owned, the ownership gate on for one test)
 isr.NATIVE_SETTINGS[:] = [p for p in isr.NATIVE_SETTINGS if p.startswith("~")]
 
 warnings.simplefilter("ignore", ResourceWarning)
@@ -79,6 +80,14 @@ class Box(unittest.TestCase):
             open(p, "w").write(body); os.chmod(p, 0o755)
             isr.SCANNER_LOCK_EXTRA[name] = isr.scanner_digest(p)
 
+    owned = test_boxes.Box.owned                                                # v0.8.1 (U3-U6; removed in U7a)
+
+    def fs(self):
+        return self.snap()["findings"]
+
+    def vs(self):
+        return self.snap().get("vendor", [])
+
     def run_cmd(self, *argv):
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err):
@@ -101,6 +110,10 @@ class Box(unittest.TestCase):
 
 
 class DQ028SkillNamedQuarantine(Box):
+    def setUp(self):
+        super().setUp()
+        self.owned()
+
     def test_user_skill_named_quarantine_is_live_and_scored(self):
         """R19 / DQ-028: a live skill folder literally named quarantine must still score."""
         d = os.path.join(self.home, "sand-data", "workflows", "quarantine")
@@ -140,7 +153,9 @@ class DQ028SkillNamedQuarantine(Box):
         self.assertLess(r["score"], 90)
 
     def test_bundled_path_with_quarantine_segment_is_live(self):
-        """R19: quarantine as a path segment under bundled/managed skills does not exempt."""
+        """R19: quarantine as a path segment under bundled/managed skills does not exempt.
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. Found, Confirmed,
+        kept as a vendor record and counted in the platform notes."""
         d = os.path.join(self.home, ".grok", "bundled", "skills", "quarantine")
         self.write_skill(d)
         skill = os.path.join(d, "SKILL.md")
@@ -151,11 +166,11 @@ class DQ028SkillNamedQuarantine(Box):
         r = self.audit()
         # v0.7.1 item 4: Grok Bot's own bundled files never move the score. The quarantine-named folder still doesn't hide it:
         # it is found, Confirmed and listed in the Platform section.
-        found = [f for f in self.snap()["findings"] if f["severity"] in ("critical", "high") and f.get("label") == isr.CONFIRMED
-                 and f.get("scope") == "platform" and "bundled/skills/quarantine" in f["where"].replace(os.sep, "/")]
+        found = [f for f in self.vs() if f["severity"] in ("critical", "high") and "bundled/skills/quarantine" in f["where"].replace(os.sep, "/")]
+        self.assertTrue(all(f["label"] == isr.CONFIRMED for f in found), found)
         self.assertTrue(found, "bundled skill under .../quarantine/ must still be found and Confirmed")
-        self.assertFalse([f for f in found if isr.counts(f)])
-        self.assertTrue(any("bundled/skills/quarantine" in x for x in r.get("platform", [])))
+        self.assertFalse([f for f in self.fs() if "bundled/skills/quarantine" in f["where"].replace(os.sep, "/")])
+        self.assertGreaterEqual(r["platform_notes"]["count"], 1)
 
     def test_plugin_path_with_quarantine_segment_still_scores(self):
         """R19 on a marketplace plugin (still counts in full after item 4): a quarantine segment never exempts."""
@@ -171,6 +186,10 @@ class DQ028SkillNamedQuarantine(Box):
 
 
 class DQ029ReferencesUnderLoadable(Box):
+    def setUp(self):
+        super().setUp()
+        self.owned()
+
     def test_references_payload_under_live_user_skill_scores(self):
         """R20 / DQ-029: BAD payload in references/ of a live skill must move the score."""
         d = os.path.join(self.home, "sand-data", "workflows", "nice")
@@ -188,7 +207,8 @@ class DQ029ReferencesUnderLoadable(Box):
         self.assertLess(r["score"], 90)
 
     def test_references_under_bundled_skill_scores(self):
-        """R20: references payload under a plugin/bundled skill is not sample-exempt."""
+        """R20: references payload under a plugin/bundled skill is not sample-exempt.
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         d = os.path.join(self.home, ".grok", "bundled", "skills", "helper")
         self.write_skill(d, CLEAN_SKILL)
         ref = os.path.join(d, "references")
@@ -199,11 +219,17 @@ class DQ029ReferencesUnderLoadable(Box):
         self.assertTrue(isr.is_loadable_skill_location(os.path.join(ref, "steps.md")))
         r = self.audit()
         # v0.7.1 item 4: found and Confirmed in Grok Bot's own bundled skill, listed under Platform, not scored
-        found = [f for f in self.snap()["findings"]
+        found = [f for f in self.vs()
                  if f["severity"] in ("critical", "high") and f.get("label") == isr.CONFIRMED
                  and "references/steps.md" in f["where"].replace(os.sep, "/")]
         self.assertTrue(found, "bundled references payload must still be found and Confirmed")
-        self.assertFalse([f for f in found if isr.counts(f)])
+        self.assertFalse([f for f in self.fs() if "references/steps.md" in f["where"].replace(os.sep, "/")])
+        u = os.path.join(self.home, "sand-data", "workflows", "helper2")         # the owner's copy of the same payload
+        self.write_skill(u, CLEAN_SKILL)
+        os.makedirs(os.path.join(u, "references"), exist_ok=True)
+        open(os.path.join(u, "references", "steps.md"), "w").write(BAD_SKILL)
+        self.audit()
+        self.assertTrue([f for f in self.fs() if isr.counts(f) and "workflows/helper2/references/steps.md" in f["where"].replace(os.sep, "/")])
 
     def test_references_under_plugin_skill_scores(self):
         """R20 on a marketplace plugin (still counts after item 4): references payload is not sample-exempt."""
@@ -244,6 +270,10 @@ class DQ030QuarantineFromNotExempt(Box):
 
 
 class DQ022_023StillGreen(Box):
+    def setUp(self):
+        super().setUp()
+        self.owned()
+
     def test_fixture_under_tests_still_unscored(self):
         fix = os.path.join(self.ws, "app", "tests", "fixtures", "bad", "hidden-unicode")
         self.write_skill(fix)
@@ -267,6 +297,7 @@ class DQ022_023StillGreen(Box):
         self.assertGreaterEqual(r["score"], 90)
 
     def test_bundled_pptx_template_still_demoted(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         tmpl = os.path.join(self.home, ".grok", "bundled", "skills", "pptx", "templates")
         os.makedirs(tmpl)
         open(os.path.join(self.home, ".grok", "bundled", "skills", "pptx", "SKILL.md"), "w").write(
@@ -275,10 +306,11 @@ class DQ022_023StillGreen(Box):
         open(js, "w").write("// pitch\nconst beat = 'The hero secretly trains at night';\n")
         self.scanners()
         r = self.audit()
-        t008 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-T008" and "tv_series_pitch_deck" in f["where"]]
+        t008 = [f for f in self.vs() if f["rule"] == "ISR-T008" and "tv_series_pitch_deck" in f["where"]]
         self.assertTrue(t008)
         self.assertTrue(all(f["severity"] == "info" for f in t008), t008)
         self.assertFalse(any(isr.counts(f) for f in t008))
+        self.assertFalse([f for f in self.fs() if "tv_series_pitch_deck" in f["where"]])
 
 
 class QuarantineHelperRules(unittest.TestCase):

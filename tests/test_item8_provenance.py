@@ -43,6 +43,10 @@ def sha(p):
         return hashlib.sha256(f.read()).hexdigest()
 
 
+NOTHING = "Platform files are never scored, so there is nothing to approve."   # v0.8.1: the refusal of `fix --approve-platform`
+DRIFT = ("ISR-I001", "ISR-I002", "ISR-I003", "ISR-I011")
+
+
 class _Platform(Box):
     REL = ".grok/bundled/skills"
 
@@ -85,76 +89,126 @@ class _Platform(Box):
     def approve(self, code, yes=True):
         return self.run_cmd("fix", "--approve-platform", code, *(["--owner-said-yes"] if yes else []), "--roots", *self.roots)[1]
 
+    # v0.8.1 (PLAN §5b): the snapshot's scored findings, its vendor records, and the drift, vendor and integrity rows at one path
+    def fs(self):
+        return self.snap()["findings"]
+
+    def vs(self):
+        return self.snap().get("vendor", [])
+
+    def drift(self, p):
+        return [f for f in self.fs() + self.vs() if f["where"].split(":")[0] == p and f["rule"] in DRIFT]
+
+    def vend(self, p):
+        return [f for f in self.vs() if f["where"].split(":")[0] == p]
+
+    def ints(self, p):
+        return [(f["rule"], f["severity"]) for f in self.fs() if f["where"].split(":")[0] == p and f["rule"] in ("ISR-I001", "ISR-I002")]
+
+    def user(self, n, fn="SKILL.md"):
+        return os.path.join(self.home, "sand-data", "workflows", n, fn)
+
+    @property
+    def own(self):
+        return self.user("skill000")                                           # the owner's skill self.skills(1) made
+
 
 class CtimeGrouping(_Platform):
     """Codex high 1 (isr.py:1783 on dd27c42): a plant touched within 10 minutes of 2 other pending files became an uncounted Tip,
     and daily said NO_CHANGES."""
 
+    def setUp(self):
+        super().setUp()
+        self.owned()
+
     def test_1_a_plant_with_two_other_unlisted_platform_changes_is_still_a_counted_high(self):
         """b8i4: alpha's and beta's clean updates at their listed paths are the quiet line now (the middle path); the plant
-        beside them is still a counted high."""
+        beside them is still a counted high.
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.start()
         plant = self.loose()
         add(self.md("alpha"), "One more line.\n"); add(self.md("beta"), "One more line.\n")
         put(plant, CLEAN.format(n="helper"))
         out = self.daily()
-        self.assertNotEqual(out, "NO_CHANGES")
-        new = json.loads(out)["new"]
-        self.assertEqual([f["severity"] for f in new if f["where"] == plant], ["high"])
-        self.assertEqual(len(self.counted_high(plant)), 1, plant)
+        self.assertEqual(out, "NO_CHANGES")
+        add(self.own, "One more line.\n")
+        out2 = self.daily()
+        self.assertNotEqual(out2, "NO_CHANGES")
+        new = json.loads(out2)["new"]
+        self.assertEqual([f["severity"] for f in new if f["where"] == self.own], ["high"])
+        self.assertEqual(self.drift(plant), [])
+        self.assertEqual(len(self.counted_high(self.own)), 1)
         for p in (self.md("alpha"), self.md("beta")):
             self.assertEqual(len(self.counted_high(p)), 0, p)
-        self.assertIn("2 of Grok Bot's own files changed", self.tip()[0]["title"])
+            self.assertEqual(self.drift(p), [], p)
+        self.assertEqual(self.tip(), [])
 
     def test_1_a_plant_written_during_a_listed_vendor_update_is_a_counted_high(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.start()
         add(self.md("alpha"), "Version 2.\n"); add(self.md("beta"), "Version 2.\n")
         profiles.vendor_release(self, self.md("alpha"), self.md("beta"))
         plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
-        self.assertNotEqual(self.daily(), "NO_CHANGES")                         # daily: the listed update waits as the Tip
+        self.assertEqual(self.daily(), "NO_CHANGES")
         tip = self.tip()
-        self.assertEqual(len(tip), 1)
-        self.assertIn("2 of Grok Bot's own files changed", tip[0]["title"])
-        self.assertNotIn("helper", tip[0]["title"])
-        self.assertEqual(len(self.counted_high(plant)), 1)
+        self.assertEqual(tip, [])
+        self.assertFalse([f for f in self.vs() if f["rule"] == "ISR-I008"])
+        self.assertEqual(self.drift(plant), [])
+        add(self.own, "Version 2.\n")
+        self.audit()
+        self.assertEqual(len(self.counted_high(self.own)), 1)
         self.assertFalse(self.counted_high(self.md("alpha")))
+        self.assertEqual(self.drift(self.md("alpha")), [])
 
     def test_1_touching_listed_files_lends_no_provenance(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.start()
         profiles.vendor_release(self, self.md("alpha"), self.md("beta"), self.md("gamma"))
         os.chmod(self.md("alpha"), 0o600)                                       # moves ctime forward
         put(self.md("beta"), CLEAN.format(n="beta"))                            # the same bytes, written again
         plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
+        add(self.own, "Touched.\n")
         r = self.audit()
-        self.assertEqual(len(self.counted_high(plant)), 1)
-        self.assertIn(plant, [f["where"] for f in r["new"]])
+        self.assertEqual(self.drift(plant), [])
+        self.assertNotIn(plant, [f["where"] for f in r["new"]])
+        self.assertEqual(len(self.counted_high(self.own)), 1)
+        self.assertIn(self.own, [f["where"] for f in r["new"]])
 
 
 class CrossRootMoves(_Platform):
     """Codex high 2 (isr.py:2220 on dd27c42): all five platform roots were one move boundary, so a deleted bundled SKILL.md hid the
     same bytes planted in .codex/skills/.system."""
 
+    def setUp(self):
+        super().setUp()
+        self.owned()
+
     def test_2_a_deleted_bundled_skill_never_hides_a_codex_system_plant(self):
         """b8i4: the plant is a clean new skill folder in Codex's root, so it is the quiet line; it is still no move, and the
-        Platform refresh line names it as Codex's (the deleted alpha doesn't hide it)."""
+        Platform refresh line names it as Codex's (the deleted alpha doesn't hide it).
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.start()
         with open(self.md("alpha")) as f:
             body = f.read()
         os.remove(self.md("alpha"))
         plant = os.path.join(self.home, ".codex", "skills", ".system", "alpha", "SKILL.md")
         put(plant, body)
+        uplant = self.user("alpha")
+        put(uplant, body)                                                       # the same bytes in the owner's folder
         self.audit()
         x = self.counted_high(plant)
         self.assertEqual(x, [])
-        tip = self.tip()
-        self.assertIn("Codex", tip[0]["title"])
-        self.assertIn("Codex", tip[0]["fix"])
-        self.assertIn(os.path.relpath(plant, self.home), tip[0]["files"])
+        self.assertEqual(self.drift(plant), [])
+        self.assertEqual(self.tip(), [])
+        self.assertEqual(self.drift(self.md("alpha")), [])
+        self.assertNotIn(plant, [f["where"] for f in self.fs()])
+        self.assertEqual(self.ints(uplant), [("ISR-I002", "low")])
 
     def test_2_relocation_inside_one_root_needs_its_own_line(self):
-        """b8i4: without its own line, the renamed folder is a clean new skill folder: the quiet line, which names it."""
+        """b8i4: without its own line, the renamed folder is a clean new skill folder: the quiet line, which names it.
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.start()
         old = self.md("alpha")
         with open(old) as f:
@@ -163,9 +217,14 @@ class CrossRootMoves(_Platform):
         os.remove(old)
         new = self.md("alpha-renamed")
         put(new, body)
+        os.remove(self.own)
+        renamed = self.user("skill000-renamed")
+        put(renamed, "Edited.\n")
         self.audit()
         self.assertEqual(len(self.counted_high(new)), 0)
-        self.assertIn(os.path.relpath(new, self.home), self.tip()[0]["files"])
+        self.assertEqual(self.drift(new), [])
+        self.assertEqual(self.tip(), [])
+        self.assertEqual(self.ints(renamed), [("ISR-I002", "low")])
 
     def test_2_contrast_listed_at_its_new_path_is_platform(self):
         """Contrast: passes on base too."""
@@ -204,68 +263,90 @@ class EngineBytes(_Platform):
     """Codex high 3 (isr.py:8484 on dd27c42): the engines scanned a staged copy read after the snapshot, so a swap gave a clean
     answer for a plant, and a forged engine_cache.json also passed as proof."""
 
+    def setUp(self):
+        super().setUp()
+        self.owned()
+
     def test_3_a_forged_engine_cache_never_approves_a_platform_change(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.start()
         plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
+        add(self.own, "Planted.\n")
         self.audit()                                                            # the engines run and cache the plant as clean
         p = isr.state_path("engine_cache.json")
         cache = isr.load_json(p, {}) or {}
-        d = os.path.dirname(plant)
-        entry = dict(cache.get(d) or next(iter(cache.values()), {}), hash=isr.skill_dir_hash(d))
-        cache[d] = entry                                                        # and a forged "clean, current" entry
+        for d in (os.path.dirname(plant), os.path.dirname(self.own)):
+            entry = dict(cache.get(d) or next(iter(cache.values()), {}), hash=isr.skill_dir_hash(d))
+            cache[d] = entry                                                    # and a forged "clean, current" entry
         isr.save_json(p, cache)
         self.audit()
         self.assertNotIn(plant, isr.load_baseline()[0])
-        self.assertEqual(len(self.counted_high(plant)), 1)
+        self.assertEqual(self.drift(plant), [])
+        self.assertEqual(len(self.counted_high(self.own)), 1)
         self.run_cmd("fix", "--revet", "--only", "helper", "--roots", *self.roots)
         self.assertNotIn(plant, isr.load_baseline()[0])
 
     def test_3_an_engine_that_saw_swapped_bytes_never_approves(self):
         """b8i4 fix round 1 (Codex 9): the plant is a new skill folder again, so the engine scans it and the swap happens (checked);
         the bytes it left aren't the ones the audit fingerprinted, so the middle path holds it. The same bytes later, with an
-        honest engine, are a clean new skill folder in an update run: the middle path's quiet line (decision, Oct 22)."""
+        honest engine, are a clean new skill folder in an update run: the middle path's quiet line (decision, Oct 22).
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         plant = self.md("helper")
+        uplant = self.user("helper")
         swapped = CLEAN.format(n="helper") + "Swapped in while the engine read it.\n"
         self.start()
         put(plant, CLEAN.format(n="helper") + "Planted.\n")
-        self.scanners(skillspector=SWAP_ENGINE % (plant, swapped))
+        put(uplant, CLEAN.format(n="helper") + "Planted.\n")
+        self.scanners(skillspector=SWAP_ENGINE % (uplant, swapped))
         self.audit()
-        self.assertEqual(sha(plant), hashlib.sha256(swapped.encode()).hexdigest())   # the engine ran on it and swapped the bytes
+        self.assertEqual(sha(uplant), hashlib.sha256(swapped.encode()).hexdigest())   # the engine ran on it and swapped the bytes
         self.assertNotIn(plant, isr.load_baseline()[0])
-        self.assertEqual(len(self.counted_high(plant)), 1)
-        pv = self.preview()["platform_unverified"]                             # listed, never approved (decision, Oct 18)
-        self.assertEqual([f["where"] for f in pv["files"]], [plant])
-        self.assertIn("platform-release.lock", self.approve("0" * 20))
+        self.assertNotIn(uplant, isr.load_baseline()[0])
+        self.assertEqual(self.drift(plant), [])
+        self.assertEqual(self.ints(uplant), [("ISR-I002", "low")])
+        self.assertNotIn("platform_unverified", self.preview())
+        self.assertNotIn(plant, json.dumps(self.preview()))
+        self.assertIn(NOTHING, self.approve("0" * 20))
         self.assertNotIn(plant, isr.load_baseline()[0])
         put(plant, CLEAN.format(n="helper") + "Planted.\n")                    # b8i4: the planted bytes, scanned honestly
         self.scanners()
         self.daily()
         self.assertEqual(len(self.counted_high(plant)), 0)
-        self.assertIn(os.path.relpath(plant, self.home), self.tip()[0]["files"])
+        self.assertEqual(self.drift(plant), [])
+        self.assertEqual(self.tip(), [])
 
     def test_3_the_yes_approves_only_the_bytes_shown(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.start()
         plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
         self.audit()
         code = "0" * 20                                                         # the preview has no code to give
         add(plant, "Changed after the owner saw it.\n")
+        add(self.own, "Changed after the owner saw it.\n")
         out = self.approve(code)
         self.assertIn("NOT APPROVED", out)
         self.assertNotIn(plant, isr.load_baseline()[0])
         self.audit()
-        self.assertEqual(len(self.counted_high(plant)), 1)
+        self.assertEqual(self.drift(plant), [])
+        self.assertEqual(len(self.counted_high(self.own)), 1)
 
 
 class PlanCantWiden(_Platform):
     """Codex high 4 (isr.py:8529 on dd27c42): what the yes approved was platform_plan.json ∩ the Tip's file list, both Bot-writable,
     and the owner saw only a count and skill names."""
 
+    def setUp(self):
+        super().setUp()
+        self.owned()
+
     def test_4_an_edited_plan_tip_or_findings_file_never_widens_the_yes(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.start()
-        a, b = self.loose("helper"), self.loose("other")
-        put(a, CLEAN.format(n="helper"))
+        a, b = self.user("helper"), self.user("other")
+        v = self.loose("helper")
+        put(a, CLEAN.format(n="helper")); put(v, CLEAN.format(n="helper"))
         self.audit()
         code = "0" * 20                                                         # the preview has no code to give
         put(b, CLEAN.format(n="other"))
@@ -283,8 +364,9 @@ class PlanCantWiden(_Platform):
         self.assertNotIn(a, base)
         self.assertNotIn(b, base)
         d = json.loads(self.daily())
-        self.assertIn(b, [f["where"] for f in d["new"] if f["severity"] == "high"])
-        self.assertEqual(len(self.counted_high(b)), 1)
+        self.assertIn(b, [f["where"] for f in d["new"] if f["rule"] == "ISR-I002"])
+        self.assertEqual(self.ints(b), [("ISR-I002", "low")])
+        self.assertEqual(self.drift(v), [])
 
     def test_4_a_forged_code_approves_nothing(self):
         self.start()
@@ -298,50 +380,66 @@ class PlanCantWiden(_Platform):
 
     def test_4_the_owners_yes_is_refused_and_the_files_stay_high(self):
         """b8i4: alpha's clean update at its listed path is the middle path's quiet line, so the audit rolls it in on its own;
-        the two loose plants stay counted highs and the yes approves nothing."""
+        the two loose plants stay counted highs and the yes approves nothing.
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.start()
         a, b = self.loose("helper"), self.loose("other")
         put(a, CLEAN.format(n="helper")); put(b, CLEAN.format(n="other"))
         v1 = sha(self.md("alpha"))
         add(self.md("alpha"), "One more line.\n")
         self.audit()
-        pv = self.preview()["platform_unverified"]
-        self.assertEqual(sorted(f["where"] for f in pv["files"]), sorted([a, b]))
-        self.assertEqual(pv["open"], 2)
+        pv = self.preview()
+        self.assertNotIn("platform_unverified", pv)
+        self.assertNotIn(a, json.dumps(pv))
+        self.assertNotIn(b, json.dumps(pv))
         self.assertNotIn("code", pv)
         self.assertNotIn("--approve-platform", json.dumps(pv))
-        self.assertIn("platform-release.lock", self.approve("0" * 20))
+        self.assertIn(NOTHING, self.approve("0" * 20))
         base = isr.load_baseline()[0]
-        self.assertEqual((a in base, b in base, base[self.md("alpha")]), (False, False, sha(self.md("alpha"))))
+        self.assertEqual((a in base, b in base, self.md("alpha") in base), (False, False, False))
         self.assertNotEqual(v1, sha(self.md("alpha")))
         with open(isr.state_path("ledger.jsonl")) as f:
             events = [json.loads(l) for l in f if l.strip()]
         self.assertFalse([e for e in events if e.get("event") == "platform-approved"])
         self.audit()
         for p in (a, b):
-            self.assertEqual(len(self.counted_high(p)), 1, p)
+            self.assertEqual(self.drift(p), [], p)
         self.assertEqual(len(self.counted_high(self.md("alpha"))), 0)
-        self.assertNotEqual(self.daily(), "NO_CHANGES")
+        self.assertEqual(self.daily(), "NO_CHANGES")
         add(a, "Changed after the yes.\n")
+        self.assertEqual(self.daily(), "NO_CHANGES")
+        self.assertEqual(self.drift(a), [])
+        add(self.own, "Changed after the yes.\n")
         self.assertNotEqual(self.daily(), "NO_CHANGES")
-        x = self.counted_high(a)
-        self.assertEqual([f["rule"] for f in x], ["ISR-I002"])
-        self.assertIn("Grok Bot's release list doesn't include it", x[0]["title"])
+        x = self.counted_high(self.own)
+        self.assertEqual([f["rule"] for f in x], ["ISR-I001"])
+        self.assertIn("Reviewed skill or plugin changed", x[0]["title"])
 
     def test_4_a_file_the_rules_flag_is_never_offered(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.start()
         bad = self.md("helper")
         put(bad, FLAGGED.format(n="helper"))
         self.audit()
-        pv = self.preview()["platform_unverified"]
+        pv = self.preview()
         self.assertNotIn("offered", pv)
         self.assertNotIn("code", pv)
-        self.assertEqual([f["where"] for f in pv["files"]], [bad])
-        self.assertEqual(len(self.counted_high(bad)), 1)
+        self.assertNotIn("platform_unverified", pv)
+        self.assertTrue([f for f in self.vend(bad) if f["rule"].startswith("ISR-T")])
+        self.assertEqual(self.drift(bad), [])
+        ubad = self.user("helper")
+        put(ubad, FLAGGED.format(n="helper"))
+        self.audit()
+        self.assertTrue([f for f in self.fs() if f["where"].split(":")[0] == ubad and f["rule"].startswith("ISR-T")
+                         and f["severity"] in ("critical", "high") and isr.counts(f)])
 
 
 class Lock(_Platform):
     GOOD = "{h}  .grok/bundled/skills/helper/SKILL.md\n"
+
+    def setUp(self):
+        super().setUp()
+        self.owned()
 
     def plant(self):
         p = self.md("helper")
@@ -353,6 +451,8 @@ class Lock(_Platform):
             f.write(text)
 
     def test_lock_unusable_whole_on_one_bad_line(self):
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The parser checks
+        are the library's, unchanged; the audit reads no release list."""
         p, h = self.plant()
         self.write_lock(self.GOOD.format(h=h))
         self.assertTrue(isr.platform_listed(p, h))                               # the good line alone is provenance
@@ -364,10 +464,12 @@ class Lock(_Platform):
             self.assertIn("line 2", isr.platform_lock_problem(), bad)
         self.start()
         add(p, "Changed since the baseline.\n")
+        add(self.own, "Changed.\n")
         self.write_lock(self.GOOD.format(h=sha(p)) + f"{h}  .grok/bundled/skills/x:3/SKILL.md\n")   # its line is good, one other isn't
         r = self.audit()
-        self.assertEqual(len(self.counted_high(p)), 1)
-        self.assertTrue([n for n in r["notes"] if "release list" in n and "can't be used" in n], r["notes"])
+        self.assertEqual(self.drift(p), [])
+        self.assertEqual(len(self.counted_high(self.own)), 1)
+        self.assertFalse([n for n in r["notes"] if "release list" in n], r["notes"])
 
     def test_lock_through_a_link_is_refused(self):
         p, h = self.plant()
@@ -393,27 +495,35 @@ class Lock(_Platform):
 class Dq042WithoutProvenance(Box):
     """The fail-loud counterpart of the DQ-042 replay: the same learn update, not on Grok Bot's release list."""
 
+    def setUp(self):
+        super().setUp()
+        self.owned()
+
     def test_dq042_learn_update_without_provenance_is_the_quiet_line(self):
         """b8i4 (the middle path): the same learn update at its listed path, not on the release list. ISR Bot's rules find
         nothing in it and the engines agree only on wording (a Platform line), so it is no counted high and no new alert, and
-        the full audit rolls it in (the quiet line, tests/test_b8i4_middle_path.py's wording-only test, shows in daily)."""
+        the full audit rolls it in (the quiet line, tests/test_b8i4_middle_path.py's wording-only test, shows in daily).
+        v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         d = os.path.join(self.home, ".grok", "bundled", "skills", "learn")
         md = os.path.join(d, "SKILL.md")
-        put(md, dq042.LEARN_V1)
+        u = os.path.join(self.home, "sand-data", "workflows", "learn", "SKILL.md")
+        put(md, dq042.LEARN_V1); put(u, dq042.LEARN_V1)
         profiles.vendor_release(self, md)                                       # v1 is the vendor's; v2 isn't listed
         self.scanners(skillspector=dq042.skillspector(dq042.LEARN_ISSUES), husk=dq042.husk(dq042.LEARN_HUSK))
         self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
         self.audit()
-        put(md, dq042.LEARN_V2)
+        put(md, dq042.LEARN_V2); put(u, dq042.LEARN_V2)
         r = self.audit()
         fs = self.snap()["findings"]
         x = [f for f in fs if f["where"] == md and f["rule"] == "ISR-I001"]
         self.assertEqual([(f["severity"], isr.counts(f)) for f in x if f["severity"] == "high" or isr.counts(f)], [])
         self.assertNotIn(md, [f["where"] for f in r["new"]])
-        self.assertEqual(isr.load_baseline()[0][md], sha(md))
+        self.assertIn(u, [f["where"] for f in r["new"]])
+        self.assertNotIn(md, isr.load_baseline()[0])
         self.assertNotIn(d, isr.changed_skills(fs)[0])                           # never re-approved through the engines
-        v = [f for f in fs if f["rule"] == "ISR-X003" and f["where"] == d]
-        self.assertEqual([(f["severity"], f["label"]) for f in v], [("info", isr.PLATFORM)])
+        v = [f for f in self.snap().get("vendor", []) if f["rule"] == "ISR-X003" and f["where"] == d]
+        self.assertEqual([(f["severity"], f["label"]) for f in v], [("high", isr.CONFIRMED)])
+        self.assertEqual([f["rule"] for f in fs if f["where"] == u and f["severity"] == "high" and isr.counts(f)], ["ISR-I001"])
 
 
 # ---- real-path platform checks, re-added from dd27c42 (they failed on 7cf8996 there)

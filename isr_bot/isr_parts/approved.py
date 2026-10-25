@@ -643,11 +643,12 @@ PLATFORM_YES_REFUSED = ("NOT APPROVED: ISR Bot doesn't approve platform files on
                         "path and exact sha256, or when it is an update ISR Bot's checks pass, which is accepted on its own. The rest stay "
                         "high alerts until they are fixed or an ISR Bot release lists them. Nothing was changed. If you didn't expect these "
                         "files, remove them.")
+PLATFORM_NOTHING = "NOT APPROVED: Platform files are never scored, so there is nothing to approve. Nothing was changed."   # v0.8.1 (§2)
 
 
 def approve_platform(*_):
     """`fix --approve-platform CODE [--platform-from CURSOR] [--owner-said-yes]`: always refused, and writes nothing."""
-    return [PLATFORM_YES_REFUSED]
+    return [PLATFORM_NOTHING if OWNERSHIP_V081 else PLATFORM_YES_REFUSED]
 
 
 def cmd_fix(args):
