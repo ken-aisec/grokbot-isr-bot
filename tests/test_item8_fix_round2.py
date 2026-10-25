@@ -337,8 +337,9 @@ class Docs(unittest.TestCase):
         self.assertEqual(len(line), 1)
         for word in ("platform_approved.json", "--platform-from", rn.old_rule("ISR-I011"), "Known gaps"):   # v0.8.0 h2: the old ID
             self.assertIn(word, line[0])
-        self.assertIn("--platform-from", self.read("skills/isr-bot-fix/SKILL.md"))
-        self.assertIn("platform_unverified", self.read("routines/daily-watch.md"))
+        # v0.8.1 (U8): `--platform-from` and `platform_unverified` are gone from the fix skill and the daily routine
+        self.assertNotIn("--platform-from", self.read("skills/isr-bot-fix/SKILL.md"))
+        self.assertNotIn("platform_unverified", self.read("routines/daily-watch.md"))
 
     def test_contrasts_are_marked(self):
         """Contrast: passes on base too (a check on this file's own labels)."""

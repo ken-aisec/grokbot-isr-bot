@@ -9,6 +9,29 @@ Since 0.8.0 the product, its engine and its files are all called ISR Bot. The en
 **None are open.** Batch 7d fixed the last ones. Each item that was in this list, or that the owner logged as must-fix, is recorded
 under "Fixed in batch 7d (the last must-fix items)" right below, with its test file.
 
+## v0.8.1: ownership by location
+
+0.8.1 decides who owns a file by where it is (`owner_of`, isr_bot/isr_parts/ownership.py), never by a list of files or
+hashes. Grok Bot's, Codex's and Claude's own folders are the vendor's: never scored, one count on the platform notes line,
+each listed by `isr.py breakdown`. ISR Bot's own dev and test trees, `/workspace/backups` and copies of chat and tool output
+are silent. `rules/platform-release.lock`, `rules/platform-reviewed.json` and `rules/platform-normalize.json` are no longer
+read; their frozen copies are in `tests/fixtures/platform_v080/`. Kept knowingly:
+- The one real tradeoff: a tampered platform file goes unseen. A Bot that hides an instruction in a vendor folder raises no
+  alert: ISR Bot still reads that text with its rules, but a hit only adds one to the platform notes count, and the platform
+  still loads the file. How likely that is can't be told from what ISR Bot sees; the vendor's next update usually overwrites
+  such a file. Watching closely means a hash list per vendor release again, the stale list 0.8.1 removes. The owner chose the
+  count only, with no new guard code.
+- Unseen by design (the owner's requirement): a real key pasted into a chat transcript or tool cache, committed to ISR Bot's
+  dev tree, or sitting in `/workspace/backups`. Silent, not even counted.
+- A key in a vendor folder is only counted, even one the provider confirms works (vendors ship placeholders there).
+- Plugins the owner installs land in vendor folders (`plugins/cache`, `.claude/plugins`, `.codex/plugins`) and are not
+  scored, ISR-I004 "New plugin installed" included (the owner's decision). Check one with `isr.py vet` before installing it.
+- `isr.py fix --revet` can't re-approve the owner's file that a link inside a platform folder leads to; it stays open as
+  changed until `isr.py baseline --owner-said-yes` (the owner's decision, Oct 25: left as is).
+- Library code kept with no production caller: the release-list, reviewed-list and normalize parsers, `metadata_bound` and
+  `platform_ish`, so their tests keep running on the frozen copies. The owner decided they go, with those tests, in a
+  separate v0.8.2 step.
+
 ## v0.8.0: the full rename (clean start, no upgrade path)
 
 0.8.0 finishes the rename to ISR Bot (intelligence, surveillance, reconnaissance) that 0.7.4 began in display text only. The
@@ -149,7 +172,11 @@ owner decisions:
   rule, so dismissals made before b8i3 don't carry over to newly guarded lines.
 - `env | grep KEY` was never WT-T004 and still isn't; widening the rule to `env` was out of scope.
 
-## b8i4: the platform-file middle path (batch 8, v0.7.4 dev)
+## b8i4: the platform-file middle path (batch 8, v0.7.4 dev). Retired in 0.8.1 (history)
+
+Retired in 0.8.1: the middle path, the release list and the Platform refresh line are gone; platform files are owned by
+location and never scored ("v0.8.1: ownership by location" above). The rest of this section is the record of v0.8.0.
+
 
 Decision, Oct 22: a clean update at a platform path that already exists (a `rules/platform-release.lock` line with any hash,
 or a `baseline.json` line), or a clean new platform skill folder that appears in an update run, is the quiet "Platform
@@ -276,7 +303,8 @@ otf) have their contents skipped. Owner decisions and limits:
 - `ALLOW` holds the digest of the public repo account name exactly as written in the release URLs. Only that whole
   compound is blanked before the scan; any other spelling, casing, separator or longer compound containing it is a hit.
 - Exempt: `CHANGELOG.md` from `## 0.7.3` down (history; the owner decides), and three rules files
-  (`rules/platform-release.lock`, `rules/platform-normalize.json`, `rules/platform-reviewed.json`);
+  (`rules/platform-release.lock`, `rules/platform-normalize.json`, `rules/platform-reviewed.json`; since 0.8.1 the frozen
+  copies in `tests/fixtures/platform_v080/`, bytes unchanged);
   `test_item4_exemptions_still_needed` fails once a file is clean. b8i4 cleaned `tests/test_item8_churn.py` (dropped from the
   list). The lock stays exempt: one vendor skill path it lists under `.grok/bundled/skills` still joins into a keyed entry, and
   that line can't be dropped (the owner decides any ALLOW, decision D9); the two other rules files weren't editable in b8i4.

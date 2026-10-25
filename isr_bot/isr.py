@@ -25,7 +25,7 @@ if sys.version_info < (3, 8):   # degrade with one plain line, not a traceback (
     sys.exit(3)
 import argparse, bisect, builtins, concurrent.futures, datetime as dt, difflib, errno, functools, gzip, hashlib, heapq, html, json, math, os, platform, re, shutil, signal, stat, subprocess, sys, tempfile, threading, time, traceback
 
-VERSION = "0.8.0"
+VERSION = "0.8.1"
 HERE = os.path.dirname(os.path.realpath(__file__))   # PR A, Codex round 2 (5): the file that runs, through any link to it
 RULES_PATH = os.path.join(HERE, "..", "rules", "text_rules.json")
 SELF_ROOT = os.path.dirname(HERE)
@@ -1161,7 +1161,7 @@ def build_parser():
     fx.add_argument("--exception", help="skill name(s) the owner confirmed as security tools (30 days)")
     fx.add_argument("--quarantine", help="the owner's own skill(s) to move out of use and into ISR Bot's quarantine folder (comma-separated)")
     fx.add_argument("--owner-said-yes", action="store_true", help="with --apply: the owner said yes to the cleanup list in the last preview")
-    fx.add_argument("--approve-platform", metavar="CODE", help="refused: platform files are trusted only by rules/platform-release.lock (kept so older instructions get a plain answer)")
+    fx.add_argument("--approve-platform", metavar="CODE", help="refused: platform files are never scored, so there is nothing to approve (kept so older instructions get a plain answer)")
     fx.add_argument("--platform-from", metavar="CURSOR", help="refused, like --approve-platform")
     fx.add_argument("--skip", help="with --apply: cleanup items (ids or paths, comma-separated) the owner said to leave alone")
     qq = sub.add_parser("quarantine"); qq.add_argument("names", nargs="?"); qq.add_argument("--restore"); qq.add_argument("--reason")

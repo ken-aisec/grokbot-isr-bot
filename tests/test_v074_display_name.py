@@ -107,7 +107,7 @@ class EngineStrings(unittest.TestCase):
         self.assertEqual(bad, [])
 
     def test_version(self):
-        self.assertEqual(isr.VERSION, "0.8.0")
+        self.assertEqual(isr.VERSION, "0.8.1")   # v0.8.1 (U8)
 
 
 class Prose(unittest.TestCase):

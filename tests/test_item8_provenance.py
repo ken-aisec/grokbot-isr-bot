@@ -687,11 +687,13 @@ class Docs(unittest.TestCase):
 
     def test_the_docs_name_the_release_list_and_the_yes(self):
         unreleased = self.read("CHANGELOG.md").split("\n## v")[0]
-        for word in ("platform-release.lock", "--approve-platform", "Known gaps"):
+        # v0.8.1 (U8): the release list is no longer read; the fix skill and the daily routine no longer mention it
+        for word in ("rules/platform-release.lock is no longer read", "--approve-platform", "Known gaps"):
             self.assertIn(word, unreleased)
         self.assertIn("--approve-platform", self.read("README.md"))
-        self.assertIn("platform_unverified", self.read("skills/isr-bot-fix/SKILL.md"))
-        self.assertIn("release list", self.read("routines/daily-watch.md"))
+        self.assertIn("rules/platform-release.lock is no longer read", self.read("README.md"))
+        self.assertNotIn("platform_unverified", self.read("skills/isr-bot-fix/SKILL.md"))
+        self.assertNotIn("release list", self.read("routines/daily-watch.md"))
 
     def test_contrasts_are_marked(self):
         """Contrast: passes on base too (a check on this file's own labels)."""
