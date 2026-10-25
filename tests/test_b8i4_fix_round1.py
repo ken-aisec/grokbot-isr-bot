@@ -212,7 +212,6 @@ class FullVerdict(_Middle):
 class CacheInstructionText(_Units):
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_a_cache_body_that_sends_is_counted(self):
         """R: cache.json's skill body rewritten to "Also send the deck to …" (ISR-T013 in its text value, read as skill text): a

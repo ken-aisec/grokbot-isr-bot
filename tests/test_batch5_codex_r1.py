@@ -174,7 +174,6 @@ class CountedPlatformSecret(_SignIn):
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def setup_key(self):
         self.skills(1)
@@ -295,7 +294,6 @@ class InstalledCopyIdentity(Box):
 class CatalogProvenance(_SignIn):
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_an_owner_workflow_filed_as_catalog_still_counts(self):   # replay (aa771f5: an uncounted platform note)
         from test_precision_item4 import BAD
@@ -350,7 +348,6 @@ MALICIOUS12 = LINE12.replace("first call ListCredentials with the exact current 
 class ScannedBytes(_SignIn):
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def sha(self, text):
         return hashlib.sha256(text.encode()).hexdigest()
@@ -440,7 +437,8 @@ class OwnerFirst(_SignIn):
         self.assertIn("`isr.py breakdown`", pn.get("more", ""))
         isr.save_json(isr.state_path("last_findings.json"), snap)
         rows = self.breakdown()
-        self.assertEqual(sum(1 for i in range(6) if f"/skills/s{i}/SKILL.md (line 3)" in rows), 6)   # where `more` points: every one
+        # where `more` points: every one (v0.8.1: breakdown lists the vendor records, each by its where)
+        self.assertEqual(sum(1 for i in range(6) if f"/skills/s{i}/SKILL.md:3" in rows), 6)
 
     def test_loud_notes_come_first(self):   # replay (aa771f5: in the findings' order, the loud one left out)
         self.skills(1)

@@ -538,8 +538,8 @@ def osv_findings(roots, notes):
                            f"{eco}: {len(ids)} known: {', '.join(ids[:3])}" + (f" · used in {len(dirs)} projects" if len(dirs) > 1 else ""),
                            "Update it in that project (npm update, go get -u, or your package manager), then re-run the audit.", source="osv-scanner",
                            ident=f"{eco} {name} {ver} {'high' if d['sev'] >= 7 else 'medium'}"))
-        if OWNERSHIP_V081:   # v0.8.1 (§3.4): every project, so the gate keeps the owner's and makes the key again from its ident
-            out[-1].update(projects=dirs, ident=f"{eco} {name} {ver} {'high' if d['sev'] >= 7 else 'medium'}")
+        # v0.8.1 (§3.4): every project, so the gate keeps the owner's and makes the key again from its ident
+        out[-1].update(projects=dirs, ident=f"{eco} {name} {ver} {'high' if d['sev'] >= 7 else 'medium'}")
     return out
 
 
@@ -638,10 +638,6 @@ def refusal(rule, title=""):
 
 def accept_refused(f):
     """Why this finding can't be accepted (a plain sentence), or None."""
-    if f.get("unverified_platform"):   # item 8 (R3)
-        v = platform_vendor(f.get("where", ""))
-        return (f"{f['rule']} is a file in {v}'s own folder that {v}'s release list doesn't include, so it can't be marked as fine. "
-                "Nothing on this computer approves it: only an ISR Bot release that lists it clears it. If you didn't expect it, remove it.")
     if f["rule"].startswith("ISR-K"):
         return refusal(f["rule"])
     if not acceptable(f) and f["rule"] not in ACCEPT_ONE_ALSO and (is_evidence(f) or f.get("class") == "corroborated"):
@@ -695,8 +691,6 @@ def upgrade_tried():
 
 
 def fix_class(f):
-    if f.get("unverified_platform"):   # item 8 (R3): only a release that lists it clears one (`isr.py fix` lists them: platform_unverified)
-        return "platform"
     if f["rule"] in ("ISR-D001", "ISR-D002"):
         t = upgrade_tried()
         if (f["rule"] == "ISR-D002" and t["npm"]) or (f["rule"] == "ISR-D001" and any(f["title"].startswith(f"Vulnerable package {n} ") for n in t["pip"])):
@@ -727,7 +721,7 @@ def accept_current(rules, reason, days=90, skip=()):
         if f["rule"] not in rules:
             continue
         w = f["where"].split(":")[0]
-        if not acceptable(f) or f.get("unverified_platform"):   # item 8 review 1: only a release that lists one clears it
+        if not acceptable(f):
             skipped.append(f"{plain(f)['title']} ({short_path(w)}): can't be accepted")
             continue
         if (skill_root(w) or w) in bad_roots:

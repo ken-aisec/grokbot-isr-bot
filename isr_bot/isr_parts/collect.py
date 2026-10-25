@@ -78,7 +78,6 @@ def collect_inventory(roots, errors=None, skipped=None):
             inv["mcp_configs"].append(p)
         elif fn in ("plugin.json", "marketplace.json") or "/.grok-plugin/" in p or "/.cursor-plugin/" in p:
             inv["plugin_files"].append(p)
-    aliases = []
     for k in list(inv):
         seen, out = set(), []
         for p in sorted(set(inv[k])):
@@ -86,16 +85,10 @@ def collect_inventory(roots, errors=None, skipped=None):
                 real = os.path.realpath(p)
             except OSError:
                 real = p
-            if real not in seen:      # the same file reached through a linked folder is scanned once
-                seen.add(real)
+            if real not in seen or owner_link_into_vendor(p):   # the same file reached through a linked folder is scanned once,
+                seen.add(real)                                    # except by an owner's name for a vendor file (G8: the owner's)
                 out.append(p)
-            elif k != "non_live_skills" and platform_ish(p):
-                aliases.append(p)
         inv[k] = out
-    # Codex, item 8 review 1 (high 1): the alphabetically first name was kept and a platform name of the same file dropped, so a
-    # baselined .agents/skills/x/SKILL.md turned into a link to a new .grok/bundled/skills/x/SKILL.md hid the platform file from
-    # the integrity and provenance checks. Only the scanning is done once; every platform name is fingerprinted (audit).
-    inv["platform_aliases"] = aliases
     return inv
 
 

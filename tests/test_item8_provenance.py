@@ -119,7 +119,6 @@ class CtimeGrouping(_Platform):
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_1_a_plant_with_two_other_unlisted_platform_changes_is_still_a_counted_high(self):
         """b8i4: alpha's and beta's clean updates at their listed paths are the quiet line now (the middle path); the plant
@@ -183,7 +182,6 @@ class CrossRootMoves(_Platform):
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_2_a_deleted_bundled_skill_never_hides_a_codex_system_plant(self):
         """b8i4: the plant is a clean new skill folder in Codex's root, so it is the quiet line; it is still no move, and the
@@ -265,7 +263,6 @@ class EngineBytes(_Platform):
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_3_a_forged_engine_cache_never_approves_a_platform_change(self):
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
@@ -339,7 +336,6 @@ class PlanCantWiden(_Platform):
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_4_an_edited_plan_tip_or_findings_file_never_widens_the_yes(self):
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
@@ -439,7 +435,6 @@ class Lock(_Platform):
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def plant(self):
         p = self.md("helper")
@@ -497,7 +492,6 @@ class Dq042WithoutProvenance(Box):
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_dq042_learn_update_without_provenance_is_the_quiet_line(self):
         """b8i4 (the middle path): the same learn update at its listed path, not on the release list. ISR Bot's rules find

@@ -715,12 +715,8 @@ def note_plugins(inv):
         if was and st[name].get("status") == "new" and sorted(set(roots)) != was:
             PLUGIN_MOVES[name] = (was, sorted(set(roots)))
         if name not in st:
+            # v0.8.1 (r2 #4): plugins/cache is vendor by location, so a first-run plugin is filed known or new like any other
             st[name] = {"since": now(), "status": "known" if first and in_baseline(name) else "new"}
-            # Already there on ISR Bot's first run, inside the platform's catalog cache, and runs no code: the catalog's, as a
-            # catalog sync would have filed it. One that runs code stays "known" and counts like any installed plugin (F1).
-            # v0.8.1 (r2 #4): gone; plugins/cache is vendor by location, so a first-run plugin is filed known or new like any other
-            if not OWNERSHIP_V081 and first and st[name]["status"] == "known" and all(any(x in r + "/" for x in CATALOG_CACHE) and not runs_code(r) for r in roots):
-                st[name].update(status="catalog", filed="first-run")
         st[name]["roots"] = sorted(set(roots))
     if not first:
         recheck_known_plugins(st, here)
@@ -867,116 +863,13 @@ def unconfirmed_platform_vote(f, fs):
                    and _covers(here, _path_part(g["where"]) if str(g.get("where") or "").startswith("/") else _place(g)) for g in fs)
 
 
-def summarize_refresh(fs):
-    """v0.7.1 precision item 6 (decision, Oct 12): change alerts name the source. Changes to Grok Bot's own files (a platform refresh)
-    are one summary line, a Tip, never an alert — unless the change brings a new Confirmed critical or high (Claude v0.7.1 F4).
-    Then daily gets a real alert: the built-in turned bad; don't use it until Grok Bot fixes it. Unflagged platform changes
-    still roll into the one Tip. Owner skill changes and installed-plugin changes still alert as before."""
-    ref = [f for f in fs if f.get("refresh") and f["rule"] in ("ISR-I001", "ISR-I002", "ISR-I003")]
-    if not ref:
-        return fs
-    # Confirmed critical/high on a platform path (label may already be set; else evidence/corroboration still counts).
-    bad, index = [], None
-    for f in fs:
-        if f in ref or f["severity"] not in ("critical", "high"):
-            continue
-        if not (f.get("scope") == "platform" or platform_file(f)) or unconfirmed_platform_vote(f, fs):   # DQ-042
-            continue
-        if not (f.get("label") == CONFIRMED or is_evidence(f)) and CORROB_INDEX and index is None:
-            index = CorrobIndex(fs)   # batch 5 (c5): one index for every finding here, not a read of all of them per finding
-        if f.get("label") == CONFIRMED or is_evidence(f) or corroborated(f, fs, index):
-            bad.append(f)
-
-    def skill_of_path(w):
-        w = w.split(":")[0]
-        root = skill_root(w) if os.path.exists(w) else None
-        return root or os.path.dirname(w), skill_name(root) if root else os.path.basename(os.path.dirname(w))
-
-    def bad_for(rf):
-        w = rf["where"].split(":")[0]
-        root, _ = skill_of_path(w)
-        for b in bad:
-            bw = b["where"].split(":")[0]
-            if bw == w or bw.startswith(w.rstrip("/") + "/") or (root and (bw == root or bw.startswith(root.rstrip("/") + "/"))):
-                return b
-        return None
-
-    flagged, unflagged = [], []
-    for rf in ref:
-        (flagged if bad_for(rf) else unflagged).append(rf)
-
-    out = [f for f in fs if f not in ref]
-    seen = set()
-    for rf in flagged:
-        b = bad_for(rf)
-        root, n = skill_of_path(rf["where"])
-        if n in seen:
-            continue
-        seen.add(n)
-        title = (f"Grok Bot's own {n} changed and now {b['title']}; it's theirs to fix, but don't use it until they do")
-        alert = finding(rf["rule"], title, b["severity"], ["AST07", "ASI03"], rf["where"],
-                        rf.get("evidence") or b.get("evidence", ""),
-                        "Grok Bot's own skill went bad. Don't use it until they fix it. ISR Bot keeps it listed.",
-                        ident=f"platform-bad-{n}")
-        alert["scope"] = "platform"
-        alert["label"] = CONFIRMED
-        alert["class"] = "corroborated"
-        out.append(alert)
-    if unflagged:
-        names = []
-        for f in unflagged:
-            _, n = skill_of_path(f["where"])
-            if n not in names:
-                names.append(n)
-        c = {r: sum(1 for f in unflagged if f["rule"] == r) for r in ("ISR-I001", "ISR-I002", "ISR-I003")}
-        shown = ", ".join(names[:6]) + (f", +{len(names) - 6} more" if len(names) > 6 else "")
-        # b8i4: each vendor's count (platform_vendor), Grok Bot first; one vendor alone keeps the title as it was for Grok Bot
-        per = {}
-        for f in unflagged:
-            v = platform_vendor(f["where"]) if f["where"].startswith("/") else "Grok Bot"
-            per[v] = per.get(v, 0) + 1 + len(f.get("also_at") or [])
-        vendors = sorted(per, key=lambda v: (("Grok Bot", "Codex", "Claude") + (v,)).index(v))
-        head = ", ".join([f"{per[vendors[0]]} of {vendors[0]}'s own files changed"] + [f"{per[v]} of {v}'s" for v in vendors[1:]])
-        fix = ("Nothing to do. Grok Bot updated its own skills or plugin catalog; every new or changed file here from its own "
-               "skill folders is on Grok Bot's release list. ISR Bot re-checks the new files and accepts them on the next full audit when nothing "
-               "flags them.")
-        if any(f.get("platform_update") for f in unflagged):   # b8i4: some aren't on the release list; the middle path let them through
-            # fix round 1 (Codex 7): a full audit that accepted them (roll_builtin) still shows this line, and says so
-            fix = ("Nothing to do. " + ", ".join([f"{vendors[0]} updated {per[vendors[0]]} of its own files"] + [f"{v} {per[v]}" for v in vendors[1:]])
-                   + ". ISR Bot's rules found nothing in the new versions and no two scanners name a dangerous behavior; "
-                   + ("this full audit accepted them." if all(f.get("platform_accepted") for f in unflagged)
-                      else "it accepts them on the next full audit when nothing flags them."))
-        files = sorted({min(_home_rels(q), key=lambda r: (len(r), r), default=q)
-                        for f in unflagged for q in [f["where"]] + list(f.get("also_at") or [])})
-        evidence, n = f"{c['ISR-I001']} updated, {c['ISR-I002']} added, {c['ISR-I003']} removed", 0
-        for q in files:   # the paths that fit in the evidence's 160 characters, then how many more
-            rest = len(files) - n - 1
-            if len(f"{evidence}, {q}") + (len(f", +{rest} more") if rest else 0) > 160:
-                break
-            evidence, n = f"{evidence}{': ' if not n else ', '}{q}", n + 1
-        if n < len(files):
-            evidence += f"{': ' if not n else ', '}+{len(files) - n} more"
-        # batch 6 (B1): a metadata file verified by content (platform_verified) says how it was checked
-        meta = sorted(dict.fromkeys(_platform_place(f["where"])[0] for f in unflagged if _path_part(f["where"]) in VERIFIED_METADATA))
-        if meta:
-            fix = (f"Nothing to do. Grok Bot updated its list of what it loads ({', '.join(meta[:4])}{' …' if len(meta) > 4 else ''}). "
-                   "ISR Bot compared it with the released version: only dates, and copies of files ISR Bot checked itself, changed."
-                   + (" " + fix[len("Nothing to do. "):] if len(meta) < len(unflagged) else ""))
-        tip = finding(REFRESH_RULE, f"Platform refresh: {head} ({shown})", "info", ["AST07"], "platform-refresh", evidence, fix,
-                      ident="platform-refresh")
-        tip["class"], tip["label"] = "tip", TIP   # created after label_findings; keep it a Tip
-        tip["files"] = files   # b8i4: every file it covers, by its path under the home folder
-        out.append(tip)
-    return out
-
-
 def builtin(f):
     """Shipped by the platform or a plugin, not made or installed by hand by the user. A plugin that is new and that the
     owner hasn't kept yet is not built-in: it counts in full until they decide."""
     w = f.get("where", "")
     if in_pending_plugin(w):
         return False
-    if OWNERSHIP_V081 and str(w).startswith("/") and vendor_link_out(w.split(":")[0]):   # U4fix: a platform folder linked outside
+    if str(w).startswith("/") and vendor_link_out(w.split(":")[0]):   # U4fix: a platform folder linked outside
         return False
     # item 8 (R3): a real vendor folder or Grok Bot's config at exactly its place, never a name anywhere in the path
     return bool(vendor_root_path(w) or platform_config_finding(f) or w.startswith("system python package "))
@@ -991,42 +884,6 @@ PLATFORM = "Platform (Grok Bot's own file)"
 PLATFORM_FIX = "This is Grok Bot's own file; nothing for you to do."
 PLATFORM_CONFIRMED_FIX = ("This is Grok Bot's own file, so it doesn't move your score. Two checks agree it matters, so tell Grok Bot "
                           "support (it's theirs to fix); ISR Bot keeps it listed until it changes.")
-CATALOG_CACHE = tuple(f"/plugins/cache/{m}/" for m in CATALOG_MARKETS)
-_CATALOG = {"at": None, "roots": ()}
-_RUNS_CODE = {}
-
-
-def catalog_plugin_roots():
-    """Folders of plugins the catalog sync filed as "catalog" (arrived together from the platform's catalog, run no code)."""
-    path = state_path("plugins.json")
-    try:
-        at = os.stat(path).st_mtime
-    except OSError:
-        return ()
-    if _CATALOG["at"] != at:
-        st = load_json(path, {}) or {}
-        _CATALOG.update(at=at, roots=tuple(r for v in st.values() if isinstance(v, dict) and v.get("status") == "catalog" for r in v.get("roots", [])))
-    return _CATALOG["roots"]
-
-
-def in_catalog_plugin(where):
-    """Claude review Oct 13 (F1): the marketplace cache folders also hold plugins the owner installs. Only a plugin the catalog
-    sync filed as "catalog" that still runs no code is Grok Bot's own; a known, kept or new plugin, or one that runs code, never is."""
-    w = (where or "").split(":")[0]
-    if not any(x in w for x in CATALOG_CACHE):
-        return False
-    # PR A, Codex round 1 (7): an owner's skill folder is never the catalog's, whatever state/plugins.json says about a folder in it
-    try:
-        if skill_tier(w) == "user":   # as written or where it really leads
-            return False
-    except (OSError, ValueError):
-        return False
-    for r in catalog_plugin_roots():
-        if w == r or w.startswith(r + "/"):
-            if r not in _RUNS_CODE:
-                _RUNS_CODE[r] = runs_code(r)
-            return not _RUNS_CODE[r]
-    return False
 
 
 # Decision, Oct 13 (item 8 dry run): Codex's and Claude's own built-in skills and plugins are the platform's, shown not scored.
@@ -1063,13 +920,11 @@ def platform_secret_store_note(p):
                    ident="platform-secret-store")
 
 
-def platform_file(f, catalog=True):
-    """Grok Bot's own file: real platform skill roots (realpath prefix), its config files, catalog plugins, or system packages.
-    A user skill whose path merely contains a platform-looking segment is never platform (Claude v0.7.1 F3). catalog=False
-    leaves out catalog plugins, which only state/plugins.json says are the catalog's (platform_scope, PR A Codex round 1, 7)."""
+def platform_file(f):
+    """Grok Bot's own file: a platform folder (the classifier's vendor class, by location), its config files, its secret store,
+    the platform's hook, or system packages. A user skill whose path merely contains a platform-looking segment is never
+    platform (Claude v0.7.1 F3)."""
     w = f.get("where", "") if isinstance(f, dict) else str(f)
-    if isinstance(f, dict) and f.get("unverified_platform"):   # item 8 (R3): not shown to be the platform's, so it counts as the owner's
-        return False
     if in_pending_plugin(w):
         return False
     if isinstance(f, dict) and f.get("platform_hook"):
@@ -1077,37 +932,18 @@ def platform_file(f, catalog=True):
     lit = literal_path(f)   # item 8: the producer's own file, when it recorded one
     if (lit in secret_store_places()) if lit else (f"{w}".startswith("/") and is_platform_secret_store(w)):
         return True
-    if platform_config_finding(f) or (catalog and in_catalog_plugin(w)) or w.startswith("system python package "):
+    if platform_config_finding(f) or w.startswith("system python package "):
         return True
-    path = lit or (w.split(":")[0] if isinstance(w, str) else "")
-    if OWNERSHIP_V081:   # v0.8.1 (§2): a platform folder is the classifier's vendor class, by location
-        path = lit or _place(f if isinstance(f, dict) else {"where": w})   # §3.1: never cut at the first colon (skills:escape, learn:3)
-        return bool(path.startswith("/")) and owner_of(path) == "vendor"
-    return bool(path.startswith("/")) and under_platform_root(path)
-
-
-REVIEWED_LABEL = "Platform note (checked)"
-
-
-def mark_reviewed(fs, manifest):
-    """Batch 5 (d2): a platform finding an entry of rules/platform-reviewed.json covers (platform_reviewed: that file's exact bytes,
-    that rule and line) is a checked platform note: severity info (the rule's own kept as severity_was), the entry's note as its fix,
-    never new and never a rug-pull alert. Run before summarize_refresh and mark_platform. Each finding's _snap (the fingerprint
-    of the bytes it was found in, audit) is used here and dropped."""
-    for f in fs:
-        e = platform_reviewed(f, manifest, f.pop("_snap", None))
-        if e is not None:
-            f.update({"class": "platform", "label": REVIEWED_LABEL, "severity_was": f.get("severity_was") or f["severity"], "severity": "info",
-                      "fix": e["note"], "reviewed": True})
-    return fs
+    path = lit or _place(f if isinstance(f, dict) else {"where": w})   # v0.8.1 (§3.1): never cut at the first colon (skills:escape, learn:3)
+    return bool(path.startswith("/")) and owner_of(path) == "vendor"
 
 
 def mark_platform(fs):
     """Label Grok Bot's own findings. Worth-a-look and Tips there become one Platform line each; a Confirmed one stays
     Confirmed (it is still shown and still alerts when new) but never counts. Two engines agreeing on a platform skill in words
-    that name no dangerous behavior is a Platform line too (DQ-042). A checked one (mark_reviewed) stays as it is."""
+    that name no dangerous behavior is a Platform line too (DQ-042)."""
     for f in fs:
-        if f.get("scope") != "platform" or f.get("guarded") or f.get("reviewed"):
+        if f.get("scope") != "platform" or f.get("guarded"):
             continue
         if f.get("class") in ("pattern", "tip") or f.get("platform_hook") or unconfirmed_platform_vote(f, fs):   # Decision, Oct 13: the platform's hook is a Platform line
             f["class"], f["label"] = "platform", PLATFORM
@@ -1128,10 +964,8 @@ def counts(f):
     built-in templates never move the score. Sample-named folders inside a loadable skill still count.
     R3: keys and decoy copies (SECRET_RULES) count wherever they sit, including quarantine and sample folders.
     v0.8.1: never a finding about a place that isn't the owner's (owner_of_finding), first."""
-    if OWNERSHIP_V081 and owner_of_finding(f) != "user":
+    if owner_of_finding(f) != "user":
         return False
-    if f.get("unverified_platform"):
-        return True   # Codex, item 8 review 2 (high 1): a platform name is loaded from where it is, even when it leads into quarantine
     w = f.get("where", "")
     path = w.split(":")[0]
     if path and not w.startswith(("rollcall:", "system python package ")) and f["rule"] not in SECRET_RULES:
@@ -1140,24 +974,8 @@ def counts(f):
         if is_sample_skill_path(path) and not is_loadable_skill_location(path):
             return False
     if f.get("scope") == "platform" or platform_file(f):   # v0.7.1 item 4: never, except a real key outside Grok Bot's config
-        # batch 6 (B2): nor a gitleaks pattern hit in a metadata file the release list vouches for (metadata_hit_note)
-        return f["rule"] in SECRET_RULES and not platform_config_finding(f) and not metadata_hit_note(f)
+        return f["rule"] in SECRET_RULES and not platform_config_finding(f)
     return not builtin(f) or f["severity"] in ("critical", "high")
-
-
-def metadata_hit_note(f):
-    """Batch 6 (B2), fix round 1 (Codex 2, 3, 4): a gitleaks pattern hit in Grok Bot's own metadata file that is a platform note,
-    not counted. Decided again each time it is asked, never from a stored flag (6cd1ab4's `verified_metadata` is ignored): the
-    hit is gitleaks' alone (no provider confirmed a key: TruffleHog's live, dead or unsure, or a critical, always counts), on
-    one line of one file; its `metadata_sha256` is the bytes gitleaks_findings bound it to (a private copy of the verified
-    bytes gave gitleaks exactly the same hits); and the file has those bytes now, they verify against the release list, and
-    every unit's file is itself on it (metadata_proof). Anything else counts, with its cleanup."""
-    if f.get("rule") != "ISR-S002" or f.get("source") != "gitleaks" or f.get("severity") == "critical":
-        return False
-    if f.get("title") not in ("gitleaks: secrets in file", KEY_MAYBE):
-        return False
-    path, _, ln = str(f.get("where") or "").rpartition(":")
-    return path.startswith("/") and ln.isdigit() and metadata_proof(path, f.get("metadata_sha256"))
 
 
 def platform_owned(fs):

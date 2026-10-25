@@ -56,7 +56,6 @@ class NewVersion(_SignIn):
 
     def setUp(self):
         super().setUp()
-        self.owned()
         self.skills(1)
         self.reviewed_file([dict(e, sha256=sha(SIGNIN)) for e in shipped_entries(OLD)]
                            + [dict(e, sha256=sha(SIGNIN11)) for e in shipped_entries(NEW)])

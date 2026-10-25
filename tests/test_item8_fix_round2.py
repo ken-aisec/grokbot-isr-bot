@@ -19,9 +19,11 @@ from test_item8_provenance import CLEAN, FLAGGED, NOTHING, ROOT, _Platform, add,
 import profiles  # noqa: E402
 import rename_v080 as rn  # noqa: E402
 
+SHOWN = 50   # v0.8.0's PLATFORM_OPEN_SHOWN (the read-only list's length), gone with the list in U7a
+
 
 def forged(p, key=None):
-    """v0.8.1: a v0.8.0-shaped unverified platform finding, built with finding() (unverified_platform_finding goes in U7a)."""
+    """v0.8.1: a v0.8.0-shaped unverified platform finding, built with finding() (unverified_platform_finding is gone)."""
     f = dict(isr.finding("ISR-I002", "forged", "high", ["AST09"], p, "0" * 12, "x"), unverified_platform=True)
     return dict(f, key=key) if key else f
 
@@ -29,7 +31,6 @@ def forged(p, key=None):
 class _Quiet(_Platform):
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def assert_quiet(self, p):
         """v0.8.1: no drift row at p, and no unverified platform finding anywhere (it replaces assert_counted)."""
@@ -92,8 +93,7 @@ class OwnWalk(_Quiet):
             else:
                 vars(isr).pop("PLATFORM_WALK_MAX_FILES", None)
         self.assertEqual(out, "NO_CHANGES")
-        # U7a deletes platform_coverage_finding: then x is read from fs() + vs(), as PLAN §5b says. Until then it is a vendor record.
-        x = [f for f in self.fs() if f["rule"] == "ISR-I011"]
+        x = [f for f in self.fs() + self.vs() if f["rule"] == "ISR-I011"]   # U7a: platform_coverage_finding is gone
         self.assertEqual(x, [])
         self.assertFalse([f for f in self.vs() if f["rule"] == "ISR-I011" and isr.counts(f)])
         self.assertNotIn("platform_unverified", out)
@@ -199,7 +199,7 @@ class Pages(_Quiet):
     def test_4_the_list_is_the_exact_count_with_no_code_or_pages(self):
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.start()
-        n = isr.PLATFORM_OPEN_SHOWN + 1
+        n = SHOWN + 1
         self.forge([f"p{i:04d}" for i in range(n)])
         pv = self.preview()
         self.assertNotIn("platform_unverified", pv)
@@ -212,7 +212,7 @@ class Pages(_Quiet):
     def test_4_no_page_or_code_approves_anything(self):
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
         self.start()
-        self.forge([f"a{i:04d}" for i in range(isr.PLATFORM_OPEN_SHOWN)], text=FLAGGED)
+        self.forge([f"a{i:04d}" for i in range(SHOWN)], text=FLAGGED)
         self.forge(["zz-clean"], at=self.loose)                                 # b8i4: loose, so never the middle path's quiet line
         pv = self.preview()
         self.assertNotIn("next_page", pv)

@@ -439,13 +439,12 @@ def gitleaks_findings(roots, notes):
                 out.append(_note_examples(finding("ISR-S002", f"gitleaks: secrets in {len(files)} {'file' if len(files) == 1 else 'files'} under {os.path.basename(d)}", sev,
                                                   ["ASI03", "LLM02"], d, f"{len(leaks)} hit(s): {', '.join(kinds)[:60]} at {at}", why, source="gitleaks",
                                                   ident="gitleaks:" + ",".join(kinds)), leaks, examples))
-                # b8i4 fix round 2 (Codex 4): every file it stands for, by path (its `where` is their folder), so a platform update
-                # of one of them is held and never rolled in, this run and while a daily carries the line (finding_files)
+                # b8i4 fix round 2 (Codex 4): every file it stands for, by path (its `where` is their folder), so a change to one
+                # of them is held and never rolled in
                 out[-1]["affected_files"] = sorted(os.path.abspath(str(fp)) for fp in files if fp)
-                if OWNERSHIP_V081:   # v0.8.1 (§3.4): each hit's file, line and kind (no secret text), so the gate can split a group by owner
-                    out[-1]["member_hits"] = [{"file": os.path.abspath(str(l.get("File") or d)), "line": l.get("StartLine"),
-                                               "rule_id": l.get("RuleID", "secret"), "example": examples.get(id(l))} for l in leaks]
-        bound = metadata_bound(exe, per_file)   # fix round 1 (Codex 2): hits gitleaks also gives on the verified bytes
+                # v0.8.1 (§3.4): each hit's file, line and kind (no secret text), so the gate can split a group by owner
+                out[-1]["member_hits"] = [{"file": os.path.abspath(str(l.get("File") or d)), "line": l.get("StartLine"),
+                                           "rule_id": l.get("RuleID", "secret"), "example": examples.get(id(l))} for l in leaks]
         for fpath, leaks in per_file.items():
             kinds = sorted({l.get("RuleID", "secret") for l in leaks})
             generic = all(k.startswith("generic") for k in kinds)
@@ -453,8 +452,6 @@ def gitleaks_findings(roots, notes):
                                               f"{fpath}:{leaks[0].get('StartLine')}", f"{len(leaks)} hit(s): {', '.join(kinds)[:100]}",
                                               "Check whether these are live credentials. Revoke live ones, then delete or scrub the file.", source="gitleaks",
                                               path=fpath if isinstance(fpath, str) and fpath.startswith("/") else None), leaks, examples))
-            if fpath in bound:
-                out[-1]["metadata_sha256"] = bound[fpath]   # what metadata_hit_note holds the file to; never enough on its own
         if examples:
             notes.append(f"gitleaks: {len(examples)} hit(s) look like example or checksum values; each is scored as any other hit "
                          "and noted, to check (anyone can write a real key that way).")

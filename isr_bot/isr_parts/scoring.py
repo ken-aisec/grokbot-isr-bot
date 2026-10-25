@@ -342,7 +342,7 @@ def package_reachable(f):
         return True
     m = re.match(r"Vulnerable package (.+)$", f.get("title") or "")
     dirs = (load_json(state_path("osv_projects.json"), {}) or {}).get("packages", {}).get(m.group(1), []) if m else []
-    if OWNERSHIP_V081 and isinstance(f.get("projects"), list):
+    if isinstance(f.get("projects"), list):
         dirs = f["projects"]   # v0.8.1 (§3.4): only the projects the gate kept (the owner's); its where is the first of them
     projs = set()
     for d in [path] + [x for x in dirs if isinstance(x, str) and x.startswith("/")]:   # the finding names one project; it may sit in several
@@ -491,8 +491,7 @@ CHANGED_GROUP_MIN = 2
 def _changed_high(f):
     # the owner's own skills only: a platform or built-in change keeps its own line (dry run 53e1836: a Grok Bot built-in
     # led the group, so the owner's changes went unscored)
-    return (f.get("rule") == "ISR-I001" and f.get("severity") == "high" and not f.get("refresh") and f.get("scope") not in ("platform", "builtin")
-            and not f.get("unverified_platform"))   # item 8: a platform change without provenance keeps its own line and title
+    return (f.get("rule") == "ISR-I001" and f.get("severity") == "high" and not f.get("refresh") and f.get("scope") not in ("platform", "builtin"))
 
 
 def group_changed_skills(fs):

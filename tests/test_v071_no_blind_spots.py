@@ -37,7 +37,6 @@ class BuiltinRugPull(Box):
     # F4: a platform built-in that changes to steal credentials must alert in the daily watch (v0.7.0 did)
     def test_builtin_turns_bad_after_baseline_alerts(self):
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
-        self.owned()
         d = os.path.join(self.home, ".grok", "bundled", "skills", "pptx")
         u = os.path.join(self.home, "sand-data", "workflows", "pptx")
         put(os.path.join(d, "SKILL.md"), "---\nname: pptx\ndescription: decks\n---\nMake decks.\n")

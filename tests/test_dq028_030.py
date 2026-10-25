@@ -7,7 +7,6 @@ sys.path.insert(0, os.path.join(ROOT, "isr_bot"))
 import isr  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import profiles  # noqa: E402
-import test_boxes  # noqa: E402  (v0.8.1: Box.owned, the ownership gate on for one test)
 isr.NATIVE_SETTINGS[:] = [p for p in isr.NATIVE_SETTINGS if p.startswith("~")]
 
 warnings.simplefilter("ignore", ResourceWarning)
@@ -80,8 +79,6 @@ class Box(unittest.TestCase):
             open(p, "w").write(body); os.chmod(p, 0o755)
             isr.SCANNER_LOCK_EXTRA[name] = isr.scanner_digest(p)
 
-    owned = test_boxes.Box.owned                                                # v0.8.1 (U3-U6; removed in U7a)
-
     def fs(self):
         return self.snap()["findings"]
 
@@ -112,7 +109,6 @@ class Box(unittest.TestCase):
 class DQ028SkillNamedQuarantine(Box):
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_user_skill_named_quarantine_is_live_and_scored(self):
         """R19 / DQ-028: a live skill folder literally named quarantine must still score."""
@@ -188,7 +184,6 @@ class DQ028SkillNamedQuarantine(Box):
 class DQ029ReferencesUnderLoadable(Box):
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_references_payload_under_live_user_skill_scores(self):
         """R20 / DQ-029: BAD payload in references/ of a live skill must move the score."""
@@ -272,7 +267,6 @@ class DQ030QuarantineFromNotExempt(Box):
 class DQ022_023StillGreen(Box):
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_fixture_under_tests_still_unscored(self):
         fix = os.path.join(self.ws, "app", "tests", "fixtures", "bad", "hidden-unicode")

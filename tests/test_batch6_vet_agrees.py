@@ -168,7 +168,6 @@ class ReleasedBytes(Folder):
             patch = mock.patch.object(isr, name, p)
             patch.start()
             self.addCleanup(patch.stop)
-        self.setcap("OWNERSHIP_V081", True)   # v0.8.1 (U2-U6): the ownership gate on; removed in U7a, when it is always on
 
     def release(self, text, reviewed=((("ISR-T008", 12), "Grok Bot's sign-in skill tells the Bot not to bring up 1Password with people "
                                                           "who don't use it."), (("ISR-T004", 12), "It names the password manager it signs in with."))):

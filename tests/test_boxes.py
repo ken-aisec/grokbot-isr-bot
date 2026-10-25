@@ -129,12 +129,6 @@ class Box(unittest.TestCase):
         os.symlink(sd, os.path.join(self.home, "agent-data"))
         return sd
 
-    def owned(self):
-        """v0.8.1 (U2-U6): the ownership gate on for this test. Removed in U7a, when it is always on."""
-        had, was = hasattr(isr, "OWNERSHIP_V081"), getattr(isr, "OWNERSHIP_V081", None)
-        isr.OWNERSHIP_V081 = True
-        self.addCleanup(lambda: setattr(isr, "OWNERSHIP_V081", was) if had else vars(isr).pop("OWNERSHIP_V081", None))
-
     def scanners(self, **override):
         # Batch 3: ISR Bot runs only its own checked copies (scanners/bin, listed in the lock); the fakes are registered
         # in this process only.
@@ -792,7 +786,6 @@ class MainBoxLessons(Box):
         owner had to re-run gitleaks by hand to find 9cb25c53-56f1-4ffd-9441-51638d121499.txt:1.
         v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The workspace's
         own agent-tools cache is tool output, never shown; the same cache inside the owner's project still names its file and line."""
-        self.owned()
         for echo in (True, False):
             if not echo:
                 self.tearDown(); self.setUp()
@@ -853,7 +846,6 @@ class MainBoxLessons(Box):
     def test_a_key_in_a_built_in_site_playbook_is_low_when_only_gitleaks_sees_it(self):
         """Fresh v0.6.7 account (DQ-012 batch): every first run raised these two platform lines as medium "looks like a key".
         v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
-        self.owned()
         self.skills(1)
         self.assertEqual(self.playbook_keys("sand-data/managed-skills/skills", bucket="vendor"), {"site-playbooks-resy": "low", "site-playbooks-target": "low"})
         self.no_s002()
@@ -862,7 +854,6 @@ class MainBoxLessons(Box):
 
     def test_a_built_in_site_playbook_key_a_second_engine_agrees_on_keeps_its_severity(self):
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
-        self.owned()
         self.skills(1)
         resy = os.path.join(self.home, "sand-data", "managed-skills", "skills", "site-playbooks-resy", "SKILL.md")
         th = ("#!/bin/sh\necho '" + json.dumps({"SourceMetadata": {"Data": {"Filesystem": {"file": resy, "line": 8}}}, "DetectorName": "Resy",
@@ -875,7 +866,6 @@ class MainBoxLessons(Box):
 
     def test_the_same_key_line_outside_the_platforms_playbooks_is_unchanged(self):
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
-        self.owned()
         self.skills(1)
         self.assertEqual(self.playbook_keys("sand-data/workflows"), {"site-playbooks-resy": "medium", "site-playbooks-target": "medium"})   # the owner's own skill
         self.tearDown(); self.setUp(); self.skills(1)

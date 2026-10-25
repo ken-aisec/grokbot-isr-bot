@@ -24,7 +24,6 @@ import test_dq042_vendor_skills as dq042  # noqa: E402
 class _Middle(_Platform):
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def rel(self, p):
         return os.path.relpath(p, self.home)

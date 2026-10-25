@@ -143,8 +143,6 @@ class DQ024BundledTemplateFiction(Box):
         self.assertTrue(hits)  # the rule still matches the word
         # full audit path demotes it
         # v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only.
-        import test_boxes
-        test_boxes.Box.owned(self)   # the ownership gate on for this test (removed in U7a)
         self.scanners()
         r = self.audit()
         t008 = [f for f in self.snap().get("vendor", []) if f["rule"] == "ISR-T008" and "tv_series_pitch_deck" in f["where"]]

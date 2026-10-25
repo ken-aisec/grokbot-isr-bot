@@ -17,14 +17,13 @@ import json, os, shutil, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import test_boxes  # noqa: E402
 import isr  # noqa: E402
-from test_item8_provenance import CLEAN, _Platform, add, put, sha  # noqa: E402
+from test_item8_provenance import CLEAN, NOTHING, _Platform, add, put, sha  # noqa: E402
 import profiles  # noqa: E402
 
 
 class InventoryAliases(_Platform):
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_1_a_link_from_a_baselined_alias_never_hides_a_new_platform_file(self):
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The alias is the
@@ -66,7 +65,6 @@ class InventoryAliases(_Platform):
 class LinkedPlatformPaths(_Platform):
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_2_a_platform_file_leading_into_an_owner_workflow_is_held_to_the_list(self):
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. A platform name
@@ -119,7 +117,6 @@ class LinkedPlatformPaths(_Platform):
 class RevetOneRead(_Platform):
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_3_revet_saves_the_digest_it_held_to_the_list(self):
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. revet reads no
@@ -185,7 +182,6 @@ class KeySuppressions(_Platform):
     def test_4_contrast_dismiss_and_accept_refuse_it_too(self):
         """Contrast: passes on base too (ISR-I00x is not acceptable, and these findings aren't Worth-a-look lines).
         v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
-        self.owned()
         self.start()
         plant = self.loose()
         put(plant, CLEAN.format(n="helper"))
@@ -202,7 +198,6 @@ class KeySuppressions(_Platform):
 class OwnReleaseAfterProvenance(_Platform):
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_5_isr_bots_own_skill_copied_into_a_platform_folder_needs_a_line(self):
         """b8i4: a clean new platform skill folder is the middle path's quiet line, so the copy is no counted high now; it is
@@ -235,14 +230,15 @@ class BoundedPlatformList(_Platform):
     N = 1000
 
     def test_6_preview_and_refused_yes_read_no_platform_file(self):
-        # v0.8.1 (U3): converted in U7a (PLAN §6 item 7): its new L198 asserts unverified_platform_finding is gone, which only
-        # U7a makes true, and its old L198 needs the list the gate removes.
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. A forged list
+        of v0.8.0-shaped platform findings is no list at all now: the preview has none and the yes is refused."""
         self.start()
         snap = self.snap()
         for i in range(self.N):
             p = self.md(f"p{i:04d}")
             put(p, CLEAN.format(n=f"p{i:04d}"))
-            snap["findings"].append(dict(isr.unverified_platform_finding(p, "0" * 64), key=f"{i:016d}"))   # a forged, long list
+            snap["findings"].append(dict(isr.finding("ISR-I002", "forged", "high", ["AST09"], p, "0" * 12, "x"), key=f"{i:016d}",
+                                         unverified_platform=True))   # a forged, long list
         isr.save_json(isr.state_path("last_findings.json"), snap)
         real, reads = os.open, []
 
@@ -252,13 +248,13 @@ class BoundedPlatformList(_Platform):
             return real(p, *a, **k)
         os.open = counting
         try:
-            pv = self.preview()["platform_unverified"]                         # Decision, Oct 18: a read-only list
+            pv = self.preview()                                                 # Decision, Oct 18: read-only
             self.assertEqual(len(reads), 0)
-            self.assertEqual(pv["open"], self.N)
-            self.assertEqual(len(pv["files"]), isr.PLATFORM_OPEN_SHOWN)
-            self.assertEqual(pv.get("more"), self.N - isr.PLATFORM_OPEN_SHOWN)
-            self.assertIn("isr.py show ISR-I002", pv["next"])
-            self.assertIn("platform-release.lock", self.approve("0" * 20))
+            self.assertNotIn("platform_unverified", pv)
+            self.assertFalse(pv.get("platform_unverified"))
+            self.assertFalse(hasattr(isr, "unverified_platform_finding"))
+            self.assertNotIn("--approve-platform", json.dumps(pv))
+            self.assertIn(NOTHING, self.approve("0" * 20))
             self.assertEqual(len(reads), 0)
         finally:
             os.open = real

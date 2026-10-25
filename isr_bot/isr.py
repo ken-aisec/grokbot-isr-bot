@@ -284,25 +284,6 @@ def fit_owner_first(obj, notes, limit=4096, keep=(), alias=False, before=None, b
     return text()
 
 
-PLATFORM_OPEN_SHOWN = 50
-
-
-def platform_open(snap):
-    """Every open unverified_platform finding, new or not: their exact count, the first PLATFORM_OPEN_SHOWN by name, and what to do."""
-    fs = [f for f in snap.get("findings", []) if isinstance(f, dict) and f.get("unverified_platform")]
-    if not fs:
-        return None
-    out = {"open": len(fs), "files": [dict({k: f[k] for k in ("rule", "severity", "title", "where")}, evidence=f.get("evidence", ""))
-                                      for f in fs[:PLATFORM_OPEN_SHOWN]],
-           "next": f"Still open from any earlier day too: files in the platform's own folders that ISR Bot's release list ({PLATFORM_LOCK_REL}) "
-                   "doesn't include. Don't use them until someone has looked. Nothing on this computer approves them: remove any the owner "
-                   "didn't expect; a real vendor update clears when an ISR Bot release lists it. `isr.py show ISR-I002 --limit 100000` and "
-                   "`isr.py show ISR-I001 --limit 100000` list every one."}
-    if len(fs) > PLATFORM_OPEN_SHOWN:
-        out["more"] = len(fs) - PLATFORM_OPEN_SHOWN
-    return out
-
-
 def cmd_daily(args):
     sweep_old_replies()
     try:
@@ -310,25 +291,19 @@ def cmd_daily(args):
     except Busy:
         print("BUSY another ISR Bot run is in progress; this daily check was skipped")
         return 0
-    # Codex, item 8 review 2 (high 2): an open platform file without provenance is said before any quiet answer. "New" means not in
-    # last run's findings file, which the Bot can write: a plant whose finding was copied into it in advance was never new, and
-    # daily said NO_CHANGES. Being in that file is never the owner's acknowledgment.
-    plat = platform_open(snap)
     # PR A, Codex round 2 (6): a critical or high finding an earlier run had no room to name is still to be said: never NO_CHANGES
     pending = undelivered_open(snap, new)
     moved = snap.get("plugin_version_changes") or []   # DQ-047 fix round 1: a pending plugin's version bump is said, never NO_CHANGES
-    if snap.get("scanners_missing") and not new and not fixed and not plat and not pending and not moved:
+    if snap.get("scanners_missing") and not new and not fixed and not pending and not moved:
         print("SCANNERS_MISSING " + ", ".join(snap["scanners_missing"]) + ": run `bash /workspace/isr-bot/app/scripts/install.sh --scanners`, then `isr.py daily` again")
         return 0
     gap = list(snap.get("stages_skipped") or [])
-    if not new and not fixed and not plat and not pending and not moved:
+    if not new and not fixed and not pending and not moved:
         # R04: nothing changed among what WAS checked; a stage that didn't finish is said, never hidden behind NO_CHANGES
         print(f"NO_CHANGES_BUT_NOT_CHECKED {'; '.join(gap)[:300]}: these were not checked this run (last results kept)" if gap else "NO_CHANGES")
         return 0
     out = {"score": snap["score"], "score_line": score_line(snap)}
     out["status"] = snap_status(snap)
-    if plat:
-        out["platform_unverified"] = plat   # a dict: fit() never trims it
     if snap.get("scanners_missing"):   # batch 3 (R7): said, but never in place of what is new (a decoy alarm included)
         out["scanners_missing"] = snap["scanners_missing"]
     if gap:
@@ -343,7 +318,7 @@ def cmd_daily(args):
         out["not_yet_reported"] = [alert_line(f) for f in pending[:PENDING_SHOWN]]
     # batch 5 (d1): a new finding in Grok Bot's own files is said in platform_notes, never in `new` (a vendor rug pull still breaks
     # NO_CHANGES). Codex round 1 (10): critical and high ones first, and any left out are counted in `more`, with the command.
-    note_fs = [f for f in new if platform_scope(f)] + [f for f in snap["findings"] if f.get("unverified_platform")]
+    note_fs = [f for f in new if platform_scope(f)]
     notes = platform_notes(note_fs, 5)
     rest = [f for f in new if not f["rule"].startswith("ISR-K") and not platform_scope(f)]
     out["new"] = [dict(compact(f), key=f["key"]) if f.get("class") == "pattern" else compact(f) for f in rest][:10]
@@ -358,9 +333,9 @@ def cmd_daily(args):
     # snapshot until a daily run names it, and is listed whole in a file the routine must read and name from, today
     said = json.loads(text)
     named = {f["key"] for f in pending[:len(said.get("not_yet_reported", []))]} | {f["key"] for f in rest[:len(said["new"])]}
-    named |= {f["key"] for f in platform_note_order(note_fs)[1][:len((said.get("platform_notes") or {}).get("lines", []))]}
+    named |= {f["key"] for f in platform_note_order(note_fs)[:len((said.get("platform_notes") or {}).get("lines", []))]}
     left = []
-    for f in pending + rest + platform_note_order(note_fs)[1]:
+    for f in pending + rest + platform_note_order(note_fs):
         if f["key"] not in named and is_alert(f, snap):
             named.add(f["key"])
             left.append(f)
@@ -382,12 +357,11 @@ PENDING_SHOWN = 10   # PR A, Codex round 2 (6): earlier critical or high finding
 
 def is_alert(f, snap):
     """A finding the daily routine must name: an owner's critical or high one, or a platform note ISR Bot would call critical or
-    high. Decoys and scanner alerts are always shown whole, and an unlisted platform file is said every day while it is open."""
-    if f["rule"].startswith("ISR-K") or f["rule"] == "ISR-X005" or f.get("unverified_platform") or f.get("guarded"):
+    high. Decoys and scanner alerts are always shown whole."""
+    if f["rule"].startswith("ISR-K") or f["rule"] == "ISR-X005" or f.get("guarded"):
         return False
     if platform_scope(f):
-        unlisted = {g["where"].split(":")[0] for g in snap.get("findings", []) if g.get("unverified_platform")}
-        return loud_note(f, unlisted)
+        return loud_note(f)
     return f.get("severity") in ("critical", "high")
 
 
@@ -418,11 +392,10 @@ def keep_undelivered(snap, left):
 def save_undelivered(fs, snap):
     """Every finding in `fs` (masked, platform notes as their lines) in state/deltas/daily-<time>.json; its path, or None."""
     d = state_path("deltas")
-    unlisted = {g["where"].split(":")[0] for g in snap.get("findings", []) if g.get("unverified_platform")}
     try:
         os.makedirs(d, exist_ok=True)
         path = os.path.join(d, f"daily-{time.time_ns()}.json")
-        rec = lambda f: mask_stored([dict(compact(f), key=f["key"], **({"platform_note": platform_note_line(f, unlisted)} if platform_scope(f) else {}))])[0]
+        rec = lambda f: mask_stored([dict(compact(f), key=f["key"], **({"platform_note": platform_note_line(f)} if platform_scope(f) else {}))])[0]
         save_json(path, {"at": now(), "undelivered": [rec(f) for f in fs]})
         for old in sorted(fn for fn in os.listdir(d) if fn.startswith("daily-") and fn.endswith(".json"))[:-DELTA_KEEP]:
             os.remove(os.path.join(d, old))
@@ -440,26 +413,10 @@ def cmd_baseline(args):
         return 1
     roots = args.roots or [os.path.expanduser("~"), "/workspace"]
     fs, meta = audit(roots, None, quick=True)
-    # b8i4 fix round 2 (Codex 1): this audit saves no findings, so the platform files it held outside the middle path (a first
-    # baseline's new skill folders) are kept here, and the next run holds them as it would after a first audit
-    save_platform_held(fs, meta.get("platform_held_before"))
-    if status == "first":
-        held = save_first_baseline(meta["manifest"])
-    else:
-        # Codex, item 8 review 2 (high 3): the owner's yes to a new baseline covers their own skills and plugins, never a platform
-        # file the release list doesn't include. Such a file keeps the line it had (so it still shows as changed) or stays out, and
-        # only an ISR Bot release that lists it clears it (decision, Oct 18).
-        old = load_baseline()[0]
-        held = set() if OWNERSHIP_V081 else platform_unproven(meta["manifest"])   # v0.8.1: the manifest is the owner's files only
-        base = {p: h for p, h in meta["manifest"].items() if p not in held}
-        base.update({p: old[p] for p in held if p in old})
-        save_baseline(base)
-    n = save_approved_all(meta.get("skill_dirs", []), held, load_baseline()[0])
+    save_baseline(meta["manifest"])   # v0.8.1: the manifest is the owner's files only
+    n = save_approved_all(meta.get("skill_dirs", []), (), load_baseline()[0])
     ledger(dict({"event": "baseline", "files": len(meta["manifest"]), "copies": n}, **({"after_reset": True} if status == "reset" else {})))
-    print(f"Baseline saved: {len(meta['manifest']) - len(held)} skill and plugin files. Kept a copy of {n} skills so the next change shows as a diff."
-          + (f" Not approved by this: {len(held)} file(s) in the platform's own folders that ISR Bot's release list ({PLATFORM_LOCK_REL}) "
-             "doesn't include. An update ISR Bot's checks pass rolls in on its own at a full audit; the rest stay high alerts "
-             "until an ISR Bot release lists them." if held else ""))
+    print(f"Baseline saved: {len(meta['manifest'])} skill and plugin files. Kept a copy of {n} skills so the next change shows as a diff.")
     return 0
 
 
@@ -501,7 +458,7 @@ def cmd_breakdown(args):
               f"({', '.join(sorted({f['rule'] for f in plat}))}).")
         for line in platform_notes(snap["findings"], len(plat))["lines"]:   # Codex round 1 (9, 10): every one, where `more` points
             print(f"  {line}")
-    vend = [v for v in snap.get("vendor") or [] if isinstance(v, dict) and v.get("label") != GUARDED_LABEL] if OWNERSHIP_V081 else []
+    vend = [v for v in snap.get("vendor") or [] if isinstance(v, dict) and v.get("label") != GUARDED_LABEL]
     if vend:   # v0.8.1 (§3.5): Grok Bot's, Codex's and Claude's own files, never scored; every one, by where it is
         print("")
         print(f"Platform notes (Grok Bot's, Codex's and Claude's own files, never scored): {len(vend)}")

@@ -412,7 +412,7 @@ class RenderedTitles(_Box):
     """Fix round 1 (Codex LOW4): a finding title never has the name cut, in either breakdown column."""
     def test_every_title_has_the_whole_name_within_48_characters(self):   # replay (cffd4b7: four titles cut it)
         found = titles_with_the_name()
-        self.assertGreater(len(found), 8)
+        self.assertGreater(len(found), 6)   # v0.8.1 (U7a): the two platform titles that held the name went with their code
         bad = [(rule, f, t[:70]) for rule, f, t in found
                if any("\0" in t[:i] or i + len(NAME) > min(TITLE_COLUMNS) for i in [m.start() for m in re.finditer(re.escape(NAME), t)])]
         self.assertEqual(bad, [])
@@ -423,9 +423,16 @@ class RenderedTitles(_Box):
 
     def test_breakdown_and_the_report_never_cut_it(self):   # replay (cffd4b7: the first 0.7.4 name was cut in breakdown)
         p = os.path.join(self.home, ".grok", "bundled", "manifest.json")
-        fs = [isr.unverified_platform_finding(p, "b" * 64), isr.unverified_platform_finding(p, "b" * 64, "a" * 64),
-              isr.unverified_platform_finding(os.path.join(self.home, ".grok", "bundled", "x", "SKILL.md"), "c" * 64, "c" * 64),
-              isr.platform_coverage_finding(os.path.dirname(p), "too many files")]
+        # v0.8.1 (U7a): the four v0.8.0 platform titles as literals; the functions that made them are gone with the release list
+        fs = [isr.finding("ISR-I002", "ISR Bot's release list doesn't have Grok Bot's new list of what it loads yet", "high",
+                          ["AST09", "AST07"], p, "sha256 bbbbbbbbbbbb, not on the release list", "fix"),
+              isr.finding("ISR-I001", "ISR Bot's release list doesn't have Grok Bot's changed list of what it loads yet", "high",
+                          ["AST07"], p, "sha256 aaaaaaaaaaaa→bbbbbbbbbbbb", "fix"),
+              isr.finding("ISR-I002", "On ISR Bot's list, but not on Grok Bot's release list: a file in Grok Bot's own skill folder",
+                          "high", ["AST09", "AST07"], os.path.join(self.home, ".grok", "bundled", "x", "SKILL.md"),
+                          "sha256 cccccccccccc, not on the release list", "fix"),
+              isr.finding("ISR-I011", "ISR Bot couldn't check all of Grok Bot's own skill folder", "high", ["AST07", "AST09"],
+                          os.path.dirname(p), "too many files", "fix")]
         fs += [isr.finding(rule, t.replace("\0", "x"), "high", ["AST07"], f"/tmp/{n}/f.md", "evidence", "fix")
                for n, (rule, _, t) in enumerate(titles_with_the_name())]
         for f in fs:

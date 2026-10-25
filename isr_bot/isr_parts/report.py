@@ -49,9 +49,7 @@ def dismiss(key, reason):
     else:
         entry.update(key=f["key"], rule=f["rule"], where=f["where"], cls=f.get("class") or ("evidence" if is_evidence(f) else "pattern"))
         m = SAFE_CLAIM.search(dismiss_context(f))
-        if f.get("unverified_platform"):   # item 8 review 1; decision, Oct 18: only a release that lists it clears one
-            ok, why = False, "a platform file not on the vendor's release list: only an ISR Bot release that lists it clears it"
-        elif is_evidence(f) or entry["cls"] != "pattern":
+        if is_evidence(f) or entry["cls"] != "pattern":
             ok, why = False, f"{entry['cls']} finding: only Worth-a-look findings can be dropped"
         elif not (reason or "").strip():
             ok, why = False, "give the reason it is a false alarm"
@@ -122,13 +120,13 @@ def by_sev(fs):
 # Batch 5 (d1, decision 2, Oct 18): Grok Bot's own files (scope "platform") keep their severity, label and key inside, so a
 # vendor rug pull still alerts and stays Confirmed, but they are never one of the owner's problems: not in open_by_severity, not
 # in `new`, not in breakdown's Confirmed list, not in the report's counts or the dashboard's tiles. Each is one plain line in
-# "Platform notes" instead. Unverified platform files (ISR-I001/I002/I011) are never platform scope and still count.
+# "Platform notes" instead.
 # PR A, Codex round 1 (5, 7): a platform finding that counts (a real key outside Grok Bot's config: counts() keeps it) is the
 # owner's, with its own fix, in every channel; and only a place ISR Bot itself vouches for (a platform root, Grok Bot's
 # config, its secret store, a system package, the platform's hook) makes a note. A plugin state/plugins.json files as "catalog"
 # (the Bot can write that file) stays in the owner's lists, as on 151e40c.
 def platform_scope(f):
-    return f.get("scope") == "platform" and not f.get("guarded") and not counts(f) and platform_file(f, catalog=False)
+    return f.get("scope") == "platform" and not f.get("guarded") and not counts(f) and platform_file(f)
 
 
 def owners(fs):
@@ -145,44 +143,27 @@ def _platform_place(where):
     return ("~/" + path[len(h):] if path.startswith(h) else path), ln
 
 
-def _unlisted(path, unlisted):
-    """True when the platform file at `path`, or one inside the folder `path`, is one the release list doesn't include."""
-    return path in unlisted or any(u.startswith(path.rstrip("/") + "/") for u in unlisted)
-
-
-def _note_kind(f, unlisted=()):
-    """Which line a platform note gets: "reviewed", "unlisted", "pattern" or "said" (ISR Bot would call it <severity>)."""
-    if f.get("reviewed"):
-        return "reviewed"
-    if _unlisted(f["where"].split(":")[0], unlisted):
-        return "unlisted"
+def _note_kind(f):
+    """Which line a platform note gets: "pattern" or "said" (ISR Bot would call it <severity>)."""
     if f.get("class") == "platform" and not f.get("platform_hook"):
         return "pattern"
     return "said"
 
 
-def loud_note(f, unlisted=()):
+def loud_note(f):
     """A note whose line says ISR Bot would call it critical or high: the ones the daily routine names (Codex round 1, 10)."""
-    return _note_kind(f, unlisted) == "said" and (f.get("severity_was") or f["severity"]) in ("critical", "high")
+    return _note_kind(f) == "said" and (f.get("severity_was") or f["severity"]) in ("critical", "high")
 
 
-def platform_note_line(f, unlisted=()):
-    """One plain line for a platform note. `unlisted`: paths whose platform file the release list doesn't include."""
+def platform_note_line(f):
+    """One plain line for a platform note."""
     short, ln = _platform_place(f.get("where", ""))
     line = f" (line {ln})" if ln else ""
     v = platform_vendor(f["where"].split(":")[0]) if str(f.get("where", "")).startswith("/") else "Grok Bot"
-    kind = _note_kind(f, unlisted)
-    if kind == "reviewed":   # d2: an exact-bytes entry of rules/platform-reviewed.json; its note is the fix
-        return f"{f['fix']} ISR Bot checked this exact text{' (line ' + ln + ')' if ln else ''}; nothing to do."
-    if kind == "unlisted":
-        return f"{v}'s own folder, {short}{line}: {f['title']}. Not on ISR Bot's release list: its own alert counts, this line doesn't."
-    if kind == "pattern":
+    if _note_kind(f) == "pattern":
         return f"{v}'s own file {short}{line}: {f['title']}. A pattern match nothing backs up; not counted."
     sev = f.get("severity_was") or f["severity"]
     said = f"would call {sev}" if sev in ("critical", "high", "medium", "low") else "would list"
-    if metadata_hit_note(f):   # batch 6 (B2): a gitleaks hit in a metadata file verified by content (fix round 1: decided afresh)
-        return (f"gitleaks {said.replace('would call', 'would call this')} in {v}'s own file {short}{line} ({f['title']}). "
-                f"ISR Bot checked that file against the released version: it's {v}'s list of what it loads, so it isn't counted.")
     return (f"{v}'s own file {short}{line}: has text ISR Bot {said} in your own skill ({f['title']}). It isn't counted. "
             f"If it worries you, tell {v} support; ISR Bot keeps it listed.")
 
@@ -192,19 +173,18 @@ def platform_notes(fs, limit, vendor=None):
     would call critical or high, whose lines come first (Codex round 1, 10); `lines` holds at most `limit`. `loud` is for the
     caller, which says what it leaves out (notes_more) and never prints it. v0.8.1 (§3.5): `vendor` (a snapshot's vendor
     records) adds its non-warning-text records to the count only; `isr.py breakdown` lists them."""
-    unlisted, plat = platform_note_order(fs)
-    extra = sum(1 for v in vendor or [] if isinstance(v, dict) and v.get("label") != GUARDED_LABEL) if OWNERSHIP_V081 else 0
+    plat = platform_note_order(fs)
+    extra = sum(1 for v in vendor or [] if isinstance(v, dict) and v.get("label") != GUARDED_LABEL)
     if not plat and not extra:
         return None
-    return {"count": len(plat) + extra, "loud": sum(1 for f in plat if loud_note(f, unlisted)),
-            "lines": [platform_note_line(f, unlisted) for f in plat[:limit]]}
+    return {"count": len(plat) + extra, "loud": sum(1 for f in plat if loud_note(f)),
+            "lines": [platform_note_line(f) for f in plat[:limit]]}
 
 
 def platform_note_order(fs):
-    """(the unlisted paths, the platform notes among `fs` in the order platform_notes gives their lines: the loud ones first)."""
-    unlisted = {f["where"].split(":")[0] for f in fs if f.get("unverified_platform")}
+    """The platform notes among `fs` in the order platform_notes gives their lines: the loud ones first."""
     plat = [f for f in shown(fs) if platform_scope(f)]
-    return unlisted, [f for f in plat if loud_note(f, unlisted)] + [f for f in plat if not loud_note(f, unlisted)]
+    return [f for f in plat if loud_note(f)] + [f for f in plat if not loud_note(f)]
 
 
 PLATFORM_NOTES_MORE = "`isr.py breakdown` lists every one"
@@ -297,13 +277,8 @@ def render_md(snap, hist, tag):
         lines += ["", "## Platform notes", "", "Grok Bot's, Codex's and Claude's own files, never scored.",
                   f"- {notes_more(vnotes['count'], 0, 0)}"]
     if plat:   # batch 5 (d1): one plain line each, outside every count
-        unlisted = {f["where"].split(":")[0] for f in snap["findings"] if f.get("unverified_platform")}
-        lead = ("Grok Bot's own files, exactly as ISR Bot's release lists them. They don't count toward your problems or your status."
-                if not any(_unlisted(f["where"].split(":")[0], unlisted) for f in plat) else
-                "Grok Bot's own files. They don't count toward your problems or your status; a file ISR Bot's release list doesn't "
-                "include has its own counted alert above.")
         notes = vnotes
-        lines += ["", "## Platform notes", "", lead]
+        lines += ["", "## Platform notes", "", "Grok Bot's own files. They don't count toward your problems or your status."]
         lines += [f"- {l}" for l in notes["lines"]]
         if notes["count"] > len(notes["lines"]):
             lines.append(f"- {notes_more(notes['count'], notes['loud'], len(notes['lines']))}")

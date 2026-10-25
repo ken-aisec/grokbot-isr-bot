@@ -210,7 +210,7 @@ def approved_dirs():
         except (OSError, ValueError, EOFError, AttributeError):
             continue
         if isinstance(d, str) and d.startswith("/") and approved_path(d) == state_path("approved", fn):
-            if not OWNERSHIP_V081 or owner_of(d) == "user":   # v0.8.1: an old vendor copy is left on disk, never read
+            if owner_of(d) == "user":   # v0.8.1: an old vendor copy is left on disk, never read
                 out.add(os.path.normpath(d))
     return out
 
@@ -271,7 +271,7 @@ def cmd_diff(args):
     if not d:
         print(f"ERROR no single skill named “{args.skill}”. Give the full folder path.", file=sys.stderr)
         return 2
-    if OWNERSHIP_V081 and owner_of(d) != "user":   # v0.8.1: approved copies are kept for the owner's skills only
+    if owner_of(d) != "user":   # v0.8.1: approved copies are kept for the owner's skills only
         print(f"{skill_name(d)}: not tracked: " + ("platform file" if owner_of(d) == "vendor" else "ISR Bot's own files or tool output"))
         return 0
     r = skill_diff(d)
@@ -287,9 +287,7 @@ def changed_skills(findings):
     """Skills with a changed file since approval, and changed files that aren't part of a skill (plugin or MCP config files)."""
     skills, other = {}, []
     for f in expand_groups(findings):
-        if f["rule"] != "ISR-I001" or f.get("unverified_platform"):   # item 8: never re-approved through the engines
-            continue
-        if OWNERSHIP_V081 and owner_of_finding(f) != "user":   # v0.8.1: an old snapshot's vendor I001 is never re-vetted
+        if f["rule"] != "ISR-I001" or owner_of_finding(f) != "user":   # v0.8.1: an old snapshot's vendor I001 is never re-vetted
             continue
         p = f["where"].split(":")[0]
         d = skill_root(p)
@@ -304,7 +302,7 @@ def revet(dirs, approve=False):
     """Re-scan changed skills with every engine that's installed. A skill is clean when nothing critical or high is open on it.
     With approve=True a clean skill is re-approved: its fingerprints go into the baseline and a fresh copy is kept."""
     rules = load_rules()
-    dirs = [os.path.normpath(d) for d in dirs if not OWNERSHIP_V081 or owner_of(d) == "user"]   # v0.8.1: no vendor copy or fingerprint
+    dirs = [os.path.normpath(d) for d in dirs if owner_of(d) == "user"]   # v0.8.1: no vendor copy or fingerprint
     reset_scanner_checks()
     per, all_fs = {}, []
     for d in dirs:
@@ -345,19 +343,12 @@ def revet(dirs, approve=False):
             else:
                 r["result"] = "clean"
                 files = skill_dir_files(os.path.join(d, "SKILL.md")) if approve else []
-                # item 8 (R3): re-approving writes every file of the skill; one in a platform folder that the vendor release list
-                # doesn't include (a plant beside a listed update) is never approved here: only a release that lists it clears it.
-                # Codex, item 8 review 1: each file is hashed once, and that digest is both the one held to the list and the
-                # one saved; hashing again to save let bytes swapped in after the check be approved.
-                # Review 2: read once, so the approved copy is made from the same bytes (medium 2), and held to the release list
-                # only, never to a baseline.json line (high 3).
+                # Codex, item 8 review 1: each file is hashed once, and that digest is the one saved; hashing again to save let
+                # bytes swapped in after the check be approved. Review 2: read once, so the approved copy is made from the same
+                # bytes (medium 2).
                 snapshot = {p: read_snapshot(p) for p in files}
                 digests = {p: s[0] for p, s in snapshot.items()}
-                unlisted = [p for p, hp in digests.items() if platform_ish(p) and not platform_listed(p, hp)]
-                if unlisted:
-                    r.update(result="not finished", why=f"{len(unlisted)} file(s) in it aren't on {platform_vendor(d)}'s release list; "
-                             "only an ISR Bot release that lists them clears those")
-                elif approve:
+                if approve:
                     for k in [k for k in base if k.startswith(d + "/") and k not in files]:
                         del base[k]
                     for p, hp in digests.items():
@@ -634,21 +625,16 @@ def upgrade_npm(projects):
 
 
 # Item 8 (R3, Codex highs 3 and 4) bound the owner's yes to the bytes `isr.py fix` showed, and reviews 1 to 3 bounded its reads and
-# pages. Decision, Oct 18: there is no yes. A file in a platform folder is trusted only through the release list, so
-# `fix --approve-platform` and `--platform-from` stay in the parser (a Bot following an older SKILL.md gets a plain answer, not an
-# argparse error) and are refused: nothing is read, written or approved. The preview shows the same read-only list daily does
-# (platform_open). b8i4 (decision, Oct 22): still no yes; a file the middle path's checks pass is accepted on its own.
-PLATFORM_YES_REFUSED = ("NOT APPROVED: ISR Bot doesn't approve platform files on this computer (ISR Bot policy: the owner's yes never approves a platform file). A file in Grok "
-                        f"Bot's, Codex's or Claude's own skill folder is trusted when ISR Bot's release list ({PLATFORM_LOCK_REL}) has its "
-                        "path and exact sha256, or when it is an update ISR Bot's checks pass, which is accepted on its own. The rest stay "
-                        "high alerts until they are fixed or an ISR Bot release lists them. Nothing was changed. If you didn't expect these "
-                        "files, remove them.")
-PLATFORM_NOTHING = "NOT APPROVED: Platform files are never scored, so there is nothing to approve. Nothing was changed."   # v0.8.1 (§2)
+# pages. Decision, Oct 18: there is no yes. `fix --approve-platform` and `--platform-from` stay in the parser (a Bot following an
+# older SKILL.md gets a plain answer, not an argparse error) and are refused: nothing is read, written or approved. v0.8.1 (§2):
+# platform files are never scored, so there is nothing to approve.
+PLATFORM_YES_REFUSED = ("NOT APPROVED: Platform files are never scored, so there is nothing to approve. Nothing was changed. "
+                        "(ISR Bot policy: the owner's yes never approves a platform file)")
 
 
 def approve_platform(*_):
     """`fix --approve-platform CODE [--platform-from CURSOR] [--owner-said-yes]`: always refused, and writes nothing."""
-    return [PLATFORM_NOTHING if OWNERSHIP_V081 else PLATFORM_YES_REFUSED]
+    return [PLATFORM_YES_REFUSED]
 
 
 def cmd_fix(args):
@@ -666,9 +652,7 @@ def cmd_fix(args):
     ch_skills, ch_other = changed_skills(fs)
     approving = getattr(args, "approve_platform", None) is not None or getattr(args, "platform_from", None) is not None
     if not (args.apply or args.upgrade or args.upgrade_projects or args.accept or args.revet or args.exception or args.quarantine or approving):
-        plat = platform_open(snap)   # item 8: a dict, never trimmed by fit; read-only (decision, Oct 18: nothing here approves them)
         out = fit({"mode": "preview (nothing changed)",
-                   **({"platform_unverified": plat} if plat else {}),
                    "changed_skills_total": len(ch_skills),
                    "changed_skills": [{k: v for k, v in r.items() if k != "path"} for r in revet(sorted(ch_skills))],
                    "changed_other_files": [short_path(p) for p in ch_other],

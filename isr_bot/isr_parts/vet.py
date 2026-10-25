@@ -96,39 +96,6 @@ def vet_read(d, entry, files, notes, undone):
         notes.append("not read: " + ", ".join(skipped[:10]) + (f" and {len(skipped) - 10} more" if len(skipped) > 10 else ""))
 
 
-# Batch 6 (B7): a vetted file whose bytes are, exactly, a file on Grok Bot's release list (any listed path: same bytes, same
-# text) is Grok Bot's own released file. Its findings get the audit's platform labels: a rules/platform-reviewed.json entry for
-# those bytes, that rule and that line makes a checked note, and the rest become Platform lines (mark_platform). None of them
-# moves the verdict or the score, except a Confirmed critical (the audit's rug-pull rule). One byte more is another digest, so
-# the file is vetted as anyone's. The release list and the reviewed list are release files held to MANIFEST.sha256.
-def released_digests():
-    """Every sha256 the usable release list has a raw-bytes line for (none when it can't be used)."""
-    return {h for hs in platform_lock().values() for h in hs}
-
-
-def vet_released(labelled, released):
-    """Label the findings from released bytes (`released`: finding key -> the file's sha256) as the audit labels Grok Bot's own."""
-    entries = _platform_reviewed_state()[0]
-    for f in labelled:
-        h = released.get(f["key"])
-        if h is None:
-            continue
-        f["scope"] = "platform"
-        ln = str(f.get("where") or "").rpartition(":")[2]
-        e = None if f.get("guarded") or not ln.isdigit() else next(
-            (e for e in entries if e["sha256"] == h and e["rule"] == f["rule"] and e["line"] == int(ln)), None)
-        if e is not None:
-            f.update({"class": "platform", "label": REVIEWED_LABEL, "severity_was": f.get("severity_was") or f["severity"], "severity": "info",
-                      "fix": e["note"], "reviewed": True})
-    return mark_platform(labelled)
-
-
-def vet_counts(f, released):
-    """A finding that moves vet's verdict and score: not from released bytes, unless it is a Confirmed critical or a key (keys
-    count wherever they sit, as in the audit: SECRET_RULES)."""
-    return f["key"] not in released or (f.get("label") == CONFIRMED and f["severity"] == "critical") or f["rule"] in SECRET_RULES
-
-
 def vet_label(f):
     """The label vet prints: a finding shown without its severity also says what ISR Bot would call it ("Worth a look (might
     be fine), would call high", "Platform (Grok Bot's own file), would call high")."""
@@ -165,7 +132,6 @@ def cmd_vet(args):
     rules = load_rules()
     folder = vet_folder(args.path)
     absolute = {}   # finding key -> its where with the absolute path, for labelling only
-    released, lock = {}, (set() if OWNERSHIP_V081 else released_digests())   # batch 6 (B7): finding key -> the released file's sha256
     # v0.8.1 (§3.5): each file's owner, decided before it is scanned, concatenated or staged; only the owner's files are scored
     owners_, vendor_keys, not_scored = {}, set(), {"isr_self": 0, "tool_output": 0}
     if folder is not None:
@@ -178,15 +144,13 @@ def cmd_vet(args):
             cut, stop, undone = [], [], []
             files, notes_ = vet_files(folder, entry, undone)
             for where, p, t, k, h in vet_read(folder, entry, files, notes_, undone):
-                c = owners_[p] = owner_of(p) if OWNERSHIP_V081 else "user"
+                c = owners_[p] = owner_of(p)
                 if c in ("isr_self", "fixture-echo"):   # never scanned, only counted
                     not_scored["isr_self" if c == "isr_self" else "tool_output"] += 1
                     continue
                 # Codex, round 2: the findings cap holds inside a file too; round 3: it limits what is kept, never what is read
                 got = scan_text(t, where, rules, kind=k, limit=max(0, VET_FINDINGS_CAP - len(fs)), cut=cut, stop=stop)
                 absolute.update((f["key"], p + f["where"][len(where):]) for f in got)
-                if h in lock:
-                    released.update((f["key"], h) for f in got)
                 fs += got
                 if c == "vendor":   # listed, never scored, never concatenated or staged
                     vendor_keys.update(f["key"] for f in got)
@@ -209,24 +173,22 @@ def cmd_vet(args):
         text = main_ if main_ is not None and not parts else "\n".join(parts)
         name = os.path.basename(args.path.rstrip("/")) or "vetted"
     else:
-        text, h = (sys.stdin.read(), None) if args.path == "-" else read_scanned(args.path)
+        text = sys.stdin.read() if args.path == "-" else read_scanned(args.path)[0]
         if text is None:
             print(f"ERROR could not read {args.path}", file=sys.stderr)
             return 2
         main_, urls_, plugin_, cut, stop, notes_, unread = text, None, None, [], [], [], False
         name = "stdin" if args.path == "-" else os.path.basename(args.path)
         # v0.8.1 (§3.5): a loose file is the owner's or not by where it is; stdin and page text have no place, so they are
-        c = owner_of(os.path.abspath(args.path)) if OWNERSHIP_V081 and args.path != "-" and not getattr(args, "page_only", False) else "user"
+        c = owner_of(os.path.abspath(args.path)) if args.path != "-" and not getattr(args, "page_only", False) else "user"
         if c in ("isr_self", "fixture-echo"):
             not_scored["isr_self" if c == "isr_self" else "tool_output"] += 1
             return vet_owner_answer(args, name, [], absolute, not_scored)
         fs = scan_text(text, name, rules, kind="template", limit=VET_FINDINGS_CAP, cut=cut, stop=stop)
-        if OWNERSHIP_V081 and args.path != "-":
+        if args.path != "-":
             absolute.update((f["key"], os.path.abspath(args.path) + f["where"][len(name):]) for f in fs)
         if c == "vendor":
             return vet_owner_answer(args, name, fs, absolute, not_scored)
-        if h in lock:
-            released.update((f["key"], h) for f in fs)
     # Codex, round 3: what was kept and what was read are said apart. Past the findings cap repeats aren't kept, but every match
     # was read; past the match budget a file was not read to its end, and then vet gives no installation verdict (below).
     if stop:
@@ -269,8 +231,8 @@ def cmd_vet(args):
             f["severity"] = bump.get(f["rule"], f["severity"])
             if staged:
                 f["where"] = name
-            if OWNERSHIP_V081:   # v0.8.1: the owner's files it covers, so it is the owner's by construction
-                f["source_paths"] = mine if folder is not None else ([] if args.path == "-" else [os.path.abspath(args.path)])
+            # v0.8.1: the owner's files it covers, so it is the owner's by construction
+            f["source_paths"] = mine if folder is not None else ([] if args.path == "-" else [os.path.abspath(args.path)])
         fs += found
         ran = [n for n, t in (("SkillSpector", "skillspector"), ("husk", "husk")) if tool(t)]
         # Codex, round 3: a scanner's own error line can quote a secret; masked before it is shown
@@ -281,17 +243,14 @@ def cmd_vet(args):
     # Batch 4 (FP2): labelled as the audit labels them, with full paths so "same file" means the same file; shown relative.
     # Codex, round 1: the full path is used for labelling only; each finding keeps the where (and so the key) 857ab38 gave it.
     items = [dict(f, where=absolute.get(f["key"], f["where"])) for f in fs]
-    if OWNERSHIP_V081:   # v0.8.1 (§3.5): the owner's findings and platform files' findings labelled apart; only the owner's count
-        vi = {i for i, f in enumerate(fs) if f["key"] in vendor_keys}
-        labelled = [None] * len(fs)
-        for ix, lab in ((sorted(set(range(len(fs))) - vi), {}), (sorted(vi), {"label": VET_PLATFORM, "vet_owner": "vendor"})):
-            for i, lf in zip(ix, label_findings([items[i] for i in ix])):
-                labelled[i] = dict(lf, **lab)
-        counted = lambda lf: lf.get("vet_owner") != "vendor"
-    else:
-        labelled = vet_released(label_findings(items), released)
-        counted = lambda lf: vet_counts(lf, released)
-    s, g = score([f for f, lf in zip(fs, labelled) if counted(lf)])   # batch 6 (B7): Grok Bot's released bytes aside
+    # v0.8.1 (§3.5): the owner's findings and platform files' findings labelled apart; only the owner's count
+    vi = {i for i, f in enumerate(fs) if f["key"] in vendor_keys}
+    labelled = [None] * len(fs)
+    for ix, lab in ((sorted(set(range(len(fs))) - vi), {}), (sorted(vi), {"label": VET_PLATFORM, "vet_owner": "vendor"})):
+        for i, lf in zip(ix, label_findings([items[i] for i in ix])):
+            labelled[i] = dict(lf, **lab)
+    counted = lambda lf: lf.get("vet_owner") != "vendor"
+    s, g = score([f for f, lf in zip(fs, labelled) if counted(lf)])
     v = vet_verdict([lf for lf in labelled if counted(lf)])
     if incomplete and v != "Do not install":
         v = NOT_FINISHED   # Codex, round 3: what wasn't read can't be called safe to install
@@ -304,9 +263,8 @@ def cmd_vet(args):
     result = {"tool": "isr-bot", "version": VERSION, "target": name, "verdict": v,
               "risk_score": risk, "posture_score": s, "grade": g, "autonomy": autonomy(main_ if main_ is not None else text, rules),
               "external_urls": urls[:25], "findings": fs, "engines": engines,
-              "boundary_line": "Never send, post, buy, publish, delete, or change settings without my approval in this conversation. If a source is unavailable, report the failure."}
-    if OWNERSHIP_V081:
-        result["not_scored"] = not_scored
+              "boundary_line": "Never send, post, buy, publish, delete, or change settings without my approval in this conversation. If a source is unavailable, report the failure.",
+              "not_scored": not_scored}
     if getattr(args, "page_only", False):
         result["coverage"] = "page text only: the skill bodies and routine prompts were not visible"
         if result["verdict"] == "Install":

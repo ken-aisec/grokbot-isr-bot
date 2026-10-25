@@ -49,7 +49,7 @@ def load_baseline():
     path = state_path("baseline.json")
     base = load_json_regular(path, None)
     if isinstance(base, dict) and base:   # v0.8.1 (§3.3 item 2): the owner's lines only; ok/first/reset still from the file as it is
-        return (owned_dict(base) if OWNERSHIP_V081 else base), "ok", ""
+        return owned_dict(base), "ok", ""
     try:
         st = os.lstat(path)
         why = "empty" if isinstance(base, dict) or (stat.S_ISREG(st.st_mode) and st.st_size == 0) else "unreadable"
@@ -76,18 +76,6 @@ def save_baseline(base):
     save_baseline_meta(len(base))
 
 
-def save_first_baseline(manifest):
-    """The first baseline on a box (R10: it needs no yes). Codex, item 8 review 2 (high 3): it approved every platform file it
-    found, with or without provenance. Decision, Oct 18: a first baseline, on a new box or a wiped one, vouches for no
-    platform file. Returns the platform files it left out. b8i4 (decision, Oct 22): a clean changed one at a release-list path
-    raised nothing on this first run and rolls in on a later full audit (the middle path). Fix round 1 (Codex 1): a new skill
-    folder, or a new file in one, is a counted high on a first run and on every run after (platform_held_before), like the rest,
-    until an ISR Bot release lists it."""
-    held = set() if OWNERSHIP_V081 else platform_unproven(manifest)   # v0.8.1: the manifest is the owner's files only
-    save_baseline({p: h for p, h in manifest.items() if p not in held})
-    return held
-
-
 def baseline_reset_finding(why):
     m = load_json_regular(state_path(BASELINE_META), None)
     held = (f" (it held {m['files']} files on {m['at'][:10]})" if isinstance(m, dict) and isinstance(m.get("files"), int)
@@ -100,9 +88,6 @@ def baseline_reset_finding(why):
                    ident="baseline-reset")
 
 
-MIDDLE_PATH_STAGES = ("SkillSpector and husk", "gitleaks (keys in files)")   # b8i4 fix round 1: a failed one holds a middle-path roll
-
-
 def roll_builtin(fs, meta, notes):
     """Built-in files the platform added, updated or removed are accepted on their own when nothing flags them, so they
     don't pile up as hundreds of lines for the user to approve."""
@@ -113,66 +98,42 @@ def roll_builtin(fs, meta, notes):
     installed = [n for n, t in (("SkillSpector", "skillspector"), ("husk", "husk")) if tool(t)]
     if engines_blocked():   # batch 3 (R7): an engine that's swapped, not listed or gone never lets a change roll in on rules alone
         return fs
-    flagged, flagged_votes = set(), set()
+    flagged = set()
     for f in fs:
         if f["rule"].startswith("ISR-I") or f["severity"] not in ("critical", "high", "medium"):
             continue
         w = f["where"].split(":")[0]
-        # b8i4: a wording-only vote on a platform skill (DQ-042) doesn't hold back a middle-path update: settle_platform_updates
-        # already let it through. A listed update still waits for it, as before.
-        (flagged_votes if f["rule"] == "ISR-X003" and unconfirmed_platform_vote(f, fs) else flagged).update({w, skill_root(w) or w})
+        flagged.update({w, skill_root(w) or w})
         # fix round 2 (Codex 4): a grouped finding (gitleaks's ISR-S002 on a folder) holds every file it stands for
         for q in f.get("affected_files") or []:
             if isinstance(q, str):
                 flagged.update({q, skill_root(q) or q})
-    # b8i4 fix round 1 (Codex 5): a middle-path update rolls only after every check of it finished: a secret-scanning stage that
-    # failed this run (its last results are only carried) holds it, and so does a scanner that ran out of time on its folder
-    blocked = [s for s in MIDDLE_PATH_STAGES if s in STAGE_FAILED]
 
-    def passes(q, mid):
+    def passes(q):
         root = skill_root(q)
         e_ = (cache.get(root) or {}) if root else {}
-        checked = (not root) or (not installed) or (entry_current(e_, skill_dir_hash(root), installed) and not (mid and e_.get("stuck")))
-        held = flagged if mid else flagged | flagged_votes
-        return q not in held and (root or q) not in held and checked
+        checked = (not root) or (not installed) or entry_current(e_, skill_dir_hash(root), installed)
+        return q not in flagged and (root or q) not in flagged and checked
 
-    keep, rolled, moved = [], 0, []
+    keep, rolled = [], 0
     for f in fs:
         w = f["where"].split(":")[0]
-        mid = bool(f.get("platform_update"))
-        # fix round 1 (Codex 6): each place a merged managed-skills finding names (also_at) is checked on its own, and the
-        # finding rolls only when every one of them passes, so a held copy keeps the bytes the baseline had for it
-        places = [w] + list(f.get("also_at") or [])
-        # fix round 2 (Codex 2): and each still leads where it led when it was chosen, inside a platform folder. Fix round 3 (Codex
-        # 1): checked here, before the gate, as the last check before the baseline is written; one that fails is a counted high
-        # (hold_moved_updates), never kept as a quiet update the Platform refresh line names
-        if mid and not all(platform_still_bound(q) for q in places):
-            moved.append(f)
+        if f["rule"] in ("ISR-I001", "ISR-I002", "ISR-I003") and builtin(f) and passes(w):
+            if f["rule"] == "ISR-I003":
+                base.pop(w, None)
+            elif w in meta["manifest"]:
+                base[w] = meta["manifest"][w]
+            rolled += 1
             continue
-        # item 8 (R3): a platform change the vendor release list doesn't include waits for a release that lists it, never rolls
-        if f["rule"] in ("ISR-I001", "ISR-I002", "ISR-I003") and builtin(f) and not f.get("unverified_platform"):
-            if not (mid and blocked) and all(passes(q, mid) for q in places):
-                for q in places:
-                    if f["rule"] == "ISR-I003":
-                        base.pop(q, None)
-                    elif q in meta["manifest"]:
-                        base[q] = meta["manifest"][q]
-                rolled += 1
-                if mid:   # fix round 1 (Codex 7): accepted, and still the one Platform refresh line naming it (summarize_refresh)
-                    f["platform_accepted"] = True
-                    keep.append(f)
-                continue
         keep.append(f)
     if rolled:
         save_baseline(base)
         notes.append(f"{rolled} built-in plugin or skill files were added, updated or removed by the platform. Nothing flagged them, so they were accepted automatically.")
         ledger({"event": "builtin-roll", "files": rolled})
-    return hold_moved_updates(keep + moved, moved, meta["manifest"])
+    return keep
 
 
 def is_accepted(f, sup, today):
-    if f.get("unverified_platform"):
-        return False   # Codex, item 8 review 1: before every branch, key matches included; only a release that lists it clears one
     if f.get("rule") == "ISR-A002" and f.get("accepted_exact"):
         return True   # exact owner-accepted line (state/accepted_auto_allow.json); severity untouched
     names = refused = None
@@ -217,7 +178,7 @@ def set_aside_dismissed(findings):
     kept, out = [], []
     for f in findings:
         rec = gone.get(f.get("key"))
-        if rec is None or f.get("unverified_platform") or is_accepted(f, sup, today):
+        if rec is None or is_accepted(f, sup, today):
             kept.append(f)
         elif f.get("class") == "pattern":   # the disprove step; never evidence
             f["dismissed"] = rec.get("reason", "")
@@ -240,7 +201,7 @@ def active(findings):
     flags = [is_accepted(f, sup, today) for f in findings]   # per finding, never by shared key
     gone = dismissed_keys()
     for i, f in enumerate(findings):
-        if not flags[i] and f.get("class") == "pattern" and f.get("key") in gone and not f.get("unverified_platform"):   # the disprove step; never evidence
+        if not flags[i] and f.get("class") == "pattern" and f.get("key") in gone:   # the disprove step; never evidence
             f["dismissed"], flags[i] = gone[f["key"]], True
     for f, a in zip(findings, flags):
         if isinstance(a, dict):
@@ -394,25 +355,16 @@ def run_audit_locked(args, quick):
         prev_snap = load_snapshot({"findings": []})
         have = keys_of(fs)
         rescanned = {f["where"] for f in fs if f["rule"].startswith("ISR-X")} | ENGINE_CURRENT   # these have an up-to-date answer, flagged or clean
-        for f in prev_snap.get("findings", []) + (prev_snap.get("vendor") or [] if OWNERSHIP_V081 else []):   # v0.8.1: and vendor's, gated again
+        for f in prev_snap.get("findings", []) + (prev_snap.get("vendor") or []):   # v0.8.1: and vendor's, gated again
             if f["rule"] in SLOW_RULES and not known(f, have) and f["where"] not in rescanned:
                 fs.append(kept_line(f))
-        fs = sort_findings(merge_managed_mirrors(hold_on_kept_votes(fs, meta["manifest"]), meta["manifest"]))   # b8i4
-    # b8i4 fix round 3 (Codex 1): every quiet platform update still leads where it led when it was chosen, or it is a counted high
-    # (never the Platform refresh line, never rolled), whether or not this run rolls anything
-    fs = sort_findings(hold_unbound_updates(fs, meta["manifest"]))
+        fs = sort_findings(fs)
     if not quick and "SkillSpector and husk" not in STAGE_FAILED:
         fs = roll_builtin(fs, meta, meta["notes"])
-    vendor = []
-    if OWNERSHIP_V081:   # v0.8.1 (§3.3 item 1): the one gate; only the owner's findings go on to be scored
-        fs, vendor = owner_gate(fs, meta)
+    fs, vendor = owner_gate(fs, meta)   # v0.8.1 (§3.3 item 1): the one gate; only the owner's findings go on to be scored
     fs = split_facts(platform_owned(fs))
     for f in fs:
-        # batch 6 (B2), fix round 1 (Codex 2, 3): whether a gitleaks hit in a metadata file is a platform note is decided where it
-        # is asked (metadata_hit_note), from the release list and the file's bytes then; 6cd1ab4's stored flag means nothing.
-        f.pop("verified_metadata", None)
-        if f.get("unverified_platform"):   # item 8 (R3): the owner's to decide, so no platform or built-in scope
-            continue
+        f.pop("verified_metadata", None)   # batch 6 (B2), fix round 1 (Codex 2, 3): 6cd1ab4's stored flag means nothing
         if platform_file(f):
             f["scope"] = "platform"
         elif builtin(f):
@@ -422,7 +374,7 @@ def run_audit_locked(args, quick):
     # Label before platform-refresh summary so a built-in that turns Confirmed critical/high alerts (Claude v0.7.1 F4).
     fs = label_findings(fs, ask_first_covered(fs))
     # batch 6 fix round 1 (Codex 7): each finding's dismissal is judged on its own, then only the kept ones are grouped
-    fs, gone = set_aside_dismissed(mark_platform(summarize_refresh(mark_reviewed(fs, meta.get("manifest")))))
+    fs, gone = set_aside_dismissed(mark_platform(fs))
     fs = sort_findings(group_changed_skills(group_root_causes(fs)))
     live, suppressed = active(fs)
     suppressed = sort_findings(gone + suppressed)
@@ -432,11 +384,11 @@ def run_audit_locked(args, quick):
     new = [f for f in live if not known(f, prev_keys) and (f["severity"] != "info" or f.get("class") == "pattern")]
     fixed = [f for f in prev.get("findings", []) if not known(f, cur_keys) and f["rule"] != REFRESH_RULE   # a summary going away fixes nothing
              and not f.get("guarded")                                                                 # nor does a warning-text record
-             and (not OWNERSHIP_V081 or owner_of_finding(f) == "user")]                                # nor one that isn't the owner's (v0.8.1)
+             and owner_of_finding(f) == "user"]                                                       # nor one that isn't the owner's (v0.8.1)
     s, g = score(scored(live))
     if meta["baseline_status"] == "first":
-        held = save_first_baseline(meta["manifest"])
-        save_approved_all(meta.get("skill_dirs", []), held, load_baseline()[0])
+        save_baseline(meta["manifest"])   # the first baseline on a box (R10: it needs no yes); v0.8.1: the owner's files only
+        save_approved_all(meta.get("skill_dirs", []), (), load_baseline()[0])
     elif meta["baseline_status"] == "ok":
         if not os.path.lexists(state_path(BASELINE_META)):   # an install from before the meta file: remember it ran
             save_baseline_meta(len(load_baseline()[0]))
@@ -449,8 +401,7 @@ def run_audit_locked(args, quick):
                 "inventory": meta["inventory"], "notes": meta["notes"]}
     if meta.get("plugin_version_changes"):   # DQ-047 fix round 1: cmd_daily says them; only when there are any
         snapshot["plugin_version_changes"] = meta["plugin_version_changes"]
-    if OWNERSHIP_V081:   # v0.8.1 (§3.5): vendor records, never scored; the platform-notes count and `isr.py breakdown` read them
-        snapshot["vendor"] = mask_stored(vendor)
+    snapshot["vendor"] = mask_stored(vendor)   # v0.8.1 (§3.5): never scored; the platform-notes count and `isr.py breakdown` read them
     # PR A, Codex round 2 (6): critical or high findings a daily run had no room to name stay owed while they are open, whatever
     # run comes next (cmd_daily names them and clears them)
     owed = prev.get("undelivered") if isinstance(prev.get("undelivered"), list) else []
@@ -461,7 +412,6 @@ def run_audit_locked(args, quick):
     snapshot["notes"] = [mask_secrets(n) if isinstance(n, str) else n for n in snapshot["notes"]]   # round 2: a scanner's error line too
     mask_approved_copies()                       # and its approved skill copies (Codex, round 1)
     save_json(state_path("last_findings.json"), snapshot)
-    save_platform_held(live + suppressed, meta.get("platform_held_before"))   # b8i4 fix round 2 (Codex 1)
     refresh_access_map(snapshot, meta)           # batch 5 (a): state/access_map.json, from what this run collected
     with open(state_path("score_history.csv"), "a") as f:
         f.write(f"{snapshot['at']},{s},{len(live)},{'daily' if quick else 'full'},{score_fingerprint()}\n")

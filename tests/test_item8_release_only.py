@@ -50,7 +50,6 @@ class H1LocalRecords(_ForgedState):
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_h1_a_record_with_its_ledger_line_grants_nothing(self):
         self.start()
@@ -126,7 +125,6 @@ class H2FirstRunTrust(_ForgedState):
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_h2_a_brand_new_box_trusts_no_unlisted_platform_file(self):
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
@@ -163,7 +161,6 @@ class H2FirstRunTrust(_ForgedState):
 class Migration(_ForgedState):
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_migration_a_vouched_baseline_line_is_the_middle_path_and_the_old_record_is_never_read(self):
         """b8i4: the vouched baseline line makes the clean plant's path "already existing" (the middle path's accepted limit), so
@@ -183,7 +180,6 @@ class Migration(_ForgedState):
 class HeldLinkKeepsCopy(_Platform):
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_mb_a_refused_file_replaced_by_a_link_keeps_its_approved_copy(self):
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. A platform folder

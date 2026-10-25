@@ -53,7 +53,6 @@ class OtherPlatformBuiltins(Box):
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. platform_file
         answers by owner_of. A plugin in the catalog cache is in a vendor folder by location (plugins the owner installs there go
         unscored, decided Oct 24); the owner's plugin folder outside the cache is not platform."""
-        self.owned()
         for p in ("/home/box/.codex/skills/.system/imagegen", "/home/box/.claude/plugins/synced/abc_def/skills/s"):
             self.assertEqual(isr.owner_of(p), "vendor", p)
             self.assertTrue(isr.platform_file({"where": p}), p)

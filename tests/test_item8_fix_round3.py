@@ -20,7 +20,6 @@ from test_item8_provenance import CLEAN, NOTHING, ROOT, _Platform, add, put, sha
 class _Owned(_Platform):
     def setUp(self):
         super().setUp()
-        self.owned()
 
 
 class RootsInsidePlatformFolders(_Owned):
@@ -71,8 +70,7 @@ class RootsInsidePlatformFolders(_Owned):
             else:
                 vars(isr).pop("PLATFORM_WALK_MAX_FILES", None)
         self.assertEqual(out, "NO_CHANGES")
-        # U7a deletes platform_coverage_finding: then x is read from fs() + vs(), as PLAN §5b says. Until then it is a vendor record.
-        x = [f for f in self.fs() if f["rule"] == "ISR-I011"]
+        x = [f for f in self.fs() + self.vs() if f["rule"] == "ISR-I011"]   # U7a: platform_coverage_finding is gone
         self.assertEqual(x, [])
         self.assertFalse([f for f in self.vs() if f["rule"] == "ISR-I011" and isr.counts(f)])
 

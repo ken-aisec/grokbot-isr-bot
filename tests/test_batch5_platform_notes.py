@@ -100,7 +100,6 @@ class _SignIn(Box):
 class PlatformNotes(_SignIn):
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_grok_bots_sign_in_skill_is_not_counted_anywhere(self):   # replay (151e40c: critical 1, high 1)
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
@@ -235,7 +234,6 @@ class PlatformNotes(_SignIn):
 class CheckedPlatformFiles(_SignIn):
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def sha(self, text):
         import hashlib

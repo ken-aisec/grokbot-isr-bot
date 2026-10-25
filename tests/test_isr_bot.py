@@ -989,7 +989,7 @@ class Features(unittest.TestCase):
     def test_isr_bots_own_skills_and_routines_vet_clean(self):
         import glob
         for p in sorted(glob.glob(os.path.join(ROOT, "skills", "*", "SKILL.md")) + glob.glob(os.path.join(ROOT, "routines", "*.md")) + [os.path.join(ROOT, "bot", "description.md")]):
-            r = vet(p)[1]
+            r = vet(user_copy(self, p))[1]   # v0.8.1 (U7a, as r5 b): the checkout is ISR Bot's own, so a vet reads a copy
             self.assertEqual(r["verdict"], "Install", p)
             self.assertNotIn("ISR-T010", {f["rule"] for f in r["findings"] if not f.get("guarded")}, p)
 

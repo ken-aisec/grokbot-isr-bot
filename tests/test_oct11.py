@@ -60,7 +60,6 @@ class DQ017CatalogSync(Box):
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def again_in_the_owners_folder(self):
         """v0.8.1 control: a fresh box (the gate still on), the plugins planted under sand-data/plugins/installed."""

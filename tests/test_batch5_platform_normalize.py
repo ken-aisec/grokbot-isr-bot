@@ -92,7 +92,6 @@ class _Meta(Box):
 class MetadataWording(_Meta):
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_a_changed_metadata_file_says_what_it_is(self):   # replay (151e40c: "Don't use this skill … remove it")
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. No held
@@ -147,7 +146,6 @@ class Normalized(_Meta):
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def baseline_with(self, doc):
         self.spec(self.SPEC)

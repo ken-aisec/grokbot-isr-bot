@@ -370,14 +370,13 @@ def match_moves(base, manifest):
     """(approved paths moved away, new paths they moved to). Any new file with the sha256 of any approved file used to be
     "moved", so one deleted bundled SKILL.md hid the same bytes planted in .codex/skills/.system (Codex, item 8 high 2). Each
     approved file that is gone from disk now accounts for at most one new file, with the same name and bytes, in the same trust
-    boundary (move_boundary). A platform-ish path (platform_ish) is never on either side: a platform file relocated or copied
-    is new where it lands, and needs a release-list line for its new path."""
+    boundary (move_boundary). v0.8.1: both sides are the owner's files only (the baseline and the manifest are)."""
     gone, came = {}, {}
     for q, hq in base.items():
-        if q not in manifest and not q.startswith("persist:") and not hq.startswith("unreadable") and not os.path.lexists(q) and not platform_ish(q):
+        if q not in manifest and not q.startswith("persist:") and not hq.startswith("unreadable") and not os.path.lexists(q):
             gone.setdefault((os.path.basename(q), hq, move_boundary(q)), []).append(q)
     for p, h in manifest.items():
-        if p not in base and not h.startswith("unreadable") and not platform_ish(p):
+        if p not in base and not h.startswith("unreadable"):
             came.setdefault((os.path.basename(p), h, move_boundary(p)), []).append(p)
     moved_from, moved_to = set(), set()
     for k in gone.keys() & came.keys():

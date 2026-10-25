@@ -72,7 +72,6 @@ class _CatalogMove:
 
     def setUp(self):
         super().setUp()
-        self.owned()
         self.cache = os.path.join(self.home, *self.CACHE)
 
     def fv(self):
@@ -313,7 +312,6 @@ class _VersionBump:
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def sites(self, ver):
         root = os.path.join(self.home, *self.ROOT, ver)

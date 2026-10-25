@@ -121,11 +121,15 @@ class NoManifest(_Copies):
         self.assertTrue(isr.scanner_list_changed())
 
     def test_the_audit_says_so(self):   # replay (5dcd0a2: no note)
+        """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The platform
+        lists aren't read, so the audit says nothing about them; the vocabulary file it does read is still said."""
         self.checkout(manifest=False)
         notes = self.audit()["notes"]
         said = [n for n in notes if "ISR Bot's release files can't be checked" in n]
-        self.assertTrue(any(isr.PLATFORM_LOCK_REL in n for n in said), notes)
-        self.assertTrue(any(isr.PLATFORM_REVIEWED_REL in n for n in said), notes)
+        self.assertFalse([n for n in notes if isr.PLATFORM_LOCK_REL in n], notes)
+        self.assertFalse([n for n in notes if isr.PLATFORM_REVIEWED_REL in n or isr.PLATFORM_NORMALIZE_REL in n], notes)
+        self.assertTrue(any(isr.ACCESS_VOCAB_REL in n for n in said), notes)
+        self.assertIn("ISR Bot's release files can't be checked", isr.platform_lock_problem())   # the library still refuses it
 
     def test_a_manifest_listing_them_makes_them_usable(self):   # guard
         self.checkout(manifest=True)

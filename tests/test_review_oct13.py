@@ -22,7 +22,6 @@ class _P1:
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def place(self):
         return ("sand-data", "plugins", "cache", self.market)

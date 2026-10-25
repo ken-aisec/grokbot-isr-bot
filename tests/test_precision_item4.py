@@ -26,7 +26,6 @@ class BuiltInsNeverScore(Box):
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def mine(self, d):
         return [f for f in self.snap()["findings"] if f["where"].startswith(d)]

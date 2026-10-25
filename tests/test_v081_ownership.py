@@ -4,8 +4,8 @@ by path prefixes, on the path as written and where it really leads, never by a l
 
 OwnerOf: the classifier on its own. On v0.8.0 every test errors: there is no owner_of.
 
-The box replays (R1-R30, PLAN §5a) turn the gate on (Box.owned: isr.OWNERSHIP_V081, a harmless extra name on v0.8.0, where each
-fails at the assertion its docstring names). The box guards (G1-G8) pass on v0.8.0 too: what is the owner's stays scored."""
+The box replays (R1-R30, PLAN §5a) each fail on v0.8.0 at the assertion its docstring names (U2-U6 ran them with the gate
+switched on; U7a made it the only path). The box guards (G1-G8) pass on v0.8.0 too: what is the owner's stays scored."""
 import hashlib, json, os, shutil, sys, time, unittest
 from unittest import mock
 
@@ -68,11 +68,10 @@ def engines_flagging(marker, log, husk=True):
 
 
 class _Owned(Box):
-    """A box with the v0.8.1 gate on."""
+    """A box with the v0.8.1 gate (always on since U7a)."""
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def h(self, *p):
         return os.path.join(self.home, *p)
@@ -948,7 +947,6 @@ class StaysScored(Box):
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def put(self, p, text="x\n"):
         os.makedirs(os.path.dirname(p), exist_ok=True)

@@ -444,7 +444,6 @@ class NormalizedScannedBytes(pn._Meta):
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_bytes_swapped_back_for_the_normalization_read_are_not_vouched_for(self):   # replay (13cbfa4: an empty set)
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The library

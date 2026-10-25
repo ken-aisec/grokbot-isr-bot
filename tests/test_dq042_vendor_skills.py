@@ -75,7 +75,6 @@ class _Learn:
         put(os.path.join(self.d, "SKILL.md"), LEARN_V1)
         for text in (LEARN_V1, LEARN_V2, BAD):   # item 8: the vendor's own releases, the rug pull included, are on its release list
             profiles.vendor_release(self, (os.path.join(self.d, "SKILL.md"), text))
-        self.owned()
 
     def daily(self):
         return self.run_cmd("daily", "--roots", *self.roots)[1].strip()
@@ -238,7 +237,6 @@ class OtherSkillsUnchanged(Box):
     def test_the_env_vars_contrast_row_still_alerts(self):
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The plugin
         cache is a vendor folder now; the same skill in an installed plugin folder is the owner's and still alerts."""
-        self.owned()
         # SkillSpector + ISR Bot on a plugin-cache skill: not a platform skill folder, and ISR Bot's own rule agrees.
         d = os.path.join(self.home, "sand-data", "plugins", "cache", "cursor-public", "vercel", "e48c1d", "skills", "env-vars")
         ud = os.path.join(self.home, "sand-data", "plugins", "installed", "vercel", "e48c1d", "skills", "env-vars")
@@ -339,7 +337,6 @@ class ColonInAFolderName(Box):
     def test_its_vote_stays_confirmed_and_the_change_alerts(self):
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The link
         leads out, so the folder is the owner's: its vote and its change are the owner's alerts."""
-        self.owned()
         x = isr.finding("ISR-X003", "Corroborated by multiple engines", "high", ["AST01", "AST08"], self.d, LEARN_EVIDENCE,
                        "Two independent engines agree.", source="engines")
         x["kinds"] = []                                                       # the engines' words name no behavior
@@ -380,7 +377,6 @@ class NumericSuffixInAFolderName(Box):
     def test_its_vote_stays_confirmed_and_the_change_alerts(self):
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only. The link
         leads out, so the folder is the owner's: its vote and its change are the owner's alerts."""
-        self.owned()
         x = isr.finding("ISR-X003", "Corroborated by multiple engines", "high", ["AST01", "AST08"], self.d, LEARN_EVIDENCE,
                        "Two independent engines agree.", source="engines")
         x["kinds"] = []                                                       # the engines' words name no behavior

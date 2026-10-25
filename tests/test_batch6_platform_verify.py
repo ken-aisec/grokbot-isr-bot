@@ -103,7 +103,6 @@ class _Units(Box):
 
     def setUp(self):
         super().setUp()
-        self.owned()
         self.mroot = os.path.join(self.home, "sand-data", "managed-skills")
         self.cache = os.path.join(self.home, CACHE)
         self.manifest = os.path.join(self.home, MANIFEST)
@@ -665,6 +664,7 @@ class CanonicalLinesAreNotRawLines(_Units):
         self.assertFalse(self.V(self.run_manifest()))
         self.assertFalse(isr.platform_listed(self.cache, sha(raw)))
         self.skills(1)
+        isr.VERIFIED_METADATA.clear()   # v0.8.1 (U7a): the library check above filled it; the audit neither reads nor clears it now
         self.audit()
         # b8i4: still unproven (above), but its path is on the release list and the rules find nothing, so on this first run it
         # is the middle path's (silent, out of the first baseline: D8), like any other clean version there

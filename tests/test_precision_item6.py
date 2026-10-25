@@ -15,7 +15,6 @@ import profiles  # noqa: E402
 class ChangeSources(Box):
     def setUp(self):
         super().setUp()
-        self.owned()
         self.lay = profiles.busy_clean_box(self); self.scanners()
         self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
 

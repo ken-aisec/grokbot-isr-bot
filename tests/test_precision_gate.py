@@ -96,7 +96,6 @@ class GateStillCatches(Box):
     """Every place the gate wants quiet still catches a real attack placed there (the precision pass must not buy silence)."""
     def setUp(self):
         super().setUp()
-        self.owned()
         self.lay = profiles.busy_clean_box(self); self.scanners()
 
     def key_in(self, rel, silent=False):

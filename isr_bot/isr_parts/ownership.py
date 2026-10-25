@@ -1,15 +1,15 @@
 # Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 # ---------------------------------------------------------------- ownership (v0.8.1)
 # Who owns a file is decided by where it is: path prefixes, on the path as written and where it really leads, never a list of
-# files or hashes. Every other part's name used here (_under, home_bases, literal_path, _place, home, SELF_ROOT, ACCESS_WORKSPACE,
-# score, scored, status_of) is read when a function runs: access.py, which binds ACCESS_WORKSPACE, loads after this part.
+# files or hashes. Every other part's name used here (_under, walk, home_bases, literal_path, _place, home, SELF_ROOT,
+# ACCESS_WORKSPACE, score, scored, status_of) is read when a function runs: access.py, which binds ACCESS_WORKSPACE, loads after
+# this part.
 OWNER_CLASSES = ("user", "vendor", "isr_self", "fixture-echo")
 OWNER_VENDOR_HOME = ("sand-data/managed-skills", "agent-data/managed-skills", "sand-data/plugins/cache", "agent-data/plugins/cache",
                      ".claude/plugins", ".codex/skills", ".codex/plugins", ".grok/bundled")
 OWNER_SELF_WORKSPACE = ("isr-bot-dev", "backups")
 OWNER_SELF_WORKSPACE += ("watchtower-dev",)   # the dev checkout's real folder name: the dev tree is never scored
 OWNER_ECHO_HOME = (".claude/projects", ".claude/plans")
-OWNERSHIP_V081 = False   # U2-U6 only: the gate, the integrity store and the snapshot readers use owner_of when a test turns this on
 
 
 def _owner_places(cls):
@@ -72,6 +72,27 @@ def vendor_link_out(p):
     """U4fix (decision (b), Oct 25): a path written in a platform folder whose real file is outside every one. Never built-in."""
     written, real = _owner_roots("vendor")
     return _owner_in(os.path.normpath(os.path.abspath(p)), written) and not _owner_in(os.path.realpath(p), real)
+
+
+def vendor_links_out(roots):
+    """E3 (decision, Oct 25, option B): the files behind each vendor_link_out link, by the names written in the vendor folder: a
+    vendor folder within the roots (or a root inside one) that is itself such a link, or a folder or file link inside one. Only
+    links are looked for; no ordinary vendor file is listed. Their files are the owner's (owner_of), so the audit scans and
+    fingerprints them. os.walk follows no link inside a vendor folder; a linked folder's files are walk()'s, with its limits."""
+    written = _owner_roots("vendor")[0]
+    scope = {os.path.normpath(os.path.abspath(os.path.expanduser(r))) for r in roots}
+    rscope = {os.path.realpath(r) for r in scope}
+    starts = [w for w, _ in written if _under(w, scope) or _under(os.path.realpath(w), rscope)]
+    starts = list(dict.fromkeys(starts + [s for s in sorted(scope) if _owner_in(s, written)]))
+    out = []
+    for s in starts:
+        if _under(s, set(starts) - {s}, strict=True):
+            continue   # walked under the outer one
+        links = [s] if vendor_link_out(s) else [p for d, ds, fs in os.walk(s) for p in (os.path.join(d, n) for n in ds + fs)
+                                                 if os.path.islink(p) and vendor_link_out(p)]
+        for p in links:
+            out += list(walk([p])) if os.path.isdir(p) else [p] if os.path.isfile(p) else []
+    return out
 
 
 def _owner_members(paths, first=False):
@@ -177,9 +198,8 @@ def _owner_older(v):
 def normalize_snapshot(snap):
     """A stored snapshot as v0.8.1 shows it: findings and suppressed split by owner (vendor records move to "vendor"; isr_self
     and fixture-echo ones are dropped), and the score, grade and status it holds made again from the findings kept, when it is
-    older than 0.8.1 or anything was split out. The input isn't changed; the file on disk isn't rewritten. (U2-U6: as stored
-    while OWNERSHIP_V081 is off.)"""
-    if not isinstance(snap, dict) or not OWNERSHIP_V081:
+    older than 0.8.1 or anything was split out. The input isn't changed; the file on disk isn't rewritten."""
+    if not isinstance(snap, dict):
         return snap
     out, vendor, split = dict(snap), list(snap.get("vendor") or []), False
     for k in ("findings", "suppressed"):

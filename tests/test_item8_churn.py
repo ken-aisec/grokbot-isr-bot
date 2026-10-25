@@ -253,7 +253,6 @@ class SyncIsQuiet(_Churn):
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def test_c_a_sync_rewriting_its_bookkeeping_is_quiet(self):
         self.start()
@@ -362,7 +361,6 @@ class Lookalikes(_Churn):
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def quiet_beside(self, loud):
         """v0.8.1 (decision, Oct 24): vendor folders are never scored; drift is tracked for the owner's files only."""
@@ -532,7 +530,7 @@ class FillClears(Box):
             p = os.path.join(home, rel)
             for q in (p, os.path.realpath(p)) if real_too else (p,):
                 self.assertTrue(isr.platform_listed(q, h), q)
-        walked = isr.platform_inventory([home])[0]
+        walked = [os.path.join(home, r) for r in rels if not isr.platform_churn_file(os.path.join(home, r))]   # v0.8.1: no platform walk
         self.assertTrue(walked)
         for p in walked:
             with open(p, "rb") as f:
@@ -638,7 +636,6 @@ class Placeholder(_Churn):
 
     def setUp(self):
         super().setUp()
-        self.owned()
 
     def bucket2(self, rel):
         return self.h(f"{SYNCED}/{BUCKET2}/{rel}")
