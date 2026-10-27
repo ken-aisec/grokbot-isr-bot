@@ -78,9 +78,16 @@ def audit(roots, exports, quick=False):
                 continue   # ISR Bot's own skill, identical to the checksummed release it was installed from
             if p in moved_to:
                 continue   # the same file under a new folder name (plugins are reinstalled under new folders after a restart)
-            if p in base and base[p] != h and is_vendor(p) and not (owner_link_into_vendor(p) or vendor_link_out(p)):
+            vendor = p in base and base[p] != h and is_vendor(p) and not (owner_link_into_vendor(p) or vendor_link_out(p))
+            ro = rename_only(p, h, base) if p in base and base[p] != h and not vendor else None   # v0.8.2 (item 6)
+            if vendor:
                 fs.append(finding("ISR-I001", "Built-in skill or plugin updated", "low", ["AST07"], p, f"sha256 {base[p][:12]}→{h[:12]}",
                                   "Usually the platform or a plugin update. The scanners re-check the new version; the fix re-approves it if clean."))
+            elif ro:   # the product's former name swapped for ISR Bot in prose, nothing else: shown with its diff, low
+                fs.append(finding("ISR-I001", RENAME_TITLE, "low", ["AST07"], p, f"{ro['old']} → ISR Bot on {ro['lines']} line{'' if ro['lines'] == 1 else 's'}",
+                                  "Only the product's name changed: read the diff. If that is the change you expected, say yes in the fix "
+                                  f"(`isr.py fix --rename-reviewed {skill_name(skill_root(p))} --owner-said-yes`); anything else keeps the skill open."))
+                fs[-1].update(rename_only=True, diff=ro["diff"])
             elif p in base and base[p] != h:
                 fs.append(finding("ISR-I001", "Reviewed skill or plugin changed", "high", ["AST07"], p,
                                   f"sha256 {base[p][:12]}→{h[:12]}",

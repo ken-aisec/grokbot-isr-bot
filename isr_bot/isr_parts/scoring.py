@@ -251,7 +251,7 @@ def corroborated(f, findings, index=None):
             return True
         if other and gp != here and _covers(gp, here) and fk & gk:
             return True                          # a verdict on the folder this file is in, about the same kind of risk
-        if is_evidence(g) and not gk and g["rule"] in DRIFT_RULES and _covers(gp, here):
+        if is_evidence(g) and not gk and g["rule"] in DRIFT_RULES and _covers(gp, here) and not g.get("rename_only"):   # v0.8.2 (item 6): a name swap isn't
             return True                          # the live skill changed after approval and now does this: reach plus behavior
         if not other and same_file and loud(f) and loud(g) and not same_rule(g, f) and g["rule"] in RISK_KIND:
             return True

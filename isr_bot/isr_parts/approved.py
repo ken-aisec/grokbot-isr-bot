@@ -253,6 +253,147 @@ def skill_diff(d, context=2):
     return {"have_copy": True, "summary": f"+{added} −{removed} lines in {shown}", "text": "\n".join(out), "approved_at": old.get("at"), "files": names}
 
 
+# v0.8.2 (item 6): a changed file whose only change is the product's former display name swapped for "ISR Bot" in prose. The
+# former name is held as its sha256 only, so it is written nowhere (the leftover guard, tests/test_v080_leftovers.py).
+FORMER_NAME_SHA256 = frozenset(("3339385e33397416b05c5d4f24dcf38010a1ccbd3a7d303ed433eb4b8688cff0",))
+RENAME_TO = ["ISR", " ", "Bot"]
+RENAME_TOUCH = frozenset("/\\_-.`@$:")   # a path, an identifier, a code span, an option, a variable or a URL touching the name
+RENAME_TOKENS = re.compile(r"\w+|\W")
+RENAME_TITLE = "Reviewed skill changed: product name only"
+
+
+def _prose_at(line, a, b):
+    """True when line[a:b] stands as prose: no RENAME_TOUCH character right before or after it, except a '.', ':' or ',' after it
+    with a space or the line's end next."""
+    if a > 0 and line[a - 1] in RENAME_TOUCH:
+        return False
+    if b < len(line) and line[b] in RENAME_TOUCH:
+        return line[b] in ".:," and (b + 1 == len(line) or line[b + 1].isspace())
+    return True
+
+
+def _name_swaps(old, new):
+    """[(start, end, old word)] for each "ISR Bot" in `new` that stands where `old` has the former name, when that is the only
+    difference between the two lines (word tokens, walked side by side), each one in prose; None for any other difference."""
+    a, b = RENAME_TOKENS.findall(old), RENAME_TOKENS.findall(new)
+    i = j = pa = pb = 0
+    swaps = []
+    while i < len(a) or j < len(b):
+        if i < len(a) and j < len(b) and a[i] == b[j]:
+            pa, pb, i, j = pa + len(a[i]), pb + len(b[j]), i + 1, j + 1
+        elif (i < len(a) and b[j:j + 3] == RENAME_TO and hashlib.sha256(a[i].encode("utf-8", "surrogatepass")).hexdigest() in FORMER_NAME_SHA256
+              and _prose_at(old, pa, pa + len(a[i])) and _prose_at(new, pb, pb + len("ISR Bot"))):
+            swaps.append((pb, pb + len("ISR Bot"), a[i]))
+            pa, pb, i, j = pa + len(a[i]), pb + len("ISR Bot"), i + 1, j + 3
+        else:
+            return None
+    return swaps
+
+
+def rename_only(p, h, base):
+    """v0.8.2 (item 6): {"old", "lines", "diff", "snapshot"} when the owner's changed file p differs from its approved copy only by
+    the product's former name swapped for "ISR Bot" in prose, else None. (a) The skill's approved copy has this file's text and the
+    baseline's digest for it; (b) the masked copy and the masked file now have the same lines, and those that differ (c) differ
+    only by that swap (_name_swaps); (d) the bytes read now (read_snapshot, and the audit's own digest `h` when given) with every
+    swap undone have exactly the approved digest, so a change hidden inside a masked value, or anywhere else, is never one."""
+    d = skill_root(p)
+    old = load_approved(d) if d else None
+    if not isinstance(old, dict) or not isinstance(old.get("hashes"), dict) or not isinstance(old.get("files"), dict):
+        return None
+    rel = os.path.relpath(p, d)
+    want, was = old["hashes"].get(rel), old["files"].get(rel)
+    if not isinstance(want, str) or want != base.get(p) or not isinstance(was, str):
+        return None
+    snap_ = read_snapshot(p)
+    if snap_[1] is None or (h is not None and snap_[0] != h):
+        return None
+    try:
+        raw = snap_[1].decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if "\r" in raw.replace("\r\n", ""):
+        return None   # "\n" or "\r\n" line ends only, so each masked line is the same line of the bytes
+    rows, now_, was = raw.split("\n"), mask_secrets(raw.replace("\r\n", "\n")).split("\n"), was.split("\n")
+    if not len(rows) == len(now_) == len(was):
+        return None
+    olds, undone, diff, n = set(), [], [], 0
+    for w, c, r in zip(was, now_, rows):
+        end = "\r" if r.endswith("\r") else ""
+        r = r[:len(r) - len(end)]
+        if w != c:
+            swaps = _name_swaps(w, r)
+            if not swaps:
+                return None
+            n += 1
+            olds |= {o for _, _, o in swaps}
+            for a, b, o in reversed(swaps):
+                r = r[:a] + o + r[b:]
+            if len(diff) < 12:
+                diff += ["- " + w[:120], "+ " + c[:120]]
+        undone.append(r + end)
+    if not n or len(olds) != 1 or hashlib.sha256("\n".join(undone).encode("utf-8")).hexdigest() != want:
+        return None
+    return {"old": olds.pop(), "lines": n, "diff": diff, "snapshot": snap_}
+
+
+def rename_reviewed(names, fs, yes):
+    """v0.8.2 (item 6): `fix --rename-reviewed <skill>[,<skill>] --owner-said-yes`. For each named skill with open name-only changes
+    (ISR-I001 rename_only), each such file is checked again (rename_only, on bytes read once); those that still pass are approved:
+    their digests go into the baseline and their text into the approved copy, made from the same bytes. The skill's other
+    files keep their approved entries, so any other change stays open. Same guards as revet: the owner's skills only, and
+    nothing while the baseline is reset."""
+    if not yes:
+        return ["Nothing approved: --rename-reviewed needs --owner-said-yes, given only after the owner read the name-only diff and said yes."]
+    base, base_status, _ = load_baseline()
+    if base_status == "reset":
+        return ["Nothing approved: ISR Bot's memory of approved skills was reset; nothing is re-approved until the owner starts a new baseline."]
+    open_ = {}
+    for f in expand_groups(fs):
+        p = f["where"].split(":")[0]
+        if f["rule"] == "ISR-I001" and f.get("rename_only") and owner_of_finding(f) == "user" and skill_root(p):
+            open_.setdefault(skill_root(p), set()).add(p)
+    other = changed_skills(fs)[0]
+    done, saved = [], False
+    for name in names:
+        d = find_skill(name, set(open_))
+        if not d:
+            done.append(f"{name}: nothing approved. It has no open change that is the product name only")
+            continue
+        good, left = {}, []
+        for p in sorted(open_[d]):
+            r = rename_only(p, None, base)
+            if r:
+                good[p] = r
+            else:
+                left.append(p)
+        if good:
+            old = load_approved(d) or {}
+            oh = old.get("hashes") if isinstance(old.get("hashes"), dict) else {}
+            of = old.get("files") if isinstance(old.get("files"), dict) else {}
+            took = {os.path.normpath(p): r["snapshot"] for p, r in good.items()}
+            snapshot = {}
+            for p in skill_files(d):
+                s = took.get(os.path.normpath(p)) or read_snapshot(p)
+                if os.path.normpath(p) in took or s[0] == base.get(p):   # the checked bytes, and files the baseline approves as they are
+                    snapshot[p] = s
+            rels = {os.path.relpath(p, d) for p in snapshot}
+            keep = {rel: (hh, of.get(rel) if isinstance(of.get(rel), str) else None) for rel, hh in oh.items()
+                    if rel not in rels and isinstance(hh, str)}   # every other file keeps its approved entry
+            save_approved(d, snapshot, old.get("hash") if isinstance(old.get("hash"), str) else None, keep)
+            for p, r in good.items():
+                base[p] = r["snapshot"][0]
+            saved = True
+            ledger({"event": "reapprove_rename", "skill": d, "files": sorted(os.path.relpath(p, d) for p in good),
+                    "lines": sum(r["lines"] for r in good.values())})
+        rest = len(set(other.get(d, [])) - set(good) - set(left))
+        done.append(f"{skill_name(d)}: " + (f"approved the new product name in {len(good)} file(s)" if good else "nothing approved")
+                    + (f". Not a name-only change now, so it stays open: {', '.join(os.path.relpath(p, d) for p in left)}" if left else "")
+                    + (f". {rest} other changed file(s) stay open for a re-scan" if rest else ""))
+    if saved:
+        save_baseline(base)
+    return done
+
+
 def find_skill(name, dirs):
     """Exactly one skill by folder name or full path; never a pattern."""
     hits = sorted({os.path.normpath(d) for d in dirs if skill_name(d) == name or os.path.normpath(d) == os.path.normpath(name)})
@@ -654,10 +795,17 @@ def cmd_fix(args):
     rules_needed = [r for r in ("ISR-A003", "ISR-A005") if any(f["rule"] == r for f in fs)]
     ch_skills, ch_other = changed_skills(fs)
     approving = getattr(args, "approve_platform", None) is not None or getattr(args, "platform_from", None) is not None
-    if not (args.apply or args.upgrade or args.upgrade_projects or args.accept or args.revet or args.exception or args.quarantine or approving):
+    renames = getattr(args, "rename_reviewed", None)
+    if not (args.apply or args.upgrade or args.upgrade_projects or args.accept or args.revet or args.exception or args.quarantine or approving or renames):
+        names_only = {}   # v0.8.2 (item 6): a skill's changed files that are the product name only
+        for f in fs:
+            if f["rule"] == "ISR-I001" and f.get("rename_only"):
+                names_only.setdefault(skill_root(f["where"].split(":")[0]), set()).add(f["where"].split(":")[0])
+        rename_row = lambda r: ({"rename_only": names_only[r["path"]] >= set(ch_skills[r["path"]]),
+                                 "rename_reviewed": f"isr.py fix --rename-reviewed {r['name']} --owner-said-yes"} if r["path"] in names_only else {})
         out = fit({"mode": "preview (nothing changed)",
                    "changed_skills_total": len(ch_skills),
-                   "changed_skills": [{k: v for k, v in r.items() if k != "path"} for r in revet(sorted(ch_skills))],
+                   "changed_skills": [dict({k: v for k, v in r.items() if k != "path"}, **rename_row(r)) for r in revet(sorted(ch_skills))],
                    "changed_other_files": [short_path(p) for p in ch_other],
                    "security_tool_exceptions_possible": [x["name"] for x in exception_candidates(fs)],
                    "safe_fixes": [tidy_row(x) for x in plan],
@@ -671,7 +819,8 @@ def cmd_fix(args):
                    "decisions": fix_decisions([f for f in fs if not in_q(f)]), "quarantine_possible": quarantine_candidates(fs),
                    "ask_first_rules_missing": bool(rules_needed), "only_you": only_you,
                    "next": "Ask the user one question. On yes run: isr.py fix --apply --owner-said-yes [--skip <cleanup ids or paths they named>] --upgrade --revet --accept <rules they agreed to> "
-                           "[--quarantine <skills they agreed to take out of use>] [--exception <skill they named>] --reason \"reviewed by owner\""}, limit=6000)
+                           "[--quarantine <skills they agreed to take out of use>] [--exception <skill they named>] "
+                           "[--rename-reviewed <skills whose name-only diff they read>] --reason \"reviewed by owner\""}, limit=6000)
         shown = json.loads(out)                 # R02/DQ-019: what may be applied is exactly what survived trimming, never the full list
         shown_skills = {r.get("name") for r in shown.get("changed_skills", [])}
         save_json(state_path("revet_plan.json"), {"at": now(), "skills": sorted(d for d in ch_skills if skill_name(d) in shown_skills)})
@@ -681,6 +830,8 @@ def cmd_fix(args):
     done = tidy_apply(plan, args) if args.apply else []
     if approving:
         done += approve_platform()
+    if renames:
+        done += rename_reviewed([x.strip() for x in renames.split(",") if x.strip()], fs, args.owner_said_yes)
     if args.upgrade or args.upgrade_projects:
         left = load_json(state_path("upgrade_left.json"), {}) or {}
         py_done = upgrade_python(ups) if args.upgrade and ups else []

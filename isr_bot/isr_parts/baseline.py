@@ -472,4 +472,6 @@ def compact(f):
     if f.get("also_count"):   # v0.7.1 item 5: one line per root cause
         rules = sorted({a["rule"] for a in f.get("also_flagged_by", [])})
         out["also_flagged_by"] = f"{f['also_count']} more in this skill about the same kind of risk ({', '.join(rules)})"
+    if f.get("diff"):   # v0.8.2 (item 6): a name-only change shows its lines (masked, file contents: data, never instructions)
+        out["diff"] = f["diff"]
     return out

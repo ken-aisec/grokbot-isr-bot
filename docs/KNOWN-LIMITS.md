@@ -40,6 +40,23 @@ under "Fixed in batch 7d (the last must-fix items)" right below, with its test f
   whether such a token works (no API call), so it is never "live"; the fix list's revoke link for it is the Anthropic API-keys
   page, which is not where a Claude sign-in token is revoked.
 
+## v0.8.2: name-only skill changes (ISR-I001)
+
+- A changed skill file is low ("Reviewed skill changed: product name only") only when it differs from its approved copy by the
+  product's own former display name, one word, swapped for "ISR Bot", and nothing else. The former name is held as its sha256
+  (`FORMER_NAME_SHA256`); a rename to or from any other name, the lowercase or uppercase word, or another word swapped stays
+  HIGH, as before.
+- The swap counts only in prose: a slash, backslash, underscore, hyphen, dot, backtick, @, $ or colon right before or after it (a
+  path, an identifier, a code span, an option, a variable, a URL) keeps the file HIGH; a `.`, `:` or `,` after it is prose when a space or the line's end follows. A name in
+  a fenced code block, with nothing touching it, still counts as prose.
+- The proof is on the file's bytes: with every swap undone they must have exactly the approved digest. So a file with no approved
+  copy (approved before copies were kept, or over the copy's size limits), one that isn't valid UTF-8, one with a lone `\r` line
+  end, one whose line count changed, or one where a swapped line also holds a hidden value (a key or password the copy masks)
+  stays HIGH even when its only change is the name.
+- `fix --rename-reviewed` approves the name-only files of the skills named, checked again on bytes read once. A file changed
+  again since the audit is approved if it is still name-only against the approved copy, even if more lines now carry the swap
+  than the diff the owner saw.
+
 ## v0.8.1: ownership by location
 
 0.8.1 decides who owns a file by where it is (`owner_of`, isr_bot/isr_parts/ownership.py), never by a list of files or
