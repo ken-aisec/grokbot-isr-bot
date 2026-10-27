@@ -347,7 +347,7 @@ def gather_brief(cfg, offline=None):
 
 
 EXPOSURE_AREAS = [
-    ("Secrets on the shared computer", ("ISR-S001", "ISR-S002", "ISR-S003", "ISR-T011", "ISR-T011x")),   # batch 6: T011x is T011
+    ("Secrets on the shared computer", ("ISR-S001", "ISR-S002", "ISR-S003", "ISR-S006", "ISR-T011", "ISR-T011x")),   # batch 6: T011x is T011
     ("Logged-in browser sessions", ("ISR-S004",)),
     ("Skills and templates", ("ISR-X001", "ISR-X002", "ISR-X003", "ISR-T001", "ISR-T002", "ISR-T003", "ISR-T004", "ISR-T005", "ISR-T006", "ISR-T007", "ISR-T008", "ISR-T018", "ISR-I001")),
     ("Approvals and settings", ("ISR-A001", "ISR-A002", "ISR-A003", "ISR-A004", "ISR-A005", "ISR-C001", "ISR-C003", "ISR-C005")),

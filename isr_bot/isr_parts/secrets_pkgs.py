@@ -2,6 +2,14 @@
 GITLEAKS_CONFIG = r"""[extend]
 useDefault = true
 
+[[rules]]
+id = "anthropic-oauth-token"
+description = "A Claude sign-in token (CLAUDE_CODE_OAUTH_TOKEN): gitleaks' own rules know only Anthropic API and admin keys"
+regex = '''\b(sk-ant-oat\d{2}-[A-Za-z0-9_-]{40,})'''
+secretGroup = 1
+entropy = 3.5
+keywords = ["sk-ant-oat"]
+
 [[allowlists]]
 description = "ISR Bot: package caches, lockfiles, headers and its own state"
 paths = [
@@ -396,6 +404,84 @@ def drop_fingerprints(fs):
         if isinstance(f.get("member_hits"), list):
             f["member_hits"] = [{k: v for k, v in m.items() if k != "fp"} if isinstance(m, dict) else m for m in f["member_hits"]]
     return fs
+
+
+# v0.8.2 (item 5): a tool's output spill file that holds a whole environment dump (set -x, env, a shell-state dump) with a key in
+# it. Cursor's layout: ~/.cursor/projects/<p>/agent-tools, .../terminals and /workspace/agent-tools
+SPILL_PLACES = ("agent-tools", "terminals")
+SPILL_READ_LIMIT = 20_000_000   # the fix plan's read limit; ISR-S001 reads files up to 300,000 bytes
+SPILL_MIN_NAMES, SPILL_MIN_SHELL = 15, 3
+SPILL_SHELL = frozenset(("PATH", "HOME", "SHELL", "USER", "LOGNAME", "PWD", "HOSTNAME", "LANG", "TERM", "SHLVL"))
+SPILL_SECRET_NAME = re.compile(r"TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY|CREDENTIAL")
+SPILL_ASSIGN = re.compile(r"^[ \t]*(?:\++[ \t]+)?(?:export[ \t]+|declare[ \t]+-x[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)=([^\n]*)", re.M)
+
+
+def spill_place(p):
+    """v0.8.2 (item 5): a tool's output spill file: a .txt directly in a folder named agent-tools or terminals."""
+    return p.endswith(".txt") and os.path.basename(os.path.dirname(p)) in SPILL_PLACES
+
+
+def spill_dump(text):
+    """v0.8.2 (item 5): [(line, variable name or None, fingerprint)] for each real secret in `text` when it holds a whole
+    environment dump, else []. A dump: NAME=value lines (`export `, `declare -x ` or xtrace's `+ ` in front allowed) with at least
+    15 different names, 3 of them the shell's own (SPILL_SHELL). A secret: a value SCRUB's key shapes match, anywhere in the file,
+    or else the value of a variable whose name says TOKEN, SECRET, PASSWORD... (16 characters or more, not a path); either only
+    when secret_kind calls it real, so a placeholder (xxxx) or a $VAR reference never counts. Fingerprints only, never a value."""
+    assigns = list(SPILL_ASSIGN.finditer(text))
+    names = {a.group(1) for a in assigns}
+    if len(names) < SPILL_MIN_NAMES or len(names & SPILL_SHELL) < SPILL_MIN_SHELL:
+        return []
+    lines, n, at = [], 1, 0
+    for a in assigns:
+        n += text.count("\n", at, a.start()); at = a.start()
+        lines.append(n)
+    out, shaped, i, n, at = [], set(), 0, 1, 0
+    for m in SCRUB.finditer(text):
+        while i < len(assigns) and assigns[i].end(2) <= m.start():
+            i += 1
+        a = i if i < len(assigns) and assigns[i].start(2) <= m.start() else None
+        if a is not None:
+            shaped.add(a)   # a key shape in its value: the name rule isn't asked
+        if secret_kind(m.group(0), block=(text, m.start(), True))[0] != "real":
+            continue
+        n += text.count("\n", at, m.start()); at = m.start()
+        out.append((n, assigns[a].group(1) if a is not None else None, secret_fp(m.group(0))))
+    for k, a in enumerate(assigns):
+        if k in shaped or not SPILL_SECRET_NAME.search(a.group(1).upper()):
+            continue
+        v = a.group(2).strip()
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+            v = v[1:-1]
+        if len(v) >= 16 and not v.startswith(("/", "~/", "./")) and secret_kind(v)[0] == "real":
+            out.append((lines[k], a.group(1), secret_fp(v)))
+    return out
+
+
+def spill_findings(spills):
+    """v0.8.2 (item 5): one ISR-S006 per folder for {folder: {spill file: spill_dump's list}}. Its evidence names each secret by
+    its variable and says which is this computer's own gh token (own_token_of); counts by fingerprint, no value, no fingerprint
+    kept. Its key is made from its folder (ident): files and copies coming and going never make a new/fixed pair."""
+    out = []
+    count = lambda k, one, many: f"{k} {one if k == 1 else many}"
+    for d, files in sorted(spills.items()):
+        hits = [(p, ln, name, fp) for p, got in files.items() for ln, name, fp in got]
+        named = {}
+        for _, _, name, fp in hits:
+            if name and fp not in named:
+                named[fp] = name
+        own = {fp for fp in {h[3] for h in hits} if own_token_of(fp)}
+        labels = sorted({named[fp] + (SPILL_OWN_NOTE if fp in own else "") for fp in named})
+        bare = len({h[3] for h in hits} - set(named))
+        what = ", ".join(labels + ([f"{bare} with no name"] if bare else []))
+        f = finding("ISR-S006", SPILL_TITLE, "high", ["ASI03", "LLM02"], d,
+                    f"{count(len(files), 'file', 'files')}, {count(len({h[3] for h in hits}), 'secret', 'secrets')} ({what}), "
+                    f"{count(len({(p, ln, fp) for p, ln, _, fp in hits}), 'copy', 'copies')}",
+                    SPILL_FIX + (" " + SPILL_OWN_FIX if own else ""), ident="spill-dump")
+        f["affected_files"] = sorted(files)
+        if own:
+            f["own_token"] = "gh"
+        out.append(f)
+    return out
 
 
 GROUPED_DIRS = ("/agent-transcripts", "/agent-tools", "/.cursor/projects")

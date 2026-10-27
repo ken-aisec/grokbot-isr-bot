@@ -13,7 +13,7 @@ EVIDENCE_RULES = frozenset((
     # Shell history: commands that actually ran on this computer, not wording (decision, 2026-10-10). H007 is a file-mode fact.
     "ISR-H001", "ISR-H002", "ISR-H003", "ISR-H004", "ISR-H005", "ISR-H006", "ISR-H007", "ISR-H008", "ISR-H009",
     "ISR-K001", "ISR-K002", "ISR-K003", "ISR-K004", "ISR-K005", "ISR-K006", "ISR-M001", "ISR-P001", "ISR-R010",
-    "ISR-S003", "ISR-S004", "ISR-S005", "ISR-W001", "ISR-W002", "ISR-X003", "ISR-X004",
+    "ISR-S003", "ISR-S004", "ISR-S005", "ISR-S006", "ISR-W001", "ISR-W002", "ISR-X003", "ISR-X004",
     "ISR-X005"))   # batch 3 (R7): ISR Bot's copy of a scanner isn't the one it installed
 HISTORY_SHRANK = "Shell history shrank since last check"
 NEW_SIGN_IN = "New sign-in in the shared browser"
@@ -54,7 +54,7 @@ def _place(f):
 
 
 PLACE_WHOLE = ("ISR-X", "ISR-I", "ISR-D", "ISR-K")   # where is a folder or a whole file: no line to take off
-PLACE_WHOLE_RULES = frozenset(("ISR-S003", "ISR-S004", "ISR-S005", "ISR-T001r", "ISR-R002", "ISR-R003", "ISR-H006", "ISR-P001"))
+PLACE_WHOLE_RULES = frozenset(("ISR-S003", "ISR-S004", "ISR-S005", "ISR-S006", "ISR-T001r", "ISR-R002", "ISR-R003", "ISR-H006", "ISR-P001"))
 
 
 def _corrob_sig(g):

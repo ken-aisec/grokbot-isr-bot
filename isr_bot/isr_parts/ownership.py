@@ -112,12 +112,16 @@ def _owner_members(paths, first=False):
 
 
 def owner_of_finding(f):
-    """The class of the place a finding names. A decoy finding (ISR-K*) is the owner's wherever it is. One with members (an S002
+    """The class of the place a finding names. A decoy finding (ISR-K*) is the owner's wherever it is; a spill-file dump
+    (ISR-S006) is the owner's in tool output too, and is vendor or ISR Bot's own as its files are. One with members (an S002
     group's files, D002's projects, I004/I005's roots) by its members, never its folder. Otherwise the producer's own file
     (literal_path), else _place: one trailing :line off a file finding, a folder verdict's name kept as it is. A where that isn't
     a path is the owner's."""
     if (f.get("rule") or "").startswith("ISR-K"):
         return "user"
+    if f.get("rule") == "ISR-S006":   # v0.8.2 (item 5): an environment dump in tool output is the owner's to delete and rotate
+        c = _owner_members(f.get("affected_files") or [_place(f)])
+        return "user" if c == "fixture-echo" else c
     if f.get("member_hits"):
         return _owner_members([m.get("file") for m in f["member_hits"]])
     for k in ("affected_files", "projects", "roots"):

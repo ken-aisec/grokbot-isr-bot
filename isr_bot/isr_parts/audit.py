@@ -165,6 +165,7 @@ def audit(roots, exports, quick=False):
     jar = {}
     sign_ins = new_sign_ins(jar)   # kept open EVENT_DAYS with the other one-time events below
     decoys = canary_paths()
+    spills = {}   # v0.8.2 (item 5): {folder: {spill file: its secrets}}, one ISR-S006 per folder
     for p in walk(roots, max_depth=6):
         if p in known or p in decoys or os.path.basename(p) in SESSION_FILES:
             continue
@@ -175,7 +176,16 @@ def audit(roots, exports, quick=False):
         # decoy-copy check must see docs/, tests/, examples/, references/ and fixtures/ folders too.
         if os.path.splitext(p)[1].lower() not in TEXT_EXT:
             continue
-        t = read_text(p, limit=300_000)
+        # v0.8.2 (item 5): a tool's spill file is read whole (up to 20 MB) for an environment dump; the key and decoy-copy
+        # checks below read it only as before, up to 300,000 bytes
+        spill = spill_place(p)
+        t = read_text(p, limit=SPILL_READ_LIMIT if spill else 300_000)
+        if spill and t:
+            got = spill_dump(t)
+            if got:
+                spills.setdefault(os.path.dirname(os.path.abspath(p)), {})[os.path.abspath(p)] = got
+            st = _look(p, follow=True)
+            t = t if st and st.st_size <= 300_000 else None
         if not t:
             continue
         if decoys:
@@ -196,6 +206,7 @@ def audit(roots, exports, quick=False):
             f["secret_hits"] = [dict({"file": os.path.abspath(p), "line": line_of(t, h.start())},
                                      **fp_marks(None if PEM_HEAD.match(h.group(0)) else secret_fp(h.group(0)))) for h, _ in hits]
             fs.append(mark_own(annotate_example(f, why) if why else f, f["secret_hits"]))
+    fs += spill_findings(spills)
 
     export_rules = ""
     # 5. exports the user pastes in (routines, descriptions, Auto Review rules, settings)

@@ -22,6 +22,24 @@ under "Fixed in batch 7d (the last must-fix items)" right below, with its test f
   was rotated) is not noted as the computer's own.
 - ISR-S001's counts take its own hits; a key block (a private key) is counted per answer, not by its value.
 
+## v0.8.2: environment dumps in tool output (ISR-S006) and Claude sign-in tokens
+
+- ISR-S006 looks only at spill places: a `.txt` file directly in a folder named `agent-tools` or `terminals` (Cursor's layout:
+  `~/.cursor/projects/<p>/agent-tools`, `.../terminals`, `/workspace/agent-tools`), read up to 20,000,000 bytes. A dump is a
+  file with `NAME=value` lines (`export `, `declare -x ` or xtrace's `+ ` in front allowed) of at least 15 different names,
+  3 of them the shell's own (PATH, HOME, SHELL, USER, LOGNAME, PWD, HOSTNAME, LANG, TERM, SHLVL). A dump with fewer names,
+  with no shell names, or in any other place is not ISR-S006; ISR-S001 and gitleaks still report its keys when its folder is
+  the owner's, as in 0.8.1.
+- A secret in a dump is a known key shape (the fix's key list), anywhere in the file, or the value of a variable whose name says
+  TOKEN, SECRET, PASSWORD, PASSWD, API_KEY, PRIVATE_KEY or CREDENTIAL (16 characters or more, not a path). A placeholder
+  (`xxxx`, `<your-key>`) or a `$VAR` reference never counts. A secret under any other name, without a key shape, is not seen.
+- Tool output stays silent for everything else (decision D2, option a, as decided in 0.8.1): a provider-verified live key in an
+  agent-tools file that is not an environment dump is still not reported. ISR-S006 is high, never critical (decision D3).
+- gitleaks' `anthropic-oauth-token` rule (`sk-ant-oat..`) keeps placeholders out by its entropy floor (3.5), not by a name; a
+  low-entropy real token would be missed by gitleaks (ISR Bot's own key rule still matches it). Nothing checks with Anthropic
+  whether such a token works (no API call), so it is never "live"; the fix list's revoke link for it is the Anthropic API-keys
+  page, which is not where a Claude sign-in token is revoked.
+
 ## v0.8.1: ownership by location
 
 0.8.1 decides who owns a file by where it is (`owner_of`, isr_bot/isr_parts/ownership.py), never by a list of files or

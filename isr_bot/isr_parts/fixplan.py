@@ -102,6 +102,18 @@ OWN_FIX = ("This is the GitHub token gh and git push use on this computer. Make 
 OWN_TOKEN_PLAIN = ("This computer's own GitHub token is copied into files", "Every Bot can read it and act as you on GitHub.", OWN_FIX, "you")
 
 
+# v0.8.2 (item 5): ISR-S006, a tool's output file that holds a whole environment dump (spill_findings). It names the secrets in
+# it; when one is this computer's own gh token, its fix says how to rotate that one without breaking gh and git push
+SPILL_TITLE = "Tool output holds a whole environment dump"
+SPILL_FIX = ("Delete these files (the fix's tidy list can empty an agent-tools folder with one yes), then rotate each named secret. "
+             "Find what printed the environment (set -x, env, a shell-state dump) and stop it.")
+SPILL_OWN_NOTE = " - this computer's own gh token"
+SPILL_OWN_FIX = ("The one marked as this computer's own gh token is the one gh and git push use: make a new one at "
+                 "github.com/settings/tokens, sign gh in with it, then revoke the old one.")
+PLAIN["ISR-S006"] = ("A tool's output file holds a whole environment dump", "Every Bot can read the keys in it and use them.", SPILL_FIX, "you")
+SPILL_OWN_PLAIN = PLAIN["ISR-S006"][:2] + (SPILL_FIX + " " + SPILL_OWN_FIX, "you")
+
+
 def mark_own(f, hits):
     """f noted as holding this computer's own gh token when one of its hits is (own_token, set when the hit was found)."""
     if any(isinstance(h, dict) and h.get("own_token") for h in hits or ()):
@@ -110,7 +122,8 @@ def mark_own(f, hits):
 
 
 def plain(f):
-    t = (OWN_TOKEN_PLAIN if f.get("own_token") else None) or (EXAMPLE_PLAIN if f.get("example") else None) or PLAIN_BY_TITLE.get(f["title"]) or PLAIN.get(f["rule"])
+    own = (SPILL_OWN_PLAIN if f["rule"] == "ISR-S006" else OWN_TOKEN_PLAIN) if f.get("own_token") else None
+    t = own or (EXAMPLE_PLAIN if f.get("example") else None) or PLAIN_BY_TITLE.get(f["title"]) or PLAIN.get(f["rule"])
     if t:
         return {"title": t[0], "why": t[1], "how": t[2], "who": t[3], "label": label_of(f)}
     return {"title": f["title"], "why": "", "how": f["fix"], "who": "you", "label": label_of(f)}
