@@ -175,9 +175,11 @@ def plugin_move_line(e):
 
 def owner_gate(fs, meta):
     """The one gate (§3.3 item 1), in run_audit_locked before anything is scored: (the owner's findings, vendor records). Vendor
-    records are labelled, keep their severity for breakdown and lose _snap; isr_self and fixture-echo ones are dropped. Plugin
+    records are labelled, keep their severity for breakdown and lose _snap; isr_self and fixture-echo ones are dropped; no
+    finding keeps a secret's fingerprint (drop_fingerprints). Plugin
     version events (data, audit.py) become the notes and daily's plugin_version_changes for the owner's plugins only."""
     fs, vendor = split_owned(fs, meta.get("key_status"))
+    drop_fingerprints(fs + vendor)   # v0.8.2 (D1): the owner split was the last use of a found secret's fingerprint
     for v in vendor:
         v.pop("_snap", None)
     lines = [plugin_move_line(e) for e in meta.get("plugin_version_changes") or []

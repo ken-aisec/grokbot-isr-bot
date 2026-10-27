@@ -9,6 +9,19 @@ Since 0.8.0 the product, its engine and its files are all called ISR Bot. The en
 **None are open.** Batch 7d fixed the last ones. Each item that was in this list, or that the owner logged as must-fix, is recorded
 under "Fixed in batch 7d (the last must-fix items)" right below, with its test file.
 
+## v0.8.2: counting secrets and the computer's own gh token
+
+- A found secret's fingerprint is a plain sha256 of the value, cut to 12 hex characters (decision D1), with no per-run secret
+  key mixed in. It is kept in memory for one audit only (never in `state/`), so the risk is small; but anyone who can read
+  ISR Bot's memory during a run, or a future change that stores a fingerprint, could test guesses of a short, simple password
+  against it. Long random tokens (GitHub, Claude) can't be guessed that way.
+- Counts are by fingerprint only where ISR Bot found the value. A TruffleHog answer without one (its stage failed and the last
+  answers were used) takes the fingerprint of the finding's only secret on its line, else counts as a token of its own, so
+  "N tokens" can be too high then, never too low.
+- The own-token note compares with the token `gh auth token` gives when the audit runs. A copy of an earlier gh token (one that
+  was rotated) is not noted as the computer's own.
+- ISR-S001's counts take its own hits; a key block (a private key) is counted per answer, not by its value.
+
 ## v0.8.1: ownership by location
 
 0.8.1 decides who owns a file by where it is (`owner_of`, isr_bot/isr_parts/ownership.py), never by a list of files or

@@ -89,6 +89,7 @@ class Box(unittest.TestCase):
         with open(self.platform_lock, "w") as f:
             f.write("# test box: no vendor files listed yet\n")
         isr.PLATFORM_LOCK = self.platform_lock
+        p = mock.patch.object(isr, "own_gh_token", return_value=None, create=True); p.start(); self.addCleanup(p.stop)   # v0.8.2: never the real gh
 
     def tearDown(self):
         clear_scanner_checks()

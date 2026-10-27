@@ -6,6 +6,8 @@ def audit(roots, exports, quick=False):
     version_changes = []   # DQ-047 fix round 1: the pending plugins' version-folder notes, said in daily too
     INCOMPLETE_SKILLS.clear()
     reset_scanner_checks()
+    OWN_TOKEN.clear()
+    OWN_TOKEN["on"] = True   # v0.8.2 (item 2): this computer's own gh token is looked up once, when the first secret is found
     walk_errors = []   # batch 5 PR B, Codex round 2 (3): a folder the scan couldn't list leaves the access map incomplete
     walk_skipped = []   # round 3 (1): so does one it left out (a link, too deep, a folder it never scans)
     inv = collect_inventory(roots, errors=walk_errors, skipped=walk_skipped)
@@ -189,7 +191,11 @@ def audit(roots, exports, quick=False):
             f = finding("ISR-S001", "Secret stored in a file on the shared computer", secret_severity(p, False), ["ASI03", "LLM02"],
                         f"{p}:{line_of(t, m.start())}", f"{mask(m.group(0))} ({len(hits)} in file)",
                         "Every Bot can read this file. Revoke the key, delete the file, and use the secure secret request instead.", path=p)
-            fs.append(annotate_example(f, why) if why else f)
+            # v0.8.2 (items 1, 2): each hit's place and fingerprint (this run only), so its copies count once and the box's own gh
+            # token is said; the note goes on after the key is made. A key block's match is its header only: no fingerprint
+            f["secret_hits"] = [dict({"file": os.path.abspath(p), "line": line_of(t, h.start())},
+                                     **fp_marks(None if PEM_HEAD.match(h.group(0)) else secret_fp(h.group(0)))) for h, _ in hits]
+            fs.append(mark_own(annotate_example(f, why) if why else f, f["secret_hits"]))
 
     export_rules = ""
     # 5. exports the user pastes in (routines, descriptions, Auto Review rules, settings)
@@ -319,4 +325,5 @@ def audit(roots, exports, quick=False):
                                "walk_errors": len(walk_errors), "walk_skipped": len(walk_skipped),   # round 3 (1): and those it left out
                                # batch 6 (KL5): the sign-in files and scheduled-job folders it couldn't look at
                                "cli_unknown": len(cli_unknown), "persist_unknown": sorted(PERSIST_UNKNOWN)}}
+    OWN_TOKEN.clear()
     return fs, meta

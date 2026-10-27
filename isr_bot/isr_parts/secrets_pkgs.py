@@ -324,22 +324,78 @@ def gitleaks_example(leak, datas, since_ns):
     they are the bytes gitleaks read. Anything that can't be read that way keeps the hit as gitleaks gave it. Fix round 3
     (Codex 1, 2, 7): it only adds a note (annotate_example), never lowers or leaves out a hit; the file is held as a FileBytes,
     so its lines are found once for all its hits, and a key block is judged in the whole file's text, as masking reads it."""
+    return _example_why(_gitleaks_found(leak, datas, since_ns))
+
+
+def _gitleaks_found(leak, datas, since_ns):
+    """v0.8.2 (item 1): (gitleaks_hit's answer, the file's FileBytes) for one hit, its bytes read as gitleaks_example says
+    (once per file per run, into `datas`); None when it can't be read that way."""
     p = leak.get("File")
     if not isinstance(p, str) or not p:
-        return ""
+        return None
     if p not in datas:
         data = _read_unchanged(p, GITLEAKS_READ_LIMIT, since_ns)
         datas[p] = FileBytes(data) if data is not None else None
     buf = datas[p]
     found = gitleaks_hit(leak, buf) if buf is not None else None
-    if not found:
+    return (found, buf) if found else None
+
+
+def _example_why(got):
+    """gitleaks_example's answer for _gitleaks_found's `got`."""
+    if not got:
         return ""
-    secret, line, at, (k, col) = found
+    (secret, line, at, (k, col)), buf = got
     block = None
     if PEM_HEAD.match(secret.strip()):
         text, lines = buf.text()
         block = (text, lines[k] + col + (len(secret) - len(secret.lstrip())), True)
     return secret_kind(secret, line=line, at=at, block=block)[1]
+
+
+OWN_TOKEN = {}   # v0.8.2 (item 2): "on" while an audit runs; "fp": the fingerprint of this computer's own gh token, once looked up
+
+
+def own_gh_token():
+    """The token gh signs in with on this computer (`gh auth token` reads gh's own config or GH_TOKEN; it calls no API), or None.
+    Only its fingerprint is kept (own_token_of); the value is never printed, logged, stored or passed anywhere else."""
+    exe = shutil.which("gh")
+    if not exe:
+        return None
+    code, out_s, _ = run([exe, "auth", "token"], 10)
+    lines = out_s.strip().splitlines()
+    return lines[0].strip() if code == 0 and len(lines) == 1 and lines[0].strip() else None
+
+
+def own_token_of(fp):
+    """"gh" when fingerprint `fp` is this computer's own gh token, else None. Looked up only while an audit runs, and then once,
+    when the first secret is found (so a run that finds none never asks gh)."""
+    if not fp or "on" not in OWN_TOKEN:
+        return None
+    if "fp" not in OWN_TOKEN:
+        OWN_TOKEN["fp"] = secret_fp(own_gh_token())
+    return "gh" if fp == OWN_TOKEN["fp"] else None
+
+
+def fp_marks(fp):
+    """What a found secret's record keeps: its fingerprint (this run only, drop_fingerprints) and, when it is this computer's
+    own gh token, own_token "gh" (kept: a later run never compares fingerprints made in another). {} without a fingerprint."""
+    if not fp:
+        return {}
+    own = own_token_of(fp)
+    return {"fp": fp, **({"own_token": own} if own else {})}
+
+
+def drop_fingerprints(fs):
+    """D1 (v0.8.2): fingerprints are for this run's counts and owner split only, never stored. A finding keeps its counts (in its
+    evidence) and its own_token mark; its member hits lose "fp", ISR-S001's per-hit list (secret_hits) goes."""
+    for f in fs:
+        if not isinstance(f, dict):
+            continue
+        f.pop("secret_hits", None)
+        if isinstance(f.get("member_hits"), list):
+            f["member_hits"] = [{k: v for k, v in m.items() if k != "fp"} if isinstance(m, dict) else m for m in f["member_hits"]]
+    return fs
 
 
 GROUPED_DIRS = ("/agent-transcripts", "/agent-tools", "/.cursor/projects")
@@ -404,7 +460,7 @@ def gitleaks_findings(roots, notes):
             reason = next((l for l in re.sub(r"\x1b\[[0-9;]*m", "", err).splitlines() if "FTL" in l or "error" in l.lower()), err.strip()[:160] or "no report written")
             fail_note(notes, f"gitleaks FAILED on {r} ({reason.strip()[-160:]}): secrets there were NOT checked by gitleaks.")
             continue
-        per_file, decoys, skipped_tool, examples, datas = {}, canary_paths(), 0, {}, {}
+        per_file, decoys, skipped_tool, examples, datas, marks = {}, canary_paths(), 0, {}, {}, {}
         for leak in got:
             if not isinstance(leak, dict):
                 continue
@@ -418,10 +474,15 @@ def gitleaks_findings(roots, notes):
             per_file.setdefault(leak.get("File"), []).append(leak)
             # batch 6 (B5); fix round 3 (Codex 1, 2): an example-looking hit is grouped, counted and scored as any other; its why
             # only adds a note to a finding all of whose hits look like that (_note_examples)
-            why = gitleaks_example(leak, datas, since)
+            got_ = _gitleaks_found(leak, datas, since)
+            why = _example_why(got_)
             if why:
                 examples[id(leak)] = why
+            # v0.8.2 (items 1, 2): each hit's secret by its fingerprint, so copies of one count once (the value is not kept)
+            marks[id(leak)] = fp_marks(secret_fp(got_[0][0])) if got_ else {}
         datas.clear()
+        member = lambda l, d: dict({"file": os.path.abspath(str(l.get("File") or d)), "line": l.get("StartLine"),
+                                 "rule_id": l.get("RuleID", "secret"), "example": examples.get(id(l))}, **marks.get(id(l), {}))
         by_dir = {}
         for fpath in per_file:
             by_dir.setdefault(group_dir(fpath), []).append(fpath)
@@ -443,8 +504,8 @@ def gitleaks_findings(roots, notes):
                 # of them is held and never rolled in
                 out[-1]["affected_files"] = sorted(os.path.abspath(str(fp)) for fp in files if fp)
                 # v0.8.1 (§3.4): each hit's file, line and kind (no secret text), so the gate can split a group by owner
-                out[-1]["member_hits"] = [{"file": os.path.abspath(str(l.get("File") or d)), "line": l.get("StartLine"),
-                                           "rule_id": l.get("RuleID", "secret"), "example": examples.get(id(l))} for l in leaks]
+                out[-1]["member_hits"] = [member(l, d) for l in leaks]
+                mark_own(out[-1], out[-1]["member_hits"])
         for fpath, leaks in per_file.items():
             kinds = sorted({l.get("RuleID", "secret") for l in leaks})
             generic = all(k.startswith("generic") for k in kinds)
@@ -452,6 +513,10 @@ def gitleaks_findings(roots, notes):
                                               f"{fpath}:{leaks[0].get('StartLine')}", f"{len(leaks)} hit(s): {', '.join(kinds)[:100]}",
                                               "Check whether these are live credentials. Revoke live ones, then delete or scrub the file.", source="gitleaks",
                                               path=fpath if isinstance(fpath, str) and fpath.startswith("/") else None), leaks, examples))
+            # v0.8.2 (item 1): its hits too, so its copies are counted (one file: the gate gives the same answer as for its path)
+            if isinstance(fpath, str) and fpath.startswith("/"):
+                out[-1]["member_hits"] = [member(l, fpath) for l in leaks]
+                mark_own(out[-1], out[-1]["member_hits"])
         if examples:
             notes.append(f"gitleaks: {len(examples)} hit(s) look like example or checksum values; each is scored as any other hit "
                          "and noted, to check (anyone can write a real key that way).")
@@ -483,7 +548,7 @@ def regroup_s002(f, kept, status, ran):
                 f"{len(kept)} hit(s): {', '.join(kinds)[:60]} at {at}", group_why(d), source="gitleaks", ident="gitleaks:" + ",".join(kinds))
     g.update(affected_files=files, member_hits=kept)
     whys = [m.get("example") for m in kept]
-    g = annotate_example(g, whys[0]) if all(whys) else g
+    g = mark_own(annotate_example(g, whys[0]) if all(whys) else g, kept)
     return key_status_severity([g], {p: ks for p, ks in status.items() if p in files}, ran)[0]
 
 

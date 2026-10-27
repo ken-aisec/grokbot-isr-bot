@@ -94,8 +94,23 @@ EXAMPLE_PLAIN = ("Keys that look like examples or checksums", "ISR Bot can't tel
                  "Check each one; if one is a real key, rotate it at its provider.", "you")
 
 
+# v0.8.2 (item 2): a found secret that is this computer's own gh token (own_token, set when it was found) is rotated, not revoked
+# as a stranger's key: gh and git push stop working until gh is signed in with the new one
+OWN_NOTE = " - the same token as this computer's own gh sign-in"
+OWN_FIX = ("This is the GitHub token gh and git push use on this computer. Make a new one at github.com/settings/tokens, sign gh in "
+           "with it, revoke this one, then tell ISR Bot \"fix it\" to clear the copies.")
+OWN_TOKEN_PLAIN = ("This computer's own GitHub token is copied into files", "Every Bot can read it and act as you on GitHub.", OWN_FIX, "you")
+
+
+def mark_own(f, hits):
+    """f noted as holding this computer's own gh token when one of its hits is (own_token, set when the hit was found)."""
+    if any(isinstance(h, dict) and h.get("own_token") for h in hits or ()):
+        f.update(own_token="gh", fix=OWN_FIX, evidence=f["evidence"] + ("" if OWN_NOTE in f["evidence"] else OWN_NOTE))
+    return f
+
+
 def plain(f):
-    t = (EXAMPLE_PLAIN if f.get("example") else None) or PLAIN_BY_TITLE.get(f["title"]) or PLAIN.get(f["rule"])
+    t = (OWN_TOKEN_PLAIN if f.get("own_token") else None) or (EXAMPLE_PLAIN if f.get("example") else None) or PLAIN_BY_TITLE.get(f["title"]) or PLAIN.get(f["rule"])
     if t:
         return {"title": t[0], "why": t[1], "how": t[2], "who": t[3], "label": label_of(f)}
     return {"title": f["title"], "why": "", "how": f["fix"], "who": "you", "label": label_of(f)}
@@ -315,7 +330,7 @@ def needs_you(findings, limit=None):
             g["severity"], g["where"] = f["severity"], f["where"]
     items = sorted(groups.values(), key=lambda g: (SEV_ORDER.index(g["severity"]), -g["count"]))
     key_files = (load_json(state_path("key_status.json"), {}) or {}).get("files", {})
-    live = live_key_links(key_files)
+    live = live_key_links(key_files, findings)
     keys = live or revoke_targets(findings)
     pkgs = sorted({re.sub(r"^Vulnerable package ", "", f["title"]).split(" ")[0] for f in findings if f["rule"] == "ISR-D001"})
     for g in items:
@@ -390,9 +405,13 @@ def trufflehog_status(paths, notes):
         # R05: "not verified" is not "dead": TruffleHog couldn't confirm the key works, which is not the provider saying it's revoked
         st = "live" if d.get("Verified") else ("unknown" if d.get("VerificationError") else "unverified")
         ex = d.get("ExtraData") or {}
+        # v0.8.2 (items 1, 2): the key's fingerprint (this run only) and whether it is this computer's own gh token
         status.setdefault(os.path.abspath(f), []).append({"detector": d.get("DetectorName", "key"), "status": st, "line": fs_meta.get("line"),
-                                                          "guide": ex.get("rotation_guide") if isinstance(ex, dict) else None})
-    save_json(state_path("key_status.json"), {"at": now(), "ran": True, "files": status})
+                                                          "guide": ex.get("rotation_guide") if isinstance(ex, dict) else None,
+                                                          **fp_marks(secret_fp(d.get("Raw")))})
+    # D1 (v0.8.2): the fingerprints are never stored; the own-token mark is
+    save_json(state_path("key_status.json"), {"at": now(), "ran": True, "files": {
+        p: [{k: v for k, v in r.items() if k != "fp"} for r in ks] for p, ks in status.items()}})
     return status
 
 
@@ -443,26 +462,23 @@ def key_status_severity(findings, status, ran=None):
     out = []
     for f in findings:
         if f["rule"] in ("ISR-S001", "ISR-S002"):
-            p, _, ln = f["where"].partition(":")
-            keys = [k for fp, ks in status.items() if fp == p or fp.startswith(p.rstrip("/") + "/") for k in ks]
-            if ln.split(":")[0].isdigit():      # R06: a verdict counts only for the key on this finding's own line
-                keys = [k for k in keys if str(k.get("line")) == ln.split(":")[0]]
+            bound = bound_keys(f, status)
             f = dict(f)
-            live = [k for k in keys if k["status"] == "live"]
-            dead = [k for k in keys if k["status"] == "dead"]
-            unsure = [k for k in keys if k["status"] in ("unknown", "unverified")]
-            names = lambda ks: ", ".join(sorted({k["detector"] for k in ks}))
+            live = [(x, k) for x, k in bound if k["status"] == "live"]
+            dead = [(x, k) for x, k in bound if k["status"] == "dead"]
+            unsure = [(x, k) for x, k in bound if k["status"] in ("unknown", "unverified")]
+            own = f.get("own_token") or next((k["own_token"] for _, k in live or unsure or dead if k.get("own_token")), None)
             if live:
                 f["severity"], f["title"] = "critical", KEY_LIVE
-                f["evidence"] = f"{names(live)} ({len(live)} live)"
+                f["evidence"] = key_evidence(f, live, "live")
                 f["fix"] = "Turn the key off at its provider, then tell ISR Bot \"fix it\" to clear every copy."
             elif unsure:
                 f["severity"], f["title"] = "medium", KEY_UNSURE
-                f["evidence"] = f"{names(unsure)} ({len(unsure)} not confirmed either way)"
+                f["evidence"] = key_evidence(f, unsure, "not confirmed either way")
                 f["fix"] = "Nobody could confirm whether this key works. If you recognize the key, treat it as live and turn it off."
             elif dead:
                 f["severity"], f["title"] = "low", KEY_DEAD
-                f["evidence"] = f"{names(dead)} ({len(dead)} dead)"
+                f["evidence"] = key_evidence(f, dead, "dead")
                 f["fix"] = "Nothing to revoke. Tell ISR Bot \"fix it\" to clear the copies."
             else:
                 # batch 6 (B5, owner decision): a file's name no longer lowers a key (FIXTURE_PATH is gone); what is here is judged like a
@@ -470,12 +486,55 @@ def key_status_severity(findings, status, ran=None):
                 f["severity"] = "medium" if SEV_ORDER.index(f["severity"]) < SEV_ORDER.index("medium") else f["severity"]
                 f["title"] = KEY_MAYBE
                 f["fix"] = "Pattern match only. If one is a real key, turn it off at its provider."
+            if own:   # v0.8.2 (item 2): rotated, not revoked as a stranger's; severity and label as any other
+                f = mark_own(f, [{"own_token": own}])
             # batch 6 fix round 3 (Codex 1, 2): an example-looking key is judged as any other, keeping only its note; one the
             # provider says works is a working key, so its note goes
             if f.get("example"):
                 f = annotate_example(f, f["example"]) if not live else {k: v for k, v in f.items() if k != "example"}
         out.append(f)
     return out
+
+
+def bound_keys(f, status):
+    """v0.8.2 (item 3): TruffleHog's answers for the files key finding f stands for, as (file, answer): its affected_files (every
+    gitleaks group has them since b8i4), else its own file, and for a file:line finding only that line's (R06). A folder finding
+    with neither (a record from an older version) is still matched by folder. A group never takes another folder's answers: the
+    ~/.cursor/projects group took the agent-tools files' live GitHub answers and showed them on a 64-hex line of its own."""
+    p, _, ln = f["where"].partition(":")
+    files = f.get("affected_files")
+    if files:
+        got = [(x, k) for x in files for k in (status or {}).get(x) or []]
+    elif ln:
+        got = [(p, k) for k in (status or {}).get(p) or []]
+    else:
+        got = [(x, k) for x, ks in (status or {}).items() if x == p or x.startswith(p.rstrip("/") + "/") for k in ks]
+    if ln.split(":")[0].isdigit():      # R06: a verdict counts only for the key on this finding's own line
+        got = [(x, k) for x, k in got if str(k.get("line")) == ln.split(":")[0]]
+    return got
+
+
+def key_evidence(f, keys, word):
+    """v0.8.2 (items 1, 3): "<detectors>: N tokens, M copies, <word>, at <places>" for the answers `keys` ((file, answer), bound
+    to f). Tokens are the distinct secrets among them by fingerprint; an answer with none takes the one of f's own hit on its
+    line when only one secret was found there, else it is a token of its own (never merged). Copies are every place one of those
+    tokens is: the answers' and f's own hits' (member_hits, ISR-S001's secret_hits). Counts and places only, never a fingerprint."""
+    hits = [h for h in (f.get("member_hits") or f.get("secret_hits") or []) if isinstance(h, dict)]
+    at = {}
+    for h in hits:
+        if h.get("fp"):
+            at.setdefault((h.get("file"), h.get("line")), set()).add(h["fp"])
+    tokens = set()
+    for i, (x, k) in enumerate(keys):
+        there = at.get((x, k.get("line"))) or ()
+        tokens.add(k.get("fp") or (next(iter(there)) if len(there) == 1 else ("answer", i)))
+    copies = {(x, k.get("line")) for x, k in keys} | {(h.get("file"), h.get("line")) for h in hits if h.get("fp") in tokens}
+    base = (f["where"] if f.get("affected_files") else os.path.dirname(f["where"].partition(":")[0])) or "/"
+    locs = [f"{os.path.relpath(str(x), base)}:{n}" for x, n in sorted(copies, key=lambda c: (str(c[0]), c[1] if isinstance(c[1], int) else 0))]
+    where = ", ".join(locs[:3]) + (f" and {len(locs) - 3} more" if len(locs) > 3 else "")
+    count = lambda n, one, many: f"{n} {one if n == 1 else many}"
+    return (f"{', '.join(sorted({k['detector'] for _, k in keys}))}: {count(len(tokens), 'token', 'tokens')}, "
+            f"{count(len(copies), 'copy', 'copies')}, {word}, at {where}")
 
 
 OSV_SKIP = ("/isr-bot/backups/", "/isr-bot/state/", "/isr-bot/app/", "/isr-bot/scanners/", "/.cursor/", "/skill-hunt", "/skill-review", "/candidates/", "/spike/", "/node_modules/", "/vendor/")
@@ -582,7 +641,7 @@ def item_row(f, key_files=None):
         name, reason = f["title"].replace("Vulnerable package ", ""), f["evidence"]
     elif f["rule"] in ("ISR-S001", "ISR-S002"):
         name = os.path.basename(w.rstrip("/")) or w
-        keys = [k for fp, ks in (key_files or {}).items() if fp == w or fp.startswith(w.rstrip("/") + "/") for k in ks]
+        keys = [k for _, k in bound_keys(f, key_files)]   # v0.8.2 (item 3): the answers for its own files only
         if keys:
             by = {}
             for k in keys:
@@ -595,10 +654,14 @@ def item_row(f, key_files=None):
     return {"name": name, "reason": reason, "where": short_path(w), "rule": f["rule"], "severity": f["severity"]}
 
 
-def live_key_links(key_files):
+def live_key_links(key_files, findings):
+    """Where to turn off each live key an open key finding stands for (v0.8.2, item 3: the answers bound to `findings`, never
+    every live answer TruffleHog gave, so a key in files nothing shows never names a provider)."""
     out, seen = [], set()
-    for ks in (key_files or {}).values():
-        for k in ks:
+    for f in findings:
+        if f.get("rule") not in ("ISR-S001", "ISR-S002"):
+            continue
+        for _, k in bound_keys(f, key_files):
             if k["status"] != "live" or k["detector"] in seen:
                 continue
             seen.add(k["detector"])

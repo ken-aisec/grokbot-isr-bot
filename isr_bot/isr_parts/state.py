@@ -155,6 +155,14 @@ def read_text(path, limit=1_000_000):
         return None
 
 
+def secret_fp(value):
+    """v0.8.2 (items 1, 2; decision D1: plain sha256): a found secret's fingerprint, 12 hex characters, so copies of one secret
+    count once. Kept in memory for the run only (drop_fingerprints); None for anything that isn't a secret's text."""
+    if not isinstance(value, str) or not value:
+        return None
+    return hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()[:12]
+
+
 def finding(rule_id, title, severity, owasp, where, evidence, fix, source="isr-bot", ident=None, path=None, shown=None):
     """`ident` names the finding when its evidence holds a count that drifts (63 logins, 6 advisories): the same problem
     keeps the same key, so it is never reported as fixed and new in one run. `key0` is the key older versions gave it.
