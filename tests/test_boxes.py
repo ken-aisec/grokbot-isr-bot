@@ -739,26 +739,47 @@ class MainBoxLessons(Box):
     def test_dq013_changed_skills_are_scanned_before_old_stuck_ones_are_retried(self):
         """Main box, v0.6.8 (DQ-013): 4 of 34 new or changed skills in ten minutes. Six skills SkillSpector had given up on were
         retried first-come (v0.6.7 raised the solo limit, so every old 'stuck' entry looked due), each jamming a batch and then
-        a solo launch, and the changed skills behind them waited."""
-        ds = self.skills(34)
-        jams = ds[3::6][:6]
+        a solo launch, and the changed skills behind them waited.
+        v0.8.2 item 10: the same lesson without the box's speed in it. The 2-second caps marked a healthy launch stuck on a busy
+        box, and a 40-second timer timed the whole audit; the order DQ-013 is about is now checked launch by launch."""
+        self.dq013_box(34, 3, 6, slow=0)
+
+    def test_dq013_order_holds_on_a_slow_box(self):
+        """v0.8.2 item 10: every launch takes 0.6 seconds (a busy box) and the order still holds."""
+        self.dq013_box(8, 3, 4, slow=0.6)
+
+    def dq013_box(self, n, first, step, slow):
+        """n skills, every `step`th from `first` jams SkillSpector. A jam answers at once the way a killed scanner does (exit 124,
+        read as a time-out); the real kill stays covered by the one-skill-that-hangs test. The caps are far above any healthy
+        launch. The fake logs the skills each launch was given."""
+        ds = self.skills(n)
+        jams = ds[first::step][:6]
         for d in jams:
             open(os.path.join(d, "notes.md"), "w").write("JAMMER\n")
-        self.scanners(skillspector=JAM_SS)
-        isr.ENGINE_BUDGET, isr.ENGINE_LAUNCH_BASE, isr.ENGINE_LAUNCH_PER_SKILL, isr.ENGINE_SOLO_LIMIT = 120, 2, 0, 2
+        log = os.path.join(os.environ["ISR_BOT_HOME"], "launches.log")
+        quick_jam = SCANNERS["skillspector"].replace(
+            'skills = []\n', f'import time\nopen({log!r}, "a").write(json.dumps(sorted(n.split("-", 1)[1] for n in os.listdir(stage))) + "\\n")\n'
+            f'time.sleep({slow!r})\nfor r, _, fs in os.walk(stage):\n    for f in fs:\n'
+            '        if b"JAMMER" in open(os.path.join(r, f), "rb").read():\n            sys.exit(124)\nskills = []\n')
+        self.scanners(skillspector=quick_jam)
+        isr.ENGINE_BUDGET, isr.ENGINE_LAUNCH_BASE, isr.ENGINE_LAUNCH_PER_SKILL, isr.ENGINE_SOLO_LIMIT = 600, 60, 0, 30
         self.audit()
         cache = isr.load_json(isr.state_path("engine_cache.json"), {})
         self.assertEqual(sorted(d for d in cache if cache[d].get("stuck")), sorted(jams))
         for d in ds:                                                              # every other skill changes
             if d not in jams:
                 open(os.path.join(d, "SKILL.md"), "a").write("Changed.\n")
-        isr.ENGINE_BUDGET, isr.ENGINE_LAUNCH_BASE, isr.ENGINE_LAUNCH_PER_SKILL, isr.ENGINE_SOLO_LIMIT = 14, 3, 0.4, 6
-        t0 = time.monotonic()
+        os.remove(log)
+        isr.ENGINE_BUDGET, isr.ENGINE_LAUNCH_BASE, isr.ENGINE_LAUNCH_PER_SKILL, isr.ENGINE_SOLO_LIMIT = 600, 60, 0, 120   # a higher solo limit: every stuck entry is due
         self.audit()
-        self.assertLess(time.monotonic() - t0, 40)
-        cache = isr.load_json(isr.state_path("engine_cache.json"), {})
+        launches = [json.loads(x) for x in open(log).read().splitlines()]
         fresh = [d for d in ds if d not in jams]
-        self.assertEqual([d for d in fresh if not cache[d].get("engines") or cache[d]["hash"] != isr.skill_dir_hash(d)], [])   # all 28 scanned
+        fresh_n, jam_n = {os.path.basename(d) for d in fresh}, {os.path.basename(d) for d in jams}
+        first_jam = min(i for i, l in enumerate(launches) if jam_n & set(l))
+        self.assertEqual([l for l in launches[first_jam:] if fresh_n & set(l)], [], launches)   # changed skills first, stuck ones after
+        self.assertEqual(sorted(l for l in launches if jam_n & set(l)), sorted([x] for x in jam_n))   # each stuck one retried alone
+        cache = isr.load_json(isr.state_path("engine_cache.json"), {})
+        self.assertEqual([d for d in fresh if not cache[d].get("engines") or cache[d]["hash"] != isr.skill_dir_hash(d)], [])   # all 28 scanned (6 on the slow box)
 
     def test_copies_of_one_skill_are_scanned_once(self):
         """Main box, v0.6.7 (DQ-010): the audit checked 7 of 41 new or changed skills in its seven minutes. Most of the 41 were
