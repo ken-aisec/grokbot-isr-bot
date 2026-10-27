@@ -253,7 +253,7 @@ def render_md(snap, hist, tag):
     plat = [f for f in shown(snap["findings"]) if platform_scope(f)]   # v0.7.1 item 4: their own section, never scored
     fs = [f for f in shown(snap["findings"]) if not platform_scope(f) and not f.get("guarded")]   # Codex round 1 (5): a counted one is here
     c = by_sev(fs)
-    lines = [f"# ISR Bot report {tag}", "", f"Status: {status_line(snap)}", "",
+    lines = [f"# ISR Bot report {tag}", "", f"Status: {status_line(snap)}", "", f"Score: {SCORE_MEANING}", "",
              f"Score {score_line(snap)} (grade {snap_grade(snap)}), {trend(hist)}. Open findings: "
              f"{c['critical']} critical, {c['high']} high, {c['medium']} medium, {c['low']} low.", "",
              "## Top fixes", ""]
@@ -368,7 +368,7 @@ h1{{font-size:20px;margin:0 0 4px}}.mut{{color:var(--mut)}}.row{{display:flex;ga
 table{{border-collapse:collapse;width:100%;font-size:13px}}td,th{{border-bottom:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}}
 .sev{{color:#fff;border-radius:4px;padding:2px 6px;font-size:11px;text-transform:uppercase}}.wrap{{overflow-x:auto}}code{{font-size:12px}}
 </style></head><body><h1>ISR Bot · {tag}</h1><div class='mut'>Generated {html.escape(snap['at'])} · read-only audit of this Grok Bot computer</div>
-<div class='row'><div class='card'><div class='mut'>Status</div><div style='font-size:24px;font-weight:700'>{html.escape(status_line(snap))}</div><div class='mut'>Posture score</div><div class='big'>{snap['score']}<span class='mut' style='font-size:18px'>/100 · {snap_grade(snap)}</span></div><div class='mut'>{html.escape(score_line(snap))}</div><div class='mut'>{trend(hist)}</div></div>
+<div class='row'><div class='card'><div class='mut'>Status</div><div style='font-size:24px;font-weight:700'>{html.escape(status_line(snap))}</div><div class='mut'>Posture score</div><div class='big'>{snap['score']}<span class='mut' style='font-size:18px'>/100 · {snap_grade(snap)}</span></div><div class='mut'>{html.escape(SCORE_MEANING)}</div><div class='mut'>{html.escape(score_line(snap))}</div><div class='mut'>{trend(hist)}</div></div>
 <div class='card'><div class='mut'>Score, last {len(pts)} runs</div><svg width='{w}' height='{h}' viewBox='0 0 {w} {h}' role='img' aria-label='score trend'><polyline fill='none' stroke='#2e86c1' stroke-width='2' points='{poly}'/></svg></div>
 {tiles}</div><h2 style='font-size:16px'>Open findings</h2><div class='wrap'><table><tr><th>Severity</th><th>Finding</th><th>Where</th><th>OWASP</th><th>Fix</th></tr>{rows or "<tr><td colspan=5>Nothing open.</td></tr>"}</table></div>
 {access_card(load_access_map())}{extra_sections(fs)}{platform_details(snap["findings"], snap.get("vendor"))}

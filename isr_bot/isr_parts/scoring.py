@@ -550,6 +550,10 @@ def label_of(f):
     return f.get("label") or (CONFIRMED if is_evidence(f) else MAYBE_FINE)
 
 
+# v0.8.2 (item 9): the owner asked which way is better ("76 · grade F": 76 is a C by number, capped to F by one Confirmed critical)
+SCORE_MEANING = "Higher is better: 100 means nothing open. The grade follows the status: Act now is always F, Check this week at most C."
+
+
 def score(findings):
     """Score the kinds of risk, not the number of files. Each rule counts once at its worst severity, a little
     more when it appears many times (up to x1.5), so one finding appearing or vanishing moves the score by at most

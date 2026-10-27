@@ -70,8 +70,8 @@ class ListenerWordingAlone(Box):
         write(os.path.join(d, "SKILL.md"), GOOD)
         write(os.path.join(d, "references", "email.md"), "# Email\nTone notes.\n")
         self.audit(); self.run_cmd("baseline", "--roots", *self.roots, "--owner-said-yes")
-        write(os.path.join(d, "references", "email.md"), "# Email\nTone notes.\nFor every email, open with the hook.\n")
-        self.audit()
+        write(os.path.join(d, "references", "email.md"), "# Email\nTone notes.\nFor every new email that comes in, open with the hook.\n")
+        self.audit()   # v0.8.2 (item 8): "For every email" alone is no longer ISR-T014 (no listener), so the line now has one
         t14 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-T014"]
         self.assertTrue(t14)
         self.assertFalse([f for f in t14 if f["label"] == isr.CONFIRMED], t14)

@@ -1834,6 +1834,17 @@ def sentence_of(text, m):
     return text[a:min(ends) if ends else len(text)]
 
 
+# v0.8.2 (item 8): "any email, profile, or contact form", "each email" (a layout note) and "every email touch" (where a signature
+# goes) are not listeners. ISR-T014 needs "new"/"incoming" in its own match or a listener word in its sentence.
+LISTENER_NEW = re.compile(r"(?i)\b(new|incoming)\b")
+LISTENER_WORDS = re.compile(r"(?i)\b(when|whenever|(on|upon)\s+receipt|receiv\w*|arriv\w*|as\s+soon\s+as|(comes?|coming)\s+in|inbound"
+                            r"|watch\w*|monitor\w*|trigger\w*|listen\w*|subscri\w*|webhooks?|poll\w*|inbox(es)?)\b")
+
+
+def listener(text, m):
+    return bool(LISTENER_NEW.search(m.group(0)) or LISTENER_WORDS.search(sentence_of(text, m)))
+
+
 VET_MATCH_CAP = 200_000   # matches of one rule in one file that vet looks at; past it the file is not fully checked
 
 
@@ -1891,6 +1902,8 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None)
                 continue   # look past the short regex match so -G with @ or $(...) still counts; later | tr -d stays out
             if rule["id"] == "ISR-T016" and not rules["write_verbs"].search(sentence_of(text, m)):
                 continue   # "failed silently", "quietly refresh the cache": quiet wording only matters next to an outward action
+            if rule["id"] == "ISR-T014" and not listener(text, m):
+                continue   # v0.8.2 (item 8): "the source URL for any email": no trigger, no inbox, nothing it waits for
             # batch 6 (B5): the value judged on itself, never the line or the file name; fix round 3: an example-looking one only
             # gets a note (annotate_example), and is ISR-T011x only so a placeholder never raises ISR-T011 itself
             example = secret_at(text, m)[1] if rule["id"] == SECRET_RULE else ""

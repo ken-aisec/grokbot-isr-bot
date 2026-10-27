@@ -76,6 +76,16 @@ under "Fixed in batch 7d (the last must-fix items)" right below, with its test f
   `isr.py breakdown` and the platform notes count leave it out). A vendor copy elsewhere (a bundled or managed skill) with the
   same name stays a vendor record. A carried line (a daily run that didn't scan again) keeps the count it had.
 
+## v0.8.2: broad listener wording (ISR-T014) and the score's direction
+
+- ISR-T014 counts only when its match says "new" or "incoming" ("every new message") or its sentence has a listener word: when,
+  whenever, on/upon receipt, receive, arrive, as soon as, comes in, inbound, watch, monitor, trigger, listen, subscribe,
+  webhook, poll or inbox. A sentence is cut at `.`, `!`, `?` and the line end, so a listener word only in a heading or the line
+  before ("When a message arrives:" then "- reply to each message") does not count, and "reply to each message" with no
+  listener word in its sentence is no longer ISR-T014. It is still ISR-T013 when it sends without an approval line.
+- The score is 100 minus the penalty: higher is better. The report, the dashboard card and the brief say so; the audit and
+  daily JSON do not carry the sentence (the skill docs tell the Bot to say it).
+
 ## v0.8.1: ownership by location
 
 0.8.1 decides who owns a file by where it is (`owner_of`, isr_bot/isr_parts/ownership.py), never by a list of files or

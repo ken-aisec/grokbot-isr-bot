@@ -631,7 +631,7 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
         cls = "q" if why_changed else ("up" if delta > 0 else "down")
         delta_txt = f"<span class='{cls}'>{'▲' if delta > 0 else '▼'} {abs(delta)} since last check{e(why_changed)}</span>"
     dots = "".join(f"<i class='{'on' if i <= lvl_i else ''} l{lvl_i}'></i>" for i in range(5))
-    metrics = (f"<div class='m'><span class='k'>Security score</span><b>{e(str(score)) if score is not None else '–'}</b><span class='s'>{e(grade)} {delta_txt}</span><span class='s'>{e(score_line(snap))}</span></div>"
+    metrics = (f"<div class='m'><span class='k'>Security score</span><b>{e(str(score)) if score is not None else '–'}</b><span class='s'>{e(grade)} {delta_txt}</span><span class='s'>{e(score_line(snap))}</span><span class='s'>{e(SCORE_MEANING)}</span></div>"
                f"<div class='m'><span class='k'>Threat level</span><b class='lv l{lvl_i}'>{e(lvl)}</b><span class='dots'>{dots}</span></div>"
                f"<div class='m'><span class='k'>Needs you</span><b>{len(urgent)}</b><span class='s'>{len(todo) - len(urgent)} smaller {'item' if len(todo) - len(urgent) == 1 else 'items'}</span></div>"
                f"<div class='m'><span class='k'>Handled this week</span><b>{fixed + cleaned}</b><span class='s'>fixed or cleaned up</span></div>")
