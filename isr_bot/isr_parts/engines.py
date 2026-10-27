@@ -96,6 +96,29 @@ def skill_files(d):
     return out
 
 
+# v0.8.2 (item 7): SkillSpector alone on a skill that is only documents (no script or any other file) is medium, not high,
+# unless its words name a kind of risk a document can do on its own: read keys, send data out, hide, inject, encode.
+DOC_ONLY_EXT = (".md", ".markdown", ".txt", ".rst")
+DOC_ONLY_KEEP_HIGH = frozenset(("credential", "exfil", "secrecy", "override", "obfuscation"))
+
+
+def doc_only_skill(d):
+    """True when every file in the folder, at any depth (skill_files' skipped folders included), is a plain document
+    (DOC_ONLY_EXT). Any other file, any link, or more files than skill_files lists makes it not documents only."""
+    n = 0
+    for dirpath, dirnames, filenames in os.walk(d):
+        if any(os.path.islink(os.path.join(dirpath, x)) for x in dirnames):
+            return False
+        for fn in filenames:
+            p = os.path.join(dirpath, fn)
+            if os.path.islink(p) or not os.path.isfile(p) or not fn.lower().endswith(DOC_ONLY_EXT):
+                return False
+        n += len(filenames)
+        if n > ENGINE_MAX_FILES:
+            return False
+    return n > 0
+
+
 def entry_engines(e_):
     """Which engines produced a remembered result. Older entries didn't record it: they were scanned if SkillSpector left a summary."""
     if "engines" in e_:
@@ -470,7 +493,8 @@ def engine_findings(skill_dirs, isr_findings, notes, user_root_dirs=(), budget=N
                 x["kinds_incomplete"] = True                  # ran out), or husk's words missing, may lack a kind: never filed under Platform
             out.append(x)
         elif ss_flag:
-            x = finding("ISR-X001", "SkillSpector: do not install", "high" if tier == "user" else "low", ["AST01", "AST08"], d,
+            sev = ("medium" if not ss_k & DOC_ONLY_KEEP_HIGH and doc_only_skill(d) else "high") if tier == "user" else "low"
+            x = finding("ISR-X001", "SkillSpector: do not install", sev, ["AST01", "AST08"], d,
                         engine_evidence("ISR-X001", s_, hk),
                         "Run `skillspector scan <folder>` for the exact lines; one engine alone can be wrong.", source="skillspector")
             x["key"] = raw_keys.get("ISR-X001", x["key"])

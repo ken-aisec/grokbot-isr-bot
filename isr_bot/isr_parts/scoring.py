@@ -73,6 +73,7 @@ def _skill_of(f):
 
 
 NO_OPINION = frozenset(("ISR-X004", "ISR-R010"))   # "couldn't finish" / "didn't parse": facts about the run, not the content
+ENGINE_SOURCES = frozenset(("skillspector", "husk", "engines"))   # v0.8.2 (item 7): the outside engines' findings, by source
 
 # v0.7.1 precision item 2 (decision, Oct 12): Confirmed means dangerous and reachable. Two votes count only when they are about the
 # same file and the same kind of risk; a wording hit alone is never Confirmed, it needs a behavior signal in the same file.
@@ -209,9 +210,17 @@ def corroborated(f, findings, index=None):
     - anything inside a new plugin the owner hasn't kept yet (ISR-I004) counts until they decide, as before.
     A ISR-S005 cookie-only note stays Worth a look even when a real sign-in is at the same shared-browser place.
     Batch 6 fix round 3 (Codex 1, 2): an example-looking secret is read like any other (its note changes nothing here), and
-    ISR-T011x is ISR-T011 (same_rule)."""
+    ISR-T011x is ISR-T011 (same_rule).
+    v0.8.2 (item 7): one engine's folder verdict (ISR-X001, ISR-X002) is backed up only by a second engine's verdict on the
+    same place or inside a new plugin (ISR-I004). ISR Bot's own hits never back it up: when they name the engine's kind of risk,
+    engine_findings already made the two of them one ISR-X003."""
     if f["rule"] == "ISR-S005" and f.get("title") != NEW_SIGN_IN:
         return False
+    if f["rule"] in ("ISR-X001", "ISR-X002"):
+        here, src = _place(f), f.get("source", "isr-bot")
+        return any(g is not f and g["rule"] not in NO_OPINION and not g.get("guarded") and _covers(_place(g), here)
+                   and (g["rule"] == "ISR-I004" or g.get("source") in ENGINE_SOURCES - {src})
+                   for g in (index.candidates(here) if index is not None else findings))
     here, src, skill = _place(f), f.get("source", "isr-bot"), (index.skill(f) if index is not None else _skill_of(f))
     skill_of = index.skill if index is not None else _skill_of
     loud = lambda g: (g.get("severity_was") or g["severity"]) in ("critical", "high")

@@ -57,6 +57,25 @@ under "Fixed in batch 7d (the last must-fix items)" right below, with its test f
   again since the audit is approved if it is still name-only against the approved copy, even if more lines now carry the swap
   than the diff the owner saw.
 
+## v0.8.2: one engine alone, documents-only skills, plugin-cache copies (ISR-X001)
+
+- SkillSpector's "do not install" (ISR-X001) or husk's flag (ISR-X002) alone is Worth a look, never Confirmed, unless a second
+  engine's verdict is on the same place or the skill is in a new plugin nobody has kept (ISR-I004). ISR Bot's own hits in the
+  folder no longer back it up: a pattern hit, a live key, a decoy read or a change since approval each stay listed with their
+  own label, but the folder verdict line itself is not Confirmed by them. ISR Bot's high hit of the engine's own kind of risk
+  still makes the two of them one ISR-X003, as before.
+- A lone ISR-X001 on the owner's skill is medium, not high, when every file in the folder (at any depth, skipped folders
+  included) is `.md`, `.markdown`, `.txt` or `.rst`, with no link and at most 400 files, and SkillSpector's words name none of
+  credential, exfil, secrecy, override or obfuscation. A documents-only skill that SkillSpector says fetches and runs a script
+  (pipe) or runs commands (exec) is medium too: a document's install line is read by ISR Bot's own rules, which keep their own
+  severity. Wording the engine uses that names no kind of risk ISR Bot knows reads as no kind. `isr.py vet --deep` still rates
+  a lone ISR-X001 high (it rates a skill not yet installed; unchanged).
+- A plugin cache's copy (`agent-data/plugins/cache`, `sand-data/plugins/cache`, `.claude/plugins`, `.codex/plugins`) is folded
+  into the owner's finding when it has the same rule and the same skill folder name, whatever its files hold: its folder is
+  listed in `also_at` and the evidence ends "· also in N plugin-cache copies"; it is no longer a vendor record of its own (so
+  `isr.py breakdown` and the platform notes count leave it out). A vendor copy elsewhere (a bundled or managed skill) with the
+  same name stays a vendor record. A carried line (a daily run that didn't scan again) keeps the count it had.
+
 ## v0.8.1: ownership by location
 
 0.8.1 decides who owns a file by where it is (`owner_of`, isr_bot/isr_parts/ownership.py), never by a list of files or

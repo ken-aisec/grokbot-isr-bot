@@ -1,7 +1,7 @@
 # Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
 # ---------------------------------------------------------------- ownership (v0.8.1)
 # Who owns a file is decided by where it is: path prefixes, on the path as written and where it really leads, never a list of
-# files or hashes. Every other part's name used here (_under, walk, home_bases, literal_path, _place, home, SELF_ROOT,
+# files or hashes. Every other part's name used here (_under, walk, home_bases, literal_path, _place, skill_name, home, SELF_ROOT,
 # ACCESS_WORKSPACE, score, scored, status_of) is read when a function runs: access.py, which binds ACCESS_WORKSPACE, loads after
 # this part.
 OWNER_CLASSES = ("user", "vendor", "isr_self", "fixture-echo")
@@ -177,12 +177,44 @@ def plugin_move_line(e):
             f"{', '.join(os.path.basename(r) for r in e['to'])}); it is still waiting for your decision (ISR-I004).")
 
 
+OWNER_PLUGIN_CACHE = ("sand-data/plugins/cache", "agent-data/plugins/cache", ".claude/plugins", ".codex/plugins")   # vendor's plugin copies
+ENGINE_COPY_RULES = ("ISR-X001", "ISR-X002", "ISR-X003")
+ALSO_IN_COPIES = re.compile(r" · also in \d+ plugin-cache cop(?:y|ies)$")
+
+
+def fold_plugin_copies(fs, vendor):
+    """v0.8.2 (item 7): the vendor records left once a plugin's copy of one of the owner's skills is counted with it. A scanner's
+    folder verdict (ENGINE_COPY_RULES) on a skill in a plugin cache, with the same rule and skill name as one of the owner's,
+    is the same skill: its folder goes on the owner's finding (also_at, "· also in N plugin-cache copies" after the evidence;
+    the key stays the one finding() made) and it leaves the vendor records. Anything else is kept."""
+    mine = {}
+    for f in fs:
+        if isinstance(f, dict) and f.get("rule") in ENGINE_COPY_RULES and str(f.get("where") or "").startswith("/"):
+            mine.setdefault((f["rule"], skill_name(f["where"])), f)
+    caches = [os.path.normpath(os.path.join(h, s)) for h in home_bases() for s in OWNER_PLUGIN_CACHE]
+    kept, folded = [], set()
+    for v in vendor:
+        w = v.get("where") if isinstance(v, dict) else None
+        f = mine.get((v.get("rule"), skill_name(w))) if isinstance(w, str) and w.startswith("/") else None
+        if f is None or not _under(os.path.normpath(w), caches, strict=True):
+            kept.append(v)
+            continue
+        f["also_at"] = sorted(set(f.get("also_at") or ()) | {w})
+        folded.add(id(f))
+    for f in fs:
+        if id(f) in folded:
+            n = len(f["also_at"])
+            f["evidence"] = ALSO_IN_COPIES.sub("", f.get("evidence") or "") + f" · also in {n} plugin-cache cop{'y' if n == 1 else 'ies'}"
+    return kept
+
+
 def owner_gate(fs, meta):
     """The one gate (§3.3 item 1), in run_audit_locked before anything is scored: (the owner's findings, vendor records). Vendor
     records are labelled, keep their severity for breakdown and lose _snap; isr_self and fixture-echo ones are dropped; no
     finding keeps a secret's fingerprint (drop_fingerprints). Plugin
     version events (data, audit.py) become the notes and daily's plugin_version_changes for the owner's plugins only."""
     fs, vendor = split_owned(fs, meta.get("key_status"))
+    vendor = fold_plugin_copies(fs, vendor)
     drop_fingerprints(fs + vendor)   # v0.8.2 (D1): the owner split was the last use of a found secret's fingerprint
     for v in vendor:
         v.pop("_snap", None)
