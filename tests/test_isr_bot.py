@@ -574,7 +574,8 @@ class Features(unittest.TestCase):
         todo = isr.needs_you(list(out.values()))
         self.assertEqual(todo[0]["title"], "Keys that still work are sitting in files")
         self.assertEqual(todo[0]["links"][0][0], "AWS")
-        self.assertIn("1 live", todo[0]["rows"][0]["reason"])
+        self.assertIn("1 token", todo[0]["rows"][0]["reason"])
+        self.assertIn("live", todo[0]["rows"][0]["reason"])
 
     def test_drilldown_names_and_fix_reaches_flagged_chat_logs(self):
         F = isr.finding

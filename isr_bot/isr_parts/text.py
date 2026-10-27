@@ -1841,8 +1841,35 @@ LISTENER_WORDS = re.compile(r"(?i)\b(when|whenever|(on|upon)\s+receipt|receiv\w*
                             r"|watch\w*|monitor\w*|trigger\w*|listen\w*|subscri\w*|webhooks?|poll\w*|inbox(es)?)\b")
 
 
+# FIX2 (Codex med 3): "Monitor\nall messages" is one sentence wrapped; "Automatically process every event" is a listener too.
+LISTENER_AUTO = re.compile(r"(?i)\bautomatically\s+(process(es)?|handles?|responds?\s+to|repl(y|ies)\s+to|acts?\s+on)\b")
+LISTENER_EVERY = re.compile(r"(?i)(every|all|each)\b")
+SOFT_BREAK = re.compile(r"(?m)[ \t]*([-*+][ \t]|\d+[.)][ \t]|#|\||```|~~~|\r?$)")   # a line that starts a block: blank, list, heading
+
+
+def soft_sentence_of(text, m):
+    """sentence_of with a single line break inside a paragraph read as a space: a blank line, a list item, a heading, a table
+    row or a fence still ends the sentence, as do . ! ?"""
+    a = text.rfind("\n", 0, m.start()) + 1
+    while a and not SOFT_BREAK.match(text, a):
+        p = text.rfind("\n", 0, a - 1) + 1
+        if not text[p:a - 1].strip() or text[p:a - 1].lstrip().startswith("#"):
+            break
+        a = p
+    b = text.find("\n", m.end())
+    while b != -1 and not SOFT_BREAK.match(text, b + 1) and not text[text.rfind("\n", 0, b) + 1:b].lstrip().startswith("#"):
+        b = text.find("\n", b + 1)
+    seg = text[a:b if b != -1 else len(text)].replace("\n", " ")
+    s, e = m.start() - a, m.end() - a
+    i = max(seg.rfind(c, 0, s) for c in ".!?") + 1
+    ends = [j for j in (seg.find(c, e) for c in ".!?") if j != -1]
+    return seg[i:min(ends) if ends else len(seg)]
+
+
 def listener(text, m):
-    return bool(LISTENER_NEW.search(m.group(0)) or LISTENER_WORDS.search(sentence_of(text, m)))
+    s = soft_sentence_of(text, m)
+    return bool(LISTENER_NEW.search(m.group(0)) or LISTENER_WORDS.search(s)
+                or (LISTENER_AUTO.search(s) and LISTENER_EVERY.match(m.group(0))))
 
 
 VET_MATCH_CAP = 200_000   # matches of one rule in one file that vet looks at; past it the file is not fully checked

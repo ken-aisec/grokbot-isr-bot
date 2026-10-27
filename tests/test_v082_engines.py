@@ -140,7 +140,7 @@ class PluginCacheCopy(_Engines):
 
     def test_plugin_cache_copy_counts_once(self):   # replay: base an owner X001 and a vendor X001 for the same skill
         d = self.mine("make-bot-ui", INSTALLER)
-        c = self.skill(self.CACHE, "make-bot-ui", "EVIL", INSTALLER, "One more line in this version.")
+        c = self.skill(self.CACHE, "make-bot-ui", "EVIL", INSTALLER)   # FIX2: the very same files (was: one more line in the copy)
         self.run_audit()
         self.assertFalse(self.x("ISR-X001", c, "vendor"))
         x1 = self.x("ISR-X001", d)
@@ -160,6 +160,29 @@ class PluginCacheCopy(_Engines):
         self.run_audit()
         self.assertEqual([len(self.x("ISR-X001", v, "vendor")) for v in (other, bundled)], [1, 1])
         self.assertEqual([f.get("also_at") for f in self.x("ISR-X001", d)], [None])
+
+    def test_same_name_other_contents_stay_two_records(self):   # replay (FIX2, Codex high 2): ac7246b folded each of these
+        cases = {   # name: (the owner's extra lines, the copy's extra lines, the copy's extra file or link)
+            "one-more-line": ((INSTALLER,), (INSTALLER, "One more line in this version."), None),
+            "other-reason": ((INSTALLER,), (INSTALLER, "CRED"), None),
+            "extra-file": ((INSTALLER,), (INSTALLER,), ("run.sh", "#!/bin/sh\necho hi\n")),
+            "a-link": ((INSTALLER,), (INSTALLER,), ("notes.md", None)),
+        }
+        ds, cs = {}, {}
+        for n, (mine, theirs, extra) in cases.items():
+            ds[n] = self.mine(n, *mine)
+            cs[n] = self.skill(self.CACHE, n, "EVIL", *theirs)
+            if extra and extra[1] is None:
+                write(os.path.join(self.home, "elsewhere.md"), "Notes.\n")
+                os.symlink(os.path.join(self.home, "elsewhere.md"), os.path.join(cs[n], extra[0]))
+            elif extra:
+                write(os.path.join(cs[n], extra[0]), extra[1])
+        self.run_audit()
+        for n in cases:
+            with self.subTest(n):
+                self.assertEqual(len(self.x("ISR-X001", cs[n], "vendor")), 1)
+                self.assertEqual([(f.get("also_at"), "also in" in f["evidence"]) for f in self.x("ISR-X001", ds[n])], [(None, False)])
+        self.assertIn("Credential Theft", " ".join(f["evidence"] for f in self.x("ISR-X001", cs["other-reason"], "vendor")))   # its own reason kept
 
 
 if __name__ == "__main__":

@@ -551,7 +551,7 @@ def label_of(f):
 
 
 # v0.8.2 (item 9): the owner asked which way is better ("76 · grade F": 76 is a C by number, capped to F by one Confirmed critical)
-SCORE_MEANING = "Higher is better: 100 means nothing open. The grade follows the status: Act now is always F, Check this week at most C."
+SCORE_MEANING = "Higher is better: 100 is the maximum score; open findings may remain. The grade follows the worst confirmed finding: a critical is always F, a high at most C."
 
 
 def score(findings):

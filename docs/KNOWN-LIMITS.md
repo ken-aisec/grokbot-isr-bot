@@ -47,8 +47,13 @@ under "Fixed in batch 7d (the last must-fix items)" right below, with its test f
   (`FORMER_NAME_SHA256`); a rename to or from any other name, the lowercase or uppercase word, or another word swapped stays
   HIGH, as before.
 - The swap counts only in prose: a slash, backslash, underscore, hyphen, dot, backtick, @, $ or colon right before or after it (a
-  path, an identifier, a code span, an option, a variable, a URL) keeps the file HIGH; a `.`, `:` or `,` after it is prose when a space or the line's end follows. A name in
-  a fenced code block, with nothing touching it, still counts as prose.
+  path, an identifier, a code span, an option, a variable, a URL) keeps the file HIGH; a `.`, `:` or `,` after it is prose when a space or the line's end follows.
+  Since FIX2 (Codex high 1) only a documentation file can be name-only: `.md`, `.mdx`, `.txt` or `.rst`, not executable, not
+  starting with `#!`; a script or any other file stays HIGH. A swap inside a code span (backticks, also one wrapped over lines
+  of a paragraph), a fenced block (``` or ~~~, and its fence lines), an indented line (4+ spaces or a tab in Markdown, any
+  indent in `.txt`/`.rst`) or a front-matter line other than `description:` keeps the file HIGH: there the name can be a
+  command's argument. Read loosely on purpose, so a nested list item indented 4 spaces stays HIGH too; HTML `<code>`/`<pre>`
+  is not read as code.
 - The proof is on the file's bytes: with every swap undone they must have exactly the approved digest. So a file with no approved
   copy (approved before copies were kept, or over the copy's size limits), one that isn't valid UTF-8, one with a lone `\r` line
   end, one whose line count changed, or one where a swapped line also holds a hidden value (a key or password the copy masks)
@@ -71,20 +76,28 @@ under "Fixed in batch 7d (the last must-fix items)" right below, with its test f
   severity. Wording the engine uses that names no kind of risk ISR Bot knows reads as no kind. `isr.py vet --deep` still rates
   a lone ISR-X001 high (it rates a skill not yet installed; unchanged).
 - A plugin cache's copy (`agent-data/plugins/cache`, `sand-data/plugins/cache`, `.claude/plugins`, `.codex/plugins`) is folded
-  into the owner's finding when it has the same rule and the same skill folder name, whatever its files hold: its folder is
-  listed in `also_at` and the evidence ends "· also in N plugin-cache copies"; it is no longer a vendor record of its own (so
-  `isr.py breakdown` and the platform notes count leave it out). A vendor copy elsewhere (a bundled or managed skill) with the
-  same name stays a vendor record. A carried line (a daily run that didn't scan again) keeps the count it had.
+  into the owner's finding when it has the same rule and the same skill folder name, and (since FIX2, Codex high 2) both skill
+  folders hold the very same files (every file at any depth, relative path and bytes; a link, an unreadable file or more than
+  400 files means not proved) and both findings have the same evidence: its folder is listed in `also_at` and the evidence ends
+  "· also in N plugin-cache copies"; it is no longer a vendor record of its own (so `isr.py breakdown` and the platform notes
+  count leave it out). A copy whose files differ in any byte, an older or newer plugin version included, stays a vendor record
+  of its own (on the v0.8.1 box the make-bot-ui copies differ by a line, so they stay two records). A vendor copy elsewhere (a
+  bundled or managed skill) with the same name stays a vendor record. A carried line (a daily run that didn't scan again) keeps
+  the count it had.
 
 ## v0.8.2: broad listener wording (ISR-T014) and the score's direction
 
 - ISR-T014 counts only when its match says "new" or "incoming" ("every new message") or its sentence has a listener word: when,
   whenever, on/upon receipt, receive, arrive, as soon as, comes in, inbound, watch, monitor, trigger, listen, subscribe,
-  webhook, poll or inbox. A sentence is cut at `.`, `!`, `?` and the line end, so a listener word only in a heading or the line
+  webhook, poll or inbox; or (since FIX2, Codex med 3) its match starts with every, all or each and its sentence says
+  "automatically process / handle / respond to / reply to / act on". A sentence is cut at `.`, `!` and `?`; since FIX2 a single
+  line break inside a paragraph is read as a space ("Monitor" then "all messages in every channel." is one sentence), while a
+  blank line, a list item, a heading, a table row or a fence still ends it. So a listener word only in a heading or a list item
   before ("When a message arrives:" then "- reply to each message") does not count, and "reply to each message" with no
   listener word in its sentence is no longer ISR-T014. It is still ISR-T013 when it sends without an approval line.
-- The score is 100 minus the penalty: higher is better. The report, the dashboard card and the brief say so; the audit and
-  daily JSON do not carry the sentence (the skill docs tell the Bot to say it).
+- The score is 100 minus the penalty: higher is better. 100 is the maximum score; open findings may remain (a tip or info
+  finding is not scored, and one low finding's penalty rounds to 0). The report, the dashboard card and the brief say so; the
+  audit and daily JSON do not carry the sentence (the skill docs tell the Bot to say it).
 
 ## v0.8.1: ownership by location
 

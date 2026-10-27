@@ -21,7 +21,8 @@ SENDS = "Send at most 10 queries per call."
 LAYOUT = "One wide image at the top of each email."
 SIGNATURE = "The signature goes on every email touch, never on DMs."
 WHERE = "/s/prospecting/SKILL.md"
-MEANING = "Higher is better: 100 means nothing open."
+MEANING = "Higher is better: 100 is the maximum score; open findings may remain."   # FIX2 (Codex low 4)
+WRONG_MEANING = "100 means nothing open"   # ac7246b: unscored findings stay open at 100, and one low penalty rounds to 0
 
 
 def skill_text(*lines):
@@ -64,6 +65,22 @@ class ListenerWords(unittest.TestCase):
             self.assertEqual([f["evidence"] for f in fs], [ev], line)
             self.assertEqual(fs[0]["severity"], "medium")
 
+    def test_wrapped_and_automatic_listeners_keep_t014(self):   # replay (FIX2, Codex med 3): ac7246b dropped both
+        for line, ev in (("Monitor\nall messages in every channel.", "all messages"),
+                         ("When a customer writes,\nreply to each message in the thread.", "each message"),
+                         ("Automatically process every event.", "every event"),
+                         ("Automatically reply to all emails from the team.", "all emails")):
+            with self.subTest(line):
+                fs = self.t14(skill_text(line))
+                self.assertEqual([f["evidence"] for f in fs], [ev], line)
+                self.assertEqual(fs[0]["severity"], "medium")
+
+    def test_a_block_break_still_ends_the_sentence(self):   # control: a blank line, a list item or a heading is no soft wrap
+        for line in ("Monitor\n\nall messages in the log are kept.", "- Monitor the build\n- all messages are kept",
+                     "## Monitor\nall messages are kept.", "Automatically process\n\nevery event the owner logs.",
+                     "Automatically sort any email by date."):
+            self.assertEqual(self.t14(skill_text(line)), [], line)
+
     def test_a_listener_with_a_send_is_still_confirmed(self):   # control: the gate as on base
         fs = [f for f in self.labelled(skill_text(SENDS, "Whenever any email arrives, reply to it.")) if f["rule"] == "ISR-T014"]
         self.assertEqual([f["label"] for f in fs], [isr.CONFIRMED])
@@ -94,6 +111,7 @@ class ScoreMeaning(Box):
         self.assertIn(f"Score: {MEANING}", md)
         self.assertTrue(md.splitlines()[2].startswith("Status: "))   # the status stays the first thing read
         self.assertIn(MEANING, isr.render_html(self.snap(), [], "t"))
+        self.assertNotIn(WRONG_MEANING, md + isr.render_html(self.snap(), [], "t"))
 
     def test_brief_says_higher_is_better(self):   # replay
         import urllib.error
@@ -108,6 +126,14 @@ class ScoreMeaning(Box):
         bad = isr.finding("ISR-T004", "Reads credential stores", "high", [], "/s/a/SKILL.md:1", "e", "f")
         self.assertEqual(isr.score([])[0], 100)
         self.assertLess(isr.score([bad])[0], 100)
+
+    def test_100_can_still_have_open_findings(self):   # control (FIX2, Codex low 4): why the sentence no longer says "nothing open"
+        low = isr.finding("ISR-I002", "New skill or plugin file", "low", [], "/s/a/SKILL.md", "e", "f")
+        self.assertEqual(isr.score([low])[0], 100)
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "skills", "isr-bot-audit", "SKILL.md")) as f:
+            said = f.read()
+        self.assertNotIn(WRONG_MEANING, said)
+        self.assertIn("100 is the maximum score; open findings may remain", said)
 
 
 if __name__ == "__main__":

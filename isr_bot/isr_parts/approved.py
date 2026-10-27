@@ -260,6 +260,9 @@ RENAME_TO = list("ISR Bot".partition(" "))
 RENAME_TOUCH = frozenset("/\\_-.`@$:")   # a path, an identifier, a code span, an option, a variable or a URL touching the name
 RENAME_TOKENS = re.compile(r"\w+|\W")
 RENAME_TITLE = "Reviewed skill changed: product name only"
+RENAME_DOC_EXT = frozenset((".md", ".mdx", ".txt", ".rst"))   # FIX2 (Codex high 1): documentation prose files only
+RENAME_FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
+RENAME_KEY = re.compile(r"([A-Za-z0-9_-]+)\s*:")
 
 
 def _prose_at(line, a, b):
@@ -270,6 +273,54 @@ def _prose_at(line, a, b):
     if b < len(line) and line[b] in RENAME_TOUCH:
         return line[b] in ".:," and (b + 1 == len(line) or line[b + 1].isspace())
     return True
+
+
+def _code_at(rows, markdown):
+    """FIX2 (Codex high 1): for each line, True when the whole line is code or settings (a fenced block and its fence lines, an
+    indented line: 4+ spaces or a tab in Markdown, any indent in other text, a front-matter line other than `description:`),
+    else the (start, end) of its inline code spans (backtick runs matched within a paragraph; an unclosed run reaches the
+    paragraph's end). A name swap there is never rename-only: it can change a command's arguments."""
+    out, fence, front, key, run, opened = [], None, bool(rows) and rows[0].strip() == "---", None, 0, 0
+    for i, r in enumerate(rows):
+        m = RENAME_FENCE.match(r)
+        if front:
+            if i and r.strip() in ("---", "..."):
+                front = False
+            elif i:
+                k = RENAME_KEY.match(r)
+                key = k.group(1) if k else (key if r[:1].isspace() or r.startswith("-") else None)
+            out.append([] if i and front and key == "description" else True)
+            continue
+        if fence:
+            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) and not r[m.end():].strip():
+                fence = None
+            out.append(True)
+            continue
+        if m:
+            fence, run = m.group(1), 0
+            out.append(True)
+            continue
+        if not r.strip():
+            run = 0
+            out.append([])
+            continue
+        if r.startswith(("    ", "\t")) or (not markdown and r[:1].isspace()):
+            out.append(True)
+            continue
+        spans = []
+        if run:
+            opened = 0
+        for b in re.finditer(r"`+", r):
+            n = len(b.group())
+            if not run:
+                run, opened = n, b.start()
+            elif n == run:
+                spans.append((opened, b.end()))
+                run = 0
+        if run:
+            spans.append((opened, len(r)))
+        out.append(spans)
+    return out
 
 
 def _name_swaps(old, new):
@@ -295,8 +346,17 @@ def rename_only(p, h, base):
     the product's former name swapped for "ISR Bot" in prose, else None. (a) The skill's approved copy has this file's text and the
     baseline's digest for it; (b) the masked copy and the masked file now have the same lines, and those that differ (c) differ
     only by that swap (_name_swaps); (d) the bytes read now (read_snapshot, and the audit's own digest `h` when given) with every
-    swap undone have exactly the approved digest, so a change hidden inside a masked value, or anywhere else, is never one."""
+    swap undone have exactly the approved digest, so a change hidden inside a masked value, or anywhere else, is never one.
+    FIX2 (Codex high 1): (e) only a documentation file (RENAME_DOC_EXT, not executable, no #! line), and no swap in code or
+    settings (_code_at), so a name swap can't change a command's arguments."""
     d = skill_root(p)
+    if os.path.splitext(p)[1].lower() not in RENAME_DOC_EXT:
+        return None
+    try:
+        if os.stat(p).st_mode & 0o111:
+            return None
+    except OSError:
+        return None
     old = load_approved(d) if d else None
     if not isinstance(old, dict) or not isinstance(old.get("hashes"), dict) or not isinstance(old.get("files"), dict):
         return None
@@ -305,7 +365,7 @@ def rename_only(p, h, base):
     if not isinstance(want, str) or want != base.get(p) or not isinstance(was, str):
         return None
     snap_ = read_snapshot(p)
-    if snap_[1] is None or (h is not None and snap_[0] != h):
+    if snap_[1] is None or (h is not None and snap_[0] != h) or snap_[1].startswith(b"#!"):
         return None
     try:
         raw = snap_[1].decode("utf-8")
@@ -316,13 +376,14 @@ def rename_only(p, h, base):
     rows, now_, was = raw.split("\n"), mask_secrets(raw.replace("\r\n", "\n")).split("\n"), was.split("\n")
     if not len(rows) == len(now_) == len(was):
         return None
+    code = _code_at([r[:-1] if r.endswith("\r") else r for r in rows], os.path.splitext(p)[1].lower() in (".md", ".mdx"))
     olds, undone, diff, n = set(), [], [], 0
-    for w, c, r in zip(was, now_, rows):
+    for w, c, r, k in zip(was, now_, rows, code):
         end = "\r" if r.endswith("\r") else ""
         r = r[:len(r) - len(end)]
         if w != c:
             swaps = _name_swaps(w, r)
-            if not swaps:
+            if not swaps or k is True or any(s < b and a < e for a, b, _ in swaps for s, e in k):
                 return None
             n += 1
             olds |= {o for _, _, o in swaps}

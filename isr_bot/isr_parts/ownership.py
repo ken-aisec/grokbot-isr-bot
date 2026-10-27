@@ -182,21 +182,62 @@ ENGINE_COPY_RULES = ("ISR-X001", "ISR-X002", "ISR-X003")
 ALSO_IN_COPIES = re.compile(r" · also in \d+ plugin-cache cop(?:y|ies)$")
 
 
+def skill_contents_hash(d):
+    """FIX2 (Codex high 2): sha256 over every file in skill folder d, at any depth (relative path and bytes, sorted); None when
+    it can't all be read: no folder, a link, anything not a plain file, an unreadable file, or more than ENGINE_MAX_FILES files."""
+    if not d or not os.path.isdir(d) or os.path.islink(d):
+        return None
+    h, n = hashlib.sha256(), 0
+    try:
+        for dirpath, dirnames, filenames in os.walk(d, onerror=_raise):
+            dirnames.sort()
+            if any(os.path.islink(os.path.join(dirpath, x)) for x in dirnames):
+                return None
+            for fn in sorted(filenames):
+                p = os.path.join(dirpath, fn)
+                n += 1
+                if n > ENGINE_MAX_FILES or os.path.islink(p) or not os.path.isfile(p):
+                    return None
+                with open(p, "rb") as fh:
+                    data = fh.read()
+                h.update(os.path.relpath(p, d).encode("utf-8", "surrogateescape") + b"\0" + str(len(data)).encode() + b"\0" + data)
+    except OSError:
+        return None
+    return h.hexdigest() if n else None
+
+
+def _raise(e):
+    raise e
+
+
 def fold_plugin_copies(fs, vendor):
     """v0.8.2 (item 7): the vendor records left once a plugin's copy of one of the owner's skills is counted with it. A scanner's
     folder verdict (ENGINE_COPY_RULES) on a skill in a plugin cache, with the same rule and skill name as one of the owner's,
     is the same skill: its folder goes on the owner's finding (also_at, "· also in N plugin-cache copies" after the evidence;
-    the key stays the one finding() made) and it leaves the vendor records. Anything else is kept."""
-    mine = {}
+    the key stays the one finding() made) and it leaves the vendor records. Anything else is kept.
+    FIX2 (Codex high 2): only when the two skill folders hold the very same files (skill_contents_hash, both read in full) and
+    the two findings say the same (evidence), so folding loses nothing; a same-named skill with other contents stays its own record."""
+    mine, sums = {}, {}
     for f in fs:
         if isinstance(f, dict) and f.get("rule") in ENGINE_COPY_RULES and str(f.get("where") or "").startswith("/"):
-            mine.setdefault((f["rule"], skill_name(f["where"])), f)
+            mine.setdefault((f["rule"], skill_name(f["where"])), []).append(f)
     caches = [os.path.normpath(os.path.join(h, s)) for h in home_bases() for s in OWNER_PLUGIN_CACHE]
+
+    def contents(where):
+        d = skill_root(re.sub(r":\d+$", "", where))
+        if d not in sums:
+            sums[d] = skill_contents_hash(d)
+        return sums[d]
+
     kept, folded = [], set()
     for v in vendor:
         w = v.get("where") if isinstance(v, dict) else None
-        f = mine.get((v.get("rule"), skill_name(w))) if isinstance(w, str) and w.startswith("/") else None
-        if f is None or not _under(os.path.normpath(w), caches, strict=True):
+        cands = mine.get((v.get("rule"), skill_name(w)), []) if isinstance(w, str) and w.startswith("/") else []
+        f = None
+        if cands and _under(os.path.normpath(w), caches, strict=True) and contents(w):
+            f = next((c for c in cands if contents(c["where"]) == contents(w)
+                      and ALSO_IN_COPIES.sub("", c.get("evidence") or "") == ALSO_IN_COPIES.sub("", v.get("evidence") or "")), None)
+        if f is None:
             kept.append(v)
             continue
         f["also_at"] = sorted(set(f.get("also_at") or ()) | {w})

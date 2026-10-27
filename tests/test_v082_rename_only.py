@@ -132,6 +132,75 @@ class NameOnly(_Rename):
         self.assertEqual([(f["severity"], f.get("rename_only")) for f in self.i001(ok)], [("low", True)])
 
 
+class NameInCode(_Rename):
+    """FIX2 (Codex high 1): a swap where the name is a command's argument, or in a file that runs, is never rename-only. Replays:
+    on ac7246b each of these was low and rename_only (the swap had prose on both sides); the prose ones are controls."""
+    def test_swap_in_a_command_stays_high(self):   # replay
+        cmd = "notes --label {} --all"
+        cases = {   # name: (approved text, text now, file)
+            "in-fence": (skill_md("in-fence", OLD, f"```sh\n{cmd.format(OLD)}\n```\n"),
+                         skill_md("in-fence", "ISR Bot", f"```sh\n{cmd.format('ISR Bot')}\n```\n"), "SKILL.md"),
+            "in-tilde-fence": (skill_md("in-tilde-fence", OLD, f"~~~\n{cmd.format(OLD)}\n~~~\n"),
+                               skill_md("in-tilde-fence", "ISR Bot", f"~~~\n{cmd.format('ISR Bot')}\n~~~\n"), "SKILL.md"),
+            "in-inline-code": (skill_md("in-inline-code", OLD, f"Run `{cmd.format(OLD)}` first.\n"),
+                               skill_md("in-inline-code", "ISR Bot", f"Run `{cmd.format('ISR Bot')}` first.\n"), "SKILL.md"),
+            "in-wrapped-code": (skill_md("in-wrapped-code", OLD, f"Run ``notes --label\n{OLD} --all`` first.\n"),
+                                skill_md("in-wrapped-code", "ISR Bot", "Run ``notes --label\nISR Bot --all`` first.\n"), "SKILL.md"),
+            "in-indented": (skill_md("in-indented", OLD, f"\n    {cmd.format(OLD)}\n"),
+                            skill_md("in-indented", "ISR Bot", f"\n    {cmd.format('ISR Bot')}\n"), "SKILL.md"),
+            "in-front-matter": (f"---\nname: in-front-matter\nallowed-tools: Bash({cmd.format(OLD)})\n---\n# Notes\n",
+                                "---\nname: in-front-matter\nallowed-tools: Bash(" + cmd.format("ISR Bot") + ")\n---\n# Notes\n", "SKILL.md"),
+            "in-run-sh": (f"echo {OLD} started\n{cmd.format(OLD)}\n", "echo ISR Bot started\n" + cmd.format("ISR Bot") + "\n", "run.sh"),
+            "in-notes-py": (f"# {OLD} lists the notes\n", "# ISR Bot lists the notes\n", "notes.py"),
+        }
+        ds = {}
+        for n, (was, _, rel) in cases.items():
+            ds[n] = self.make(n, skill_md(n, OLD) if rel != "SKILL.md" else was)
+            if rel != "SKILL.md":
+                self.rewrite(ds[n], was, rel=rel)
+        self.approve()
+        for n, (_, now, rel) in cases.items():
+            self.rewrite(ds[n], now, rel=rel)
+            if rel != "SKILL.md":
+                self.rewrite(ds[n], skill_md(n, "ISR Bot"))   # the prose swap beside it stays its own low finding
+        self.audit()
+        rows = {r["name"]: r for r in self.fix()["changed_skills"]}
+        for n, (_, _, rel) in cases.items():
+            with self.subTest(n):
+                fs = self.i001(ds[n], rel)
+                self.assertEqual(len(fs), 1, fs)
+                self.assertEqual(fs[0]["severity"], "high")
+                self.assertFalse(fs[0].get("rename_only"))
+                self.assertNotIn("diff", fs[0])
+                self.assertFalse(rows[n].get("rename_only"))   # the skill isn't offered as name-only
+
+    def test_runnable_doc_file_stays_high(self):   # replay: an executable .md and a .md with a #! line
+        ex, sb = self.make("exec-md", skill_md("exec-md", OLD)), self.make("shebang-md", "#!/bin/sh\n" + skill_md("shebang-md", OLD))
+        self.approve()
+        self.rewrite(ex, skill_md("exec-md", "ISR Bot"))
+        os.chmod(os.path.join(ex, "SKILL.md"), 0o755)
+        self.rewrite(sb, "#!/bin/sh\n" + skill_md("shebang-md", "ISR Bot"))
+        self.audit()
+        for d in (ex, sb):
+            with self.subTest(os.path.basename(d)):
+                self.assertEqual([(f["severity"], f.get("rename_only")) for f in self.i001(d)], [("high", None)])
+
+    def test_prose_next_to_code_is_still_name_only(self):   # control: prose lines, a code span elsewhere on the line, a description
+        was = ("---\nname: notes-prose\ndescription: {} tidies the notes folder.\nallowed-tools: Bash(notes --all)\n---\n# Notes\n"
+               "{} reads the notes. Run `notes --all` first.\n```sh\nnotes --all\n```\n{} lists the open tasks.\n"
+               "- {} keeps the list.\n")
+        d = self.make("notes-prose", was.format(OLD, OLD, OLD, OLD))
+        os.makedirs(os.path.join(d, "references"))
+        self.rewrite(d, f"{OLD} reads the notes.\n", rel="references/notes.txt")
+        self.approve()
+        self.rewrite(d, was.format(*["ISR Bot"] * 4))
+        self.rewrite(d, "ISR Bot reads the notes.\n", rel="references/notes.txt")
+        self.audit()
+        self.assertEqual([(f["severity"], f.get("rename_only"), f["evidence"]) for f in self.i001(d)], [("low", True, f"{OLD} → ISR Bot on 4 lines")])
+        self.assertEqual([(f["severity"], f.get("rename_only")) for f in self.i001(d, "references/notes.txt")], [("low", True)])
+        self.assertIs([r for r in self.fix()["changed_skills"] if r["name"] == "notes-prose"][0].get("rename_only"), True)
+
+
 class RenameReviewed(_Rename):
     def two_files(self):
         d = self.make("notes-two", skill_md("notes-two", OLD))
