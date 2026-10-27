@@ -194,6 +194,51 @@ class NameInCode(_Rename):
                 self.assertNotIn("diff", fs[0])
                 self.assertFalse(rows[n].get("rename_only"))
 
+    def desc_cases(self, cases):
+        """{name: (I001 findings, preview row)} after each description (lines with {} for the name) swaps the name."""
+        ds = {n: self.make(n, f"---\nname: {n}\n{desc.replace('{}', OLD)}---\n# Notes\nList the open tasks.\n") for n, desc in cases.items()}
+        self.approve()
+        for n, desc in cases.items():
+            self.rewrite(ds[n], f"---\nname: {n}\n{desc.replace('{}', 'ISR Bot')}---\n# Notes\nList the open tasks.\n")
+        self.audit()
+        rows = {r["name"]: r for r in self.fix()["changed_skills"]}
+        return {n: (self.i001(d), rows[n]) for n, d in ds.items()}
+
+    def test_fenced_code_in_a_description_stays_high(self):   # replay (FIX4, Codex r4 high): on 3843eb9 each was low and rename_only
+        got = self.desc_cases({   # a fenced block in a `description: |`, as the body reads one: ~~~ or ``` fences, indented ones too
+            "desc-tilde-fence": "description: |\n  Tidy the notes folder:\n  ~~~sh\n  notes --label {} --all\n  ~~~\n",
+            "desc-indented-tilde-fence": "description: |\n  Tidy the notes folder:\n    ~~~sh\n    notes --label {} --all\n    ~~~\n",
+            "desc-backtick-fence": "description: |\n  ```sh\n  echo ```\n  notes --label {} --all\n  ```\n",
+        })
+        for n, (fs, row) in got.items():
+            with self.subTest(n):
+                self.assertEqual(len(fs), 1, fs)
+                self.assertEqual(fs[0]["severity"], "high")
+                self.assertFalse(fs[0].get("rename_only"))
+                self.assertNotIn("diff", fs[0])
+                self.assertFalse(row.get("rename_only"))
+
+    def test_code_span_swap_in_a_description_stays_high(self):   # control (FIX4): a swap inside a span, prose swap beside it
+        got = self.desc_cases({
+            "desc-span-and-prose": "description: {} runs `notes --label {} --all`.\n",
+            "desc-plain-backtick-fence": "description: |\n  ```sh\n  notes --label {} --all\n  ```\n",   # high on 3843eb9 too
+        })
+        for n, (fs, row) in got.items():
+            with self.subTest(n):
+                self.assertEqual([(f["severity"], f.get("rename_only")) for f in fs], [("high", None)])
+                self.assertFalse(row.get("rename_only"))
+
+    def test_prose_beside_a_description_code_span_is_name_only(self):   # replay (FIX4, Codex r4 med): on 3843eb9 each was high
+        got = self.desc_cases({   # the swap is in the prose; the code span on the line (or the next one) holds no name
+            "desc-prose-span": "description: {} uses `notes --all` to tidy the notes folder.\n",
+            "desc-wrapped-prose-span": "description: >\n  {} uses `notes\n  --all` to tidy the notes folder.\n",
+            "desc-prose-after-span": "description: >\n  Run `notes --all`, then {} lists\n  the open tasks.\n",
+        })
+        for n, (fs, row) in got.items():
+            with self.subTest(n):
+                self.assertEqual([(f["severity"], f.get("rename_only")) for f in fs], [("low", True)])
+                self.assertIs(row.get("rename_only"), True)
+
     def test_plain_description_swap_is_still_name_only(self):   # control (FIX3): description prose, one line or wrapped
         cases = {
             "desc-prose": "description: {} tidies the notes folder.\n",

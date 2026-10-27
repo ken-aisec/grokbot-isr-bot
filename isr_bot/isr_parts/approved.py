@@ -277,44 +277,28 @@ def _prose_at(line, a, b):
 
 def _code_at(rows, markdown):
     """FIX2 (Codex high 1): for each line, True when the whole line is code or settings (a fenced block and its fence lines, an
-    indented line: 4+ spaces or a tab in Markdown, any indent in other text, a front-matter line other than `description:`, a
-    `description:` line with a backtick on it or inside a code span opened on an earlier description line),
+    indented line: 4+ spaces or a tab in Markdown, any indent in other text, a front-matter line other than `description:`),
     else the (start, end) of its inline code spans (backtick runs matched within a paragraph; an unclosed run reaches the
-    paragraph's end). A name swap there is never rename-only: it can change a command's arguments."""
-    out, fence, front, key, run, opened = [], None, bool(rows) and rows[0].strip() == "---", None, 0, 0
-    for i, r in enumerate(rows):
+    paragraph's end). A name swap there is never rename-only: it can change a command's arguments. FIX4 (Codex r4): the
+    `description:` text (after the key, or a wrapped line less its block indent) goes through the same body rules, so a fence in
+    it is code and a span marks only its own columns."""
+    out, fence, front, key, ind, run, opened = [], None, bool(rows) and rows[0].strip() == "---", None, None, 0, 0
+
+    def body(r):
+        nonlocal fence, run, opened
         m = RENAME_FENCE.match(r)
-        if front:
-            if i and r.strip() in ("---", "..."):
-                front = False
-            elif i:
-                k = RENAME_KEY.match(r)
-                key = k.group(1) if k else (key if r[:1].isspace() or r.startswith("-") else None)
-            if not (i and front and key == "description"):
-                run = 0
-                out.append(True)
-                continue
-            inside = run   # FIX3 (Codex high 1): a description line with a code span on it, or inside one, is code too
-            for b in re.finditer(r"`+", r):
-                run = 0 if len(b.group()) == run else (run or len(b.group()))
-            out.append(True if inside or "`" in r else [])
-            continue
         if fence:
             if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) and not r[m.end():].strip():
                 fence = None
-            out.append(True)
-            continue
+            return True
         if m:
             fence, run = m.group(1), 0
-            out.append(True)
-            continue
+            return True
         if not r.strip():
             run = 0
-            out.append([])
-            continue
+            return []
         if r.startswith(("    ", "\t")) or (not markdown and r[:1].isspace()):
-            out.append(True)
-            continue
+            return True
         spans = []
         if run:
             opened = 0
@@ -327,7 +311,30 @@ def _code_at(rows, markdown):
                 run = 0
         if run:
             spans.append((opened, len(r)))
-        out.append(spans)
+        return spans
+
+    for i, r in enumerate(rows):
+        if front:
+            if i and r.strip() in ("---", "..."):
+                front = False
+            elif i:
+                k = RENAME_KEY.match(r)
+                key = k.group(1) if k else (key if r[:1].isspace() or r.startswith("-") else None)
+            if not (i and front and key == "description"):
+                fence, run = None, 0
+                out.append(True)
+                continue
+            if k:
+                a, ind = len(r) - len(r[k.end():].lstrip()), None
+            else:
+                a = len(r) - len(r.lstrip(" "))
+                if ind is None and r.strip():
+                    ind = a   # the first wrapped line with text sets the block indent
+                a = a if ind is None else min(a, ind)
+            c = body(r[a:])
+            out.append(c if c is True else [(s + a, e + a) for s, e in c])
+            continue
+        out.append(body(r))
     return out
 
 
