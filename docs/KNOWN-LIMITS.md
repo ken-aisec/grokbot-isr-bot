@@ -16,8 +16,8 @@ under "Fixed in batch 7d (the last must-fix items)" right below, with its test f
   ISR Bot's memory during a run, or a future change that stores a fingerprint, could test guesses of a short, simple password
   against it. Long random tokens (GitHub, Claude) can't be guessed that way.
 - Counts are by fingerprint only where ISR Bot found the value. A TruffleHog answer without one (its stage failed and the last
-  answers were used) takes the fingerprint of the finding's only secret on its line, else counts as a token of its own, so
-  "N tokens" can be too high then, never too low.
+  answers were used) counts as a token of its own and is never merged with another (not even one found on its line), so
+  "N tokens" can be too high then, never too low, and its copies are only the places TruffleHog answered for.
 - The own-token note compares with the token `gh auth token` gives when the audit runs. A copy of an earlier gh token (one that
   was rotated) is not noted as the computer's own.
 - ISR-S001's counts take its own hits; a key block (a private key) is counted per answer, not by its value.

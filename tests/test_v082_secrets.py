@@ -205,5 +205,50 @@ class OwnGhToken(_Keys):
         self.assertEqual(isr.plain(g)["title"], "Keys that still work are sitting in files")
 
 
+class U1Fix1(_Keys):
+    """Codex's review of U1a+U1b (edaca62). Tests marked "replay" fail on edaca62 at their assertion; "control" ones pass there too."""
+
+    def own(self, value):
+        p = mock.patch.object(isr, "own_gh_token", return_value=value, create=True); p.start(); self.addCleanup(p.stop)
+
+    def test_a_group_with_the_own_token_and_another_live_key_keeps_both_fixes(self):   # replay (finding 1)
+        tok, slack = pat(11), "xoxb-" + fake_key(12, alphabet="0123456789", seed=51) + "-" + fake_key(24, seed=52)
+        self.own(tok)
+        d, hits, live = self.logs(tok)
+        e = self.put(os.path.join(d, "e.txt"), f"SLACK_BOT_TOKEN={slack}\n")
+        g = self.s002(self.run_scan(hits + leaks(e, slack, "slack-bot-token"), live + [answer(e, 1, "Slack", True, slack)]), d)
+        self.assertEqual((g["title"], g.get("own_token")), (isr.KEY_LIVE, "gh"))
+        self.assertIn("Turn the key off at its provider", g["fix"])          # edaca62: the own-token fix alone
+        self.assertIn("sign gh in", g["fix"])
+        item = isr.needs_you([g])[0]
+        self.assertIn("Slack", item["how"])                                   # edaca62: "This is the GitHub token gh ..." only
+        self.assertIn("https://api.slack.com/apps", [u for _, u in item.get("links", [])])
+        self.assertIn("sign gh in", item["how"])
+
+    def test_answers_without_a_fingerprint_are_never_merged(self):   # replay (finding 2)
+        tok = pat(11)
+        d, hits, _ = self.logs(tok)
+        g = self.s002(self.run_scan(hits, [answer(h["File"], h["StartLine"], "Github", True, None) for h in hits[:2]]), d)
+        self.assertIn("2 tokens, 2 copies", g["evidence"])                    # edaca62: "1 token, 16 copies" (borrowed by place)
+
+    def test_the_fix_plan_row_says_tokens_and_copies(self):   # replay (finding 4)
+        tok = pat(11)
+        self.own(tok)
+        d, hits, live = self.logs(tok)
+        g = self.s002(self.run_scan(hits, live), d)
+        row = isr.item_row(g, isr.load_json(isr.state_path("key_status.json"), {})["files"])
+        self.assertIn("1 token, 16 copies", row["reason"])                    # edaca62: "Github: 8 live"
+        self.assertIn("a.txt:2", row["reason"])
+        self.assertIn("own gh sign-in", row["reason"])
+        self.assertNotIn("8 live", row["reason"])
+
+    def test_an_older_records_fix_plan_row_still_counts_answers(self):   # control (finding 4: the legacy fallback)
+        tok = pat(11)
+        d, hits, live = self.logs(tok)
+        g = self.s002(self.run_scan(hits, live), d)
+        old = dict(g, evidence="16 hit(s): github-fine-grained-pat at a.txt:2, a.txt:4, a.txt:6 and 13 more")
+        self.assertEqual(isr.item_row(old, isr.load_json(isr.state_path("key_status.json"), {})["files"])["reason"], "Github: 8 live")
+
+
 if __name__ == "__main__":
     unittest.main()

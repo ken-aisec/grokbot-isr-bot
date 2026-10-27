@@ -8,7 +8,9 @@ borrowed verdict U1a removes. S006 reaches exactly those files (a .txt directly 
 to 20 MB) and must not fire on ordinary logs. Every token is built when the test runs; gh is never run (Box patches
 own_gh_token, create=True, so on the base the patch is inert).
 
-Tests marked "replay" fail on ca18f8a (U1a) and on e9184df (v0.8.1) at their assertion; "control" ones pass there too."""
+Tests marked "replay" in SpillDump and AnthropicOauth were shown failing at their assertion by ablation (edaca62 without the
+spill_findings call and the gitleaks rule), not by a run on ca18f8a (U1a) or e9184df (v0.8.1); "control" ones pass there too.
+U1Fix1's replays were run on edaca62 itself."""
 import hashlib, json, os, re, shutil, subprocess, sys, tempfile, unittest
 from unittest import mock
 
@@ -170,6 +172,33 @@ class SpillDump(_Spill):
         fs = self.run_audit()
         self.assertEqual(self.s006(fs), [])
         self.assertEqual([f["rule"] for f in fs if f["where"].startswith(d)], [])
+
+
+class U1Fix1(_Spill):
+    """Codex's review of U1a+U1b (edaca62). Tests marked "replay" fail on edaca62 at their assertion."""
+
+    def test_an_unquoted_aws_secret_is_one_secret(self):   # replay (finding 3)
+        d = os.path.join(self.home, ".cursor", "projects", "p", "agent-tools")
+        aws = fake_key(40, alphabet="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789/+", seed=61)
+        self.put(os.path.join(d, "a.txt"), dump([("AWS_SECRET_ACCESS_KEY", aws)], style="export {}={}"))
+        got = self.s006(self.run_audit())
+        self.assertEqual(len(got), 1)
+        self.assertIn("1 file, 1 secret (AWS_SECRET_ACCESS_KEY), 1 copy", got[0]["evidence"])   # edaca62: 2 secrets, 1 with no name
+
+    def test_the_fix_preview_names_the_dumps_secrets_and_files(self):   # replay (finding 5)
+        gh, ot = pat(31), oat(32)
+        self.own(gh)
+        d, files = SpillDump.v081_box(self, gh, ot)
+        self.assertEqual(len(self.s006(self.run_audit())), 1)
+        code, o, _ = self.run_cmd("fix", "--roots", *self.roots)
+        self.assertEqual(code, 0)
+        got = [x for x in json.loads(o)["only_you"] if x["what"] == isr.PLAIN["ISR-S006"][0]]
+        self.assertEqual(len(got), 1, json.loads(o)["only_you"])
+        text = json.dumps(got[0])
+        for part in files + ["GH_TOKEN - this computer's own gh token", "CLAUDE_CODE_OAUTH_TOKEN", "30 copies"]:
+            self.assertIn(part, text)                                         # edaca62: title, instructions and links only
+        for v in (gh, ot, fp(gh), fp(ot)):
+            self.assertNotIn(v, o)
 
 
 class AnthropicOauth(_Spill):

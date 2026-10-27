@@ -646,7 +646,10 @@ def cmd_fix(args):
     crates = cargo_projects()
     q_names = {q["name"] for q in quarantine_candidates(fs)}
     in_q = lambda f: bool(q_names) and skill_name(skill_root(f["where"].split(":")[0]) or "") in q_names and skill_tier(f["where"]) == "user"
-    only_you = [{"what": g["title"], "how": g["how"], "links": [u for _, u in g.get("links", [])]}
+    only_you = [dict({"what": g["title"], "how": g["how"], "links": [u for _, u in g.get("links", [])]},
+                     # U1fix1 (Codex 5): an environment dump's (ISR-S006) secrets by name and its files, which its how asks about
+                     **({"dumps": [{"secrets": r["reason"], "files": r["files"]} for r in g["rows"] if r["rule"] == "ISR-S006"]}
+                        if "ISR-S006" in g["rules"] else {}))
                 for g in needs_you([f for f in fs if fix_class(f) == "only_you" and not in_q(f)], 5)]   # quarantine handles those; don't hand them back to the owner
     rules_needed = [r for r in ("ISR-A003", "ISR-A005") if any(f["rule"] == r for f in fs)]
     ch_skills, ch_other = changed_skills(fs)

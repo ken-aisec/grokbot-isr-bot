@@ -413,6 +413,7 @@ SPILL_READ_LIMIT = 20_000_000   # the fix plan's read limit; ISR-S001 reads file
 SPILL_MIN_NAMES, SPILL_MIN_SHELL = 15, 3
 SPILL_SHELL = frozenset(("PATH", "HOME", "SHELL", "USER", "LOGNAME", "PWD", "HOSTNAME", "LANG", "TERM", "SHLVL"))
 SPILL_SECRET_NAME = re.compile(r"TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY|CREDENTIAL")
+AWS_SECRET_SHAPE = re.compile(r"(?i:aws_secret_access_key)\s*[=:]")   # SCRUB's one shape that holds a name
 SPILL_ASSIGN = re.compile(r"^[ \t]*(?:\++[ \t]+)?(?:export[ \t]+|declare[ \t]+-x[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)=([^\n]*)", re.M)
 
 
@@ -437,15 +438,18 @@ def spill_dump(text):
         lines.append(n)
     out, shaped, i, n, at = [], set(), 0, 1, 0
     for m in SCRUB.finditer(text):
-        while i < len(assigns) and assigns[i].end(2) <= m.start():
+        s, v = m.start(), m.group(0)
+        if AWS_SECRET_SHAPE.match(v):   # U1fix1 (Codex 3): this shape starts at its name; the secret is its 40-character value
+            s, v = m.end() - 40, v[-40:]
+        while i < len(assigns) and assigns[i].end(2) <= s:
             i += 1
-        a = i if i < len(assigns) and assigns[i].start(2) <= m.start() else None
+        a = i if i < len(assigns) and assigns[i].start(2) <= s else None
         if a is not None:
             shaped.add(a)   # a key shape in its value: the name rule isn't asked
-        if secret_kind(m.group(0), block=(text, m.start(), True))[0] != "real":
+        if secret_kind(v, block=(text, s, True))[0] != "real":
             continue
-        n += text.count("\n", at, m.start()); at = m.start()
-        out.append((n, assigns[a].group(1) if a is not None else None, secret_fp(m.group(0))))
+        n += text.count("\n", at, s); at = s
+        out.append((n, assigns[a].group(1) if a is not None else None, secret_fp(v)))
     for k, a in enumerate(assigns):
         if k in shaped or not SPILL_SECRET_NAME.search(a.group(1).upper()):
             continue

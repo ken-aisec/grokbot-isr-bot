@@ -95,11 +95,11 @@ EXAMPLE_PLAIN = ("Keys that look like examples or checksums", "ISR Bot can't tel
 
 
 # v0.8.2 (item 2): a found secret that is this computer's own gh token (own_token, set when it was found) is rotated, not revoked
-# as a stranger's key: gh and git push stop working until gh is signed in with the new one
+# as a stranger's key: gh and git push stop working until gh is signed in with the new one. U1fix1 (Codex 1): added to the finding's
+# own fix, never in place of it, so another key in the same finding keeps its fix and its provider's link
 OWN_NOTE = " - the same token as this computer's own gh sign-in"
-OWN_FIX = ("This is the GitHub token gh and git push use on this computer. Make a new one at github.com/settings/tokens, sign gh in "
-           "with it, revoke this one, then tell ISR Bot \"fix it\" to clear the copies.")
-OWN_TOKEN_PLAIN = ("This computer's own GitHub token is copied into files", "Every Bot can read it and act as you on GitHub.", OWN_FIX, "you")
+OWN_FIX = ("The token marked as this computer's own gh sign-in is the one gh and git push use: make a new one at "
+           "github.com/settings/tokens, sign gh in with it, then revoke the old one.")
 
 
 # v0.8.2 (item 5): ISR-S006, a tool's output file that holds a whole environment dump (spill_findings). It names the secrets in
@@ -117,15 +117,21 @@ SPILL_OWN_PLAIN = PLAIN["ISR-S006"][:2] + (SPILL_FIX + " " + SPILL_OWN_FIX, "you
 def mark_own(f, hits):
     """f noted as holding this computer's own gh token when one of its hits is (own_token, set when the hit was found)."""
     if any(isinstance(h, dict) and h.get("own_token") for h in hits or ()):
-        f.update(own_token="gh", fix=OWN_FIX, evidence=f["evidence"] + ("" if OWN_NOTE in f["evidence"] else OWN_NOTE))
+        f.update(own_token="gh", fix=with_own(f["fix"]), evidence=f["evidence"] + ("" if OWN_NOTE in f["evidence"] else OWN_NOTE))
     return f
 
 
+def with_own(how):
+    """`how` and then how to rotate this computer's own gh token (OWN_FIX), once."""
+    return how if OWN_FIX in how else f"{how} {OWN_FIX}"
+
+
 def plain(f):
-    own = (SPILL_OWN_PLAIN if f["rule"] == "ISR-S006" else OWN_TOKEN_PLAIN) if f.get("own_token") else None
+    own = SPILL_OWN_PLAIN if f["rule"] == "ISR-S006" and f.get("own_token") else None
     t = own or (EXAMPLE_PLAIN if f.get("example") else None) or PLAIN_BY_TITLE.get(f["title"]) or PLAIN.get(f["rule"])
     if t:
-        return {"title": t[0], "why": t[1], "how": t[2], "who": t[3], "label": label_of(f)}
+        how = with_own(t[2]) if f.get("own_token") and not own else t[2]
+        return {"title": t[0], "why": t[1], "how": how, "who": t[3], "label": label_of(f)}
     return {"title": f["title"], "why": "", "how": f["fix"], "who": "you", "label": label_of(f)}
 
 
@@ -356,6 +362,7 @@ def needs_you(findings, limit=None):
         g["rules"] = sorted(g["rules"])
         g["can_accept"] = all(accept_refused(f) is None for f in g["findings"])   # batch 1's gate (built on acceptable())
         g["decoy"] = any(f["rule"].startswith("ISR-K") for f in g["findings"])
+        own = any(f.get("own_token") and f["rule"] != "ISR-S006" for f in g["findings"])   # U1fix1 (Codex 1): added, never in place
         g["rows"] = [item_row(f, key_files) for f in sorted(g.pop("findings"), key=lambda f: SEV_ORDER.index(f["severity"]))]
         if g["title"] == "Keys that still work are sitting in files" and live:
             g["how"] = "Turn these off at the provider: " + ", ".join(n for n, _ in live) + ". Then tell ISR Bot \"fix it\" to clear every copy."
@@ -363,6 +370,8 @@ def needs_you(findings, limit=None):
         elif g["title"] == "Keys left in files" and keys:   # TruffleHog isn't installed: best guess from key types
             g["how"] = "Turn off these keys: " + ", ".join(n for n, _ in keys) + ". Then tell ISR Bot \"fix it\" to clear the copies."
             g["links"] = keys
+        if own:
+            g["how"] = with_own(g["how"])
     return items[:limit] if limit else items
 
 
@@ -527,20 +536,16 @@ def bound_keys(f, status):
     return got
 
 
+KEY_COUNTS = re.compile(r": \d+ tokens?, \d+ cop(?:y|ies), ")   # key_evidence's, in a record's evidence
+
+
 def key_evidence(f, keys, word):
     """v0.8.2 (items 1, 3): "<detectors>: N tokens, M copies, <word>, at <places>" for the answers `keys` ((file, answer), bound
-    to f). Tokens are the distinct secrets among them by fingerprint; an answer with none takes the one of f's own hit on its
-    line when only one secret was found there, else it is a token of its own (never merged). Copies are every place one of those
-    tokens is: the answers' and f's own hits' (member_hits, ISR-S001's secret_hits). Counts and places only, never a fingerprint."""
+    to f). Tokens are the distinct secrets among them by fingerprint; an answer with none is a token of its own (never merged, U1fix1).
+    Copies are every place one of those tokens is: the answers' and f's own hits' (member_hits, ISR-S001's secret_hits). Counts and
+    places only, never a fingerprint."""
     hits = [h for h in (f.get("member_hits") or f.get("secret_hits") or []) if isinstance(h, dict)]
-    at = {}
-    for h in hits:
-        if h.get("fp"):
-            at.setdefault((h.get("file"), h.get("line")), set()).add(h["fp"])
-    tokens = set()
-    for i, (x, k) in enumerate(keys):
-        there = at.get((x, k.get("line"))) or ()
-        tokens.add(k.get("fp") or (next(iter(there)) if len(there) == 1 else ("answer", i)))
+    tokens = {k.get("fp") or ("answer", i) for i, (_, k) in enumerate(keys)}
     copies = {(x, k.get("line")) for x, k in keys} | {(h.get("file"), h.get("line")) for h in hits if h.get("fp") in tokens}
     base = (f["where"] if f.get("affected_files") else os.path.dirname(f["where"].partition(":")[0])) or "/"
     locs = [f"{os.path.relpath(str(x), base)}:{n}" for x, n in sorted(copies, key=lambda c: (str(c[0]), c[1] if isinstance(c[1], int) else 0))]
@@ -655,7 +660,9 @@ def item_row(f, key_files=None):
     elif f["rule"] in ("ISR-S001", "ISR-S002"):
         name = os.path.basename(w.rstrip("/")) or w
         keys = [k for _, k in bound_keys(f, key_files)]   # v0.8.2 (item 3): the answers for its own files only
-        if keys:
+        if KEY_COUNTS.search(f["evidence"]):   # U1fix1 (Codex 4): key_evidence's tokens, copies, places and own-token note
+            reason = f["evidence"]
+        elif keys:                             # an older record: its answers by status
             by = {}
             for k in keys:
                 by.setdefault(k["detector"], []).append(k["status"])
@@ -664,7 +671,10 @@ def item_row(f, key_files=None):
             reason = f["evidence"]
     else:
         name, reason = f["title"], f["evidence"]
-    return {"name": name, "reason": reason, "where": short_path(w), "rule": f["rule"], "severity": f["severity"]}
+    row = {"name": name, "reason": reason, "where": short_path(w), "rule": f["rule"], "severity": f["severity"]}
+    if f["rule"] == "ISR-S006":   # U1fix1 (Codex 5): the files to delete, whole (short_path cuts long ones)
+        row["files"] = list(f.get("affected_files") or [w])
+    return row
 
 
 def live_key_links(key_files, findings):
