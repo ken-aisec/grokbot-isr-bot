@@ -277,7 +277,8 @@ def _prose_at(line, a, b):
 
 def _code_at(rows, markdown):
     """FIX2 (Codex high 1): for each line, True when the whole line is code or settings (a fenced block and its fence lines, an
-    indented line: 4+ spaces or a tab in Markdown, any indent in other text, a front-matter line other than `description:`),
+    indented line: 4+ spaces or a tab in Markdown, any indent in other text, a front-matter line other than `description:`, a
+    `description:` line with a backtick on it or inside a code span opened on an earlier description line),
     else the (start, end) of its inline code spans (backtick runs matched within a paragraph; an unclosed run reaches the
     paragraph's end). A name swap there is never rename-only: it can change a command's arguments."""
     out, fence, front, key, run, opened = [], None, bool(rows) and rows[0].strip() == "---", None, 0, 0
@@ -289,7 +290,14 @@ def _code_at(rows, markdown):
             elif i:
                 k = RENAME_KEY.match(r)
                 key = k.group(1) if k else (key if r[:1].isspace() or r.startswith("-") else None)
-            out.append([] if i and front and key == "description" else True)
+            if not (i and front and key == "description"):
+                run = 0
+                out.append(True)
+                continue
+            inside = run   # FIX3 (Codex high 1): a description line with a code span on it, or inside one, is code too
+            for b in re.finditer(r"`+", r):
+                run = 0 if len(b.group()) == run else (run or len(b.group()))
+            out.append(True if inside or "`" in r else [])
             continue
         if fence:
             if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) and not r[m.end():].strip():

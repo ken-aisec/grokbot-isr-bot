@@ -52,7 +52,8 @@ under "Fixed in batch 7d (the last must-fix items)" right below, with its test f
   starting with `#!`; a script or any other file stays HIGH. A swap inside a code span (backticks, also one wrapped over lines
   of a paragraph), a fenced block (``` or ~~~, and its fence lines), an indented line (4+ spaces or a tab in Markdown, any
   indent in `.txt`/`.rst`) or a front-matter line other than `description:` keeps the file HIGH: there the name can be a
-  command's argument. Read loosely on purpose, so a nested list item indented 4 spaces stays HIGH too; HTML `<code>`/`<pre>`
+  command's argument. Since FIX3 (Codex high 1) a `description:` line is prose only when it has no backtick and isn't inside
+  a code span opened on an earlier description line; otherwise the whole line is code. Read loosely on purpose, so a nested list item indented 4 spaces stays HIGH too; HTML `<code>`/`<pre>`
   is not read as code.
 - The proof is on the file's bytes: with every swap undone they must have exactly the approved digest. So a file with no approved
   copy (approved before copies were kept, or over the copy's size limits), one that isn't valid UTF-8, one with a lone `\r` line

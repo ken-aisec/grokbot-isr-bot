@@ -174,6 +174,42 @@ class NameInCode(_Rename):
                 self.assertNotIn("diff", fs[0])
                 self.assertFalse(rows[n].get("rename_only"))   # the skill isn't offered as name-only
 
+    def test_code_in_a_description_stays_high(self):   # replay (FIX3, Codex high 1): on 793835f each was low and rename_only
+        cases = {   # name: description lines, with {} for the name
+            "desc-inline-code": "description: Run `notes --label {} --all`.\n",
+            "desc-wrapped-code": "description: >\n  Run `notes\n  --label {}\n  --all` first.\n",
+        }
+        ds = {n: self.make(n, f"---\nname: {n}\n{desc.format(OLD)}---\n# Notes\nList the open tasks.\n") for n, desc in cases.items()}
+        self.approve()
+        for n, desc in cases.items():
+            self.rewrite(ds[n], f"---\nname: {n}\n{desc.format('ISR Bot')}---\n# Notes\nList the open tasks.\n")
+        self.audit()
+        rows = {r["name"]: r for r in self.fix()["changed_skills"]}
+        for n, d in ds.items():
+            with self.subTest(n):
+                fs = self.i001(d)
+                self.assertEqual(len(fs), 1, fs)
+                self.assertEqual(fs[0]["severity"], "high")
+                self.assertFalse(fs[0].get("rename_only"))
+                self.assertNotIn("diff", fs[0])
+                self.assertFalse(rows[n].get("rename_only"))
+
+    def test_plain_description_swap_is_still_name_only(self):   # control (FIX3): description prose, one line or wrapped
+        cases = {
+            "desc-prose": "description: {} tidies the notes folder.\n",
+            "desc-wrapped-prose": "description: >\n  {} tidies the notes\n  folder.\n",
+        }
+        ds = {n: self.make(n, f"---\nname: {n}\n{desc.format(OLD)}---\n# Notes\nList the open tasks.\n") for n, desc in cases.items()}
+        self.approve()
+        for n, desc in cases.items():
+            self.rewrite(ds[n], f"---\nname: {n}\n{desc.format('ISR Bot')}---\n# Notes\nList the open tasks.\n")
+        self.audit()
+        rows = {r["name"]: r for r in self.fix()["changed_skills"]}
+        for n, d in ds.items():
+            with self.subTest(n):
+                self.assertEqual([(f["severity"], f.get("rename_only")) for f in self.i001(d)], [("low", True)])
+                self.assertIs(rows[n].get("rename_only"), True)
+
     def test_runnable_doc_file_stays_high(self):   # replay: an executable .md and a .md with a #! line
         ex, sb = self.make("exec-md", skill_md("exec-md", OLD)), self.make("shebang-md", "#!/bin/sh\n" + skill_md("shebang-md", OLD))
         self.approve()

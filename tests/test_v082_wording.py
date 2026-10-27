@@ -135,6 +135,20 @@ class ScoreMeaning(Box):
         self.assertNotIn(WRONG_MEANING, said)
         self.assertIn("100 is the maximum score; open findings may remain", said)
 
+    def test_no_skill_or_doc_keeps_the_old_grade_wording(self):   # replay (FIX3, Codex low): 793835f's report skill said it
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        paths = [os.path.join(root, "README.md")]
+        for top in ("skills", "docs"):
+            for d, _, names in os.walk(os.path.join(root, top)):
+                paths += [os.path.join(d, n) for n in names if n.endswith(".md")]
+        for p in paths:
+            with open(p, encoding="utf-8") as f:
+                said = f.read()
+            for old in ("the grade follows the status", WRONG_MEANING):
+                self.assertNotIn(old, said, p)
+        with open(os.path.join(root, "skills", "isr-bot-report", "SKILL.md"), encoding="utf-8") as f:
+            self.assertIn("the grade follows the worst confirmed finding (a critical is always F, a high at most C)", f.read())
+
 
 if __name__ == "__main__":
     unittest.main()
