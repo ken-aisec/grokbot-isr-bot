@@ -256,7 +256,7 @@ def skill_diff(d, context=2):
 # v0.8.2 (item 6): a changed file whose only change is the product's former display name swapped for "ISR Bot" in prose. The
 # former name is held as its sha256 only, so it is written nowhere (the leftover guard, tests/test_v080_leftovers.py).
 FORMER_NAME_SHA256 = frozenset(("3339385e33397416b05c5d4f24dcf38010a1ccbd3a7d303ed433eb4b8688cff0",))
-RENAME_TO = ["ISR", " ", "Bot"]
+RENAME_TO = list("ISR Bot".partition(" "))
 RENAME_TOUCH = frozenset("/\\_-.`@$:")   # a path, an identifier, a code span, an option, a variable or a URL touching the name
 RENAME_TOKENS = re.compile(r"\w+|\W")
 RENAME_TITLE = "Reviewed skill changed: product name only"

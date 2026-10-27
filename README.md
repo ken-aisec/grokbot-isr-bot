@@ -62,7 +62,7 @@ installer itself and everything it installs are pinned:
 COMMIT=<full commit ID from the release page>
 mkdir -p /workspace/isr-bot && cd /workspace/isr-bot
 curl -fsSLO "https://raw.githubusercontent.com/ken-aisec/grokbot-isr-bot/$COMMIT/scripts/install.sh"
-head -40 install.sh && bash install.sh v0.8.1 "$COMMIT"
+head -40 install.sh && bash install.sh v0.8.2 "$COMMIT"
 bash /workspace/isr-bot/app/scripts/install.sh --scanners
 python3 /workspace/isr-bot/app/isr_bot/isr.py audit
 ```
@@ -100,6 +100,7 @@ isr.py fix [--roots DIR..]      preview: the cleanup list (path, file count, who
 isr.py fix --apply --owner-said-yes [--skip N,..] --upgrade --revet --accept RULES [--keep-open NAMES] [--reason "..."]
                                          everything in one pass (after your yes); --keep-open leaves those open
 isr.py fix --revet [--only NAMES]   re-scan changed skills with every scanner and re-approve the clean ones
+isr.py fix --rename-reviewed SKILLS --owner-said-yes   re-approve skills whose only change is the product's former name now ISR Bot (shown low, with the diff)
 isr.py fix --exception NAMES    keep skills the owner confirmed as security tools (30 days)
 isr.py fix --quarantine NAMES   move the owner's own skills out of use into ISR Bot's quarantine folder
 isr.py fix --upgrade-projects   npm and Rust lockfile fixes in your own projects (its own yes)

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ISR Bot installer. Pinned, checksummed, and confined to /workspace/isr-bot.
-# Usage: bash install.sh v0.8.1 [commit]   install that tagged release; with a commit ID, refuse anything else
+# Usage: bash install.sh v0.8.2 [commit]   install that tagged release; with a commit ID, refuse anything else
 #        bash install.sh --scanners        add the optional scanners (second half of this file)
 set -euo pipefail
 ISR_HOME="${ISR_BOT_HOME:-/workspace/isr-bot}"
@@ -8,7 +8,7 @@ REPO="https://github.com/ken-aisec/grokbot-isr-bot"
 
 if [[ "${1:-}" != "--scanners" ]]; then
   # ---- This is everything that runs for `bash install.sh <tag>`. It only writes inside $ISR_HOME.
-  TAG="${1:?usage: install.sh <tag> [commit]  (for example v0.8.1)}"; WANT="${2:-}"
+  TAG="${1:?usage: install.sh <tag> [commit]  (for example v0.8.2)}"; WANT="${2:-}"
   mkdir -p "$ISR_HOME"/{state,reports,exports,vet}
   # Private staging (0700, unpredictable name, removed on any exit): nothing else can plant a link in it.
   STAGE="$(mktemp -d "$ISR_HOME/.stage.XXXXXXXX")"; chmod 700 "$STAGE"; OLD="$STAGE/old"
