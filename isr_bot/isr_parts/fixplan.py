@@ -282,9 +282,28 @@ def tidy_row(x):
     return {k: x[k] for k in ("id", "action", "path", "files", "owner", "count") if k in x}
 
 
+TIDY_KINDS = {"scrub_keys": ("key scrub in a chat, session or log file", "key scrubs in chat, session or log files"),
+              "empty_tool_cache": ("shared tool-result folder to empty", "shared tool-result folders to empty"),
+              "rearm_canaries": ("decoy reset", "decoy resets"), "prune_reports": ("old-report clean-up", "old-report clean-ups")}
+
+
+def tidy_hidden_note(plan, n_shown):
+    """v0.8.4 (a): the preview may show only the first steps (to fit), but tidy_plan.json keeps them all and --apply does them
+    all, so the preview says how many it hides, which ids and what kind of steps they are."""
+    hidden = plan[n_shown:]
+    kinds = {}
+    for x in hidden:
+        kinds[x.get("action")] = kinds.get(x.get("action"), 0) + 1
+    what = ", ".join(f"{n} {TIDY_KINDS.get(a, (a, a))[n != 1]}" for a, n in kinds.items())
+    return (f"Showing {n_shown} of {len(plan)} cleanup steps here; the other {len(hidden)} (ids {hidden[0].get('id')} to "
+            f"{hidden[-1].get('id')}: {what}) are not shown for room, but they are on the saved list and are done too when the "
+            f"owner says yes. Name any of them in --skip to leave it alone.")
+
+
 def tidy_apply(plan, args):
-    """One list, one yes. Applies only what the owner saw in the last preview (saved in tidy_plan.json) and what is still
-    on the list now (a cache that changed in the last day drops off), minus anything they named to skip."""
+    """One list, one yes. Applies every step on the list saved by the last preview (tidy_plan.json; since v0.8.4 it holds the
+    whole list, also the steps the preview had no room to show) that is still on the list now (a cache that changed in the
+    last day drops off), minus anything they named to skip. One line per saved step: done, could not, or not touched and why."""
     if not getattr(args, "owner_said_yes", False):
         return ["Cleanup not done: it needs the owner's yes to the whole list. Run `isr.py fix` to show the list, then "
                 "`isr.py fix --apply --owner-said-yes` after they say yes (add `--skip <ids or paths>` for anything they named)."]
@@ -292,26 +311,36 @@ def tidy_apply(plan, args):
     if not saved.get("items") or time.time() - float(saved.get("ts", 0)) > TIDY_PLAN_DAYS * 86400:
         return ["Cleanup not done: there is no list from the last week for the owner to have said yes to. Run `isr.py fix` and show it first."]
     skip = {x.strip() for x in (getattr(args, "skip", None) or "").split(",") if x.strip()}
-    # a target that grew since the preview (more files than the owner saw) needs a fresh preview
-    shown = {(x.get("action"), x.get("path")) for x in saved["items"]}
-    grew = {(x.get("action"), x.get("path")) for x in saved["items"] for y in plan
-            if (y["action"], y["path"]) == (x.get("action"), x.get("path")) and isinstance(x.get("files"), int) and y.get("files", 0) > x["files"]}
-    shown -= grew
-    # numbers are the ones on the list the owner saw (tidy_plan.json), never the rebuilt list's: an item that dropped off
-    # since the preview would shift them and the wrong folder would be emptied
-    by_name = lambda x: x["path"] in skip or short_path(x["path"]) in skip or os.path.basename(x["path"].rstrip("/")) in skip
-    skipped = {(x.get("action"), x.get("path")) for x in saved["items"] if str(x.get("id")) in skip or by_name({"path": x.get("path") or ""})}
-    named = lambda x: (x["action"], x["path"]) in skipped or by_name(x)
-    go = [x for x in plan if (x["action"], x["path"]) in shown and not named(x)]
+    now_on = {(y["action"], y["path"]): y for y in plan}
+    # numbers are the ones on the saved list (tidy_plan.json), never the rebuilt list's: an item that dropped off since the
+    # preview would shift them and the wrong folder would be emptied
+    by_name = lambda p: p in skip or short_path(p) in skip or os.path.basename(p.rstrip("/")) in skip
+    # overlapping roots list one folder twice under two ids: skipping either leaves both alone (Codex review, v0.8.4 (a))
+    skip_steps = {(x.get("action"), x.get("path")) for x in saved["items"] if str(x.get("id")) in skip or by_name(x.get("path") or "")}
+    go, left, after, first = [], [], [], {}
+    for x in saved["items"]:
+        p = x.get("path") or ""
+        step = (x.get("action"), x.get("path"))
+        y = now_on.get(step)
+        if step in skip_steps:
+            left.append(p)
+            after.append(f"Left alone as you asked, still open: {p} ({(y or x).get('files')} files, {(y or x).get('owner')})")
+        elif step in first:
+            after.append(f"Not run again: it is the same step as id {first[step]} on the list: {p}")
+        elif y is None:
+            after.append(f"Not touched because it is no longer on the list (gone, or changed since the list was shown): {p}")
+        elif isinstance(x.get("files"), int) and y.get("files", 0) > x["files"]:   # grew since the preview: needs a fresh one
+            after.append(f"Not touched because it changed since the list was shown ({y['files']} files now, {x['files']} on the list): "
+                         f"{p}. Run `isr.py fix` again to show it")
+        else:
+            first[step] = x.get("id")
+            go.append(y)
     done = apply_fix(go)
-    left = [x for x in plan if named(x)]
-    if left:
-        done.append("Left alone as you asked, still open: " + "; ".join(f"{short_path(x['path'])} ({x['files']} files, {x['owner']})" for x in left))
-    gone = [x for x in saved["items"] if (x.get("action"), x.get("path")) not in {(y["action"], y["path"]) for y in plan} or (x.get("action"), x.get("path")) in grew]
-    if gone:
-        done.append("Not touched because they changed since the list was shown: " + "; ".join(short_path(x.get("path", "")) for x in gone[:5]))
-    ledger({"event": "tidy", "applied": [x["path"] for x in go], "skipped": [x["path"] for x in left]})
-    return done
+    if saved.get("hidden"):
+        ok = len(go) - sum(1 for d in done if d.startswith("Could not "))
+        after.append(f"done {ok} of {len(saved['items'])} cleanup steps on the list ({saved['hidden']} of them were not shown in the preview)")
+    ledger({"event": "tidy", "applied": [x["path"] for x in go], "skipped": left})
+    return done + after
 
 
 def apply_fix(plan):

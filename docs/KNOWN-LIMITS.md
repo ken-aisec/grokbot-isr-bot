@@ -24,6 +24,9 @@ under "Fixed in batch 7d (the last must-fix items)" right below, with its test f
   sign-in that uses an old 40-character token without a prefix is no longer noted as the computer's own.
 - The score trend compares with the latest full audit at least 12 hours older, whatever version made it; when ISR Bot's version
   or scanners differ between the two, the line says so, and the number may be ISR Bot looking differently.
+- The owner's yes to the cleanup preview covers steps the preview had no room to show: they are saved and done too. The preview
+  says how many it hides, their ids and what kind of steps they are, but not their paths; name an id in `--skip` to leave one
+  alone, or read state/tidy_plan.json for the full list.
 
 ## v0.8.3: the roll-call inbox
 

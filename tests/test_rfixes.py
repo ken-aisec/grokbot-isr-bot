@@ -50,7 +50,8 @@ class R01RollCallConsent(Box):
 
 class R02ShownEqualsApplied(Box):
     def test_only_the_cleanup_rows_the_owner_saw_are_applied(self):
-        """R02: a large cleanup preview was trimmed to fit, but every row was saved and later applied."""
+        """R02, as changed in v0.8.4 (a) on the owner's word (Nov 1): a large cleanup preview is trimmed to fit, the full plan
+        is saved and applied, and the preview says how many steps were hidden."""
         self.skills(1); self.audit()
         plan = [{"id": i, "action": "empty-cache", "path": os.path.join(self.ws, f"cache{i:03d}-" + "x" * 120), "files": 3, "owner": "pip"} for i in range(80)]
         for x in plan:
@@ -61,12 +62,12 @@ class R02ShownEqualsApplied(Box):
             self.assertIn("safe_fixes", shown.get("truncated", {}))
             seen = {r["path"] for r in shown["safe_fixes"]}
             saved = {r["path"] for r in isr.load_json(isr.state_path("tidy_plan.json"), {})["items"]}
-            self.assertEqual(saved, seen)
+            self.assertEqual(saved, {x["path"] for x in plan}); self.assertLessEqual(seen, saved)
             applied = []
             with mock.patch.object(isr, "apply_fix", side_effect=lambda go: applied.extend(x["path"] for x in go) or []):
                 self.run_cmd("fix", "--apply", "--owner-said-yes", "--roots", *self.roots)
-        self.assertEqual(set(applied), seen)
-        self.assertLess(len(applied), len(plan))
+        self.assertEqual(set(applied), {x["path"] for x in plan})
+        self.assertEqual(len(applied), len(plan))
 
     def test_a_target_that_grew_since_the_preview_needs_a_new_one(self):
         self.skills(1); self.audit()

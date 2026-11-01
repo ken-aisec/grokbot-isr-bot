@@ -879,7 +879,7 @@ def cmd_fix(args):
                 names_only.setdefault(skill_root(f["where"].split(":")[0]), set()).add(f["where"].split(":")[0])
         rename_row = lambda r: ({"rename_only": names_only[r["path"]] >= set(ch_skills[r["path"]]),
                                  "rename_reviewed": f"isr.py fix --rename-reviewed {r['name']} --owner-said-yes"} if r["path"] in names_only else {})
-        out = fit({"mode": "preview (nothing changed)",
+        obj = {"mode": "preview (nothing changed)",
                    "changed_skills_total": len(ch_skills),
                    "changed_skills": [dict({k: v for k, v in r.items() if k != "path"}, **rename_row(r)) for r in revet(sorted(ch_skills))],
                    "changed_other_files": [short_path(p) for p in ch_other],
@@ -896,11 +896,29 @@ def cmd_fix(args):
                    "ask_first_rules_missing": bool(rules_needed), "only_you": only_you,
                    "next": "Ask the user one question. On yes run: isr.py fix --apply --owner-said-yes [--skip <cleanup ids or paths they named>] --upgrade --revet --accept <rules they agreed to> "
                            "[--quarantine <skills they agreed to take out of use>] [--exception <skill they named>] "
-                           "[--rename-reviewed <skills whose name-only diff they read>] --reason \"reviewed by owner\""}, limit=6000)
-        shown = json.loads(out)                 # R02/DQ-019: what may be applied is exactly what survived trimming, never the full list
+                           "[--rename-reviewed <skills whose name-only diff they read>] --reason \"reviewed by owner\""}
+        out = fit(obj, limit=6000)
+        n_shown = len(json.loads(out).get("safe_fixes", []))
+        room = 0
+        while n_shown < len(plan):              # v0.8.4 (a): room for the sentence that says how many cleanup steps are hidden
+            # trimming more can hide a step of another kind and lengthen the sentence: keep more room until all of it fits
+            room = max(room, len(json.dumps(tidy_hidden_note(plan, n_shown))) + 40)
+            with_note = {}
+            for k, v in json.loads(fit(obj, limit=6000 - room)).items():
+                with_note[k] = v
+                if k == "safe_fixes":
+                    n_shown = len(v)
+                    with_note["safe_fixes_not_shown"] = tidy_hidden_note(plan, n_shown)
+            out = json.dumps(with_note, indent=1)
+            if len(out) <= 6000 or room >= 6000:
+                break
+            room += len(out) - 6000
+        shown = json.loads(out)                # R02/DQ-019: revet touches only the skills that survived trimming
         shown_skills = {r.get("name") for r in shown.get("changed_skills", [])}
         save_json(state_path("revet_plan.json"), {"at": now(), "skills": sorted(d for d in ch_skills if skill_name(d) in shown_skills)})
-        save_json(state_path("tidy_plan.json"), {"at": now(), "ts": time.time(), "items": shown.get("safe_fixes", [])})
+        # v0.8.4 (a): the cleanup list is saved whole, also the steps the preview had no room to show; --apply does them all
+        save_json(state_path("tidy_plan.json"), {"at": now(), "ts": time.time(), "items": [tidy_row(x) for x in plan],
+                                                 "shown": n_shown, "hidden": len(plan) - n_shown})
         print(out)
         return 0
     done = tidy_apply(plan, args) if args.apply else []
@@ -956,6 +974,6 @@ def cmd_fix(args):
         n, skipped, exp = accept_current(rules, args.reason or "reviewed by owner", skip=[x.strip() for x in (args.keep_open or "").split(",") if x.strip()])
         done.append(f"Accepted {n} finding(s) as fine on purpose until {exp}" + (f". Left open: {'; '.join(sorted(set(skipped))[:6])}" if skipped else ""))
     ledger({"event": "fix", "steps": len(done)})
-    print(fit({"done": done or ["Nothing to do."], "only_you": only_you,
-               "next": "Run `isr.py audit` to confirm, then tell the user the new score and anything in only_you."}))
+    print(fit({"done": done or ["Nothing to do."], "only_you": only_you,   # v0.8.4 (a): every cleanup step keeps its line
+               "next": "Run `isr.py audit` to confirm, then tell the user the new score and anything in only_you."}, keep=("done",)))
     return 0
