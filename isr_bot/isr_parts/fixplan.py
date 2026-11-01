@@ -114,10 +114,26 @@ PLAIN["ISR-S006"] = ("A tool's output file holds a whole environment dump", "Eve
 SPILL_OWN_PLAIN = PLAIN["ISR-S006"][:2] + (SPILL_FIX + " " + SPILL_OWN_FIX, "you")
 
 
-def mark_own(f, hits):
-    """f noted as holding this computer's own gh token when one of its hits is (own_token, set when the hit was found)."""
-    if any(isinstance(h, dict) and h.get("own_token") for h in hits or ()):
-        f.update(own_token="gh", fix=with_own(f["fix"]), evidence=f["evidence"] + ("" if OWN_NOTE in f["evidence"] else OWN_NOTE))
+def mark_own(f, hits, shown=None):
+    """f noted as holding this computer's own gh token when one of its hits is (own_token, set on the hit when it was found).
+    v0.8.4 (item 3): the sentence is said beside that hit, never as if about the key f shows (`shown`, its hit, when f shows
+    one): "...; GitHub key at a.txt:3 - the same token as this computer's own gh sign-in", and f's other keys are counted."""
+    hits = [h for h in hits or () if isinstance(h, dict)]
+    own = [h for h in hits if h.get("own_token")]
+    if not own:
+        return f
+    note = ""
+    if OWN_NOTE not in f["evidence"]:
+        others = len({h.get("fp") or ("hit", i) for i, h in enumerate(hits) if not h.get("own_token")})
+        if (shown is not None and shown.get("own_token")) or not others:
+            note = OWN_NOTE   # the key f shows, or the only one
+        else:
+            base = (f["where"] if f.get("affected_files") else os.path.dirname(f["where"].partition(":")[0])) or "/"
+            at = f" at {os.path.relpath(str(own[0]['file']), base)}:{own[0].get('line')}" if own[0].get("file") else ""
+            note = f"; GitHub key{at}{OWN_NOTE}"
+        if others:
+            note += f" (also holds {others} other key{'' if others == 1 else 's'})"
+    f.update(own_token="gh", fix=with_own(f["fix"]), evidence=f["evidence"] + note)
     return f
 
 
@@ -390,47 +406,142 @@ def _trufflehog_logged(err):
     return said
 
 
-def trufflehog_status(paths, notes):
+TRUFFLEHOG_BUDGET = 240          # v0.8.4 (item 1): seconds for the whole stage, never more than the run has left (time_left)
+TRUFFLEHOG_BATCH_SECONDS = 60    # one batch's own limit, so one slow batch can't use the whole budget
+TRUFFLEHOG_BATCH_FILES, TRUFFLEHOG_BATCH_BYTES = 25, 10_000_000
+TRUFFLEHOG_MAX_FILES = 200
+SLOW_SCANNERS = set()            # scanners that ran out of time this run: still expected, never said as missing
+
+
+def _disk_bytes(p, until=None):
+    """Bytes in file p, or in the plain files under folder p (a gitleaks group's folder); for batching only.
+    v0.8.4 fix: a folder is sized only until `until` (time.monotonic()), the stage's own deadline; one not sized by then counts
+    as a full batch (TRUFFLEHOG_BATCH_BYTES), so it goes in a batch of its own."""
+    st = _look(p, follow=True)
+    if not st or not stat.S_ISDIR(st.st_mode):
+        return st.st_size if st else 0
+    total, late = 0, lambda: until is not None and time.monotonic() >= until
+    for d, _, names in os.walk(p):
+        if late():
+            return TRUFFLEHOG_BATCH_BYTES
+        for n in names:
+            if late():
+                return TRUFFLEHOG_BATCH_BYTES
+            s = _look(os.path.join(d, n))
+            total += s.st_size if s and stat.S_ISREG(s.st_mode) else 0
+    return total
+
+
+def trufflehog_order(paths, first=()):
+    """v0.8.4 (item 1): the flagged files that are there, most worth re-checking first: those behind a critical or high key
+    finding (`first`), then the newest changed; the path breaks ties."""
+    when = lambda p: getattr(_look(p, follow=True), "st_mtime", 0)
+    return sorted({p for p in paths if p and os.path.exists(p)}, key=lambda p: (p not in first, -when(p), p))
+
+
+def trufflehog_batches(targets, sizes):
+    """`targets` in order, cut into batches of at most TRUFFLEHOG_BATCH_FILES files and TRUFFLEHOG_BATCH_BYTES bytes (a bigger
+    file is a batch of its own)."""
+    out, cur, size = [], [], 0
+    for p in targets:
+        if cur and (len(cur) >= TRUFFLEHOG_BATCH_FILES or size + sizes[p] > TRUFFLEHOG_BATCH_BYTES):
+            out.append(cur)
+            cur, size = [], 0
+        cur.append(p)
+        size += sizes[p]
+    return out + ([cur] if cur else [])
+
+
+def carried_answers(files, at, places=None):
+    """v0.8.4 (item 1): an earlier run's answers ({file: answers}, saved at `at`) kept for files this run didn't re-check, each
+    marked old with when it was made (an answer carried before keeps its own time). `places`: only the files at or under them."""
+    under = lambda x: places is None or any(x == p or x.startswith(p.rstrip("/") + "/") for p in places)
+    return {x: [dict(k, old=k.get("old") or at or "an earlier run") for k in ks if isinstance(k, dict)]
+            for x, ks in (files or {}).items() if isinstance(ks, list) and under(x)}
+
+
+def oldest_answer(files):
+    """The time of the oldest carried answer in {file: answers}, or None."""
+    return min((str(k["old"]) for ks in files.values() for k in ks if k.get("old")), default=None)
+
+
+def trufflehog_status(paths, notes, first=()):
     """Ask each key's own provider whether it still works (TruffleHog verification). Scoped to files ISR Bot
-    already flagged. Raw key values are dropped the moment they're read; only detector, file and status are kept."""
+    already flagged. Raw key values are dropped the moment they're read; only detector, file and status are kept.
+    v0.8.4 (item 1): in batches, each with its own time limit, inside one budget; a file a finished batch re-checked gets its new
+    answer, one not reached keeps its earlier answer, marked old. The stage still fails if any batch didn't finish."""
     exe = tool("trufflehog")
     if not exe:
         scanner_absent(notes, "trufflehog", "TruffleHog not installed: can't tell live keys from dead ones (install.sh --scanners).")
         return {}
-    targets = sorted({p for p in paths if p and os.path.exists(p)})[:200]
+    ordered = trufflehog_order(paths, first)
+    targets = ordered[:TRUFFLEHOG_MAX_FILES]
     if not targets:
         save_json(state_path("key_status.json"), {"at": now(), "ran": True, "files": {}})
         return {}
-    # b8i1: --local-dev (a hidden flag in 3.97.9) skips overseer, which otherwise looks up its own program file, the sealed
-    # in-memory copy, and exits ("failed to stat binary") before scanning anything. Fix round 2: --fail-on-scan-errors, else a
-    # file it couldn't read is logged, and it still says "finished scanning" and exits 0 with that file's keys missing
-    code, out_s, err = run([exe, "filesystem", *targets, "--json", "--no-update", "--local-dev", "--fail-on-scan-errors",
-                            "--results=verified,unverified,unknown"], 150)
-    # b8i1: finished means exit 0 (or 183, results found) and its "finished scanning" line; a non-zero exit fails even with output.
-    # Fix round 2: and no "encountered errors during scan" line (in case the flag didn't take); its errors stay out of the note
-    said = _trufflehog_logged(err)
-    if code not in (0, 183) or "finished scanning" not in said or "encountered errors during scan" in said:
-        why = ((err.strip()[-140:] or "no output") if code not in (0, 183) else "it hit errors while scanning"
-               if "encountered errors during scan" in said else "it stopped without saying it finished scanning")
-        fail_note(notes, f"TruffleHog FAILED ({why}): live/dead key status is unavailable this run.")
+    old = load_json(state_path("key_status.json"), {}) or {}
+    # v0.8.4 fix: the budget starts before the folders are sized, and sizing stops when it is used up
+    end = time.monotonic() + max(0, min(TRUFFLEHOG_BUDGET, time_left()))
+    sizes = {p: _disk_bytes(p, end) for p in targets}
+    status, done, log, why, short = {}, [], [], None, False
+    for batch in trufflehog_batches(targets, sizes):
+        left = end - time.monotonic()
+        if left < 1:
+            short = True
+            break
+        t0 = time.monotonic()
+        # b8i1: --local-dev (a hidden flag in 3.97.9) skips overseer, which otherwise looks up its own program file, the sealed
+        # in-memory copy, and exits ("failed to stat binary") before scanning anything. Fix round 2: --fail-on-scan-errors, else a
+        # file it couldn't read is logged, and it still says "finished scanning" and exits 0 with that file's keys missing
+        code, out_s, err = run([exe, "filesystem", *batch, "--json", "--no-update", "--local-dev", "--fail-on-scan-errors",
+                                "--results=verified,unverified,unknown"], min(TRUFFLEHOG_BATCH_SECONDS, left))
+        # b8i1: finished means exit 0 (or 183, results found) and its "finished scanning" line; a non-zero exit fails even with output.
+        # Fix round 2: and no "encountered errors during scan" line (in case the flag didn't take); its errors stay out of the note
+        said = _trufflehog_logged(err)
+        ok = code in (0, 183) and "finished scanning" in said and "encountered errors during scan" not in said
+        # v0.8.4 (item 1): what each batch took, counts and sizes only, so a slow stage shows whether scanning or checking is slow
+        log.append({"files": len(batch), "bytes": sum(sizes[p] for p in batch), "seconds": round(time.monotonic() - t0, 1), "finished": ok})
+        if code == 124:
+            short = True
+            continue
+        if not ok:
+            why = why or ((err.strip()[-140:] or "no output") if code not in (0, 183) else "it hit errors while scanning"
+                          if "encountered errors during scan" in said else "it stopped without saying it finished scanning")
+            continue
+        done += batch
+        for line in out_s.splitlines():
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            fs_meta = ((d.get("SourceMetadata") or {}).get("Data") or {}).get("Filesystem") or {}
+            f = fs_meta.get("file")
+            if not f:
+                continue
+            # R05: "not verified" is not "dead": TruffleHog couldn't confirm the key works, which is not the provider saying it's revoked
+            st = "live" if d.get("Verified") else ("unknown" if d.get("VerificationError") else "unverified")
+            ex = d.get("ExtraData") or {}
+            # v0.8.2 (items 1, 2): the key's fingerprint (this run only) and whether it is this computer's own gh token
+            status.setdefault(os.path.abspath(f), []).append({"detector": d.get("DetectorName", "key"), "status": st, "line": fs_meta.get("line"),
+                                                              "guide": ex.get("rotation_guide") if isinstance(ex, dict) else None,
+                                                              **fp_marks(secret_fp(d.get("Raw")), d.get("Raw"))})
+    save_json(state_path("trufflehog_batches.json"), {"at": now(), "files": len(ordered), "batches": log})
+    rest = [p for p in ordered if p not in done]
+    carried = carried_answers(old.get("files") if isinstance(old.get("files"), dict) else {}, old.get("at"), rest)
+    carried = {x: ks for x, ks in carried.items() if x not in status and not any(x == p or x.startswith(p.rstrip("/") + "/") for p in done)}
+    since = oldest_answer(carried)
+    said_rest = f"the rest show answers from {et_time(since)}" if since else "the rest have no earlier answer"
+    if why:
+        fail_note(notes, f"TruffleHog FAILED ({why}): " + (f"{len(done)} of {len(ordered)} files re-checked; {said_rest}." if done
+                                                            else "live/dead key status is unavailable this run."))
+    if short:   # v0.8.4 (item 1): slow, not missing: its own note, never SCANNERS MISSING's
+        SLOW_SCANNERS.add("TruffleHog")
+        fail_note(notes, f"TruffleHog ran out of time: {len(done)} of {len(ordered)} files re-checked; {said_rest}.")
+    elif not why and rest:
+        notes.append(f"TruffleHog checked {len(done)} of {len(ordered)} flagged files (the most serious and newest first); {said_rest}.")
+    if not done:
         return {}
-    status = {}
-    for line in out_s.splitlines():
-        try:
-            d = json.loads(line)
-        except ValueError:
-            continue
-        fs_meta = ((d.get("SourceMetadata") or {}).get("Data") or {}).get("Filesystem") or {}
-        f = fs_meta.get("file")
-        if not f:
-            continue
-        # R05: "not verified" is not "dead": TruffleHog couldn't confirm the key works, which is not the provider saying it's revoked
-        st = "live" if d.get("Verified") else ("unknown" if d.get("VerificationError") else "unverified")
-        ex = d.get("ExtraData") or {}
-        # v0.8.2 (items 1, 2): the key's fingerprint (this run only) and whether it is this computer's own gh token
-        status.setdefault(os.path.abspath(f), []).append({"detector": d.get("DetectorName", "key"), "status": st, "line": fs_meta.get("line"),
-                                                          "guide": ex.get("rotation_guide") if isinstance(ex, dict) else None,
-                                                          **fp_marks(secret_fp(d.get("Raw")))})
+    status.update(carried)
     # D1 (v0.8.2): the fingerprints are never stored; the own-token mark is
     save_json(state_path("key_status.json"), {"at": now(), "ran": True, "files": {
         p: [{k: v for k, v in r.items() if k != "fp"} for r in ks] for p, ks in status.items()}})
@@ -489,7 +600,11 @@ def key_status_severity(findings, status, ran=None):
             live = [(x, k) for x, k in bound if k["status"] == "live"]
             dead = [(x, k) for x, k in bound if k["status"] == "dead"]
             unsure = [(x, k) for x, k in bound if k["status"] in ("unknown", "unverified")]
-            own = f.get("own_token") or next((k["own_token"] for _, k in live or unsure or dead if k.get("own_token")), None)
+            # v0.8.4 (item 3): the own-token mark from its own hits (or, for a record without them, its answers), said beside that hit
+            hits = [h for h in (f.get("member_hits") or f.get("secret_hits") or []) if isinstance(h, dict)]
+            if not any(h.get("own_token") for h in hits):
+                hits = [dict(k, file=x) for x, k in live or unsure or dead]
+            own = f.get("own_token") and not any(h.get("own_token") for h in hits)
             if live:
                 f["severity"], f["title"] = "critical", KEY_LIVE
                 f["evidence"] = key_evidence(f, live, "live")
@@ -508,8 +623,9 @@ def key_status_severity(findings, status, ran=None):
                 f["severity"] = "medium" if SEV_ORDER.index(f["severity"]) < SEV_ORDER.index("medium") else f["severity"]
                 f["title"] = KEY_MAYBE
                 f["fix"] = "Pattern match only. If one is a real key, turn it off at its provider."
-            if own:   # v0.8.2 (item 2): rotated, not revoked as a stranger's; severity and label as any other
-                f = mark_own(f, [{"own_token": own}])
+            # v0.8.2 (item 2): rotated, not revoked as a stranger's; severity and label as any other. A record marked before
+            # with no hit to say it beside keeps the plain mark
+            f = mark_own(f, [{"own_token": "gh"}] if own else hits)
             # batch 6 fix round 3 (Codex 1, 2): an example-looking key is judged as any other, keeping only its note; one the
             # provider says works is a working key, so its note goes
             if f.get("example"):
@@ -551,8 +667,11 @@ def key_evidence(f, keys, word):
     locs = [f"{os.path.relpath(str(x), base)}:{n}" for x, n in sorted(copies, key=lambda c: (str(c[0]), c[1] if isinstance(c[1], int) else 0))]
     where = ", ".join(locs[:3]) + (f" and {len(locs) - 3} more" if len(locs) > 3 else "")
     count = lambda n, one, many: f"{n} {one if n == 1 else many}"
+    # v0.8.4 (item 1): an answer an earlier run gave (not re-checked this run) says when it was made
+    olds = sorted(str(k["old"]) for _, k in keys if k.get("old"))
+    age = f" ({'answer' if len(olds) == len(keys) else 'some answers'} from {et_time(olds[0])})" if olds else ""
     return (f"{', '.join(sorted({k['detector'] for _, k in keys}))}: {count(len(tokens), 'token', 'tokens')}, "
-            f"{count(len(copies), 'copy', 'copies')}, {word}, at {where}")
+            f"{count(len(copies), 'copy', 'copies')}, {word}, at {where}{age}")
 
 
 OSV_SKIP = ("/isr-bot/backups/", "/isr-bot/state/", "/isr-bot/app/", "/isr-bot/scanners/", "/.cursor/", "/skill-hunt", "/skill-review", "/candidates/", "/spike/", "/node_modules/", "/vendor/")

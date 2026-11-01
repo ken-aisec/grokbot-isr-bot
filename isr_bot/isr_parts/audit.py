@@ -6,6 +6,7 @@ def audit(roots, exports, quick=False):
     version_changes = []   # DQ-047 fix round 1: the pending plugins' version-folder notes, said in daily too
     INCOMPLETE_SKILLS.clear()
     reset_scanner_checks()
+    SLOW_SCANNERS.clear()
     OWN_TOKEN.clear()
     OWN_TOKEN["on"] = True   # v0.8.2 (item 2): this computer's own gh token is looked up once, when the first secret is found
     walk_errors = []   # batch 5 PR B, Codex round 2 (3): a folder the scan couldn't list leaves the access map incomplete
@@ -204,15 +205,19 @@ def audit(roots, exports, quick=False):
         # as any other; the finding names a real-looking one first, and gets the example note only when every hit looks like one
         hits = [(m, secret_at(t, m)[1]) for m in rule["rx"].finditer(t)]
         if hits:
-            m, why = next((h for h in hits if not h[1]), hits[0])
+            i = next((i for i, h in enumerate(hits) if not h[1]), 0)
+            m, why = hits[i]
             f = finding("ISR-S001", "Secret stored in a file on the shared computer", secret_severity(p, False), ["ASI03", "LLM02"],
                         f"{p}:{line_of(t, m.start())}", f"{mask(m.group(0))} ({len(hits)} in file)",
                         "Every Bot can read this file. Revoke the key, delete the file, and use the secure secret request instead.", path=p)
             # v0.8.2 (items 1, 2): each hit's place and fingerprint (this run only), so its copies count once and the box's own gh
             # token is said; the note goes on after the key is made. A key block's match is its header only: no fingerprint
             f["secret_hits"] = [dict({"file": os.path.abspath(p), "line": line_of(t, h.start())},
-                                     **fp_marks(None if PEM_HEAD.match(h.group(0)) else secret_fp(h.group(0)))) for h, _ in hits]
-            fs.append(mark_own(annotate_example(f, why) if why else f, f["secret_hits"]))
+                                     **fp_marks(None if PEM_HEAD.match(h.group(0)) else secret_fp(h.group(0)), h.group(0))) for h, _ in hits]
+            # v0.8.4 (item 3): the key shown is named by its own prefix (its key is made from the evidence as before); the own-token
+            # sentence goes beside the hit it is about
+            f["evidence"] = key_label(m.group(0)) + f["evidence"]
+            fs.append(mark_own(annotate_example(f, why) if why else f, f["secret_hits"], shown=f["secret_hits"][i]))
     fs += spill_findings(spills)
 
     export_rules = ""
@@ -294,10 +299,29 @@ def audit(roots, exports, quick=False):
         fs += soft("OSV-Scanner (project dependencies)", ("ISR-D002",), notes, [], osv_findings, roots, notes)
         fs += soft("ISR Bot's own tools", ("ISR-W001",), notes, [], self_findings, notes)
         secret_paths = [f["where"].split(":")[0] for f in fs if f["rule"] in ("ISR-S001", "ISR-S002")]
-        ks = soft("TruffleHog (which keys still work)", (), notes, None, trufflehog_status, secret_paths, notes)
-        if ks is None or "TruffleHog (which keys still work)" in STAGE_FAILED:
+        first = {f["where"].split(":")[0] for f in fs if f["rule"] in ("ISR-S001", "ISR-S002") and f["severity"] in ("critical", "high")}
+        started, stage = now(), "TruffleHog (which keys still work)"
+        # v0.8.4 fix: when the stages before it used up the run's time, TruffleHog is skipped as ran out of time (as a batch that
+        # didn't finish), never as missing; soft() would skip it before it could say so
+        skipped = time_left() <= 3 and bool(tool("trufflehog"))
+        if skipped:
+            SLOW_SCANNERS.add("TruffleHog")
+            STAGE_FAILED.append(stage)
+            ks = None
+        else:
+            ks = soft(stage, (), notes, None, trufflehog_status, secret_paths, notes, first=first)
+        if ks is None or stage in STAGE_FAILED:
             old = load_json(state_path("key_status.json"), {}) or {}
-            key_status = {"files": old.get("files", {}), "ran": bool(old.get("ran"))}
+            files = old.get("files", {})
+            if str(old.get("at") or "") < started and isinstance(files, dict):   # v0.8.4 (item 1): nothing re-checked this run
+                files = carried_answers(files, old.get("at"))
+                since = oldest_answer(files)
+                if skipped:
+                    fail_note(notes, "TruffleHog ran out of time: skipped this run; " + (
+                        f"the last live/dead answers are kept, from {et_time(since)}." if since else "there are no earlier live/dead answers."))
+                elif since and "TruffleHog" not in SLOW_SCANNERS:   # its ran-out-of-time note says when, too
+                    notes.append(f"Live/dead key answers shown are from {et_time(since)}: TruffleHog re-checked none this run.")
+            key_status = {"files": files, "ran": bool(old.get("ran"))}
         else:
             key_status = {"files": ks, "ran": bool(tool("trufflehog"))}
         fs = apply_key_status(fs, key_status["files"], ran=key_status["ran"])
@@ -313,7 +337,9 @@ def audit(roots, exports, quick=False):
                    budget=max(0, min(ENGINE_BUDGET, 120, time_left() - 10)))
     if quick:
         ks = load_json(state_path("key_status.json"), {}) or {}
-        key_status = {"files": ks.get("files", {}), "ran": bool(ks.get("ran"))}
+        # v0.8.4 fix: the daily check never runs TruffleHog, so every answer it shows is carried and says when it was made
+        files = ks.get("files", {})
+        key_status = {"files": carried_answers(files, ks.get("at")) if isinstance(files, dict) else files, "ran": bool(ks.get("ran"))}
         fs = apply_key_status(fs, key_status["files"], ran=key_status["ran"])
     prev_used = load_json(state_path("engines_used.json"), {}) or {}
     prev_used = prev_used if isinstance(prev_used, dict) else {}
@@ -327,6 +353,8 @@ def audit(roots, exports, quick=False):
         ("pip-audit", "pip-audit"), ("OSV-Scanner", "osv-scanner")) if scanner_used(t)]   # Claude review 2 (3)
     gone = [n for n in before if n not in used_now]
     save_json(state_path("engines_used.json"), {"at": now(), "engines": used_now, **({"expected": list(dict.fromkeys(before + used_now))} if gone else {})})
+    # v0.8.4 (item 1): a scanner that ran out of time is still expected, but it is slow, not missing: its own note says so
+    gone = [n for n in gone if n not in SLOW_SCANNERS]
     if gone:
         notes.insert(0, f"SCANNERS MISSING: {', '.join(gone)} ran last time and didn't run now (not installed, or not the copy ISR Bot installed), "
                         "so this is a partial scan and their last results are kept. Run `bash /workspace/isr-bot/app/scripts/install.sh --scanners`, then audit again.")

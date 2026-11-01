@@ -238,14 +238,30 @@ def cmd_report(args):
     return 0
 
 
+TREND_GAP_HOURS = 12   # v0.8.4 (item 2): two audits on the same morning are never compared with each other
+
+
 def trend(hist):
-    weekly = hist[-1:] if hist else []
-    if len(hist) >= 2:
-        prev = [h for h in hist if h[0][:10] <= (dt.date.today() - dt.timedelta(days=6)).isoformat()]
-        if prev:
-            d = hist[-1][1] - prev[-1][1]
-            return f"{'+' if d >= 0 else ''}{d} vs last week"
-    return "first week"
+    """v0.8.4 (item 2): the score against the most recent full audit at least TREND_GAP_HOURS before the latest one, named by
+    its date ("down 1 since Oct 28: 88"); when ISR Bot's version or scanners differ between the two, it says so."""
+    def when(h):
+        try:
+            t = dt.datetime.fromisoformat(str(h[0]))
+        except ValueError:
+            return None
+        return t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc)
+    last = when(hist[-1]) if hist else None
+    prev = [h for h in hist[:-1] if last and when(h) and when(h) <= last - dt.timedelta(hours=TREND_GAP_HOURS)]
+    if not prev:
+        return "first week"
+    base, d = prev[-1], hist[-1][1] - prev[-1][1]
+    out = f"{'up' if d > 0 else 'down' if d < 0 else 'no change'}{f' {abs(d)}' if d else ''} since {et_time(base[0], day=True)}: {base[1]}"
+    # score_fingerprint: era:version|scanners
+    (va, _, ea), (vb, _, eb) = (h[4].partition(":")[2].partition("|") for h in (base, hist[-1]))
+    ea, eb = set(ea.split("+")) - {""}, set(eb.split("+")) - {""}
+    what = f"{va} -> {vb}" if va != vb else "; ".join(x for x in (", ".join(sorted(ea - eb)) + " didn't run" if ea - eb else "",
+                                                                     ", ".join(sorted(eb - ea)) + " ran" if eb - ea else "") if x)
+    return out + (f"; ISR Bot itself changed ({what}), so the change may not be your computer" if what else "")
 
 
 def render_md(snap, hist, tag):
@@ -368,7 +384,7 @@ h1{{font-size:20px;margin:0 0 4px}}.mut{{color:var(--mut)}}.row{{display:flex;ga
 table{{border-collapse:collapse;width:100%;font-size:13px}}td,th{{border-bottom:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}}
 .sev{{color:#fff;border-radius:4px;padding:2px 6px;font-size:11px;text-transform:uppercase}}.wrap{{overflow-x:auto}}code{{font-size:12px}}
 </style></head><body><h1>ISR Bot · {tag}</h1><div class='mut'>Generated {html.escape(snap['at'])} · read-only audit of this Grok Bot computer</div>
-<div class='row'><div class='card'><div class='mut'>Status</div><div style='font-size:24px;font-weight:700'>{html.escape(status_line(snap))}</div><div class='mut'>Posture score</div><div class='big'>{snap['score']}<span class='mut' style='font-size:18px'>/100 · {snap_grade(snap)}</span></div><div class='mut'>{html.escape(SCORE_MEANING)}</div><div class='mut'>{html.escape(score_line(snap))}</div><div class='mut'>{trend(hist)}</div></div>
+<div class='row'><div class='card'><div class='mut'>Status</div><div style='font-size:24px;font-weight:700'>{html.escape(status_line(snap))}</div><div class='mut'>Posture score</div><div class='big'>{snap['score']}<span class='mut' style='font-size:18px'>/100 · {snap_grade(snap)}</span></div><div class='mut'>{html.escape(SCORE_MEANING)}</div><div class='mut'>{html.escape(score_line(snap))}</div><div class='mut'>{html.escape(trend(hist))}</div></div>
 <div class='card'><div class='mut'>Score, last {len(pts)} runs</div><svg width='{w}' height='{h}' viewBox='0 0 {w} {h}' role='img' aria-label='score trend'><polyline fill='none' stroke='#2e86c1' stroke-width='2' points='{poly}'/></svg></div>
 {tiles}</div><h2 style='font-size:16px'>Open findings</h2><div class='wrap'><table><tr><th>Severity</th><th>Finding</th><th>Where</th><th>OWASP</th><th>Fix</th></tr>{rows or "<tr><td colspan=5>Nothing open.</td></tr>"}</table></div>
 {access_card(load_access_map())}{extra_sections(fs)}{platform_details(snap["findings"], snap.get("vendor"))}

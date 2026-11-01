@@ -385,12 +385,13 @@ def own_token_of(fp):
     return "gh" if fp == OWN_TOKEN["fp"] else None
 
 
-def fp_marks(fp):
+def fp_marks(fp, value=None):
     """What a found secret's record keeps: its fingerprint (this run only, drop_fingerprints) and, when it is this computer's
-    own gh token, own_token "gh" (kept: a later run never compares fingerprints made in another). {} without a fingerprint."""
+    own gh token, own_token "gh" (kept: a later run never compares fingerprints made in another). {} without a fingerprint.
+    v0.8.4 (item 3): own only when the secret's own text (`value`) starts with a GitHub prefix, beside the fingerprint check."""
     if not fp:
         return {}
-    own = own_token_of(fp)
+    own = own_token_of(fp) if isinstance(value, str) and GITHUB_KEY.match(value.strip()) else None
     return {"fp": fp, **({"own_token": own} if own else {})}
 
 
@@ -569,7 +570,7 @@ def gitleaks_findings(roots, notes):
             if why:
                 examples[id(leak)] = why
             # v0.8.2 (items 1, 2): each hit's secret by its fingerprint, so copies of one count once (the value is not kept)
-            marks[id(leak)] = fp_marks(secret_fp(got_[0][0])) if got_ else {}
+            marks[id(leak)] = fp_marks(secret_fp(got_[0][0]), got_[0][0]) if got_ else {}
         datas.clear()
         member = lambda l, d: dict({"file": os.path.abspath(str(l.get("File") or d)), "line": l.get("StartLine"),
                                  "rule_id": l.get("RuleID", "secret"), "example": examples.get(id(l))}, **marks.get(id(l), {}))

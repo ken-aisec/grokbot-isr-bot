@@ -9,6 +9,22 @@ Since 0.8.0 the product, its engine and its files are all called ISR Bot. The en
 **None are open.** Batch 7d fixed the last ones. Each item that was in this list, or that the owner logged as must-fix, is recorded
 under "Fixed in batch 7d (the last must-fix items)" right below, with its test file.
 
+## v0.8.4: TruffleHog in batches, the score trend, the own gh token per key
+
+- A live/dead answer can be older than the run. Files TruffleHog didn't reach (out of time, or past the first 200) keep their
+  last answer, and the finding says when it was made ("answer from Oct 26 8:38 PM ET"). The daily check never runs TruffleHog:
+  it shows the last full audit's answers, each with its date the same way.
+- When the checks before TruffleHog use up the audit's time, TruffleHog is skipped: the report says it ran out of time and
+  keeps the last answers with their date. It is not listed as missing, and no reinstall is asked for.
+- Sizing folders for the batches counts against TruffleHog's 240 seconds; a folder not sized in time goes in a batch of its
+  own.
+- TruffleHog now has up to 240 seconds of the full audit's 540, so SkillSpector and husk get less of it on a slow week; the
+  daily checks pick up where they stopped, as before.
+- Only a GitHub-shaped key (ghp_, gho_, ghu_, ghs_, ghr_, github_pat_) can be marked as this computer's own gh token. A gh
+  sign-in that uses an old 40-character token without a prefix is no longer noted as the computer's own.
+- The score trend compares with the latest full audit at least 12 hours older, whatever version made it; when ISR Bot's version
+  or scanners differ between the two, the line says so, and the number may be ISR Bot looking differently.
+
 ## v0.8.3: the roll-call inbox
 
 - Any Bot can file a reply in the inbox under another Bot's name, same as with `--save` today: Bots can't check who sends what, and the roll-call is shape-only and never counts in the score.

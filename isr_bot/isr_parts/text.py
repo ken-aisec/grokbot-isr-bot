@@ -73,6 +73,20 @@ def annotate_example(f, why):
 KEY_PREFIXES = tuple(re.compile(p) for p in (r"sk-(?:proj|ant|svcacct|admin)-", r"sk-ant-[a-z]{2,6}\d\d-", r"sk-", r"[sr]k_(?:live|test)_",
                                              r"gh[pousr]_", r"github_pat_", r"glpat-", r"xox[baprs]-", r"xai-", r"AKIA", r"ASIA", r"AIza",
                                              r"npm_", r"pypi-"))
+# v0.8.4 (item 3): the provider a key's own prefix names, for the label beside its masked value (the first that fits); a bare
+# sk- key is left unnamed, as several providers use it. Only a GitHub-shaped key can be this computer's own gh token (fp_marks)
+KEY_PROVIDERS = tuple((re.compile(p), n) for p, n in (
+    (r"sk-ant-", "Anthropic"), (r"sk-(?:proj|svcacct|admin)-", "OpenAI"), (r"[sr]k_(?:live|test)_", "Stripe"),
+    (r"gh[pousr]_|github_pat_", "GitHub"), (r"glpat-", "GitLab"), (r"xox[baprs]-", "Slack"), (r"xai-", "xAI"),
+    (r"AKIA|ASIA", "AWS"), (r"AIza", "Google"), (r"npm_", "npm"), (r"pypi-", "PyPI")))
+GITHUB_KEY = re.compile(r"gh[pousr]_|github_pat_")
+
+
+def key_label(s):
+    """"Anthropic key " for a key whose own prefix names its provider (KEY_PROVIDERS), else ""."""
+    return next((f"{n} key " for rx, n in KEY_PROVIDERS if rx.match(s or "")), "")
+
+
 PH_WORDS = ("your", "my", "the", "api", "access", "secret", "private", "key", "token", "password", "passwd", "pass", "here", "goes",
             "insert", "replace", "put", "example", "sample", "placeholder", "dummy", "fake", "redacted", "changeme", "change", "me", "value")
 

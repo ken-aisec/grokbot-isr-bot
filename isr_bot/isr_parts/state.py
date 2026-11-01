@@ -3,6 +3,21 @@ def now():
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
 
 
+def et_time(at, day=False):
+    """v0.8.4 (items 1, 2): a stored time (now()'s ISO text) as the owner reads it: "Oct 27 8:38 PM ET", or "Oct 27" with
+    `day`; the text as it is when it isn't a time. US Eastern by the US rule (daylight time from the second Sunday of March,
+    07:00 UTC, to the first Sunday of November, 06:00 UTC), so no time zone data is needed (Python 3.8 has no zoneinfo)."""
+    try:
+        t = dt.datetime.fromisoformat(str(at))
+    except ValueError:
+        return str(at)
+    t = (t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc)).astimezone(dt.timezone.utc)
+    sunday = lambda m, d: d + (6 - dt.date(t.year, m, d).weekday()) % 7   # the first Sunday on or after day d of month m
+    summer = dt.datetime(t.year, 3, sunday(3, 8), 7, tzinfo=dt.timezone.utc) <= t < dt.datetime(t.year, 11, sunday(11, 1), 6, tzinfo=dt.timezone.utc)
+    t = t - dt.timedelta(hours=4 if summer else 5)
+    return f"{t:%b} {t.day}" + ("" if day else f" {t.hour % 12 or 12}:{t:%M} {'AM' if t.hour < 12 else 'PM'} ET")
+
+
 def home():
     return os.environ.get("ISR_BOT_HOME", "/workspace/isr-bot")
 
