@@ -94,6 +94,7 @@ isr.py report                  weekly report + dashboard.html
 isr.py brief [--summary F] [--notes F] [--offline F]   weekly threat brief (HTML)
 isr.py rollcall --question     print the one fixed roll-call question to send, unchanged
 isr.py rollcall --save <Bot>      save one reply (stdin) as a 0600 file in the private 0700 roll-call folder
+isr.py rollcall --ingest     stage the replies Bots filed in the private roll-call inbox (no stdin); prints counts only
 isr.py rollcall --owner-said-yes [--dir DIR]  analyze roll-call replies, keep masked findings, delete the replies
 isr.py prepublish PATH [--json]   check a Bot before sharing it as a template
 isr.py fix [--roots DIR..]      preview: the cleanup list (path, file count, whose) and everything else
@@ -151,7 +152,7 @@ Release drill, dev dry-run (precision plan item 8): before each release the dev 
 
 ## Tests
 
-`make test` runs more than 2000 tests: seeded malicious skills must be caught, clean and defensive text must not be flagged, hostile feed content must not execute in the brief, and every feature has its own test.
+`make test` runs more than 2200 tests: seeded malicious skills must be caught, clean and defensive text must not be flagged, hostile feed content must not execute in the brief, and every feature has its own test.
 
 ## License
 

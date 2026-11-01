@@ -286,6 +286,7 @@ def fit_owner_first(obj, notes, limit=4096, keep=(), alias=False, before=None, b
 
 def cmd_daily(args):
     sweep_old_replies()
+    sweep_old_inbox()
     try:
         snap, new, fixed = run_audit(args, quick=True)
     except Busy:
@@ -1177,6 +1178,7 @@ def build_parser():
     r = sub.add_parser("rollcall"); r.add_argument("--dir"); r.add_argument("--owner-said-yes", action="store_true", help="the owner said yes to this roll-call in this conversation")
     r.add_argument("--question", action="store_true", help="print the one fixed roll-call question to send, unchanged")
     r.add_argument("--save", metavar="BOT", help="save one Bot's reply (read from stdin) as a 0600 file in the private roll-call folder")
+    r.add_argument("--ingest", action="store_true", help="stage every reply the Bots filed in the private roll-call inbox (no stdin); prints counts only")
     pp = sub.add_parser("prepublish"); pp.add_argument("path"); pp.add_argument("--json", action="store_true")
     ic = sub.add_parser("incident"); ic.add_argument("--note")
     cs = sub.add_parser("codescan"); cs.add_argument("path")

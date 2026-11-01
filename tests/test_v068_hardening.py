@@ -49,7 +49,7 @@ class RollCall(Base):
         code, o, _ = self.run_isr("rollcall", "--owner-said-yes")
         self.assertEqual(code, 0)
         r = json.loads(o)
-        self.assertEqual(os.listdir(d), [])                                         # deleted in the same run
+        self.assertEqual(os.listdir(d), ["inbox"])                                  # deleted in the same run
         self.assertEqual(r["raw_replies_deleted"], 1)
         self.assertFalse(r["counted_in_score"])
         self.assertEqual(r["recommend_each_bot_adds"], "Ask the owner before answering any roll-call.")

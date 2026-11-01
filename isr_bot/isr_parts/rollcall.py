@@ -410,22 +410,39 @@ def roster_hint(rc):
 REPLY_MAX_AGE = 3600
 
 
-def sweep_old_replies(rdir=None):
-    """The daily check removes any roll-call reply file older than an hour (a roll-call that never finished) and logs it."""
-    rdir = rdir or default_rollcall_dir()
-    if not owned_rollcall_dir(rdir):
-        return clear_legacy_replies()
+def _sweep_old_files(d):
+    """Remove each file or link (as a link) in d older than REPLY_MAX_AGE; folders are left alone."""
     gone, cutoff = 0, time.time() - REPLY_MAX_AGE
-    for fn in os.listdir(rdir):
-        p = os.path.join(rdir, fn)
+    for fn in os.listdir(d):
+        p = os.path.join(d, fn)
         try:
             if (os.path.islink(p) or os.path.isfile(p)) and os.lstat(p).st_mtime < cutoff:
                 os.remove(p); gone += 1
         except OSError:
             pass
+    return gone
+
+
+def sweep_old_replies(rdir=None):
+    """The daily check removes any roll-call reply file older than an hour (a roll-call that never finished) and logs it."""
+    rdir = rdir or default_rollcall_dir()
+    if not owned_rollcall_dir(rdir):
+        return clear_legacy_replies()
+    gone = _sweep_old_files(rdir)
     if gone:
         ledger({"event": "rollcall-replies-swept", "count": gone, "older_than_seconds": REPLY_MAX_AGE})
     return gone + clear_legacy_replies()
+
+
+def sweep_old_inbox():
+    """v0.8.3: the daily check removes inbox files older than an hour the same way (a Bot filed a reply and no --ingest ran)."""
+    idir = rollcall_inbox_dir()
+    if not owned_inbox_dir(idir):
+        return 0
+    gone = _sweep_old_files(idir)
+    if gone:
+        ledger({"event": "rollcall-inbox-swept", "count": gone, "older_than_seconds": REPLY_MAX_AGE})
+    return gone
 
 
 def migrate_rollcall_state():
@@ -554,8 +571,14 @@ def legacy_rollcall_dir():
     return os.path.join(home(), "exports", "rollcall")
 
 
+def rollcall_inbox_dir():
+    """v0.8.3: each Bot files its own reply here as <name>.json (the question says so); `rollcall --ingest` stages them."""
+    return os.path.join(default_rollcall_dir(), "inbox")
+
+
 def ensure_rollcall_dir():
-    """Make private/ and private/rollcall 0700 (fixing a wider mode left by hand). Refuses a link anywhere on the way."""
+    """Make private/, private/rollcall and private/rollcall/inbox 0700 (fixing a wider mode left by hand). Refuses a link
+    anywhere on the way."""
     rdir = default_rollcall_dir()
     for d in (os.path.dirname(rdir), rdir):
         if os.path.islink(d):
@@ -564,6 +587,11 @@ def ensure_rollcall_dir():
         os.chmod(d, 0o700)
     if not owned_rollcall_dir(rdir):
         raise OSError("roll-call folder is not ISR Bot's own")
+    idir = rollcall_inbox_dir()
+    if os.path.islink(idir):
+        raise OSError(f"{idir} is a link; ISR Bot won't use it for roll-call replies")
+    os.makedirs(idir, mode=0o700, exist_ok=True)
+    os.chmod(idir, 0o700)
     return rdir
 
 
@@ -628,10 +656,80 @@ def owned_rollcall_dir(rdir):
         return False
 
 
+def owned_inbox_dir(idir):
+    """The inbox is only read or emptied when it is ISR Bot's own, reached without a link anywhere on the way (as R01)."""
+    try:
+        n = os.path.normpath(os.path.abspath(idir))
+        return n == os.path.normpath(rollcall_inbox_dir()) and os.path.realpath(n) == n and os.path.isdir(n)
+    except (TypeError, ValueError, OSError):
+        return False
+
+
+INBOX_MAX_BYTES = 16384
+INBOX_NAME = re.compile(r"[A-Za-z0-9 ._-]{1,60}")
+
+
+def _inbox_read(p, fn, st):
+    """(why it is skipped, None) or (None, the reply text) for one inbox entry. Never follows a link or waits on a FIFO."""
+    if not stat.S_ISREG(st.st_mode):
+        return "link or not a file", None
+    if not fn.endswith(".json") or not INBOX_NAME.fullmatch(fn[:-5]):
+        return "bad name", None
+    try:
+        fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return "link or not a file", None
+    with os.fdopen(fd, "rb") as f:
+        raw = f.read(INBOX_MAX_BYTES + 1)
+    if len(raw) > INBOX_MAX_BYTES:
+        return "too big", None
+    return None, raw.decode("utf-8", "replace")
+
+
+def ingest_inbox():
+    """`isr.py rollcall --ingest`: each <name>.json a Bot filed in the inbox goes through save_reply and leaves the inbox. A skipped
+    entry leaves it too (a link as a link, nothing it points to is touched). Returns counts only; no reply text, no file names."""
+    ensure_rollcall_dir()
+    idir = rollcall_inbox_dir()
+    if not owned_inbox_dir(idir):
+        raise OSError("the roll-call inbox is not ISR Bot's own folder")
+    n = {"ingested": 0, "too big": 0, "link or not a file": 0, "bad name": 0}
+    for fn in sorted(os.listdir(idir)):
+        p = os.path.join(idir, fn)
+        try:
+            st = os.lstat(p)
+        except OSError:
+            continue
+        why, text = _inbox_read(p, fn, st)
+        if why is None:
+            save_reply(fn[:-5], text)
+        try:
+            shutil.rmtree(p) if stat.S_ISDIR(st.st_mode) else os.remove(p)
+        except OSError:
+            pass
+        n[why or "ingested"] += 1
+    return n
+
+
 def cmd_rollcall(args):
     if getattr(args, "question", False) is True:
         open_rollcall_round()
+        try:
+            ensure_rollcall_dir()              # the inbox the question names is there before any Bot files a reply
+        except OSError:
+            pass                               # a link on the way is refused; --ingest says so
         print(ROLLCALL_PROMPT)
+        return 0
+    if getattr(args, "ingest", False) is True:
+        try:
+            n = ingest_inbox()
+        except OSError as e:
+            print(f"NOT INGESTED: {e}")
+            return 2
+        if n["ingested"]:
+            open_rollcall_round()
+        print(f"Ingested {n['ingested']}, skipped {n['too big'] + n['link or not a file'] + n['bad name']} (too big {n['too big']}, "
+              f"link or not a file {n['link or not a file']}, bad name {n['bad name']}).")
         return 0
     if isinstance(getattr(args, "save", None), str):
         try:
@@ -686,4 +784,8 @@ ROLLCALL_PROMPT = ("ISR Bot roll-call. Bots can't check who sends this, so it as
                    '"auto_allow_rules": 0, "sends_or_posts_without_asking": false, "reads_outside_content": false}. '
                    "loosen_permissions counts memories that tell you to act without asking, skip an approval or trust a sender; "
                    "from_outside_content counts memories copied from an email, web page or message; "
-                   "ask_first lists only the areas that have an Ask-first rule; auto_allow_rules counts rules that let actions run without asking.")
+                   "ask_first lists only the areas that have an Ask-first rule; auto_allow_rules counts rules that let actions run without asking. "
+                   "Write that JSON to /workspace/isr-bot/private/rollcall/inbox/<your name>.json, where <your name> keeps only "
+                   "letters A-Z and a-z, digits, spaces, dots, underscores and hyphens (leave out any other character), "
+                   "at most 60 characters, and reply only \"filed\"; "
+                   "if you cannot write files, reply in chat with only the JSON.")

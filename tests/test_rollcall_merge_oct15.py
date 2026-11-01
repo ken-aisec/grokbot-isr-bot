@@ -85,7 +85,7 @@ class Base(unittest.TestCase):
     def run_rollcall(self):
         code, o, e = self.run_isr("rollcall", "--owner-said-yes")
         self.assertEqual(code, 0, o + e)
-        self.assertEqual(os.listdir(isr.default_rollcall_dir()), [])          # raw replies gone after every run
+        self.assertEqual(os.listdir(isr.default_rollcall_dir()), ["inbox"])   # raw replies gone after every run
         return json.loads(o)
 
     def state(self):
@@ -409,7 +409,7 @@ class StateFilesSomeoneSwapped(Base):
                 os.mkfifo(p)
                 code, o, e = self.run_within(p, "rollcall", "--owner-said-yes")
                 self.assertEqual(code, 0, o + e)
-                self.assertEqual(os.listdir(isr.default_rollcall_dir()), [])
+                self.assertEqual(os.listdir(isr.default_rollcall_dir()), ["inbox"])
                 self.assertTrue(stat.S_ISREG(os.lstat(p).st_mode))
                 self.assertEqual(self.state()["bots"], ["bot-f"])
 

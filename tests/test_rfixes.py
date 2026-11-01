@@ -39,7 +39,7 @@ class R01RollCallConsent(Box):
     def test_an_approved_run_cleans_its_own_folder_but_not_through_a_link(self):
         d = self.reply_dir()
         self.run_cmd("rollcall", "--owner-said-yes")
-        self.assertEqual(os.listdir(d), [])
+        self.assertEqual(os.listdir(d), ["inbox"])
         # the roll-call folder's parent swapped for a link to somewhere else: nothing there is touched
         exp = os.path.join(os.environ["ISR_BOT_HOME"], "private"); real = os.path.join(self.ws, "victim")
         shutil.rmtree(exp); os.makedirs(os.path.join(real, "rollcall")); os.symlink(real, exp)

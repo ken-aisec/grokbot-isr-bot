@@ -9,6 +9,10 @@ Since 0.8.0 the product, its engine and its files are all called ISR Bot. The en
 **None are open.** Batch 7d fixed the last ones. Each item that was in this list, or that the owner logged as must-fix, is recorded
 under "Fixed in batch 7d (the last must-fix items)" right below, with its test file.
 
+## v0.8.3: the roll-call inbox
+
+- Any Bot can file a reply in the inbox under another Bot's name, same as with `--save` today: Bots can't check who sends what, and the roll-call is shape-only and never counts in the score.
+
 ## v0.8.2: counting secrets and the computer's own gh token
 
 - A found secret's fingerprint is a plain sha256 of the value, cut to 12 hex characters (decision D1), with no per-run secret

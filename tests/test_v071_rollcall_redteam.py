@@ -104,7 +104,7 @@ class TheQuestionRevealsNothing(Base):
             self.assertNotIn(frag, kept)
         r011 = [f for f in json.loads(o)["findings"] if f["rule"] == "ISR-R011"]
         self.assertEqual(len(r011), 1)                                             # the Bot is told about, by field name only
-        self.assertEqual(os.listdir(isr.default_rollcall_dir()), [])
+        self.assertEqual(os.listdir(isr.default_rollcall_dir()), ["inbox"])
 
 
 class RepliesArePrivateAndShortLived(Base):
@@ -116,12 +116,12 @@ class RepliesArePrivateAndShortLived(Base):
         self.assertNotIn(os.sep + "exports" + os.sep, rdir + os.sep)
         for d in (rdir, os.path.dirname(rdir)):
             self.assertEqual(stat.S_IMODE(os.stat(d).st_mode), 0o700, d)
-        files = os.listdir(rdir)
-        self.assertEqual(files, ["Ledger.json"])
+        files = sorted(os.listdir(rdir))
+        self.assertEqual(files, ["Ledger.json", "inbox"])
         self.assertEqual(stat.S_IMODE(os.stat(os.path.join(rdir, files[0])).st_mode), 0o600)
         code, o, _ = self.run_isr("rollcall", "--owner-said-yes")
         self.assertEqual(code, 0); self.assertEqual(json.loads(o)["raw_replies_deleted"], 1)
-        self.assertEqual(os.listdir(rdir), [])
+        self.assertEqual(os.listdir(rdir), ["inbox"])
 
     def test_each_reply_is_deleted_as_soon_as_it_is_read(self):
         rdir = isr.ensure_rollcall_dir()
@@ -134,7 +134,7 @@ class RepliesArePrivateAndShortLived(Base):
             return real(d)
         with mock.patch.object(isr, "shape_reply", side_effect=spy):
             isr.rollcall_findings(rdir)
-        self.assertEqual(seen, [["b.json", "c.json"], ["c.json"], []])            # gone before the next one is even read
+        self.assertEqual(seen, [["b.json", "c.json", "inbox"], ["c.json", "inbox"], ["inbox"]])   # gone before the next one is even read
 
     def test_a_reply_put_there_by_hand_is_tightened_and_a_wide_folder_is_closed(self):
         rdir = isr.default_rollcall_dir(); os.makedirs(rdir, mode=0o755)
@@ -152,7 +152,7 @@ class RepliesArePrivateAndShortLived(Base):
         code, o, _ = self.run_isr("rollcall", "--owner-said-yes")
         self.assertNotIn("Dana", o + self.everything_isr_bot_kept().replace(open(target).read(), ""))
         self.assertTrue(os.path.exists(target))                                    # the link goes, what it points to stays
-        self.assertEqual(os.listdir(rdir), [])
+        self.assertEqual(os.listdir(rdir), ["inbox"])
 
     def test_replies_an_older_version_left_in_exports_are_removed(self):
         old = os.path.join(os.environ["ISR_BOT_HOME"], "exports", "rollcall"); os.makedirs(old)
