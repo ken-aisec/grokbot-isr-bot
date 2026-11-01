@@ -121,6 +121,9 @@ _isr_part("plugins")
 _isr_part("baseline")
 
 
+_isr_part("rulediff")
+
+
 def cmd_audit(args):
     try:
         snap, new, fixed = run_audit(args, quick=False)
@@ -295,13 +298,19 @@ def cmd_daily(args):
     # PR A, Codex round 2 (6): a critical or high finding an earlier run had no room to name is still to be said: never NO_CHANGES
     pending = undelivered_open(snap, new)
     moved = snap.get("plugin_version_changes") or []   # DQ-047 fix round 1: a pending plugin's version bump is said, never NO_CHANGES
-    if snap.get("scanners_missing") and not new and not fixed and not pending and not moved:
-        print("SCANNERS_MISSING " + ", ".join(snap["scanners_missing"]) + ": run `bash /workspace/isr-bot/app/scripts/install.sh --scanners`, then `isr.py daily` again")
+    chg, rsnap = rule_changes()   # v0.8.3: the rules, settings and access map since the last daily run (rulediff)
+
+    def say(text):   # v0.8.3: the rules snapshot moves on only once the output is out, so a run that dies first says it again
+        print(text)
+        sys.stdout.flush()
+        keep_rules_snapshot(rsnap)
+    if snap.get("scanners_missing") and not new and not fixed and not pending and not moved and not chg:
+        say("SCANNERS_MISSING " + ", ".join(snap["scanners_missing"]) + ": run `bash /workspace/isr-bot/app/scripts/install.sh --scanners`, then `isr.py daily` again")
         return 0
     gap = list(snap.get("stages_skipped") or [])
-    if not new and not fixed and not pending and not moved:
+    if not new and not fixed and not pending and not moved and not chg:
         # R04: nothing changed among what WAS checked; a stage that didn't finish is said, never hidden behind NO_CHANGES
-        print(f"NO_CHANGES_BUT_NOT_CHECKED {'; '.join(gap)[:300]}: these were not checked this run (last results kept)" if gap else "NO_CHANGES")
+        say(f"NO_CHANGES_BUT_NOT_CHECKED {'; '.join(gap)[:300]}: these were not checked this run (last results kept)" if gap else "NO_CHANGES")
         return 0
     out = {"score": snap["score"], "score_line": score_line(snap)}
     out["status"] = snap_status(snap)
@@ -315,6 +324,9 @@ def cmd_daily(args):
     decoys = [compact(f) for f in new if f["rule"].startswith("ISR-K")]
     if decoys:
         out["decoys"] = decoys      # always shown, whatever else is new
+    if chg:   # v0.8.3: never trimmed (keep); every text masked and cut, at most RULES_SHOWN per list
+        out["rule_changes_line"] = rule_changes_line(chg)
+        out["rule_changes"] = chg
     if pending:   # PR A, Codex round 2 (6): first, never cut short: what earlier runs couldn't name
         out["not_yet_reported"] = [alert_line(f) for f in pending[:PENDING_SHOWN]]
     # batch 5 (d1): a new finding in Grok Bot's own files is said in platform_notes, never in `new` (a vendor rug pull still breaks
@@ -329,7 +341,7 @@ def cmd_daily(args):
     alerts = scanner_alerts(snap)
     if alerts:
         out["scanner_alerts"] = alerts
-    text = fit_owner_first(out, notes, limit=6000, keep=("decoys", "scanner_alerts", "not_yet_reported", "plugin_version_changes"), before="new")
+    text = fit_owner_first(out, notes, limit=6000, keep=("decoys", "scanner_alerts", "not_yet_reported", "plugin_version_changes", "rule_changes"), before="new")
     # PR A, Codex round 2 (6): every critical or high finding this output doesn't name (no room) is kept as undelivered in the
     # snapshot until a daily run names it, and is listed whole in a file the routine must read and name from, today
     said = json.loads(text)
@@ -349,7 +361,7 @@ def cmd_daily(args):
                     "and name every one (severity, title, where), one line each, beyond the 6-line limit. Until a daily run names one "
                     "itself, it is listed again under not_yet_reported."})] + list(said.items())[3:])
         text = json.dumps(said, indent=1)
-    print(text)
+    say(text)
     return 0
 
 

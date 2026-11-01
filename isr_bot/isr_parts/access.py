@@ -579,8 +579,12 @@ def _ax_mcp(paths, bases):
 
 def _ax_auto_allow(bases):
     """(the Allow-automatically rules in Grok Bot's settings file, each with its area, its id and the start of its text; the
-    settings; "found", "missing" or "unreadable"). The file is read through _ax_open."""
+    settings; "found", "missing" or "unreadable"). The file is read through _ax_open. v0.8.3 (Option A, the owner's yes Nov 1): one of
+    the two fixed NATIVE_SETTINGS paths reached through a link (agent-data is a link to sand-data on Grok Bot computers) is
+    resolved once and the resolved path is read the same no-follow way, only when it is a plain file of this user's. No other
+    file the map reads follows a link."""
     refused = []
+    fixed = {os.path.expanduser(c) for c in NATIVE_SETTINGS}
 
     def read(p):
         st = _look(p)
@@ -588,7 +592,13 @@ def _ax_auto_allow(bases):
             refused.append(p)
         if not st:
             return None
-        doc = _ax_json_file(p, bases)
+        if p in fixed and os.path.realpath(p) != os.path.normpath(os.path.abspath(p)):
+            real = os.path.realpath(p)
+            rst = _look(real)
+            ok = bool(rst) and stat.S_ISREG(rst.st_mode) and rst.st_uid == os.getuid()
+            doc = _ax_json_file(real, bases) if ok else None
+        else:
+            doc = _ax_json_file(p, bases)
         if not isinstance(doc, dict):
             refused.append(p)
         return doc

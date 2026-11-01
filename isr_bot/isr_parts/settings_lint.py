@@ -228,6 +228,22 @@ def rule_entries(text):
     return [l.strip() for l in (text if isinstance(text, list) else text.splitlines()) if l.strip()]
 
 
+# v0.8.3: a rule that only reads names a connector without allowing an install ("Read-only ... reads through the X connector").
+# It is skipped by ISR-A004 only when it says it reads AND names nothing that writes, installs, creates, schedules or sends.
+_READ_WORDS = re.compile(r"(?i)\b(?:read(?:s|ing|-only)?|list(?:s|ing)?)\b|\b(?:view|search|fetch)\w*")
+_WRITE_WORDS = re.compile(r"(?i)\b(?:creat\w*|add\w*|install\w*|enabl\w*|authori[sz]\w*|set\s*up|edit\w*|modif\w*|updat\w*|writ\w*|"
+                          r"delet\w*|remov\w*|schedul\w*|run\w*|configur\w*|manag\w*|send\w*|post\w*|publish\w*|trigger\w*|connect(?!or)\w*|"
+                          r"overwrit\w*|exec\w*|upload\w*|append\w*|replac\w*|mov(?:e|es|ed|ing)|renam\w*|cop(?:y|ies|ied|ying)|"
+                          r"sav(?:e|es|ed|ing)|submit\w*|commit\w*|push\w*|deploy\w*|invok\w*|call(?:s|ed|ing)?|operat\w*|control\w*|chang\w*)\b")
+
+
+def grants_only_reads(l):
+    """True when the rule (objects already taken out, as lint_auto_review holds it) says it reads and names no write. A tool
+    name's underscores split its words for the write check, so slack_send_message names a send (Codex, fix round 1)."""
+    body = re.sub(r"(?i)^\s*allow\s+automatically\s*:\s*", "", l)
+    return bool(_READ_WORDS.search(body)) and not _WRITE_WORDS.search(body.replace("_", " "))
+
+
 def lint_auto_review(text, where, check_missing=True):
     out = []
     accepted = accepted_auto_allow()
@@ -247,7 +263,7 @@ def lint_auto_review(text, where, check_missing=True):
             out[-1]["fingerprint"] = fp
             if fp in accepted:   # still critical; active() files it under accepted risks so it shows, but doesn't count
                 out[-1]["accepted_exact"] = {"sha256": fp, "label": accepted[fp]}
-        if re.search(r"(?i)allow\s+automatically", l) and re.search(r"(?i)(automation|routine|schedul|cron|trigger|create\s+(a\s+)?skill|install|plugin|connector)", l):
+        if re.search(r"(?i)allow\s+automatically", l) and re.search(r"(?i)(automation|routine|schedul|cron|trigger|create\s+(a\s+)?skill|install|plugin|connector)", l) and not grants_only_reads(l):
             out.append(finding("ISR-A004", "Auto-allow on creating automations or installs", "high", ["ASI10", "ASI03"], f"{where}:{i}", raw[:140],
                                "Change it to Ask first. Anything that creates a routine or installs code can give injected text a way to run again later, unattended."))
     missing = ask_first_gaps("\n".join(lines)) if check_missing else []

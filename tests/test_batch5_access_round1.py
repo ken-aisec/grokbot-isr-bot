@@ -235,7 +235,8 @@ class NoLinkIsFollowed(_Access):
         real = w(os.path.join(self.home, "elsewhere.json"), SETTINGS)
         os.symlink(real, os.path.join(self.home, "agent-data", "settings.json"))
         rules, settings, status = isr._ax_auto_allow(isr._ax_bases([self.home]))
-        self.assertEqual((rules, settings, status), (None, None, "unreadable"))
+        # v0.8.3 (Option A, the owner's yes Nov 1): a fixed settings path reached through a link to this user's own plain file is read
+        self.assertEqual((len(rules), settings, status), (2, {"local_execution": "always", "auto_review": True}, "found"))
 
 
 # ---------------------------------------------------------------- 6: no map, the brief as it was

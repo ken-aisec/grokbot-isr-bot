@@ -13,6 +13,11 @@ under "Fixed in batch 7d (the last must-fix items)" right below, with its test f
 
 - Any Bot can file a reply in the inbox under another Bot's name, same as with `--save` today: Bots can't check who sends what, and the roll-call is shape-only and never counts in the score.
 
+## v0.8.3: the daily rule diff and the settings file through a link
+
+- A Bot that can write `state/` could rewrite `state/rules_snapshot.json` to hide a change from the next daily check. That is the same trust model as every other state file (`last_findings.json` among them); it is not guarded.
+- The access map reads Grok Bot's settings.json through a link (Option A, the owner's yes Nov 1), for the two fixed settings paths only. Someone who already owns `~/agent-data` could point settings.json at another JSON file of this user's; the map would then count that file's rules (counts and masked rule text only).
+
 ## v0.8.2: counting secrets and the computer's own gh token
 
 - A found secret's fingerprint is a plain sha256 of the value, cut to 12 hex characters (decision D1), with no per-run secret
