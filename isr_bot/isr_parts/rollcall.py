@@ -397,7 +397,8 @@ def roster_hint(rc):
     if not rc or not rc.get("findings"):
         return None
     rpath = os.path.join(home(), *ROSTER_FILE)
-    day = str(rc.get("at", ""))[:10]
+    at = str(rc.get("at", ""))
+    day = et_date(at) or at[:10]   # 1.0 (U2, Codex): the roll-call's US Eastern day (was the UTC day); kept text when not a time
     if not os.path.isfile(rpath) or not roster_bots():
         return (f"No roster saved: roll-call findings from {day} may name Bots you removed. Save the current roster to "
                 "exports/roster.json (the audit skill does this first) and they drop out on the next run.")

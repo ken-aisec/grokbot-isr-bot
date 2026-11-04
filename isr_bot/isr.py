@@ -722,7 +722,7 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
     missing = [n for n in ("SkillSpector", "husk", "gitleaks", "TruffleHog", "pip-audit", "OSV-Scanner") if n not in used]
     engines_html = (f"<p class='engines'>Checked by {len(used)} scanners: {e(', '.join(used))}."
                     + (f" Not installed: {e(', '.join(missing))} (run setup step 2)." if missing else "") + "</p>")
-    generated = dt.datetime.now(dt.timezone.utc).strftime("%-d %b %Y")
+    generated = f"{et_clock(now()):%-d %b %Y}"   # 1.0 (U2, Codex): the US Eastern day, as every time shown (was the UTC day)
     return f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>ISR Bot: {e(status)}</title><style>
 :root{{--bg:#eef1f0;--card:#fff;--ink:#17202b;--soft:#5b6572;--line:#d9dfdd;--navy:#1f3a5f;--red:#b3261e;--amber:#b77900;--green:#2e7d5b;--sea:#3f6f8f;

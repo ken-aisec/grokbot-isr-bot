@@ -14,18 +14,26 @@ mtime) come from the frozen time too. Each test puts TZ back (time.tzset) when i
 
 Tests marked "replay" fail on bc91ed7 (1.0 batch 2, whose date code is 56ed018's, v0.8.5) at their assertion, in any time
 zone ("Nov 3", "2026-11-03"). "guard" ones keep what must not change; the three-zone guard fails there too ("Nov 3" in every
-zone), and the et_date guard errors there (no et_date). Every planted value is FAKE; the box is a temp folder."""
+zone), and the et_date guard errors there (no et_date). Every planted value is FAKE; the box is a temp folder.
+
+Codex review of batch 3: two more shown days were the UTC day, the audit's roster warning ("... older than the roll-call from
+2026-11-03") and the weekly brief's headline ("3 Nov 2026"). The evening replay and the three-zone guard check both now; on
+f76851f (1.0 batch 4) they fail at those assertions, in any time zone."""
 import datetime as dt, json, os, sqlite3, sys, time, types, unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import test_batch5_access_map as b5  # noqa: E402  (module access: the access-map harness; its tests don't run twice)
+import test_batch5_brief_access as b5b  # noqa: E402  (module access: its brief harness, on top of the access-map one)
 import isr  # noqa: E402
 
 AT = dt.datetime(2026, 11, 3, 1, 32, 16, tzinfo=dt.timezone.utc)   # Nov 2 8:32 PM ET, the red run in the v0.8.5 suite log
 ZONES = {"UTC": 0, "America/New_York": -5 * 3600, "Pacific/Kiritimati": 14 * 3600}   # each zone's UTC offset at AT
 LAST_AUDIT = "(from the last audit, Nov 2)"
 ROLLCALL = "roll-call on Nov 2"
+ROSTER_NOTE = ("The saved roster (exports/roster.json) is older than the roll-call from 2026-11-02, so removed Bots are not dropped. "
+               "Save the current roster and they drop out on the next run.")
+BRIEF_DAY = "weekly report</span><span>2 Nov 2026</span>"   # the brief's headline date
 
 
 class _Frozen(dt.datetime):
@@ -46,7 +54,7 @@ def put_tz_back(old):
     time.tzset()
 
 
-class _Evening(b5._Access):
+class _Evening(b5b._Brief):
     def setUp(self):
         super().setUp()
         self.addCleanup(put_tz_back, os.environ.get("TZ"))
@@ -76,15 +84,22 @@ class _Evening(b5._Access):
         self.assertEqual(code, 0)
         return out
 
+    def other_days(self):
+        """The two other days the evening shows (Codex, batch 3 review): the audit's roster warning and, from a brief run then,
+        its headline. The roster was saved before the roll-call, so the audit warns about it."""
+        self.assertEqual([n for n in self.snap()["notes"] if "exports/roster.json" in n], [ROSTER_NOTE])
+        self.assertIn(BRIEF_DAY, self.brief([])[2])
+
 
 class AnEveningAudit(_Evening):
-    def test_an_evening_audit_is_the_eastern_day(self):   # replay (bc91ed7: "Nov 3")
+    def test_an_evening_audit_is_the_eastern_day(self):   # replay (bc91ed7: "Nov 3"; f76851f: "2026-11-03", "3 Nov 2026")
         self.box()
         out = self.evening()
         self.assertIn(LAST_AUDIT, out)
         self.assertIn(ROLLCALL, out)
         m = json.loads(self.map_file())   # the days the audit kept in state/access_map.json
         self.assertEqual((m["rollcall"]["at"], [b["said_at"] for b in m["bots"]]), ("2026-11-02", ["2026-11-02", "2026-11-02"]))
+        self.other_days()
 
     def test_rollcall_said_at_is_the_eastern_day(self):   # replay (bc91ed7: "2026-11-03")
         self.box()
@@ -101,6 +116,7 @@ class AnEveningAudit(_Evening):
                 out = self.evening()
                 self.assertIn(LAST_AUDIT, out)
                 self.assertIn(ROLLCALL, out)
+                self.other_days()
 
 
 class TheDayOfAStoredTime(unittest.TestCase):
