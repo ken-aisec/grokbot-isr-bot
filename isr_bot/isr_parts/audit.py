@@ -301,7 +301,7 @@ def audit(roots, exports, quick=False):
         secret_paths = [f["where"].split(":")[0] for f in fs if f["rule"] in ("ISR-S001", "ISR-S002")
                         and not f.get("platform_log_prefix")]   # 1.0 (U3): a key prefix isn't a key to check
         first = {f["where"].split(":")[0] for f in fs if f["rule"] in ("ISR-S001", "ISR-S002") and f["severity"] in ("critical", "high")}
-        started, stage = now(), "TruffleHog (which keys still work)"
+        started, stage = now(), TRUFFLEHOG_STAGE
         # v0.8.4 fix: when the stages before it used up the run's time, TruffleHog is skipped as ran out of time (as a batch that
         # didn't finish), never as missing; soft() would skip it before it could say so
         skipped = time_left() <= 3 and bool(tool("trufflehog"))
@@ -311,7 +311,9 @@ def audit(roots, exports, quick=False):
             ks = None
         else:
             ks = soft(stage, (), notes, None, trufflehog_status, secret_paths, notes, first=first)
-        if ks is None or stage in STAGE_FAILED:
+        # 1.0 (U1, the Nov 1 bugs' LATER item 1): read back from disk only when nothing came back (an exception, or nothing re-checked);
+        # otherwise this run's answers, with their fingerprints, which the saved file never has (one token in two copies read as two)
+        if not ks:
             old = load_json(state_path("key_status.json"), {}) or {}
             files = old.get("files", {})
             if str(old.get("at") or "") < started and isinstance(files, dict):   # v0.8.4 (item 1): nothing re-checked this run

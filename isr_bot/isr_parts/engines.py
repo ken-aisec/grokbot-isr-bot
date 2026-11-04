@@ -15,6 +15,7 @@ TIMED_OUT = "ran out of time"
 
 
 STAGE_FAILED = []        # stages that did not finish in the current run
+STAGE_PARTIAL = []       # 1.0 (U1): stages that ran but didn't re-check everything, one line each with its counts
 
 
 def carry(rules):

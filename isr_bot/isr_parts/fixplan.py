@@ -440,6 +440,7 @@ TRUFFLEHOG_BATCH_SECONDS = 60    # one batch's own limit, so one slow batch can'
 TRUFFLEHOG_BATCH_FILES, TRUFFLEHOG_BATCH_BYTES = 25, 10_000_000
 TRUFFLEHOG_MAX_FILES = 200
 SLOW_SCANNERS = set()            # scanners that ran out of time this run: still expected, never said as missing
+TRUFFLEHOG_STAGE = "TruffleHog (which keys still work)"   # its audit stage's name (audit.py), which its partly-checked line starts with
 
 
 def _disk_bytes(p, until=None):
@@ -498,7 +499,9 @@ def trufflehog_status(paths, notes, first=()):
     """Ask each key's own provider whether it still works (TruffleHog verification). Scoped to files ISR Bot
     already flagged. Raw key values are dropped the moment they're read; only detector, file and status are kept.
     v0.8.4 (item 1): in batches, each with its own time limit, inside one budget; a file a finished batch re-checked gets its new
-    answer, one not reached keeps its earlier answer, marked old. The stage still fails if any batch didn't finish."""
+    answer, one not reached keeps its earlier answer, marked old. The stage still fails if any batch didn't finish.
+    1.0 (U1): a run where a batch ran out of time but another finished is partly checked (STAGE_PARTIAL), not failed; one where
+    none finished, or a batch failed with an error, still fails."""
     exe = tool("trufflehog")
     if not exe:
         scanner_absent(notes, "trufflehog", "TruffleHog not installed: can't tell live keys from dead ones (install.sh --scanners).")
@@ -565,7 +568,18 @@ def trufflehog_status(paths, notes, first=()):
                                                             else "live/dead key status is unavailable this run."))
     if short:   # v0.8.4 (item 1): slow, not missing: its own note, never SCANNERS MISSING's
         SLOW_SCANNERS.add("TruffleHog")
-        fail_note(notes, f"TruffleHog ran out of time: {len(done)} of {len(ordered)} files re-checked; {said_rest}.")
+        said = f"TruffleHog ran out of time: {len(done)} of {len(ordered)} files re-checked; {said_rest}."
+        if done and not why:
+            # 1.0 (U1): some batches answered, so the stage ran: partly checked, not skipped. The same note without fail_note (no
+            # "failed" word, so soft() doesn't fail the stage) and one line with the counts. Nothing answered, or a batch that
+            # failed with an error, stays fail_note: skipped, as before (fail closed)
+            notes.append(said)
+            kept = sum(1 for p in rest if any(x == p or x.startswith(p.rstrip("/") + "/") for x in carried))
+            none = len(rest) - kept
+            STAGE_PARTIAL.append(f"{TRUFFLEHOG_STAGE}: {len(done)} of {len(ordered)} files re-checked; {kept} kept their older answer"
+                                 + (f"; {none} {'has' if none == 1 else 'have'} no answer this run" if none else ""))
+        else:
+            fail_note(notes, said)
     elif not why and rest:
         notes.append(f"TruffleHog checked {len(done)} of {len(ordered)} flagged files (the most serious and newest first); {said_rest}.")
     if not done:

@@ -324,6 +324,8 @@ def render_md(snap, hist, tag):
                   f"{len(fyi)} notes about software the platform or a plugin shipped. Nothing here needs you. `isr.py breakdown` lists them."]
     if snap.get("stages_skipped"):
         lines += ["", "## Skipped this run", ""] + [f"- {x}: did not finish, so its last results were kept." for x in snap["stages_skipped"]]
+    if snap.get("stages_partial"):   # 1.0 (U1): it ran, and the files it didn't re-check kept their older answer
+        lines += ["", "## Partly checked this run", ""] + [f"- {x}." for x in snap["stages_partial"]]
     exc = exceptions_active(snap)
     if exc:
         lines += ["", "## Security-tool exceptions", ""] + [

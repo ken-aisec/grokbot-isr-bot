@@ -350,6 +350,7 @@ def run_audit_locked(args, quick):
     global DEADLINE
     saved = ENGINE_BUDGET
     del STAGE_FAILED[:]
+    del STAGE_PARTIAL[:]
     try:
         limit = DAILY_LIMIT if quick else RUN_LIMIT
         if getattr(args, "budget", None) is not None:
@@ -410,6 +411,8 @@ def run_audit_locked(args, quick):
                 "inventory": meta["inventory"], "notes": meta["notes"]}
     if meta.get("plugin_version_changes"):   # DQ-047 fix round 1: cmd_daily says them; only when there are any
         snapshot["plugin_version_changes"] = meta["plugin_version_changes"]
+    if STAGE_PARTIAL:   # 1.0 (U1): a stage that ran but didn't re-check everything; only when there is one
+        snapshot["stages_partial"] = list(STAGE_PARTIAL)
     snapshot["vendor"] = mask_stored(vendor)   # v0.8.1 (§3.5): never scored; the platform-notes count and `isr.py breakdown` read them
     # PR A, Codex round 2 (6): critical or high findings a daily run had no room to name stay owed while they are open, whatever
     # run comes next (cmd_daily names them and clears them)

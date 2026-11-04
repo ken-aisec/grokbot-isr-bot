@@ -155,7 +155,11 @@ def cmd_audit(args):
         out["scanners_missing"] = snap["scanners_missing"]
     if snap.get("stages_skipped"):
         out["stages_skipped"] = snap["stages_skipped"]
-        out["not_checked_this_run"] = list(snap["stages_skipped"])   # DQ-025: same meaning as daily
+    if snap.get("stages_partial"):   # 1.0 (U1): a stage that ran but didn't re-check everything, with its counts
+        out["stages_partial"] = snap["stages_partial"]
+    gap = list(snap.get("stages_skipped") or []) + list(snap.get("stages_partial") or [])
+    if gap:   # DQ-025: same meaning as daily; 1.0 (U1): the partly-checked lines too, so it still names what wasn't re-checked
+        out["not_checked_this_run"] = gap
     out["not_counted_builtin"] = sum(1 for f in snap["findings"] if not counts(f))
     look = [f for f in snap["findings"] if f.get("class") == "pattern"]
     if look:   # no severity, not scored: read each in full and try to show it's a false alarm before showing it (isr.py dismiss)
@@ -706,6 +710,8 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
     fyi_n = sum(1 for f in (snap or {}).get("findings", []) if not counts(f))
     skipped = (snap or {}).get("stages_skipped", [])
     acc_html = (f"<p class='small'><b>Skipped this run:</b> {e(', '.join(skipped))}. Their last results were kept, so the score didn't move because of it.</p>" if skipped else "")
+    partial = (snap or {}).get("stages_partial") or []   # 1.0 (U1, Codex 1): it ran, so it is in "Checked by"; this says what it didn't re-check
+    acc_html += (f"<p class='small'><b>Partly checked this run:</b> {e('; '.join(partial))}. Files it didn't re-check keep their older answer, with its date.</p>" if partial else "")
     acc_html += (f"<p class='small'>{fyi_n} notes about built-in plugins and skills are listed for information and not counted in the score.</p>" if fyi_n else "")
     acc_html += "".join(f"<p class='small'><b>⚠ Security-tool exception:</b> {e(x['skill'])} is flagged by two scanners. You confirmed it is a security tool. "
                        f"Ends {e(x['until'])} ({x['days_left']} days) or when the skill changes.</p>" for x in exc)

@@ -79,7 +79,8 @@ class TruffleHogBatches(Box):
         notes = self.snap()["notes"]                                    # the audit's printed answer is cut to fit
         said = [n for n in notes if n.startswith("TruffleHog ran out of time")]
         self.assertEqual(said, [f"TruffleHog ran out of time: 50 of 250 files re-checked; the rest show answers from {OLD_ET}."], notes)
-        self.assertIn(STAGE, self.snap()["stages_skipped"])            # fail closed stays
+        self.assertNotIn(STAGE, self.snap()["stages_skipped"])
+        self.assertEqual(self.snap()["stages_partial"], [f"{STAGE}: 50 of 250 files re-checked; 200 kept their older answer"])
         self.assertFalse([n for n in notes if "SCANNERS MISSING" in n], notes)
         self.assertNotIn("TruffleHog", self.snap().get("scanners_missing") or [])
         files = isr.load_json(isr.state_path("key_status.json"), {})["files"]
