@@ -623,7 +623,7 @@ def key_status_severity(findings, status, ran=None):
         return findings
     out = []
     for f in findings:
-        if f["rule"] in ("ISR-S001", "ISR-S002"):
+        if f["rule"] in ("ISR-S001", "ISR-S002") and not f.get("platform_log_prefix"):   # 1.0 (U3): a platform note keeps its title and fix
             bound = bound_keys(f, status)
             f = dict(f)
             live = [(x, k) for x, k in bound if k["status"] == "live"]

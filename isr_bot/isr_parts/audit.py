@@ -298,7 +298,8 @@ def audit(roots, exports, quick=False):
         fs += soft("pip-audit (installed Python packages)", ("ISR-D001",), notes, [], package_findings, notes)
         fs += soft("OSV-Scanner (project dependencies)", ("ISR-D002",), notes, [], osv_findings, roots, notes)
         fs += soft("ISR Bot's own tools", ("ISR-W001",), notes, [], self_findings, notes)
-        secret_paths = [f["where"].split(":")[0] for f in fs if f["rule"] in ("ISR-S001", "ISR-S002")]
+        secret_paths = [f["where"].split(":")[0] for f in fs if f["rule"] in ("ISR-S001", "ISR-S002")
+                        and not f.get("platform_log_prefix")]   # 1.0 (U3): a key prefix isn't a key to check
         first = {f["where"].split(":")[0] for f in fs if f["rule"] in ("ISR-S001", "ISR-S002") and f["severity"] in ("critical", "high")}
         started, stage = now(), "TruffleHog (which keys still work)"
         # v0.8.4 fix: when the stages before it used up the run's time, TruffleHog is skipped as ran out of time (as a batch that

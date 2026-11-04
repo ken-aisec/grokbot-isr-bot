@@ -524,6 +524,51 @@ def group_why(d):
             "the shared computer. Transcripts and tool output often capture tokens by accident.")
 
 
+# 1.0 (U3): the Grok CLI's own log records the first 12 characters of its own sign-in key each time it refreshes it. Such a
+# hit is a platform note, decided by where the file is and the hit's measured shape, never a list of values. gitleaks runs with
+# --redact and the secret can't be read back from a growing multi-MB log (GITLEAKS_FRAGMENT, _read_unchanged), so its length
+# comes from the report alone: a one-line hit's span EndColumn - StartColumn + 1 is the original match's bytes (both columns
+# share one base, whichever piece gitleaks counted them in), and the secret is that minus the redacted Match's other bytes.
+# Calibrated on gitleaks 8.30.1 with this config (tests/test_v100_platform_log.py). Any other hit stays counted.
+PLATFORM_LOG = ".grok/logs/unified.jsonl"
+PLATFORM_LOG_PREFIX_MAX = 12
+PLATFORM_LOG_FIELD = re.compile(r'[A-Za-z0-9_]*(key_prefix|pre_key|post_key)":"REDACTED"')
+PLATFORM_LOG_TITLE = "gitleaks: short key prefixes in Grok Bot's own log"
+PLATFORM_LOG_LINE = "Grok Bot's own log: shows a short key prefix. Not counted."
+
+
+def platform_log_places():
+    """The Grok CLI's own log under each home secret_store_places() uses, with the home's own links followed."""
+    return {os.path.normpath(os.path.join(os.path.realpath(b), PLATFORM_LOG)) for b in dict.fromkeys((os.path.expanduser("~"), "/home/box"))}
+
+
+def prefix_only(leak, path):
+    """True only for a gitleaks hit that is a short key prefix in the Grok CLI's own log: rule generic-api-key, one line, four
+    int columns, one REDACTED and no line break in Match, Match exactly the compact field (key_prefix, pre_key, post_key), a
+    measured length of 1..PLATFORM_LOG_PREFIX_MAX, and the file's realpath the log's place (no file is opened)."""
+    if leak.get("RuleID") != "generic-api-key":
+        return False
+    sl, el, sc, ec = (_int_field(leak, k) for k in ("StartLine", "EndLine", "StartColumn", "EndColumn"))
+    if None in (sl, el, sc, ec) or sl != el:
+        return False
+    m = leak.get("Match")
+    if not isinstance(m, str) or m.count("REDACTED") != 1 or "\n" in m or "\r" in m or not PLATFORM_LOG_FIELD.fullmatch(m):
+        return False
+    if not 1 <= (ec - sc + 1) - (len(m.encode("utf-8")) - len("REDACTED")) <= PLATFORM_LOG_PREFIX_MAX:
+        return False
+    return isinstance(path, str) and path.startswith("/") and os.path.realpath(path) in platform_log_places()
+
+
+def platform_log_finding(path, leaks):
+    """One info ISR-S002 for the prefix-only hits of the Grok CLI's own log. Its own ident gives it a key no counted record has
+    (dedupe keeps both) and one that doesn't change as the log grows (no new/fixed churn)."""
+    f = finding("ISR-S002", PLATFORM_LOG_TITLE, "info", ["ASI03", "LLM02"], f"{path}:{min(l['StartLine'] for l in leaks)}",
+                f"{len(leaks)} short key prefix(es): generic-api-key", PLATFORM_LOG_LINE, source="gitleaks", path=path,
+                ident="gitleaks:platform-log-prefix")
+    f["platform_log_prefix"] = True
+    return f
+
+
 def gitleaks_findings(roots, notes):
     exe = tool("gitleaks")
     if not exe:
@@ -598,6 +643,12 @@ def gitleaks_findings(roots, notes):
                 out[-1]["member_hits"] = [member(l, d) for l in leaks]
                 mark_own(out[-1], out[-1]["member_hits"])
         for fpath, leaks in per_file.items():
+            short = {id(l) for l in leaks if prefix_only(l, fpath)}   # 1.0 (U3): the Grok CLI log's own key prefixes, a platform note
+            if short:
+                out.append(platform_log_finding(fpath, [l for l in leaks if id(l) in short]))
+                leaks = [l for l in leaks if id(l) not in short]   # the rest keep today's record exactly
+                if not leaks:
+                    continue
             kinds = sorted({l.get("RuleID", "secret") for l in leaks})
             generic = all(k.startswith("generic") for k in kinds)
             out.append(_note_examples(finding("ISR-S002", "gitleaks: secrets in file", secret_severity(fpath or "", generic), ["ASI03", "LLM02"],

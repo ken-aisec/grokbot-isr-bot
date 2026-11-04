@@ -173,6 +173,8 @@ def loud_note(f):
 
 def platform_note_line(f):
     """One plain line for a platform note."""
+    if f.get("platform_log_prefix"):   # 1.0 (U3): the Grok CLI log's own key prefixes, in the owner's words
+        return PLATFORM_LOG_LINE
     short, ln = _platform_place(f.get("where", ""))
     line = f" (line {ln})" if ln else ""
     v = platform_vendor(f["where"].split(":")[0]) if str(f.get("where", "")).startswith("/") else "Grok Bot"

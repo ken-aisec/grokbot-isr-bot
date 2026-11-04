@@ -927,7 +927,7 @@ def platform_file(f):
     w = f.get("where", "") if isinstance(f, dict) else str(f)
     if in_pending_plugin(w) or (isinstance(f, dict) and str(f.get("rule") or "").startswith("ISR-K")):   # v0.8.1 (§3.1): a decoy is the owner's
         return False
-    if isinstance(f, dict) and f.get("platform_hook"):
+    if isinstance(f, dict) and (f.get("platform_hook") or f.get("platform_log_prefix")):   # 1.0 (U3): the Grok CLI log's own key prefixes
         return True
     lit = literal_path(f)   # item 8: the producer's own file, when it recorded one
     if (lit in secret_store_places()) if lit else (f"{w}".startswith("/") and is_platform_secret_store(w)):
@@ -945,9 +945,10 @@ def mark_platform(fs):
     for f in fs:
         if f.get("scope") != "platform" or f.get("guarded"):
             continue
-        if f.get("class") in ("pattern", "tip") or f.get("platform_hook") or unconfirmed_platform_vote(f, fs):   # Decision, Oct 13: the platform's hook is a Platform line
+        if (f.get("class") in ("pattern", "tip") or f.get("platform_hook") or f.get("platform_log_prefix")   # Decision, Oct 13: the platform's hook is a Platform line
+                or unconfirmed_platform_vote(f, fs)):
             f["class"], f["label"] = "platform", PLATFORM
-            f["fix"] = f["fix"] if f.get("platform_hook") or f["rule"] == "ISR-I009" else PLATFORM_FIX
+            f["fix"] = f["fix"] if f.get("platform_hook") or f.get("platform_log_prefix") or f["rule"] == "ISR-I009" else PLATFORM_FIX   # 1.0 (U3): keeps its own line
             if f["severity"] != "info" and not f.get("platform_hook"):   # the hook keeps its low (listed fact), never scored
                 f["severity_was"], f["severity"] = f["severity"], "info"
         elif f["rule"] not in SECRET_RULES:
@@ -963,7 +964,10 @@ def counts(f):
     DQ-022/023/024/028–030: true quarantine, sample/test folders outside loadable locations, and fiction inside
     built-in templates never move the score. Sample-named folders inside a loadable skill still count.
     R3: keys and decoy copies (SECRET_RULES) count wherever they sit, including quarantine and sample folders.
-    v0.8.1: never a finding about a place that isn't the owner's (owner_of_finding), first."""
+    v0.8.1: never a finding about a place that isn't the owner's (owner_of_finding), first.
+    1.0 (U3): never the Grok CLI log's own short key prefixes (platform_log_prefix), before that."""
+    if f.get("platform_log_prefix"):
+        return False
     if owner_of_finding(f) != "user":
         return False
     w = f.get("where", "")
