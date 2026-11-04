@@ -20,7 +20,7 @@ import isr  # noqa: E402
 from test_batch5_access_map import AGENT, SETTINGS, w
 from test_batch5_brief_access import _Brief
 
-DAY = dt.date.today()
+DAY = dt.date.fromisoformat(isr.et_date(isr.now()))
 TODAY = f"{DAY.strftime('%b')} {DAY.day}"
 VOCAB_LABELS = ("Gmail", "Google Drive", "Google Calendar", "Slack", "Discord", "Microsoft Teams", "Microsoft 365", "GitHub", "Notion",
                 "1Password", "Bitwarden", "Telegram", "Dropbox", "Jira", "Linear", "Stripe", "Shopify", "Zapier", "OpenAI", "Claude",

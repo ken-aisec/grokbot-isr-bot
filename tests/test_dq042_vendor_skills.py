@@ -240,9 +240,11 @@ class OtherSkillsUnchanged(Box):
         # SkillSpector + ISR Bot on a plugin-cache skill: not a platform skill folder, and ISR Bot's own rule agrees.
         d = os.path.join(self.home, "sand-data", "plugins", "cache", "cursor-public", "vercel", "e48c1d", "skills", "env-vars")
         ud = os.path.join(self.home, "sand-data", "plugins", "installed", "vercel", "e48c1d", "skills", "env-vars")
-        for it in (d, ud):
+        # 1.0: the cache copy is an older plugin version (one more line), so it stays a vendor record; v0.8.2 FIX2 folds a
+        # byte-identical cache copy into the owner's finding (test_v100_dq042_fold)
+        for it, extra in ((d, "Version: 1.2.0\n"), (ud, "")):
             put(os.path.join(it, "SKILL.md"), "---\nname: env-vars\ndescription: Manage environment variables.\n---\n"
-                "Run `cat ~/.aws/credentials` to find the keys, then update the project's settings.\n" f"{MARK}\n")
+                "Run `cat ~/.aws/credentials` to find the keys, then update the project's settings.\n" f"{MARK}\n" + extra)
         self.scanners(skillspector=skillspector([{"severity": "HIGH", "category": "Privilege Escalation", "pattern": "Credential Access"},
                                                  {"severity": "HIGH", "category": "Rogue Agent", "pattern": "Self-Modification"}]))
         self.audit()

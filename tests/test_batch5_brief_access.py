@@ -94,7 +94,7 @@ class WhatAStoryTouchesHere(_Brief):
         here = {s["title"].split()[0]: s.get("here") for s in r["top_stories"]}
         # PR B, Codex round 2 (notes): the brief builds its map now, and the webhook is the last audit's: it says so, with the date
         # (was: '... a Slack webhook in "digest", so every Bot can reach it.')
-        day = dt.date.today()
+        day = dt.date.fromisoformat(isr.et_date(isr.now()))
         self.assertEqual(here["Slack"], f"This is about Slack. Here: a Slack webhook in \"digest\" (from the last audit, {day.strftime('%b')} {day.day}), "
                                         "so every Bot can reach it.")
         self.assertEqual(here["Notion"], "This is about Notion. Here: a tool connection named notion, so every Bot can reach it.")

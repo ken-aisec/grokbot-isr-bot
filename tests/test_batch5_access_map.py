@@ -114,7 +114,7 @@ class WhoCanReachWhat(_Access):
         self.audit_json()
         code, out = self.access()
         self.assertEqual(code, 0)
-        day = dt.date.today()
+        day = dt.date.fromisoformat(isr.et_date(isr.now()))
         for line in ("All your Bots share this computer, so every Bot can use everything in the first list.",
                      "- Browser: signed in to 2 sites, including github.com and mail.google.com.",
                      "- Command-line sign-ins: OpenAI Codex CLI login. Grok Bot's own CLI sign-in is there too (ISR Bot never reads it).",

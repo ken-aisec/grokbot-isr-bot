@@ -246,7 +246,7 @@ def rollcall_access(sh):
     labels all of it "what the Bot said; not checked"."""
     mem = sh["memories"].get("count") if isinstance(sh.get("memories"), dict) else None
     known = sh.get("connectors_known")   # round 3 (2): None, no connector list; False, an item that isn't a name
-    return rollcall_said({"said_at": now()[:10], "connectors": list(sh.get("connector_labels", [])), "connectors_other": sh.get("connectors_other", 0),
+    return rollcall_said({"said_at": et_date(now()), "connectors": list(sh.get("connector_labels", [])), "connectors_other": sh.get("connectors_other", 0),
                           "connectors_unknown": "unsaid" if known is None else None if known else "partial",
                           "routines": [{"trigger": r["trigger"], "sends_without_asking": bool(r["sends_or_posts"]) and r["asks_first"] is not True,
                                         "asks_first": r["asks_first"]} for r in sh["routines"][:60]],

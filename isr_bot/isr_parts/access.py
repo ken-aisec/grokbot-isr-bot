@@ -71,7 +71,12 @@ def _ax_host_of(v):
 
 
 def _ax_date(v):
-    return v[:10] if isinstance(v, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", v[:10]) else None
+    """The day a kept date or time stands for. 1.0 (U2): a time (a `T` after the day) is its US Eastern day (et_date), as ISR Bot
+    shows every time, so an audit or roll-call after 7 PM ET is never tomorrow's; a bare day (already kept in
+    state/access_map.json) stays as it is, so a day is never shifted twice."""
+    if not (isinstance(v, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", v[:10])):
+        return None
+    return et_date(v) if v[10:11] == "T" else v[:10]
 
 
 def _ax_list(v, cap):
@@ -786,7 +791,7 @@ def _ax_bots(bases):
     no_detail = [b for b in dict.fromkeys(answered) if b not in said]
     known, bad = _ax_known_bots(bases)
     silent = sorted(n for n in known if n not in said and n not in answered)
-    return bots, no_detail, silent, {"at": at[:10] or None, "fresh": fresh, "profiles_unreadable": bad}
+    return bots, no_detail, silent, {"at": _ax_date(at), "fresh": fresh, "profiles_unreadable": bad}   # 1.0 (U2): its Eastern day
 
 
 def _ax_cli(fs):
