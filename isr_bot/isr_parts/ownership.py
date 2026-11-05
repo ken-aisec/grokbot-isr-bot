@@ -7,19 +7,21 @@
 OWNER_CLASSES = ("user", "vendor", "isr_self", "fixture-echo")
 OWNER_VENDOR_HOME = ("sand-data/managed-skills", "agent-data/managed-skills", "sand-data/plugins/cache", "agent-data/plugins/cache",
                      ".claude/plugins", ".codex/skills", ".codex/plugins", ".grok/bundled")
-OWNER_SELF_WORKSPACE = ("isr-bot-dev", "backups")
+OWNER_SELF_WORKSPACE = ("isr-bot-dev",)
 OWNER_SELF_WORKSPACE += ("watchtower-dev",)   # the dev checkout's real folder name: the dev tree is never scored
 OWNER_ECHO_HOME = (".claude/projects", ".claude/plans")
 
 
 def _owner_places(cls):
     """(base, sub, leaf) for each prefix of a non-user class. leaf None: base/sub and everything below it; leaf "agent-tools":
-    base/sub/<exactly one folder>/agent-tools and everything below it."""
+    base/sub/<exactly one folder>/agent-tools and everything below it; a leaf ending in "*" (1.0.1, U5): a folder right under
+    base/sub whose name starts with what comes before the "*", and everything below it."""
     hs = list(home_bases())
     if cls == "vendor":
         return [(h, s, None) for h in hs for s in OWNER_VENDOR_HOME] + [("/tmp", "hooks", None)]   # the platform's hook scripts
-    if cls == "isr_self":
-        return [(SELF_ROOT, "", None), (home(), "tests", None)] + [(ACCESS_WORKSPACE, s, None) for s in OWNER_SELF_WORKSPACE]
+    if cls == "isr_self":   # 1.0.1 (U5): only backup.sh's own backups are ISR Bot's; the owner's other backups are scored
+        return ([(SELF_ROOT, "", None), (home(), "tests", None)] + [(ACCESS_WORKSPACE, s, None) for s in OWNER_SELF_WORKSPACE]
+                + [(ACCESS_WORKSPACE, "backups", "isr-bot-*")])
     return ([(h, s, None) for h in hs for s in OWNER_ECHO_HOME] + [(h, ".cursor/projects", "agent-tools") for h in hs]
             + [(ACCESS_WORKSPACE, "agent-tools", None)])
 
@@ -44,7 +46,10 @@ def _owner_in(p, roots):
                 return True
         elif _under(p, (root,), strict=True):
             parts = os.path.relpath(p, root).split(os.sep)
-            if len(parts) >= 2 and parts[1] == leaf:
+            if leaf.endswith("*"):
+                if parts[0].startswith(leaf[:-1]):
+                    return True
+            elif len(parts) >= 2 and parts[1] == leaf:
                 return True
     return False
 

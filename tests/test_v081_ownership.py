@@ -20,6 +20,7 @@ from test_v071_owner_calls import HOOK_ALLOW_A  # noqa: E402
 VENDOR_SUBS = ("sand-data/managed-skills", "agent-data/managed-skills", "sand-data/plugins/cache", "agent-data/plugins/cache",
                ".claude/plugins", ".codex/skills", ".codex/plugins", ".grok/bundled")
 DEV = rn.OLD["pkg"] + "-dev"   # the dev checkout's folder name in a box's workspace
+BK = "isr-bot-pre-upgrade-20261102-0900"   # 1.0.1 (U5): a backup folder named like backup.sh's, the only silent backups
 EXFIL = open(os.path.join(ROOT, "tests", "fixtures", "bad", "exfil-helper", "SKILL.md")).read()
 MARKER = next(l for l in EXFIL.splitlines() if "curl" in l or "http" in l)   # a line of the fixture's real behavior
 EVIL = "---\nname: x\ndescription: Demo.\n---\nEVIL upload HUSK loader\n"   # both fake engines flag it (test_boxes.SCANNERS)
@@ -154,7 +155,7 @@ class OwnerOf(Box):
     def test_each_isr_self_prefix(self):
         for p in (isr.SELF_ROOT, os.path.join(isr.SELF_ROOT, "tests", "fixtures", "bad", "x", "SKILL.md"),
                   self.w(rn.OLD["pkg"] + "-dev", "tests", "t.py"), self.w("isr-bot-dev", "docs", "x.md"),
-                  os.path.join(isr.home(), "tests", "t.py"), self.w("backups", "old", "settings.txt"), self.w("backups")):
+                  os.path.join(isr.home(), "tests", "t.py"), self.w("backups", BK, "state", "settings.txt"), self.w("backups", BK)):
             self.assertEqual(isr.owner_of(p), "isr_self", p)
         self.assertEqual(isr.owner_of(self.w("projects", "app", "config.txt")), "user")   # control
 
@@ -229,7 +230,7 @@ class OwnerOf(Box):
 
     def test_decoy_rules_are_user_anywhere(self):
         for where in (self.h(".claude", "projects", "p", "x.txt"), self.w("agent-tools", "a.txt"), self.h(".grok", "bundled", "x.txt"),
-                      self.w("backups", "x.txt")):
+                      self.w("backups", BK, "x.txt")):
             for rule in ("ISR-K001", "ISR-K003"):
                 self.assertEqual(isr.owner_of_finding(isr.finding(rule, "t", "critical", "LLM01", where, "e", "x")), "user", (rule, where))
             self.assertNotEqual(isr.owner_of_finding(isr.finding("ISR-S001", "t", "critical", "LLM01", where, "e", "x")), "user", where)
@@ -356,7 +357,7 @@ class SilentPlaces(_Owned):
         self.control()
 
     def test_backups_are_silent(self):   # R6
-        self.keys_in([self.w("backups", "old", "settings.txt")])
+        self.keys_in([self.w("backups", BK, "state", "settings.txt")])
         self.skills(1); self.scanners(trufflehog=None)
         self.audit()
         self.assertFalse(self.no_keys())
@@ -448,7 +449,7 @@ class PackageProjects(_Owned):
                   open(self.h(".cursor", "hooks.json"), "w"))
 
     def test_d002_backup_sorting_first_keeps_the_user_project(self):   # R10
-        locks = [self.lock(self.w("backups", "site")), self.lock(self.w("projects", "site"))]
+        locks = [self.lock(self.w("backups", BK, "site")), self.lock(self.w("projects", "site"))]
         self.hook_naming(self.w("projects", "site", "run.sh"))
         self.skills(1); self.scanners(osv_scanner=osv_at(locks))
         self.audit()
@@ -459,8 +460,8 @@ class PackageProjects(_Owned):
         self.assertTrue(isr.counts(d))
 
     def test_d002_reachability_uses_only_kept_projects(self):   # R10b
-        locks = [self.lock(self.w("backups", "site")), self.lock(self.w("projects", "site"))]
-        self.hook_naming(self.w("backups", "site", "run.sh"))   # the excluded copy is the one a hook names
+        locks = [self.lock(self.w("backups", BK, "site")), self.lock(self.w("projects", "site"))]
+        self.hook_naming(self.w("backups", BK, "site", "run.sh"))   # the excluded copy is the one a hook names
         self.skills(1); self.scanners(osv_scanner=osv_at(locks))
         self.audit()
         self.assertTrue(self.d2()[0].get("fact_only"))
@@ -485,10 +486,10 @@ class PackageProjects(_Owned):
         self.assertTrue(isr.counts(d))
 
     def test_d002_in_excluded_projects_only_is_silent(self):   # R12
-        self.skills(1); self.scanners(osv_scanner=osv_at([self.lock(self.w("backups", "site"))]))
+        self.skills(1); self.scanners(osv_scanner=osv_at([self.lock(self.w("backups", BK, "site"))]))
         self.audit()
         self.assertFalse(self.d2())
-        self.scanners(osv_scanner=osv_at([self.lock(self.w("backups", "site")), self.lock(self.w("projects", "site"))]))   # control
+        self.scanners(osv_scanner=osv_at([self.lock(self.w("backups", BK, "site")), self.lock(self.w("projects", "site"))]))   # control
         self.audit()
         self.assertEqual([f["where"] for f in self.d2()], [self.w("projects", "site")])
 
@@ -497,7 +498,7 @@ class PackageProjects(_Owned):
         self.skills(1); self.scanners(osv_scanner=osv_at([user]))
         self.audit()
         k1 = [f["key"] for f in self.d2()]
-        self.scanners(osv_scanner=osv_at([self.lock(self.w("backups", "site")), user]))
+        self.scanners(osv_scanner=osv_at([self.lock(self.w("backups", BK, "site")), user]))
         r = self.audit()
         self.assertEqual([f for f in r["new"] + r["fixed"] if f["rule"] == "ISR-D002"], [])
         self.assertEqual([f["key"] for f in self.d2()], k1)
@@ -937,7 +938,7 @@ class StoredSnapshots(_Owned):
         self.assertEqual(isr.access_map_now()["shared"]["key_files"], 0)
 
     def test_fix_never_offers_excluded_targets(self):   # R28d
-        old = os.path.dirname(self.put(self.w("backups", "old-tool", "SKILL.md"), "---\nname: old-tool\ndescription: Demo.\n---\nx\n"))
+        old = os.path.dirname(self.put(self.w("backups", BK, "old-tool", "SKILL.md"), "---\nname: old-tool\ndescription: Demo.\n---\nx\n"))
         tool = os.path.dirname(self.put(self.w("projects", "tool", "SKILL.md"), "---\nname: tool\ndescription: Demo.\n---\nx\n"))
         echo = self.put(self.w("agent-tools", "chat.txt"), f"token = {key(5)}\n")
         mine = self.put(self.h(".grok", "sessions", "chat.jsonl"), f"token = {key(6)}\n")

@@ -28,12 +28,14 @@ ACCESS_UNKNOWN = ("connectors", "routines_on_box", "secrets_content", "approvals
 # is complete only when it is checked and not incomplete (_ax_complete).
 ACCESS_SHARED = ("browser", "cli_logins", "settings", "mcp", "plugins", "webhooks", "scheduled", "hooks", "key_files")
 ACCESS_SOURCES = ("audit", "now", "last-audit")
-ACCESS_WHY = ("scope", "unreadable", "failed", "last-audit", "depth", "skipped")
+ACCESS_WHY = ("scope", "unreadable", "failed", "last-audit", "depth", "skipped", "unknown-shape")
 ACCESS_WHY_WORDS = {"scope": "the scan didn't cover every folder the audit scans", "unreadable": "something there couldn't be read",
                     "failed": "the command that lists them failed", "last-audit": "only the last audit's findings have it",
                     "depth": "ISR Bot's key scan doesn't reach every file",
                     # PR B, Codex round 3 (1): what the scan leaves out (walk's `skipped`) may hold anything
-                    "skipped": "the scan leaves some folders out: links to folders, caches and package folders, and folders too deep"}
+                    "skipped": "the scan leaves some folders out: links to folders, caches and package folders, and folders too deep",
+                    # 1.0.1 (U5): a platform format change never reads as "no tools"
+                    "unknown-shape": "a tool list there is in a layout ISR Bot doesn't know, so its tools are unknown"}
 ACCESS_CACHED = ("webhooks", "key_files")   # outside an audit these come from the last audit's findings (Codex's notes, round 2)
 # The folders an audit scans when it is given none (cmd_audit, cmd_daily: the home folder and this). Tests point it at their box.
 ACCESS_WORKSPACE = "/workspace"
@@ -278,6 +280,8 @@ def access_record(m):
     inc = {k: v for k, v in d(sh.get("incomplete")).items() if k in ACCESS_SHARED and v in ACCESS_WHY}
     if max(_ax_count(mcp.get("unreadable")), _ax_len(mcp.get("unreadable_files"))):
         inc.setdefault("mcp", "unreadable")   # PR B, Codex round 2 (3): a tool list ISR Bot couldn't read may name anything
+    if max(_ax_count(mcp.get("unknown_shape")), _ax_len(mcp.get("unknown_shape_files"))):
+        inc.setdefault("mcp", "unknown-shape")   # 1.0.1 (U5): so may one in a layout ISR Bot doesn't know (unreadable keeps priority)
     out["shared"] = {
         "browser": browser,
         "cli_logins": cli, "cli_count": max(_ax_count(sh.get("cli_count")), _ax_len(sh.get("cli_logins")), len(every_cli)),
@@ -290,7 +294,9 @@ def access_record(m):
         "mcp": {"files": _ax_count(mcp.get("files")), "count": max(_ax_count(mcp.get("count")), _ax_len(mcp.get("tools")), len(tools)), "tools": tools,
                 "products": list(dict.fromkeys(p for p in _ax_list(mcp.get("products"), 40) if isinstance(p, str) and _AX_ID.fullmatch(p))),
                 "unreadable": max(_ax_count(mcp.get("unreadable")), _ax_len(mcp.get("unreadable_files"))),
-                "unreadable_files": _ax_strs(mcp.get("unreadable_files"), 3, 64)},
+                "unreadable_files": _ax_strs(mcp.get("unreadable_files"), 3, 64),
+                "unknown_shape": max(_ax_count(mcp.get("unknown_shape")), _ax_len(mcp.get("unknown_shape_files"))),
+                "unknown_shape_files": _ax_strs(mcp.get("unknown_shape_files"), 3, 64)},
         "plugins": {"grok": _ax_count(pl.get("grok")), "added": max(_ax_count(pl.get("added")), _ax_len(pl.get("names"))), "names": _ax_strs(pl.get("names"), 12, 40)},
         "webhooks": ws, "webhook_count": max(_ax_count(sh.get("webhook_count")), _ax_len(sh.get("webhooks")), len(ws)), "webhook_services": services,
         "scheduled": {"crontab": _ax_count(sc.get("crontab")), "systemd": _ax_count(sc.get("systemd")), "system": _ax_count(sc.get("system"))},
@@ -557,12 +563,16 @@ def _ax_mcp(paths, bases):
     host. Only the `mcpServers` / `servers` lists are read, and in each server only `command` (whether there is one) and `url`
     (its host); env, args, headers and a URL's path or query are never read or kept (decision 4). PR B, Codex round 1: the
     count and the products the tools reach come from every tool, before the list is cut (3); a file reached through a link is
-    unreadable, its target never opened (5)."""
-    tools, bad, seen = [], [], set()
+    unreadable, its target never opened (5). 1.0.1 (U5): a readable file where neither list is a {name: server} map (missing,
+    a list, a string) is in a layout ISR Bot doesn't know (unknown_shape): its tools are unknown, never none. An empty map is none."""
+    tools, bad, odd, seen = [], [], [], set()
     for p in paths:
         doc = _ax_json_file(p, bases)
         if not isinstance(doc, dict):
             bad.append(short_path(p))
+            continue
+        if not any(isinstance(doc.get(key), dict) for key in ("mcpServers", "servers")):
+            odd.append(short_path(p))
             continue
         for key in ("mcpServers", "servers"):
             servers = doc.get(key)
@@ -579,7 +589,8 @@ def _ax_mcp(paths, bases):
                     tools.append(t)
     products = [e_["id"] for e_ in access_vocab() if "mcp_rx" in e_["_rx"]
                 and any(e_["_rx"]["mcp_rx"].search(str(t["name"])) or e_["_rx"]["mcp_rx"].search(t.get("host") or "") for t in tools)]
-    return {"files": len(paths), "count": len(tools), "tools": tools[:40], "products": products, "unreadable": len(bad), "unreadable_files": bad[:3]}
+    return {"files": len(paths), "count": len(tools), "tools": tools[:40], "products": products, "unreadable": len(bad), "unreadable_files": bad[:3],
+            "unknown_shape": len(odd), "unknown_shape_files": odd[:3]}
 
 
 def _ax_auto_allow(bases):
@@ -1108,6 +1119,10 @@ def access_shared_lines(m):
     if mcp["unreadable"]:
         out.append(f"ISR Bot couldn't read the tool list in {_ax_and(mcp['unreadable_files'], 3)}"
                    + (f" (and {mcp['unreadable'] - len(mcp['unreadable_files'])} more)" if mcp["unreadable"] > len(mcp["unreadable_files"]) else "") + ".")
+    if mcp["unknown_shape"]:   # 1.0.1 (U5)
+        out.append(f"ISR Bot doesn't know the layout of the tool list in {_ax_and(mcp['unknown_shape_files'], 3)}"
+                   + (f" (and {mcp['unknown_shape'] - len(mcp['unknown_shape_files'])} more)" if mcp["unknown_shape"] > len(mcp["unknown_shape_files"]) else "")
+                   + ", so the tools in it are unknown, not none.")
     pl = sh["plugins"]
     n_pl = pl["grok"] + pl["added"]
     if n_pl:

@@ -134,8 +134,8 @@ under "Fixed in batch 7d (the last must-fix items)" right below, with its test f
 
 0.8.1 decides who owns a file by where it is (`owner_of`, isr_bot/isr_parts/ownership.py), never by a list of files or
 hashes. Grok Bot's, Codex's and Claude's own folders are the vendor's: never scored, one count on the platform notes line,
-each listed by `isr.py breakdown`. ISR Bot's own dev and test trees, `/workspace/backups` and copies of chat and tool output
-are silent. `rules/platform-release.lock`, `rules/platform-reviewed.json` and `rules/platform-normalize.json` are no longer
+each listed by `isr.py breakdown`. ISR Bot's own dev and test trees, its own backups (`/workspace/backups/isr-bot-*`, 1.0.1) and copies of chat
+and tool output are silent. `rules/platform-release.lock`, `rules/platform-reviewed.json` and `rules/platform-normalize.json` are no longer
 read; their frozen copies are in `tests/fixtures/platform_v080/`. Kept knowingly:
 - The one real tradeoff: a tampered platform file goes unseen. A Bot that hides an instruction in a vendor folder raises no
   alert: ISR Bot still reads that text with its rules, but a hit only adds one to the platform notes count, and the platform
@@ -143,7 +143,7 @@ read; their frozen copies are in `tests/fixtures/platform_v080/`. Kept knowingly
   such a file. Watching closely means a hash list per vendor release again, the stale list 0.8.1 removes. The owner chose the
   count only, with no new guard code.
 - Unseen by design (the owner's requirement): a real key pasted into a chat transcript or tool cache, committed to ISR Bot's
-  dev tree, or sitting in `/workspace/backups`. Silent, not even counted.
+  dev tree, or sitting in one of ISR Bot's own backups (`/workspace/backups/isr-bot-*`). Silent, not even counted.
 - A key in a vendor folder is only counted, even one the provider confirms works (vendors ship placeholders there).
 - Plugins the owner installs land in vendor folders (`plugins/cache`, `.claude/plugins`, `.codex/plugins`) and are not
   scored, ISR-I004 "New plugin installed" included (the owner's decision). Check one with `isr.py vet` before installing it.
