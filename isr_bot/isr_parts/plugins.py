@@ -31,6 +31,32 @@ def saved_skill_notes(notes):
                + ". A template made from this Bot would ship it. Re-save it from /workspace/isr-bot/app/bot/getting-started.md.")
         if msg not in notes:                   # the check can run twice in one audit; say it once
             notes.append(msg)
+    launcher_notes(notes)
+
+
+# 1.0.1 (U3): the template packs two thin launchers (bot/skills/); a saved one that has the launcher line but differs is older
+SKILL_LAUNCHERS = ("isr-bot-setup", "vet-template")
+LAUNCHER_MARKER = "Launcher for ISR Bot "
+
+
+def launcher_notes(notes):
+    """A saved full copy of a skill (no launcher line) stays with own_release_file, as before."""
+    seen = set()
+    for root in [os.path.normpath(os.path.expanduser("~") + sub) for sub in USER_SKILL_DIRS]:   # this home folder only
+        for name in SKILL_LAUNCHERS:
+            app = read_text(os.path.join(SELF_ROOT, "bot", "skills", name, "SKILL.md"))
+            p = os.path.join(root, name, "SKILL.md")
+            rp = os.path.realpath(p)
+            if not app or rp in seen or not os.path.isfile(p):
+                continue
+            seen.add(rp)
+            saved = read_text(p) or ""
+            if LAUNCHER_MARKER not in saved or norm_body(saved) == norm_body(app):
+                continue
+            msg = (f"Your saved {name} launcher ({short_path(p)}) is older than this ISR Bot. A template made from this Bot would ship it. "
+                   f"Re-save it from /workspace/isr-bot/app/bot/skills/{name}/SKILL.md.")
+            if msg not in notes:
+                notes.append(msg)
 
 
 def update_notes(notes):

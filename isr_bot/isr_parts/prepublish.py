@@ -29,11 +29,12 @@ def known_names(shared):
     return sorted({n for n in names if len(n) >= 3 and n.lower() not in skip})
 
 
-OWN_TEMPLATE_REL = re.compile(r"(bot|routines)/[^/]+|skills/[^/]+/SKILL\.md")
+OWN_TEMPLATE_REL = re.compile(r"(bot|routines)/[^/]+|(bot/)?skills/[^/]+/SKILL\.md")
 
 
 def own_release_digests():
-    """v0.7.4 fix round 1 (Codex MED3): this release's own template files (bot/*, routines/*, skills/*/SKILL.md) name the Bot
+    """v0.7.4 fix round 1 (Codex MED3): this release's own template files (bot/*, routines/*, skills/*/SKILL.md, and since
+    1.0.1 the launchers bot/skills/*/SKILL.md) name the Bot
     ISR Bot by design, so that roster name is no leak in an unchanged copy of one; anywhere else it is. Fix round 2 (Codex
     MED3): an unchanged copy is told only by the sha256 of its raw bytes, one the MANIFEST.sha256 this process checked itself
     against (release_manifest: self_check's, read once) lists for one of those files. Never a folder listing or a text compare

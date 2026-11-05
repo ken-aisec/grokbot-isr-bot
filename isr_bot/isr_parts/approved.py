@@ -7,12 +7,14 @@ SECURITY_TOOL = re.compile(r"(?i)\b(secur\w*|scann?\w*|audit\w*|vet(s|ting|ted)?
 
 def own_release_file(p, h):
     """True when a file in an installed copy of one of ISR Bot's own skills is byte-for-byte the file in the verified
-    release under app/skills. Updating ISR Bot then doesn't raise 'a skill you approved has changed' about itself."""
+    release under app/skills. Updating ISR Bot then doesn't raise 'a skill you approved has changed' about itself.
+    1.0.1 (U3): a saved launcher byte-for-byte the release's app/bot/skills/<name>/<file> is its own too (no ISR-I002/I001)."""
     parts = p.split("/")
     for i in range(len(parts) - 2, 0, -1):
-        src = os.path.join(SELF_ROOT, "skills", *parts[i:])
-        if parts[i - 1] in ("workflows", "skills") and not p.startswith(SELF_ROOT + "/") and os.path.isfile(src):
-            return sha256_file(src) == h
+        srcs = [s for s in (os.path.join(SELF_ROOT, "skills", *parts[i:]), os.path.join(SELF_ROOT, "bot", "skills", *parts[i:]))
+                if os.path.isfile(s)]
+        if parts[i - 1] in ("workflows", "skills") and not p.startswith(SELF_ROOT + "/") and srcs:
+            return any(sha256_file(s) == h for s in srcs)
     return False
 
 
