@@ -254,7 +254,7 @@ def fix_plan(roots):
         t = read_text(p, limit=20_000_000)
         if t and SCRUB.search(t):
             plan.append({"action": "scrub_keys", "path": p, "files": 1, "count": len(SCRUB.findall(t)), "owner": path_owner(p),
-                         "why": "Keys captured in a chat, session or log. The text stays; the keys go."})
+                         "why": "Keys captured in a chat, session or log. The text stays; the keys go. An undo copy is kept."})
     reg = load_json(state_path("canaries.json"), {})
     spent = []
     for v in reg.values():
@@ -272,6 +272,13 @@ def fix_plan(roots):
         stale = old[:-24]
         if stale:
             plan.append({"action": "prune_reports", "path": rdir, "files": len(stale), "list": stale, "owner": "ISR Bot", "why": "Keep the last 12 weeks."})
+    bdir = os.path.join(home(), "backups")
+    if os.path.isdir(bdir):   # 1.0.1 (U1b): undo copies hold the keys a scrub took out; they don't pile up for good
+        undo_cut = time.time() - UNDO_KEEP_DAYS * 86400
+        old_undo = sorted(f for f in os.listdir(bdir) if 0 < undo_stamp(f) < undo_cut and os.path.isdir(os.path.join(bdir, f)))
+        if old_undo:
+            plan.append({"action": "prune_undo", "path": bdir, "files": len(old_undo), "list": old_undo, "owner": "ISR Bot",
+                         "why": f"Undo copies from cleanups more than {UNDO_KEEP_DAYS} days ago; they hold the keys that were taken out."})
     for n, item in enumerate(plan, 1):
         item["id"] = str(n)
     tr = [dict(v, newest=dt.datetime.fromtimestamp(v["newest"]).strftime("%Y-%m-%d") if v["newest"] else None) for _, v in sorted(transcripts.items())]
@@ -285,6 +292,36 @@ def tidy_row(x):
 TIDY_KINDS = {"scrub_keys": ("key scrub in a chat, session or log file", "key scrubs in chat, session or log files"),
               "empty_tool_cache": ("shared tool-result folder to empty", "shared tool-result folders to empty"),
               "rearm_canaries": ("decoy reset", "decoy resets"), "prune_reports": ("old-report clean-up", "old-report clean-ups")}
+TIDY_KINDS["prune_undo"] = ("old undo-copy clean-up", "old undo-copy clean-ups")   # 1.0.1 (U1b)
+UNDO_KEEP_DAYS = 14
+UNDO_DIR = re.compile(r"cleanup-(\d{8}T\d{6}Z)$")
+
+
+def undo_stamp(name):
+    """When a cleanup-<UTC stamp> undo folder was made (seconds since the epoch), from its name; 0 for any other name."""
+    m = UNDO_DIR.match(name)
+    try:
+        return dt.datetime.strptime(m.group(1), "%Y%m%dT%H%M%SZ").replace(tzinfo=dt.timezone.utc).timestamp() if m else 0
+    except ValueError:
+        return 0
+
+
+def undo_folder():
+    """This apply's undo folder: one per apply, beside the lockfile upgrades' backups (home()/backups/<stamp>)."""
+    return os.path.join(home(), "backups", "cleanup-" + dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+
+
+def undo_copy(p, step_id, folder):
+    """Copy a file into the undo folder before a scrub changes it; the folder is made private (0700, as backup.sh). Raises
+    OSError when the copy can't be made, so the file is left as it was."""
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    os.chmod(folder, 0o700)
+    dest = os.path.join(folder, f"{step_id}-{os.path.basename(p)}")
+    shutil.copy2(p, dest)
+    return dest
+
+
+LAST_UNDO = {"folder": None}   # 1.0.1 (U1): the undo folder the last apply_fix used, for tidy_apply's ledger entry
 
 
 def tidy_hidden_note(plan, n_shown):
@@ -335,15 +372,22 @@ def tidy_apply(plan, args):
         else:
             first[step] = x.get("id")
             go.append(y)
+    LAST_UNDO["folder"] = None
     done = apply_fix(go)
+    undo = LAST_UNDO["folder"]
     if saved.get("hidden"):
         ok = len(go) - sum(1 for d in done if d.startswith("Could not "))
         after.append(f"done {ok} of {len(saved['items'])} cleanup steps on the list ({saved['hidden']} of them were not shown in the preview)")
-    ledger({"event": "tidy", "applied": [x["path"] for x in go], "skipped": left})
+    entry = {"event": "tidy", "applied": [x["path"] for x in go], "skipped": left}
+    if undo and os.path.isdir(undo):   # 1.0.1 (U1): where this apply's undo copies are
+        entry["undo"] = undo
+    ledger(entry)
     return done + after
 
 
 def apply_fix(plan):
+    """Does each step. A key scrub first copies the file into the undo folder (1.0.1, U1); no copy, no change."""
+    undo = LAST_UNDO["folder"] = undo_folder()
     done = []
     for step in plan:
         try:
@@ -360,12 +404,14 @@ def apply_fix(plan):
                 with open(p, "r", encoding="utf-8", errors="replace") as f:
                     t = f.read()
                 new, n = SCRUB.subn(REDACTED, t)
+                copy = None
                 if n:
+                    copy = undo_copy(p, step.get("id", "0"), undo)
                     tmp = p + ".isr-bot-tmp"
                     with open(tmp, "w", encoding="utf-8") as f:
                         f.write(new)
                     os.replace(tmp, p)
-                done.append(f"Removed {n} key(s) from {p}")
+                done.append(f"Removed {n} key(s) from {p}" + (f" (undo copy: {copy})" if copy else ""))
             elif step["action"] == "rearm_canaries":
                 rearm_canaries()
                 done.append(f"Reset {step['count']} decoys")
@@ -373,6 +419,11 @@ def apply_fix(plan):
                 for fn in step["list"]:
                     os.remove(os.path.join(step["path"], fn))
                 done.append(f"Removed {step['files']} old reports")
+            elif step["action"] == "prune_undo":
+                for fn in step["list"]:
+                    if UNDO_DIR.match(fn):
+                        shutil.rmtree(os.path.join(step["path"], fn))
+                done.append(f"Removed {step['files']} old undo folders (cleanups more than {UNDO_KEEP_DAYS} days ago)")
         except OSError as e:
             done.append(f"Could not {step['action']} at {step.get('path', '')}: {e.strerror}")
     return done
@@ -782,12 +833,32 @@ def osv_findings(roots, notes):
     return out
 
 
-CHAT_PLACES = re.compile(r"(?i)(transcript|session|chat|conversation|histor|attachment|/logs?/|\.log$|agent-tools|/\.cursor/projects/)")
+CHAT_LOG_HOME = (".grok/sessions", ".codex/sessions")   # Grok CLI chat sessions; Codex CLI session logs
+CHAT_LOG_CURSOR = (".cursor/projects", "terminals")      # Cursor's terminal captures: .cursor/projects/<one project>/terminals
 CHAT_EXT = {".json", ".jsonl", ".md", ".txt", ".log", ".html", ".ndjson"}
 
 
+def chat_log_place(p):
+    """1.0.1 (U1): True only for a file inside one of the three folders where agent chat and terminal logs really live, under
+    each home base: ~/.grok/sessions, ~/.codex/sessions and ~/.cursor/projects/<exactly one project folder>/terminals. Decided
+    by where the path is, never by a word in it: 1.0 cleaned any flagged file whose path held chat, session or log, so a
+    project's chat-service/config.json lost its key."""
+    ap = os.path.normpath(os.path.abspath(p))
+    for h in home_bases():
+        b = os.path.normpath(os.path.abspath(h))
+        if _under(ap, tuple(os.path.join(b, s) for s in CHAT_LOG_HOME), strict=True):
+            return True
+        root = os.path.join(b, CHAT_LOG_CURSOR[0])
+        if _under(ap, (root,), strict=True):
+            parts = os.path.relpath(ap, root).split(os.sep)
+            if len(parts) >= 3 and parts[1] == CHAT_LOG_CURSOR[1]:
+                return True
+    return False
+
+
 def scrub_targets_from_findings():
-    """Files ISR Bot flagged for keys that are conversation or log data, never code or config."""
+    """Files ISR Bot flagged for keys that are agent chat or terminal logs in their known folders (chat_log_place), never code,
+    config or a project's own log."""
     snap = load_snapshot({"findings": []})
     files = set()
     for f in snap.get("findings", []):
@@ -796,7 +867,7 @@ def scrub_targets_from_findings():
         p = f["where"].split(":")[0]
         cands = [p] if os.path.isfile(p) else ([os.path.join(dp, fn) for dp, _, fns in os.walk(p) for fn in fns] if os.path.isdir(p) else [])
         for c in cands:
-            if CHAT_PLACES.search(c) and os.path.splitext(c)[1].lower() in CHAT_EXT and not any(x in c for x in VENDOR_CODE):
+            if chat_log_place(c) and os.path.splitext(c)[1].lower() in CHAT_EXT and not any(x in c for x in VENDOR_CODE):
                 files.add(c)
     return sorted(files)
 

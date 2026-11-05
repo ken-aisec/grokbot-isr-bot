@@ -29,7 +29,7 @@ description: The one-yes fix. Cleans up, upgrades outdated software (undoing any
    - Add `--rename-reviewed <names, comma-separated> --owner-said-yes` for the name-only changes (rows with `rename_reviewed`) the user read and said yes to. It approves only files whose change is still the name and nothing else; it says which stay open.
    - Run `isr.py audit`.
 
-4. Reply in at most 6 lines: what was done (the `done` list in plain words, including by name anything it says was left open and why), the new score and the change, and anything still in `only_you`. If an upgrade was undone or skipped, say which and why.
+4. Reply in at most 6 lines: what was done (the `done` list in plain words, including by name anything it says was left open and why), the new score and the change, and anything still in `only_you`. If an upgrade was undone or skipped, say which and why. If a done line has "undo copy:", name that folder once: it holds the keys that were taken out, and `cp <copy> <original path>` puts a file back. If a done line has "undo copy:", name that folder once: it holds the keys that were taken out, and `cp <copy> <original path>` puts a file back.
 
 If the user approves only some of the changed skills, run `isr.py fix --revet --only <names, comma-separated>`, without `--apply`: re-approving never empties a cache or changes a file. The others stay open. `--only` works on skills the daily check or audit already reported as changed; a fresh `isr.py fix` preview is not required when the owner names them. (A full `--revet` without `--only` still uses the preview list.)
 
