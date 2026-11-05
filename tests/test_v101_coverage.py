@@ -11,7 +11,12 @@ TruffleHog.
 
 Scanners are the Box's fakes (test_boxes.SCANNERS, CRASH, HANG). Tests marked "replay" fail on bacd581 at their first
 assertion (the score line's ending, a key bacd581 already prints, or the skill text and the brief page); "guard" ones pass there
-too. Deep vet (also U2) is in batch 3."""
+too.
+
+Deep vet (U2, batch 3): `engines.ran` now means a skill scanner that answered for the vetted skill, not one that is installed;
+one that crashed, was held back, ran out of time or whose copy can't be used (changed, or gone after an audit used it, Codex 2)
+is in `engines.did_not_finish`, and the verdict is then "Could not finish checking" unless it is already "Do not install"
+(open question 4). The text output names them, or says no outside scanner is installed."""
 import html, json, os, sys, unittest
 from unittest import mock
 
@@ -200,6 +205,84 @@ class EveryCheckRan(_Coverage):
         page = self.brief_page()
         self.assertIn(html.escape("You're in good shape. Nothing needs you this week."), page)
         self.assertNotIn("checks didn", page)
+
+
+NOT_FINISHED = "Could not finish checking"
+
+
+class DeepVet(_Coverage):
+    def vet(self, *extra):
+        d = self.skills(1)[0]
+        return self.run_cmd("vet", d, "--deep", *extra)
+
+    def vet_json(self):
+        code, o, err = self.vet("--json")
+        return code, json.loads(o)
+
+    def test_deep_vet_with_a_crashing_scanner_never_says_install(self):   # replay
+        self.scanners(skillspector=CRASH)
+        code, r = self.vet_json()
+        self.assertNotEqual(r["verdict"], "Install")                             # bacd581: "Install", ran both
+        self.assertEqual(r["verdict"], NOT_FINISHED)
+        self.assertEqual(code, 1)
+        self.assertIn("SkillSpector", r["engines"]["did_not_finish"])
+        self.assertNotIn("SkillSpector", r["engines"]["ran"])
+
+    def test_deep_vet_with_a_swapped_scanner_is_not_finished(self):   # replay
+        self.scanners()
+        with open(os.path.join(self.bin(), "husk"), "a") as f:
+            f.write("# swapped after it was registered\n")
+        code, r = self.vet_json()
+        self.assertNotEqual(r["verdict"], "Install")                             # bacd581: "Install"
+        self.assertEqual(r["engines"]["did_not_finish"], ["SkillSpector", "husk"])
+        self.assertEqual(r["engines"]["ran"], [])
+        self.assertEqual(code, 1)
+
+    def test_deep_vet_after_both_skill_scanners_vanish_is_not_finished(self):   # replay (Codex 2)
+        self.skills(1)
+        self.scanners()
+        self.audit()                                                               # engines_used.json names both
+        for t in ("skillspector", "husk"):
+            os.remove(os.path.join(self.bin(), t))
+        code, r = self.vet_json()
+        self.assertNotEqual(r["verdict"], "Install")                             # bacd581: ran [], "Install"
+        self.assertEqual(r["verdict"], NOT_FINISHED)
+        self.assertEqual(code, 1)
+        self.assertEqual(r["engines"]["did_not_finish"], ["SkillSpector", "husk"])
+        self.assertEqual(r["engines"]["not_installed"], [])
+
+    def test_deep_vet_with_no_time_left_is_not_finished(self):   # replay (Codex 1)
+        self.scanners()
+        isr.ENGINE_BUDGET = 0
+        code, r = self.vet_json()
+        self.assertNotEqual(r["verdict"], "Install")                             # bacd581: ran both (installed), "Install"
+        self.assertEqual(r["verdict"], NOT_FINISHED)
+        self.assertEqual(r["engines"]["did_not_finish"], ["SkillSpector", "husk"])
+        self.assertEqual(r["engines"]["ran"], [])
+
+    def test_deep_vet_text_says_which_scanner_didnt_finish(self):   # replay
+        self.scanners(skillspector=CRASH)
+        code, o, err = self.vet()
+        self.assertIn("Scanners that didn't finish: SkillSpector", o)          # bacd581: no scanner line
+        self.assertTrue(o.startswith(f"Verdict: {NOT_FINISHED} "), o)
+        self.assertEqual(code, 1)
+
+    def test_deep_vet_without_scanners_says_so_in_text(self):   # replay
+        code, o, err = self.vet()
+        self.assertIn("No outside scanner is installed, so this vet used ISR Bot's own rules only.", o)   # bacd581: JSON only
+        self.assertNotIn("Say so.", o)
+        code, r = self.vet_json()
+        self.assertEqual(r["engines"]["not_installed"], ["SkillSpector", "husk"])   # never there: not "didn't finish"
+        self.assertEqual(r["engines"]["did_not_finish"], [])
+        self.assertEqual(r["verdict"], "Install")
+
+    def test_deep_vet_with_both_scanners_working_still_installs(self):   # guard
+        self.scanners()
+        code, r = self.vet_json()
+        self.assertEqual(r["verdict"], "Install")
+        self.assertEqual(code, 0)
+        self.assertEqual(r["engines"]["ran"], ["SkillSpector", "husk"])
+        self.assertEqual(r["engines"].get("did_not_finish", []), [])
 
 
 class PartlyCheckedTruffleHog(v100._Partial):

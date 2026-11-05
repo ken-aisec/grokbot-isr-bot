@@ -235,10 +235,18 @@ def cmd_vet(args):
             # v0.8.1: the owner's files it covers, so it is the owner's by construction
             f["source_paths"] = mine if folder is not None else ([] if args.path == "-" else [os.path.abspath(args.path)])
         fs += found
-        ran = [n for n, t in (("SkillSpector", "skillspector"), ("husk", "husk")) if tool(t)]
+        pairs = (("SkillSpector", "skillspector"), ("husk", "husk"))
+        installed = [n for n, t in pairs if tool(t)]
+        # 1.0.1 (U2): "ran" is an engine that answered for this skill, not one that is installed. One that is installed but
+        # didn't answer, was held back, or whose copy can't be used (changed, unreadable, not listed, gone after it ran: the
+        # rule engines_blocked uses, Codex 2) didn't finish; one never there is not installed.
+        ran = [n for n in installed if ENGINE_ANSWERED.get(n) == (1, 1)]
+        did_not_finish = [n for n, t in pairs if n not in ran and (n in installed or n in ENGINE_NOT_RUN or scanner_unavailable(t)[0])]
         # Codex, round 3: a scanner's own error line can quote a secret; masked before it is shown
-        engines = {"ran": ran, "notes": [mask_secrets(n) if isinstance(n, str) else n for n in notes], "staged_as_skill": bool(staged)}
-        if not ran:
+        engines = {"ran": ran, "did_not_finish": did_not_finish,
+                   "not_installed": [n for n, _ in pairs if n not in ran and n not in did_not_finish],
+                   "notes": [mask_secrets(n) if isinstance(n, str) else n for n in notes], "staged_as_skill": bool(staged)}
+        if not installed:
             engines["warning"] = "No outside scanner is installed, so this vet used ISR Bot's own rules only. Say so."
     fs = sort_findings(dedupe(fs))
     # Batch 4 (FP2): labelled as the audit labels them, with full paths so "same file" means the same file; shown relative.
@@ -253,8 +261,8 @@ def cmd_vet(args):
     counted = lambda lf: lf.get("vet_owner") != "vendor"
     s, g = score([f for f, lf in zip(fs, labelled) if counted(lf)])
     v = vet_verdict([lf for lf in labelled if counted(lf)])
-    if incomplete and v != "Do not install":
-        v = NOT_FINISHED   # Codex, round 3: what wasn't read can't be called safe to install
+    if (incomplete or engines.get("did_not_finish")) and v != "Do not install":
+        v = NOT_FINISHED   # Codex, round 3: what wasn't read can't be called safe to install; 1.0.1 (U2): nor what a scanner didn't finish
     risk = max(100 - s, {"Do not install": 80, NOT_FINISHED: 50, "Install with changes": 40}.get(v, 0))   # a high finding never reads as "risk 6"
     rel = lambda w: (name if w == folder else w[len(folder) + 1:] if w.startswith(folder + "/") else w) if folder else w
     # batch 6 (B7): each finding as the audit shows it: its label and labelled severity (info for Worth a look, a Tip, warning
@@ -286,5 +294,10 @@ def cmd_vet(args):
             print("  External URLs: " + ", ".join(urls[:10]))
         if cover and "coverage" in result and not getattr(args, "page_only", False):
             print(f"  Not fully checked: {result['coverage']}")
+        if engines.get("did_not_finish"):   # 1.0.1 (U2): the scanners are said in the text output too, not only in the JSON
+            said = "; ".join(n for n in engines["notes"] if isinstance(n, str))
+            print(f"  Scanners that didn't finish: {', '.join(engines['did_not_finish'])}" + (f" ({said})" if said else ""))
+        elif "warning" in engines:
+            print("  " + engines["warning"].replace(" Say so.", ""))
         print(f"  Paste into the description: {result['boundary_line']}")
     return 1 if result["verdict"] in ("Do not install", NOT_FINISHED) else 0

@@ -77,7 +77,8 @@ fi
 # Batch 3: every scanner lives in $ISR_HOME/scanners/bin, the only folder ISR Bot runs scanners from, and only when the
 # program matches scripts/scanner-bins.lock. The old $ISR_HOME/bin copy of each tool is removed once the new one is in.
 SB="$ISR_HOME/scanners/bin"; mkdir -p "$SB"
-arch="$(uname -m)"; case "$arch" in x86_64) ga=x64;; aarch64|arm64) ga=arm64;; *) echo "skip gitleaks: $arch"; ga="";; esac
+# 1.0.1 (U4): scripts/scanner-bins.lock has x86_64 lines only for these three, so anywhere else they would download and never run
+arch="$(uname -m)"; case "$arch" in x86_64) ga=x64;; *) ga=""; echo "gitleaks, TruffleHog and OSV-Scanner NOT installed: ISR Bot has checked copies of them only for x86_64 computers, and this one is $arch. ISR Bot works without them, and every audit lists them as checks that didn't run.";; esac
 if [[ -n "$ga" ]]; then
   # Each tool installs on its own: if one download or checksum fails, that tool is not installed, the others still are,
   # and the audit says which is missing. (&& chains on purpose: nothing is unpacked unless its checksum passed.)
@@ -89,7 +90,7 @@ if [[ -n "$ga" ]]; then
     && tar --no-same-owner -xzf "$DL/$tgz" -C "$SB" gitleaks && rm -f "$ISR_HOME/bin/gitleaks" \
     || echo "gitleaks did not install; ISR Bot works without it."
   # TruffleHog: tells live keys from dead ones (asks each key's own provider)
-  th="trufflehog_${TRUFFLEHOG_VERSION}_linux_$( [ "$ga" = x64 ] && echo amd64 || echo arm64 ).tar.gz"
+  th="trufflehog_${TRUFFLEHOG_VERSION}_linux_amd64.tar.gz"
   tb="https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}"
   curl -fsSL -o "$DL/$th" "$tb/$th" \
     && curl -fsSL -o "$DL/trufflehog_checksums.txt" "$tb/trufflehog_${TRUFFLEHOG_VERSION}_checksums.txt" \
@@ -97,7 +98,7 @@ if [[ -n "$ga" ]]; then
     && tar --no-same-owner -xzf "$DL/$th" -C "$SB" trufflehog && rm -f "$ISR_HOME/bin/trufflehog" \
     || echo "TruffleHog did not install; ISR Bot works without it."
   # OSV-Scanner: known holes in Node, Go and other project dependencies
-  ob="osv-scanner_linux_$( [ "$ga" = x64 ] && echo amd64 || echo arm64 )"
+  ob="osv-scanner_linux_amd64"
   curl -fsSL -o "$SB/osv-scanner.new" "https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}/$ob" \
     && curl -fsSL -o "$DL/osv_sums.txt" "https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}/osv-scanner_SHA256SUMS" \
     && (cd "$SB" && grep " $ob\$" "$DL/osv_sums.txt" | sed "s/$ob/osv-scanner.new/" | sha256sum -c -) \

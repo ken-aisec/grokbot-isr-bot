@@ -49,12 +49,11 @@ class InstallScanners(unittest.TestCase):
         self.release_files()
         stub(self.bin, "curl", 'echo "curl $*" >> "$CALLS"\nout=""; url=""\nwhile [[ $# -gt 0 ]]; do case "$1" in -o) out="$2"; shift 2;; -*) shift;; *) url="$1"; shift;; esac; done\n'
                                'f="$SERVE/${url##*/}"; [[ -f "$f" ]] || exit 22; cp "$f" "$out"\n')
+        stub(self.bin, "uname", "echo x86_64\n")   # 1.0.1 (U4): these tests stand for an x86_64 computer
 
     def release_files(self):
         """Stand-ins for the gitleaks, TruffleHog and OSV-Scanner release downloads, each with its published checksum file."""
-        a = {"x86_64": ("x64", "amd64"), "aarch64": ("arm64", "arm64"), "arm64": ("arm64", "arm64")}.get(platform.machine())
-        if not a:
-            self.skipTest("install.sh skips the binary scanners on " + platform.machine())
+        a = ("x64", "amd64")
         def tgz(name, tool):
             buf = io.BytesIO()
             with tarfile.open(fileobj=buf, mode="w:gz") as t:
@@ -105,7 +104,7 @@ class InstallScanners(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.isr_home, "scanners", "LOCKED")))
 
     def test_a_binary_with_a_wrong_checksum_is_not_installed(self):
-        open(os.path.join(self.serve, "gitleaks_8.30.1_checksums.txt"), "w").write("0" * 64 + f"  gitleaks_8.30.1_linux_{'x64' if platform.machine() == 'x86_64' else 'arm64'}.tar.gz\n")
+        open(os.path.join(self.serve, "gitleaks_8.30.1_checksums.txt"), "w").write("0" * 64 + f"  gitleaks_8.30.1_linux_{'x64'}.tar.gz\n")
         r, calls = self.run_install(PIP_FAILS="1")
         self.assertEqual(r.returncode, 1)
         self.assertEqual(self.binaries(), ["osv-scanner", "trufflehog"], r.stdout)

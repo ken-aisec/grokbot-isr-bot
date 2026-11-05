@@ -24,7 +24,7 @@ Download by commit whenever you have the commit ID. Show the user those 40 lines
 Your skills are the SKILL.md files under `/workspace/isr-bot/app/skills/`. Don't copy them anywhere; read them from there, so they always match the installed release. They are not slash commands: the owner asks in plain words.
 
 ## 2. Scanners
-Run `bash /workspace/isr-bot/app/scripts/install.sh --scanners`. Each tool installs on its own from a checksum lock; if one says it did not install, carry on. ISR Bot works without it and the audit says which is missing. If it ends with `CHECKSUM LOCK FAILED`, the Python scanners were skipped and nothing was installed without checksums (gitleaks, TruffleHog and OSV-Scanner still installed from their own): tell the owner the reason it printed and carry on; never install the scanners another way.
+Run `bash /workspace/isr-bot/app/scripts/install.sh --scanners`. Each tool installs on its own from a checksum lock; if one says it did not install, carry on. ISR Bot works without it and the audit says which is missing. If it ends with `CHECKSUM LOCK FAILED`, the Python scanners were skipped and nothing was installed without checksums (gitleaks, TruffleHog and OSV-Scanner still installed from their own): tell the owner the reason it printed and carry on; never install the scanners another way. On a computer that isn't x86_64 it says gitleaks, TruffleHog and OSV-Scanner were not installed: tell the owner in one line; ISR Bot's own key rules still run.
 
 ## 3. Baseline, decoys, first audit
 1. `python3 /workspace/isr-bot/app/isr_bot/isr.py baseline`. On an update, if it prints NOT SAVED, this computer already has a baseline: carry on, and never add `--owner-said-yes` yourself.
