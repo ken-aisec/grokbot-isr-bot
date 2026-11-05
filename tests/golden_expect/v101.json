@@ -400,18 +400,17 @@
       "scenario_rx": "^(box\\-busy_clean_box\\-cli|box\\-busy_clean_box\\-driver|box\\-emoji_names\\-cli|box\\-emoji_names\\-driver|box\\-empty_account\\-cli|box\\-empty_account\\-driver|box\\-fixtures_vendor\\-cli|box\\-fixtures_vendor\\-driver|box\\-odd_layout\\-cli|box\\-odd_layout\\-driver|box\\-platform_refresh\\-cli|box\\-platform_refresh\\-driver|box\\-power_user\\-cli|box\\-power_user\\-driver|box\\-strict_auto_review\\-cli|box\\-strict_auto_review\\-driver|crash|extended|tierC)$",
       "key_rx": "^\\d{3} (installed )?audit( \\[driver\\])? :stdout$",
       "lines_rx": [
-        "checks didn't run",
-        "checks_not_run",
-        "status_line",
-        "SkillSpector:",
-        "husk:",
-        "gitleaks:",
-        "TruffleHog:",
-        "pip-audit:",
-        "OSV-Scanner:",
-        "score_line",
-        "worth a look",
-        "\\],"
+        "^-.*score_line",
+        "^\\+.*checks didn",
+        "^\\+.*status_line",
+        "^\\+.*checks_not_run",
+        "^\\+\\s+\"SkillSpector:",
+        "^\\+\\s+\"husk:",
+        "^\\+\\s+\"gitleaks:",
+        "^\\+\\s+\"TruffleHog:",
+        "^\\+\\s+\"pip-audit:",
+        "^\\+\\s+\"OSV-Scanner:",
+        "^\\+\\s*\\],"
       ],
       "must_see": true,
       "why": "v101cov: audit stdout gains checks_not_run / status_line / score_line ending."
@@ -421,8 +420,8 @@
       "scenario_rx": "^(box\\-busy_clean_box\\-cli|box\\-emoji_names\\-cli|box\\-empty_account\\-cli|box\\-fixtures_vendor\\-cli|box\\-odd_layout\\-cli|box\\-platform_refresh\\-cli|box\\-power_user\\-cli|box\\-strict_auto_review\\-cli)$",
       "key_rx": "^\\d{3} show (?!--help)\\S+ :stdout$",
       "lines_rx": [
-        "checks didn't run",
-        "worth a look"
+        "^-score ",
+        "^\\+.*checks didn"
       ],
       "must_see": true,
       "why": "v101cov: show score line ends with N checks didn't run."
@@ -432,8 +431,8 @@
       "scenario_rx": "^(box\\-busy_clean_box\\-cli|box\\-emoji_names\\-cli|box\\-empty_account\\-cli|box\\-fixtures_vendor\\-cli|box\\-odd_layout\\-cli|box\\-platform_refresh\\-cli|box\\-power_user\\-cli|box\\-strict_auto_review\\-cli)$",
       "key_rx": "^\\d{3} report :stdout$",
       "lines_rx": [
-        "checks didn't run",
-        "worth a look"
+        "^-Score ",
+        "^\\+.*checks didn"
       ],
       "must_see": true,
       "why": "v101cov: report Score line ends with N checks didn't run."
@@ -443,10 +442,10 @@
       "scenario_rx": "^(box\\-busy_clean_box\\-cli|box\\-emoji_names\\-cli|box\\-empty_account\\-cli|box\\-fixtures_vendor\\-cli|box\\-odd_layout\\-cli|box\\-platform_refresh\\-cli|box\\-power_user\\-cli|box\\-strict_auto_review\\-cli)$",
       "key_rx": "^tree workspace/isr-bot/reports/\\d{4}-W\\d{2}\\.md$",
       "lines_rx": [
-        "checks didn't run",
-        "worth a look",
-        "ISR Bot 1\\.0\\.0",
-        "ISR Bot 1\\.0\\.1"
+        "^-Score ",
+        "^\\+.*checks didn",
+        "^-_ISR Bot 1\\.0\\.0",
+        "^\\+_ISR Bot 1\\.0\\.1"
       ],
       "must_see": true,
       "why": "v101cov: weekly report Score line and footer version."
@@ -456,13 +455,8 @@
       "scenario_rx": "^(box\\-busy_clean_box\\-cli|box\\-emoji_names\\-cli|box\\-empty_account\\-cli|box\\-fixtures_vendor\\-cli|box\\-odd_layout\\-cli|box\\-platform_refresh\\-cli|box\\-power_user\\-cli|box\\-strict_auto_review\\-cli)$",
       "key_rx": "^\\d{3} doctor( \\[driver\\])? :stdout$",
       "lines_rx": [
-        "checks didn't run",
-        "score_line",
-        "worth a look",
-        "\"isr_bot\": \"1\\.0\\.0\"",
-        "\"isr_bot\": \"1\\.0\\.1\"",
-        "\"version\": \"1\\.0\\.0\"",
-        "\"version\": \"1\\.0\\.1\""
+        "^-.*score_line",
+        "^\\+.*checks didn"
       ],
       "must_see": true,
       "why": "v101cov: doctor score_line ending plus version fields when both change."
@@ -472,16 +466,16 @@
       "scenario_rx": "^(box\\-busy_clean_box\\-cli|box\\-emoji_names\\-cli|box\\-empty_account\\-cli|box\\-fixtures_vendor\\-cli|box\\-odd_layout\\-cli|box\\-platform_refresh\\-cli|box\\-power_user\\-cli|box\\-strict_auto_review\\-cli|tierC)$",
       "key_rx": "^tree workspace/isr-bot/state/last_findings\\.json$",
       "lines_rx": [
-        "checks_not_run",
-        "SkillSpector:",
-        "husk:",
-        "gitleaks:",
-        "TruffleHog:",
-        "pip-audit:",
-        "OSV-Scanner:",
-        "\"version\": \"1\\.0\\.0\"",
-        "\"version\": \"1\\.0\\.1\"",
-        "\\],"
+        "^\\+.*checks_not_run",
+        "^\\+\\s+\"SkillSpector:",
+        "^\\+\\s+\"husk:",
+        "^\\+\\s+\"gitleaks:",
+        "^\\+\\s+\"TruffleHog:",
+        "^\\+\\s+\"pip-audit:",
+        "^\\+\\s+\"OSV-Scanner:",
+        "^\\+\\s*\\],",
+        "^-.*\"version\": \"1\\.0\\.0\"",
+        "^\\+.*\"version\": \"1\\.0\\.1\""
       ],
       "must_see": true,
       "why": "v101cov: last_findings gains checks_not_run list; version 1.0.0->1.0.1."
@@ -491,10 +485,10 @@
       "scenario_rx": "^(box\\-busy_clean_box\\-cli|box\\-emoji_names\\-cli|box\\-empty_account\\-cli|box\\-fixtures_vendor\\-cli|box\\-odd_layout\\-cli|box\\-platform_refresh\\-cli|box\\-power_user\\-cli|box\\-strict_auto_review\\-cli)$",
       "key_rx": "^tree workspace/isr-bot/reports/dashboard\\.html$",
       "lines_rx": [
-        "checks didn",
-        "Posture score",
-        "ISR Bot 1\\.0\\.0",
-        "ISR Bot 1\\.0\\.1"
+        "^-.*worth a look \u00b7 .*tips?</div>",
+        "^\\+.*checks didn",
+        "^-.*ISR Bot 1\\.0\\.0\\.",
+        "^\\+.*ISR Bot 1\\.0\\.1\\."
       ],
       "must_see": true,
       "why": "v101cov: dashboard Status/score card mentions checks that didn't run; footer version."
