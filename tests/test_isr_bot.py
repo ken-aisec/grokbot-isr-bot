@@ -582,7 +582,7 @@ class Features(unittest.TestCase):
         r = isr.item_row(F("ISR-X001", "SkillSpector: do not install", "high", ["AST01"], "/home/box/sand-data/workflows/inbox-triage", "risk 70; Privilege Escalation: Credential Access", "f"))
         self.assertEqual(r["name"], "inbox-triage")
         self.assertIn("Credential Access", r["reason"])
-        sess = os.path.join(self.tmp, "grok", "sessions"); code_dir = os.path.join(self.tmp, "proj")
+        sess = os.path.join(self.tmp, ".grok", "sessions"); code_dir = os.path.join(self.tmp, "proj")
         os.makedirs(sess); os.makedirs(code_dir)
         key = "ghp_" + fake_key(36)
         open(os.path.join(sess, "s1.json"), "w").write('{"msg": "' + key + '"}')

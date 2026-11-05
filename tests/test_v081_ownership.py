@@ -940,7 +940,7 @@ class StoredSnapshots(_Owned):
         old = os.path.dirname(self.put(self.w("backups", "old-tool", "SKILL.md"), "---\nname: old-tool\ndescription: Demo.\n---\nx\n"))
         tool = os.path.dirname(self.put(self.w("projects", "tool", "SKILL.md"), "---\nname: tool\ndescription: Demo.\n---\nx\n"))
         echo = self.put(self.w("agent-tools", "chat.txt"), f"token = {key(5)}\n")
-        mine = self.put(self.w("projects", "app", "logs", "chat.log"), f"token = {key(6)}\n")
+        mine = self.put(self.h(".grok", "sessions", "chat.jsonl"), f"token = {key(6)}\n")
         self.seed([self.f("ISR-X003", "Two scanners agree", "high", d, source="engines", label=isr.CONFIRMED, **{"class": "evidence"}) for d in (old, tool)]
                   + [self.f("ISR-S001", "Secret stored in a file on the shared computer", "critical", p + ":1") for p in (echo, mine)])
         self.skills(1)
