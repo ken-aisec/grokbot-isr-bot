@@ -538,12 +538,23 @@ def open_counts(fs):
     return sum(1 for f in fs if f.get("class") == "pattern"), sum(1 for f in fs if f.get("class") == "tip")
 
 
+def checks_not_run_count(snap):
+    """1.0.1 (U2): how many of the six scanners this run couldn't use (the snapshot's checks_not_run)."""
+    x = (snap or {}).get("checks_not_run")
+    return len(x) if isinstance(x, list) else 0
+
+
+def checks_didnt_run(n):
+    return f"{n} check{'' if n == 1 else 's'} didn't run"
+
+
 def score_line(snap):
-    """'100 · 7 worth a look · 3 tips'"""
+    """'100 · 7 worth a look · 3 tips', and ' · 2 checks didn't run' when scanners couldn't be used (1.0.1, U2)."""
     if not snap or snap.get("score") is None:
         return "–"
     look, tips = open_counts(snap.get("findings"))
-    return f"{snap['score']} · {look} worth a look · {tips} tip{'' if tips == 1 else 's'}"
+    n = checks_not_run_count(snap)
+    return f"{snap['score']} · {look} worth a look · {tips} tip{'' if tips == 1 else 's'}" + (f" · {checks_didnt_run(n)}" if n else "")
 
 
 def label_of(f):
@@ -606,11 +617,13 @@ def snap_grade(snap):
 
 
 def status_line(snap):
-    """'Act now — 1 confirmed critical problem'"""
+    """'Act now — 1 confirmed critical problem'; 'All good so far, 6 checks didn't run' when scanners couldn't be used (1.0.1, U2:
+    the status word itself stays one of the three)."""
     st = snap_status(snap)
     sev = "critical" if st == ACT_NOW else "high" if st == CHECK_WEEK else None
     if not sev:
-        return st
+        n = checks_not_run_count(snap)
+        return f"{st} so far, {checks_didnt_run(n)}" if st == ALL_GOOD and n else st
     n = sum(1 for f in scored(snap.get("findings") or []) if f["severity"] == sev and label_of(f) == CONFIRMED)
     return f"{st} — {n} confirmed {sev} problem{'' if n == 1 else 's'}" if n else st
 

@@ -351,6 +351,9 @@ def run_audit_locked(args, quick):
     saved = ENGINE_BUDGET
     del STAGE_FAILED[:]
     del STAGE_PARTIAL[:]
+    del STAGE_TIMED_OUT[:]   # 1.0.1 (U2): and what the skill scanners answered last run
+    ENGINE_ANSWERED.clear()
+    ENGINE_NOT_RUN.clear()
     try:
         limit = DAILY_LIMIT if quick else RUN_LIMIT
         if getattr(args, "budget", None) is not None:
@@ -413,6 +416,8 @@ def run_audit_locked(args, quick):
         snapshot["plugin_version_changes"] = meta["plugin_version_changes"]
     if STAGE_PARTIAL:   # 1.0 (U1): a stage that ran but didn't re-check everything; only when there is one
         snapshot["stages_partial"] = list(STAGE_PARTIAL)
+    if meta.get("checks_not_run"):   # 1.0.1 (U2): scanners this run couldn't use; only when there are any
+        snapshot["checks_not_run"] = list(meta["checks_not_run"])
     snapshot["vendor"] = mask_stored(vendor)   # v0.8.1 (§3.5): never scored; the platform-notes count and `isr.py breakdown` read them
     # PR A, Codex round 2 (6): critical or high findings a daily run had no room to name stay owed while they are open, whatever
     # run comes next (cmd_daily names them and clears them)

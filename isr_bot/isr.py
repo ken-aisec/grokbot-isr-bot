@@ -135,6 +135,9 @@ def cmd_audit(args):
            "fixed": [compact(f) for f in fixed][:10], "open_by_severity": by_sev(owners(snap["findings"])),
            "top_fixes": [compact(f) for f in snap["findings"] if (f.get("scope") != "platform" or counts(f)) and not f.get("guarded")][:3],   # round 1 (5): a counted key too
            "notes": snap["notes"], "inventory": snap["inventory"]}
+    out["status_line"] = status_line(snap)   # 1.0.1 (U2): "All good so far, N checks didn't run"; `status` stays the fixed word
+    if snap.get("checks_not_run"):
+        out["checks_not_run"] = snap["checks_not_run"]
     amap = load_access_map()
     if amap is not None:   # batch 5 (a): one line; `isr.py access` has the map
         out["access"] = access_summary(amap)
@@ -178,7 +181,7 @@ def cmd_audit(args):
         out["scanner_alerts"] = alerts
     # batch 5 (a): the access line brings its own room, so the owner's part is fitted exactly as without it (it never costs a finding)
     room = len(json.dumps(out, indent=1)) - len(json.dumps({k: v for k, v in out.items() if k != "access"}, indent=1))
-    print(fit_owner_first(out, notes, limit=4096 + room, keep=("scanner_alerts",), alias=True, before="scanner_alerts"))
+    print(fit_owner_first(out, notes, limit=4096 + room, keep=("scanner_alerts", "status_line", "checks_not_run"), alias=True, before="scanner_alerts"))
     return 0
 
 
@@ -638,6 +641,8 @@ def render_brief(b, snap, pkg, hist, tag, analyst_note=None, notes=None):
         status, tone = f"{WORDS.get(len(urgent), str(len(urgent)))} {'thing needs' if len(urgent) == 1 else 'things need'} you this week.", "bad"
     elif urgent:
         status, tone = f"Mostly in good shape. {WORDS.get(len(urgent), str(len(urgent)))} {'thing is' if len(urgent) == 1 else 'things are'} worth a few minutes.", "warn"
+    elif checks_not_run_count(snap):   # 1.0.1 (U2, Codex 3): a clean week with scanners that didn't run is amber, and says so
+        status, tone = f"Nothing needs you this week, but {checks_didnt_run(checks_not_run_count(snap))}.", "warn"
     else:
         status, tone = "You're in good shape. Nothing needs you this week.", "ok"
     sub = analyst_note or (f"The biggest outside threat: {stories[0]['title']}." if stories else "No major new threats this week.")

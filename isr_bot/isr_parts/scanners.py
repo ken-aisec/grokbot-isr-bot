@@ -742,6 +742,19 @@ def scanner_unavailable(name):
     return kind in ("changed", "unreadable", "unlisted") or ran, line
 
 
+COPY_WHY = {"changed": "its copy isn't the one ISR Bot installed", "unreadable": "couldn't be checked now",
+            "old-folder": "in the old scanner folder"}
+
+
+def scanner_copy_why(name):
+    """1.0.1 (U2): why ISR Bot's copy of `name` couldn't be used this run, in a few words, from what it already knows: the kind
+    in SCANNER_PROBLEMS, else gone (it ran before) or not installed."""
+    kind = SCANNER_PROBLEMS.get(name, (None,))[0]
+    if kind == "unlisted":
+        return f"no checked copy for this computer ({scanner_arch()})"
+    return COPY_WHY.get(kind) or ("gone since it last ran" if scanner_ran_before(SCANNER_NAMES.get(name, name)) else "not installed")
+
+
 def scanner_absent(notes, name, plain):
     keep, line = scanner_unavailable(name)
     if keep:

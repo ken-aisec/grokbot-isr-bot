@@ -9,6 +9,10 @@ ENGINE_SOLO_LIMIT = int(os.environ.get("ISR_BOT_ENGINE_SOLO_LIMIT", "120"))    #
 #                                                                           a real box healthy skills with Office files took 37 to 61 and were marked stuck.
 ENGINE_MAX_TARGETS = 5000
 ENGINE_CURRENT = set()                                                    # skills whose scanner answer is up to date after this run
+# 1.0.1 (U2, Codex 1): what each skill scanner answered this run, {name: (answered, asked)} for each installed one, and why one
+# wasn't run at all, {name: why}. The audit counts a skill scanner that answered none of the skills as a check that didn't run.
+ENGINE_ANSWERED = {}
+ENGINE_NOT_RUN = {}
 ENGINE_HEAVY_BYTES, ENGINE_HEAVY_FILES = 400_000, 120                     # bigger skills are scanned on their own so they can't jam a batch
 STUCK_RETRY_DAYS = 7
 TIMED_OUT = "ran out of time"
@@ -16,6 +20,7 @@ TIMED_OUT = "ran out of time"
 
 STAGE_FAILED = []        # stages that did not finish in the current run
 STAGE_PARTIAL = []       # 1.0 (U1): stages that ran but didn't re-check everything, one line each with its counts
+STAGE_TIMED_OUT = []     # 1.0.1 (U2): stages soft() skipped because the run's time was up (a TimeoutError), also in STAGE_FAILED
 
 
 def carry(rules):
@@ -55,6 +60,8 @@ def soft(stage, rules, notes, default, fn, *a, **k):
         failed = len(STAGE_FAILS) > fails_before or any(re.search(r"(?i)\bfailed\b", n) for n in notes[before:])
     except Exception as e:   # noqa: BLE001 - nothing a scanner or a strange file does may break the audit
         res, failed = default, True
+        if isinstance(e, TimeoutError):
+            STAGE_TIMED_OUT.append(stage)
         notes.append(f"{stage} FAILED ({type(e).__name__}: {mask_secrets(str(e)[:MASK_WINDOW])[:100]}): skipped, NOT checked this run; "
                      "the last results are kept.")
     if failed:
@@ -149,6 +156,15 @@ def entry_current(e_, h, installed):
     if isinstance(e_, dict) and (e_.get("hk_partial") or hk_words_missing(e_.get("hk"))) and not e_.get("stuck"):
         return False
     return bool(e_) and e_.get("hash") == h and (bool(e_.get("stuck")) or set(installed) <= entry_engines(e_))
+
+
+def engine_answered(e_, h, installed, name):
+    """1.0.1 (U2, Codex 1): whether engine `name` gave the current answer for a skill: the remembered result is current and that
+    engine made it (and isn't the one stuck on it), or it is husk's answer kept beside a SkillSpector that got stuck. An answer
+    from an earlier run counts: the skill hasn't changed since."""
+    if not entry_current(e_, h, installed):
+        return False
+    return (name in entry_engines(e_) and e_.get("stuck") != name) or (name == "husk" and e_.get("stuck") == "SkillSpector" and "hk" in e_)
 
 
 def has_binary(d):
@@ -319,11 +335,15 @@ def engine_findings(skill_dirs, isr_findings, notes, user_root_dirs=(), budget=N
     out, started = [], time.monotonic()
     budget = ENGINE_BUDGET if budget is None else budget
     ENGINE_CURRENT.clear()
+    ENGINE_ANSWERED.clear()
+    ENGINE_NOT_RUN.clear()
     ss_exe, hk_exe = tool("skillspector"), tool("husk")
     blocked = engines_blocked()
     if blocked:   # batch 3 (R7): not checked is not clean. The stage is marked failed, so last run's scanner lines are kept whole
         fail_note(notes, blocked + " SkillSpector and husk were not run this time.")
         ENGINE_CURRENT.clear()
+        for t, n in (("skillspector", "SkillSpector"), ("husk", "husk")):   # 1.0.1 (U2): each says why it wasn't run
+            ENGINE_NOT_RUN[n] = "held back: the other skill scanner isn't usable" if tool(t) else scanner_copy_why(t)
         return []
     if not ss_exe:
         scanner_absent(notes, "skillspector", "SkillSpector not installed: run install.sh --scanners for a second engine.")
@@ -436,6 +456,7 @@ def engine_findings(skill_dirs, isr_findings, notes, user_root_dirs=(), budget=N
         for err_, who in ((ss_err, "SkillSpector"), (hk_err, "husk")):
             if err_:
                 fail_note(notes, f"{who} failed on a batch of {len(chunk)} skills ({err_}); they'll be retried next run.")
+                ENGINE_NOT_RUN[who] = "failed this run"
         if ss_err or hk_err:
             continue   # don't remember a batch that didn't finish
         for d in chunk:   # husk's words missing (hk_partial): not current, so they are asked for again next run (DQ-042 round 3)
@@ -509,6 +530,8 @@ def engine_findings(skill_dirs, isr_findings, notes, user_root_dirs=(), budget=N
             out.append(x)
     if installed:
         ENGINE_CURRENT.update(d for d in targets if entry_current(cache.get(d) or {}, hashes[d], installed))
+    for n in installed:   # 1.0.1 (U2, Codex 1): how many of the skills asked about each installed engine answered
+        ENGINE_ANSWERED[n] = (sum(1 for d in targets if engine_answered(cache.get(d) or {}, hashes[d], installed, n)), len(targets))
     save_json(state_path("engines.json"), {"at": now(), "targets": len(targets), "scanned_this_run": scanned, "cached": len(targets) - len(todo),
                                            "waiting": max(0, left),
                                            "seconds": round(time.monotonic() - started, 1)})

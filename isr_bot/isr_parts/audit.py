@@ -354,6 +354,7 @@ def audit(roots, exports, quick=False):
     used_now = ["ISR Bot rules"] + [n for n, t in (
         ("SkillSpector", "skillspector"), ("husk", "husk"), ("gitleaks", "gitleaks"), ("TruffleHog", "trufflehog"),
         ("pip-audit", "pip-audit"), ("OSV-Scanner", "osv-scanner")) if scanner_used(t)]   # Claude review 2 (3)
+    not_run = checks_not_run()   # 1.0.1 (U2): before engines_used.json is saved, so "gone since it last ran" reads the last run's
     gone = [n for n in before if n not in used_now]
     save_json(state_path("engines_used.json"), {"at": now(), "engines": used_now, **({"expected": list(dict.fromkeys(before + used_now))} if gone else {})})
     # v0.8.4 (item 1): a scanner that ran out of time is still expected, but it is slow, not missing: its own note says so
@@ -364,6 +365,7 @@ def audit(roots, exports, quick=False):
     fs += scanner_x005()   # batch 3 (R7): every scanner was looked at just above, in audit and daily alike
     fs = sort_findings(dedupe(fs))
     meta = {"inventory": {k: len(v) for k, v in inv.items() if k != "non_live_skills"}, "notes": notes, "plugin_version_changes": version_changes, "manifest": manifest, "persistence": snap, "scanners_missing": gone,
+            "checks_not_run": not_run,
             "skill_dirs": [os.path.dirname(x) for x in inv["skills"] if owner_of(os.path.dirname(x)) == "user"],   # v0.8.1: approved copies are the owner's only
             "key_status": key_status, "baseline_status": base_status,
             "access_sources": {"roots": list(roots), "mcp": list(inv["mcp_configs"]), "plugin_files": list(inv["plugin_files"]),
@@ -376,3 +378,34 @@ def audit(roots, exports, quick=False):
                                "cli_unknown": len(cli_unknown), "persist_unknown": sorted(PERSIST_UNKNOWN)}}
     OWN_TOKEN.clear()
     return fs, meta
+
+
+CHECKED_SCANNERS = (("SkillSpector", "skillspector"), ("husk", "husk"), ("gitleaks", "gitleaks"), ("TruffleHog", "trufflehog"),
+                    ("pip-audit", "pip-audit"), ("OSV-Scanner", "osv-scanner"))
+SKILL_STAGE = "SkillSpector and husk"
+
+
+def checks_not_run():
+    """1.0.1 (U2): one "<name>: <why>" line for each of the six scanners this run couldn't use, from what ISR Bot already knows.
+    Not counted: a partly checked TruffleHog (stages_partial) and a skill scanner that answered some of the skills but not all
+    (open question 9): both ran, and their own notes say what's left. The daily never runs the four single-scanner stages, so
+    there only an unusable copy or the skill scanners count."""
+    out = []
+    for n, t in CHECKED_SCANNERS:
+        why = None
+        if not scanner_used(t):
+            if tool(t) and t not in SCANNERS_HELD:   # a checked copy whose stage failed this run
+                why = "ran out of time" if n in SLOW_SCANNERS else "failed this run"
+            else:
+                why = scanner_copy_why(t)
+        elif t in ("skillspector", "husk"):   # Codex 1: a skill scanner that was installed but gave no answer
+            answered, asked = ENGINE_ANSWERED.get(n, (0, 0))
+            if n in ENGINE_NOT_RUN:
+                why = None if ENGINE_NOT_RUN[n] == "failed this run" and answered else ENGINE_NOT_RUN[n]
+            elif SKILL_STAGE in STAGE_FAILED and n not in ENGINE_ANSWERED:   # soft() skipped the stage
+                why = "ran out of time" if SKILL_STAGE in STAGE_TIMED_OUT else "failed this run"
+            elif asked and not answered:
+                why = f"answered none of the {asked} skill{'' if asked == 1 else 's'} this run"
+        if why:
+            out.append(f"{n}: {why}")
+    return out
