@@ -1,0 +1,735 @@
+{
+ "about": "v1.1.0 against v1.0.1 (fa0525f4a8d4fdaab39164bb9085ca295f03d45f): v110ver the version lines, v110cmd the new `artifacts` subcommand in argparse's help and usage text, v110words the Part B sentence lines. Nothing for score, grade, status, keys, titles, severity, counts, where or open_by_severity. Each block is the exact diff of its outputs.",
+ "entries": [
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(tierA)$",
+   "key_rx": "^(001\\ \\-\\-version\\ :stdout|088\\ \\-\\-version\\ \\(cwd\\ /\\)\\ :stdout|175\\ \\-\\-version\\ \\(cwd\\ /tmp/code\\)\\ :stdout)$",
+   "block": [
+    "-1.0.1",
+    "+1.1.0"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(tierC)$",
+   "key_rx": "^(001\\ installed\\ \\-\\-version\\ :stdout)$",
+   "block": [
+    "-1.0.1",
+    "+1.1.0"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(tierA)$",
+   "key_rx": "^(035\\ doctor\\ :stdout|122\\ doctor\\ \\(cwd\\ /\\)\\ :stdout|209\\ doctor\\ \\(cwd\\ /tmp/code\\)\\ :stdout|tree\\ workspace/isr\\-bot/reports/support\\-2026\\-11\\-08\\.json)$",
+   "block": [
+    "- \"isr_bot\": \"1.0.1\",",
+    "+ \"isr_bot\": \"1.1.0\","
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(tierA)$",
+   "key_rx": "^(047\\ vet\\ /tmp/code/tests/fixtures/bad/exfil\\-helper\\ \\-\\-json\\ :stdout|052\\ vet\\ /tmp/code/tests/fixtures/bad/hidden\\-unicode\\ \\-\\-json\\ :stdout|057\\ vet\\ /tmp/code/tests/fixtures/bad/silent\\-sender\\ \\-\\-json\\ :stdout|062\\ vet\\ /tmp/code/tests/fixtures/clean/meeting\\-notes\\ \\-\\-json\\ :stdout|067\\ vet\\ /tmp/code/tests/fixtures/clean/weekly\\-digest\\-safe\\ \\-\\-json\\ :stdout|072\\ vet\\ /tmp/code/tests/fixtures/evasive/notes\\-sync\\ \\-\\-json\\ :stdout|077\\ vet\\ /tmp/code/tests/fixtures/exports/routine\\-bad\\.md\\ \\-\\-json\\ :stdout|082\\ vet\\ /tmp/code/tests/fixtures/exports/routine\\-good\\.md\\ \\-\\-json\\ :stdout|134\\ vet\\ /tmp/code/tests/fixtures/bad/exfil\\-helper\\ \\-\\-json\\ \\(cwd\\ /\\)\\ :stdout|139\\ vet\\ /tmp/code/tests/fixtures/bad/hidden\\-unicode\\ \\-\\-json\\ \\(cwd\\ /\\)\\ :stdout|144\\ vet\\ /tmp/code/tests/fixtures/bad/silent\\-sender\\ \\-\\-json\\ \\(cwd\\ /\\)\\ :stdout|149\\ vet\\ /tmp/code/tests/fixtures/clean/meeting\\-notes\\ \\-\\-json\\ \\(cwd\\ /\\)\\ :stdout|154\\ vet\\ /tmp/code/tests/fixtures/clean/weekly\\-digest\\-safe\\ \\-\\-json\\ \\(cwd\\ /\\)\\ :stdout|159\\ vet\\ /tmp/code/tests/fixtures/evasive/notes\\-sync\\ \\-\\-json\\ \\(cwd\\ /\\)\\ :stdout|164\\ vet\\ /tmp/code/tests/fixtures/exports/routine\\-bad\\.md\\ \\-\\-json\\ \\(cwd\\ /\\)\\ :stdout|169\\ vet\\ /tmp/code/tests/fixtures/exports/routine\\-good\\.md\\ \\-\\-json\\ \\(cwd\\ /\\)\\ :stdout|221\\ vet\\ /tmp/code/tests/fixtures/bad/exfil\\-helper\\ \\-\\-json\\ \\(cwd\\ /tmp/code\\)\\ :stdout|226\\ vet\\ /tmp/code/tests/fixtures/bad/hidden\\-unicode\\ \\-\\-json\\ \\(cwd\\ /tmp/code\\)\\ :stdout|231\\ vet\\ /tmp/code/tests/fixtures/bad/silent\\-sender\\ \\-\\-json\\ \\(cwd\\ /tmp/code\\)\\ :stdout|236\\ vet\\ /tmp/code/tests/fixtures/clean/meeting\\-notes\\ \\-\\-json\\ \\(cwd\\ /tmp/code\\)\\ :stdout|241\\ vet\\ /tmp/code/tests/fixtures/clean/weekly\\-digest\\-safe\\ \\-\\-json\\ \\(cwd\\ /tmp/code\\)\\ :stdout|246\\ vet\\ /tmp/code/tests/fixtures/evasive/notes\\-sync\\ \\-\\-json\\ \\(cwd\\ /tmp/code\\)\\ :stdout|251\\ vet\\ /tmp/code/tests/fixtures/exports/routine\\-bad\\.md\\ \\-\\-json\\ \\(cwd\\ /tmp/code\\)\\ :stdout|256\\ vet\\ /tmp/code/tests/fixtures/exports/routine\\-good\\.md\\ \\-\\-json\\ \\(cwd\\ /tmp/code\\)\\ :stdout)$",
+   "block": [
+    "-  \"version\": \"1.0.1\",",
+    "+  \"version\": \"1.1.0\","
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(tierA)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/reports/threat\\-brief\\-2026\\-W45\\.html)$",
+   "block": [
+    "-<p class='foot'>Read-only: ISR Bot changes nothing unless you run the fix. 0 of 11 news sources responded. Full details: /isr-bot-report. ISR Bot 1.0.1.</p>",
+    "+<p class='foot'>Read-only: ISR Bot changes nothing unless you run the fix. 0 of 11 news sources responded. Full details: /isr-bot-report. ISR Bot 1.1.0.</p>"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-emoji_names\\-cli|box\\-empty_account\\-cli|box\\-odd_layout\\-cli|box\\-strict_auto_review\\-cli)$",
+   "key_rx": "^(013\\ doctor\\ :stdout)$",
+   "block": [
+    "- \"isr_bot\": \"1.0.1\",",
+    "+ \"isr_bot\": \"1.1.0\",",
+    "-  \"version\": \"1.0.1\",",
+    "+  \"version\": \"1.1.0\","
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-emoji_names\\-driver|box\\-empty_account\\-driver|box\\-odd_layout\\-driver|box\\-strict_auto_review\\-driver)$",
+   "key_rx": "^(013\\ doctor\\ \\[driver\\]\\ :stdout)$",
+   "block": [
+    "- \"isr_bot\": \"1.0.1\",",
+    "+ \"isr_bot\": \"1.1.0\",",
+    "-  \"version\": \"1.0.1\",",
+    "+  \"version\": \"1.1.0\","
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-busy_clean_box\\-cli|box\\-power_user\\-cli)$",
+   "key_rx": "^(014\\ doctor\\ :stdout)$",
+   "block": [
+    "- \"isr_bot\": \"1.0.1\",",
+    "+ \"isr_bot\": \"1.1.0\",",
+    "-  \"version\": \"1.0.1\",",
+    "+  \"version\": \"1.1.0\","
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-busy_clean_box\\-driver|box\\-power_user\\-driver)$",
+   "key_rx": "^(014\\ doctor\\ \\[driver\\]\\ :stdout)$",
+   "block": [
+    "- \"isr_bot\": \"1.0.1\",",
+    "+ \"isr_bot\": \"1.1.0\",",
+    "-  \"version\": \"1.0.1\",",
+    "+  \"version\": \"1.1.0\","
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-fixtures_vendor\\-cli)$",
+   "key_rx": "^(027\\ doctor\\ :stdout)$",
+   "block": [
+    "- \"isr_bot\": \"1.0.1\",",
+    "+ \"isr_bot\": \"1.1.0\",",
+    "-  \"version\": \"1.0.1\",",
+    "+  \"version\": \"1.1.0\","
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-fixtures_vendor\\-driver)$",
+   "key_rx": "^(027\\ doctor\\ \\[driver\\]\\ :stdout)$",
+   "block": [
+    "- \"isr_bot\": \"1.0.1\",",
+    "+ \"isr_bot\": \"1.1.0\",",
+    "-  \"version\": \"1.0.1\",",
+    "+  \"version\": \"1.1.0\","
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-platform_refresh\\-cli)$",
+   "key_rx": "^(015\\ doctor\\ :stdout)$",
+   "block": [
+    "- \"isr_bot\": \"1.0.1\",",
+    "+ \"isr_bot\": \"1.1.0\",",
+    "-  \"version\": \"1.0.1\",",
+    "+  \"version\": \"1.1.0\","
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-platform_refresh\\-driver)$",
+   "key_rx": "^(015\\ doctor\\ \\[driver\\]\\ :stdout)$",
+   "block": [
+    "- \"isr_bot\": \"1.0.1\",",
+    "+ \"isr_bot\": \"1.1.0\",",
+    "-  \"version\": \"1.0.1\",",
+    "+  \"version\": \"1.1.0\","
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-busy_clean_box\\-cli|box\\-busy_clean_box\\-driver|box\\-emoji_names\\-cli|box\\-emoji_names\\-driver|box\\-empty_account\\-cli|box\\-empty_account\\-driver|box\\-fixtures_vendor\\-cli|box\\-fixtures_vendor\\-driver|box\\-odd_layout\\-cli|box\\-odd_layout\\-driver|box\\-platform_refresh\\-cli|box\\-platform_refresh\\-driver|box\\-power_user\\-cli|box\\-power_user\\-driver|box\\-strict_auto_review\\-cli|box\\-strict_auto_review\\-driver|extended)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/reports/2026\\-W45\\.md)$",
+   "block": [
+    "-_ISR Bot 1.0.1, read-only. Scanners can be bypassed; this report is evidence, not proof._",
+    "+_ISR Bot 1.1.0, read-only. Scanners can be bypassed; this report is evidence, not proof._"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-busy_clean_box\\-cli|box\\-busy_clean_box\\-driver|box\\-emoji_names\\-cli|box\\-emoji_names\\-driver|box\\-empty_account\\-cli|box\\-empty_account\\-driver|box\\-fixtures_vendor\\-cli|box\\-fixtures_vendor\\-driver|box\\-odd_layout\\-cli|box\\-odd_layout\\-driver|box\\-platform_refresh\\-cli|box\\-platform_refresh\\-driver|box\\-power_user\\-cli|box\\-power_user\\-driver|box\\-strict_auto_review\\-cli|box\\-strict_auto_review\\-driver|extended)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/reports/dashboard\\.html)$",
+   "block": [
+    "-<p class='mut' style='margin-top:20px'>ISR Bot 1.0.1. Scanners can be bypassed; this is evidence, not proof.</p></body></html>",
+    "+<p class='mut' style='margin-top:20px'>ISR Bot 1.1.0. Scanners can be bypassed; this is evidence, not proof.</p></body></html>"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-busy_clean_box\\-cli|box\\-busy_clean_box\\-driver|box\\-emoji_names\\-cli|box\\-emoji_names\\-driver|box\\-empty_account\\-cli|box\\-empty_account\\-driver|box\\-fixtures_vendor\\-cli|box\\-fixtures_vendor\\-driver|box\\-odd_layout\\-cli|box\\-odd_layout\\-driver|box\\-platform_refresh\\-cli|box\\-platform_refresh\\-driver|box\\-power_user\\-cli|box\\-power_user\\-driver|box\\-strict_auto_review\\-cli|box\\-strict_auto_review\\-driver|crash|extended|tierC)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/state/last_findings\\.json)$",
+   "block": [
+    "-  \"version\": \"1.0.1\"",
+    "+  \"version\": \"1.1.0\""
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-emoji_names\\-cli|box\\-empty_account\\-cli|box\\-odd_layout\\-cli)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,92,7,full,s5:1.0.1|ISR Bot rules",
+    "-<TS>,92,7,daily,s5:1.0.1|ISR Bot rules",
+    "-<TS>,92,7,full,s5:1.0.1|ISR Bot rules",
+    "-<TS>,92,7,daily,s5:1.0.1|ISR Bot rules",
+    "+<TS>,92,7,full,s5:1.1.0|ISR Bot rules",
+    "+<TS>,92,7,daily,s5:1.1.0|ISR Bot rules",
+    "+<TS>,92,7,full,s5:1.1.0|ISR Bot rules",
+    "+<TS>,92,7,daily,s5:1.1.0|ISR Bot rules"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-emoji_names\\-driver|box\\-empty_account\\-driver|box\\-odd_layout\\-driver)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,98,2,full,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,98,2,daily,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,98,2,full,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,98,2,daily,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,98,2,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,98,2,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,98,2,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,98,2,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-busy_clean_box\\-cli)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,81,8,full,s5:1.0.1|ISR Bot rules",
+    "-<TS>,81,8,daily,s5:1.0.1|ISR Bot rules",
+    "-<TS>,81,8,full,s5:1.0.1|ISR Bot rules",
+    "-<TS>,81,8,daily,s5:1.0.1|ISR Bot rules",
+    "+<TS>,81,8,full,s5:1.1.0|ISR Bot rules",
+    "+<TS>,81,8,daily,s5:1.1.0|ISR Bot rules",
+    "+<TS>,81,8,full,s5:1.1.0|ISR Bot rules",
+    "+<TS>,81,8,daily,s5:1.1.0|ISR Bot rules"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-busy_clean_box\\-driver)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,88,3,full,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,88,3,daily,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,88,3,full,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,88,3,daily,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,88,3,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,88,3,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,88,3,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,88,3,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-power_user\\-cli)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,92,8,full,s5:1.0.1|ISR Bot rules",
+    "-<TS>,92,8,daily,s5:1.0.1|ISR Bot rules",
+    "-<TS>,92,8,full,s5:1.0.1|ISR Bot rules",
+    "-<TS>,92,8,daily,s5:1.0.1|ISR Bot rules",
+    "+<TS>,92,8,full,s5:1.1.0|ISR Bot rules",
+    "+<TS>,92,8,daily,s5:1.1.0|ISR Bot rules",
+    "+<TS>,92,8,full,s5:1.1.0|ISR Bot rules",
+    "+<TS>,92,8,daily,s5:1.1.0|ISR Bot rules"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-power_user\\-driver)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,98,3,full,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,98,3,daily,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,98,3,full,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,98,3,daily,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,98,3,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,98,3,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,98,3,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,98,3,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-strict_auto_review\\-cli)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,93,7,full,s5:1.0.1|ISR Bot rules",
+    "-<TS>,93,7,daily,s5:1.0.1|ISR Bot rules",
+    "-<TS>,93,7,full,s5:1.0.1|ISR Bot rules",
+    "-<TS>,93,7,daily,s5:1.0.1|ISR Bot rules",
+    "+<TS>,93,7,full,s5:1.1.0|ISR Bot rules",
+    "+<TS>,93,7,daily,s5:1.1.0|ISR Bot rules",
+    "+<TS>,93,7,full,s5:1.1.0|ISR Bot rules",
+    "+<TS>,93,7,daily,s5:1.1.0|ISR Bot rules"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-strict_auto_review\\-driver)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,100,2,full,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,100,2,daily,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,100,2,full,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,100,2,daily,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,100,2,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,100,2,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,100,2,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,100,2,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-fixtures_vendor\\-cli)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,22,24,full,s5:1.0.1|ISR Bot rules",
+    "-<TS>,22,24,daily,s5:1.0.1|ISR Bot rules",
+    "-<TS>,22,24,full,s5:1.0.1|ISR Bot rules",
+    "-<TS>,22,24,daily,s5:1.0.1|ISR Bot rules",
+    "+<TS>,22,24,full,s5:1.1.0|ISR Bot rules",
+    "+<TS>,22,24,daily,s5:1.1.0|ISR Bot rules",
+    "+<TS>,22,24,full,s5:1.1.0|ISR Bot rules",
+    "+<TS>,22,24,daily,s5:1.1.0|ISR Bot rules"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-fixtures_vendor\\-driver)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,26,19,full,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,26,19,daily,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,26,19,full,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,26,19,daily,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,26,19,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,26,19,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,26,19,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,26,19,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-platform_refresh\\-cli)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,81,8,full,s5:1.0.1|ISR Bot rules",
+    "-<TS>,81,8,full,s5:1.0.1|ISR Bot rules",
+    "-<TS>,81,8,daily,s5:1.0.1|ISR Bot rules",
+    "-<TS>,81,8,full,s5:1.0.1|ISR Bot rules",
+    "-<TS>,81,8,daily,s5:1.0.1|ISR Bot rules",
+    "+<TS>,81,8,full,s5:1.1.0|ISR Bot rules",
+    "+<TS>,81,8,full,s5:1.1.0|ISR Bot rules",
+    "+<TS>,81,8,daily,s5:1.1.0|ISR Bot rules",
+    "+<TS>,81,8,full,s5:1.1.0|ISR Bot rules",
+    "+<TS>,81,8,daily,s5:1.1.0|ISR Bot rules"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(box\\-platform_refresh\\-driver)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,88,3,full,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,88,3,full,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,88,3,daily,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,88,3,full,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,88,3,daily,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,88,3,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,88,3,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,88,3,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,88,3,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,88,3,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(crash)$",
+   "key_rx": "^(003\\ doctor\\ \\[driver\\]\\ :stdout)$",
+   "block": [
+    "- \"isr_bot\": \"1.0.1\",",
+    "+ \"isr_bot\": \"1.1.0\",",
+    "-  \"version\": \"1.0.1\",",
+    "+  \"version\": \"1.1.0\",",
+    "-  \"at_and_command\": \"<TS> isr.py report (v1.0.1)\",",
+    "+  \"at_and_command\": \"<TS> isr.py report (v1.1.0)\","
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(crash)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/state/last_error\\.txt)$",
+   "block": [
+    "-<TS> isr.py report (v1.0.1)",
+    "+<TS> isr.py report (v1.1.0)"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(crash)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,98,2,full,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,98,2,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(extended)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,26,19,full,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,26,19,full,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,26,19,daily,s5:1.0.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,26,19,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,26,19,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,26,19,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110ver",
+   "scenario_rx": "^(tierC)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,98,1,full,s5:1.0.1|ISR Bot rules",
+    "+<TS>,98,1,full,s5:1.1.0|ISR Bot rules"
+   ],
+   "must_see": true,
+   "why": "v110: VERSION 1.0.1 -> 1.1.0 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v110cmd",
+   "scenario_rx": "^(tierA)$",
+   "key_rx": "^(002\\ \\-\\-help\\ :stdout|003\\ \\-h\\ :stdout|089\\ \\-\\-help\\ \\(cwd\\ /\\)\\ :stdout|090\\ \\-h\\ \\(cwd\\ /\\)\\ :stdout|176\\ \\-\\-help\\ \\(cwd\\ /tmp/code\\)\\ :stdout|177\\ \\-h\\ \\(cwd\\ /tmp/code\\)\\ :stdout)$",
+   "block": [
+    "-              {vet,audit,daily,baseline,status,report,breakdown,dismiss,show,canary,auto-allow,fix,quarantine,uninstall,diff,doctor,exception,accept,events,rollcall,prepublish,incident,codescan,brief,access}",
+    "+              {vet,audit,daily,baseline,status,report,breakdown,dismiss,show,canary,auto-allow,fix,quarantine,uninstall,diff,doctor,exception,accept,events,rollcall,prepublish,incident,codescan,brief,access,artifacts}",
+    "-  {vet,audit,daily,baseline,status,report,breakdown,dismiss,show,canary,auto-allow,fix,quarantine,uninstall,diff,doctor,exception,accept,events,rollcall,prepublish,incident,codescan,brief,access}",
+    "+  {vet,audit,daily,baseline,status,report,breakdown,dismiss,show,canary,auto-allow,fix,quarantine,uninstall,diff,doctor,exception,accept,events,rollcall,prepublish,incident,codescan,brief,access,artifacts}",
+    "+    artifacts           this week's threat report and access map as two",
+    "+                        Markdown files from one status-only observation"
+   ],
+   "must_see": true,
+   "why": "v110: the new `artifacts` subcommand in argparse's command list (help and usage text)."
+  },
+  {
+   "item": "v110cmd",
+   "scenario_rx": "^(tierA)$",
+   "key_rx": "^(028\\ \\ :stderr|030\\ status\\ \\-\\-bogus\\-flag\\ :stderr|115\\ \\ \\(cwd\\ /\\)\\ :stderr|117\\ status\\ \\-\\-bogus\\-flag\\ \\(cwd\\ /\\)\\ :stderr|202\\ \\ \\(cwd\\ /tmp/code\\)\\ :stderr|204\\ status\\ \\-\\-bogus\\-flag\\ \\(cwd\\ /tmp/code\\)\\ :stderr)$",
+   "block": [
+    "-              {vet,audit,daily,baseline,status,report,breakdown,dismiss,show,canary,auto-allow,fix,quarantine,uninstall,diff,doctor,exception,accept,events,rollcall,prepublish,incident,codescan,brief,access}",
+    "+              {vet,audit,daily,baseline,status,report,breakdown,dismiss,show,canary,auto-allow,fix,quarantine,uninstall,diff,doctor,exception,accept,events,rollcall,prepublish,incident,codescan,brief,access,artifacts}"
+   ],
+   "must_see": true,
+   "why": "v110: the new `artifacts` subcommand in argparse's command list (help and usage text)."
+  },
+  {
+   "item": "v110cmd",
+   "scenario_rx": "^(tierA)$",
+   "key_rx": "^(029\\ nosuchcmd\\ :stderr|116\\ nosuchcmd\\ \\(cwd\\ /\\)\\ :stderr|203\\ nosuchcmd\\ \\(cwd\\ /tmp/code\\)\\ :stderr)$",
+   "block": [
+    "-              {vet,audit,daily,baseline,status,report,breakdown,dismiss,show,canary,auto-allow,fix,quarantine,uninstall,diff,doctor,exception,accept,events,rollcall,prepublish,incident,codescan,brief,access}",
+    "+              {vet,audit,daily,baseline,status,report,breakdown,dismiss,show,canary,auto-allow,fix,quarantine,uninstall,diff,doctor,exception,accept,events,rollcall,prepublish,incident,codescan,brief,access,artifacts}",
+    "-isr.py: error: argument cmd: invalid choice: 'nosuchcmd' (choose from 'vet', 'audit', 'daily', 'baseline', 'status', 'report', 'breakdown', 'dismiss', 'show', 'canary', 'auto-allow', 'fix', 'quarantine', 'uninstall', 'diff', 'doctor', 'exception', 'accept', 'events', 'rollcall', 'prepublish', 'incident', 'codescan', 'brief', 'access')",
+    "+isr.py: error: argument cmd: invalid choice: 'nosuchcmd' (choose from 'vet', 'audit', 'daily', 'baseline', 'status', 'report', 'breakdown', 'dismiss', 'show', 'canary', 'auto-allow', 'fix', 'quarantine', 'uninstall', 'diff', 'doctor', 'exception', 'accept', 'events', 'rollcall', 'prepublish', 'incident', 'codescan', 'brief', 'access', 'artifacts')"
+   ],
+   "must_see": true,
+   "why": "v110: the new `artifacts` subcommand in argparse's command list (help and usage text)."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(box\\-emoji_names\\-cli|box\\-empty_account\\-cli|box\\-strict_auto_review\\-cli)$",
+   "key_rx": "^(001\\ audit\\ :stdout|014\\ audit\\ :stdout)$",
+   "block": [
+    "- \"access\": \"Shared by every Bot: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; 0 MCP tools; 0 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\",",
+    "+ \"access\": \"On this computer's shared files: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; 0 MCP tools; 0 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\","
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(box\\-emoji_names\\-driver|box\\-empty_account\\-driver|box\\-strict_auto_review\\-driver)$",
+   "key_rx": "^(001\\ audit\\ \\[driver\\]\\ :stdout|014\\ audit\\ \\[driver\\]\\ :stdout)$",
+   "block": [
+    "- \"access\": \"Shared by every Bot: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; 0 MCP tools; 0 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\",",
+    "+ \"access\": \"On this computer's shared files: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; 0 MCP tools; 0 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\","
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(box\\-power_user\\-cli)$",
+   "key_rx": "^(001\\ audit\\ :stdout|015\\ audit\\ :stdout)$",
+   "block": [
+    "- \"access\": \"Shared by every Bot: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; 0 MCP tools; 0 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\",",
+    "+ \"access\": \"On this computer's shared files: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; 0 MCP tools; 0 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\","
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(box\\-power_user\\-driver)$",
+   "key_rx": "^(001\\ audit\\ \\[driver\\]\\ :stdout|015\\ audit\\ \\[driver\\]\\ :stdout)$",
+   "block": [
+    "- \"access\": \"Shared by every Bot: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; 0 MCP tools; 0 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\",",
+    "+ \"access\": \"On this computer's shared files: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; 0 MCP tools; 0 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\","
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(box\\-fixtures_vendor\\-cli)$",
+   "key_rx": "^(001\\ audit\\ :stdout|028\\ audit\\ :stdout)$",
+   "block": [
+    "- \"access\": \"Shared by every Bot: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; 0 MCP tools; 0 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\",",
+    "+ \"access\": \"On this computer's shared files: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; 0 MCP tools; 0 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\","
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(box\\-fixtures_vendor\\-driver)$",
+   "key_rx": "^(001\\ audit\\ \\[driver\\]\\ :stdout|028\\ audit\\ \\[driver\\]\\ :stdout)$",
+   "block": [
+    "- \"access\": \"Shared by every Bot: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; 0 MCP tools; 0 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\",",
+    "+ \"access\": \"On this computer's shared files: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; 0 MCP tools; 0 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\","
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(crash)$",
+   "key_rx": "^(001\\ audit\\ \\[driver\\]\\ :stdout)$",
+   "block": [
+    "- \"access\": \"Shared by every Bot: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; 0 MCP tools; 0 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\",",
+    "+ \"access\": \"On this computer's shared files: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; 0 MCP tools; 0 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\","
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(extended)$",
+   "key_rx": "^(001\\ audit\\ \\[driver\\]\\ :stdout|011\\ audit\\ \\[driver\\]\\ :stdout)$",
+   "block": [
+    "- \"access\": \"Shared by every Bot: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; 0 MCP tools; 0 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\",",
+    "+ \"access\": \"On this computer's shared files: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; 0 MCP tools; 0 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\","
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(tierC)$",
+   "key_rx": "^(003\\ installed\\ audit\\ :stdout)$",
+   "block": [
+    "- \"access\": \"Shared by every Bot: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; 0 MCP tools; 0 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\",",
+    "+ \"access\": \"On this computer's shared files: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; 0 MCP tools; 0 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\","
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(box\\-emoji_names\\-cli|box\\-emoji_names\\-driver|box\\-empty_account\\-cli|box\\-empty_account\\-driver|box\\-fixtures_vendor\\-cli|box\\-fixtures_vendor\\-driver|box\\-odd_layout\\-cli|box\\-odd_layout\\-driver|box\\-power_user\\-cli|box\\-power_user\\-driver|box\\-strict_auto_review\\-cli|box\\-strict_auto_review\\-driver|extended)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/reports/2026\\-W45\\.md)$",
+   "block": [
+    "-All your Bots share this computer, so every Bot can use everything in the first list.",
+    "+Your Bots run on one computer and share its files. The first list is what ISR Bot found on those files; which Bot can actually use each item isn't checked. Each Bot's own browser sessions and connectors are separate.",
+    "-Shared by all Bots",
+    "-- Browser: ISR Bot found no shared browser cookies to check.",
+    "+On this computer's shared files",
+    "+- Browser: ISR Bot found no browser cookie files on this computer to check.",
+    "+- Which Bots can actually read each file: their OS users, ACLs and folder permissions aren't checked. Each Bot's browser sessions are its own (platform context, not observed)."
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(box\\-emoji_names\\-cli|box\\-emoji_names\\-driver|box\\-empty_account\\-cli|box\\-empty_account\\-driver|box\\-fixtures_vendor\\-cli|box\\-fixtures_vendor\\-driver|box\\-power_user\\-cli|box\\-power_user\\-driver|box\\-strict_auto_review\\-cli|box\\-strict_auto_review\\-driver|extended)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/reports/dashboard\\.html)$",
+   "block": [
+    "-<h2 style='font-size:16px'>Who can reach what</h2><div class='card'><p class='mut'>All your Bots share this computer, so every Bot can use everything in the first list.</p><p><b>Shared by all Bots</b></p><ul><li>Browser: ISR Bot found no shared browser cookies to check.</li><li>Command-line sign-ins: none found.</li><li>Allowed without asking: ISR Bot couldn&#x27;t find Grok Bot&#x27;s approval settings, so it can&#x27;t say what Bots may do without asking.</li><li>Tool connections (MCP): none found.</li><li>Plugins: none.</li><li>Scheduled jobs on this computer: 1.</li></ul><p><b>Each Bot (what each Bot said in the roll-call; ISR Bot can&#x27;t check it)</b></p><ul><li>No Bot has answered a roll-call in the last 35 days, so ISR Bot doesn&#x27;t know which connectors each Bot uses. Ask ISR Bot to run a roll-call.</li></ul><p><b>What ISR Bot can&#x27;t see</b></p><ul><li>Grok Bot&#x27;s approval settings: ISR Bot couldn&#x27;t find them on this computer.</li><li>Which connectors a Bot uses, except what it said in the roll-call. The Grok Bot app keeps that list, not this computer.</li><li>Routines and when they run: the Grok Bot app keeps them, not this computer.</li><li>What each sign-in or connector is allowed to do at its service (its permissions there).</li><li>What&#x27;s inside memories, messages or saved passwords. ISR Bot never reads them.</li></ul></div>",
+    "+<h2 style='font-size:16px'>Who can reach what</h2><div class='card'><p class='mut'>Your Bots run on one computer and share its files. The first list is what ISR Bot found on those files; which Bot can actually use each item isn&#x27;t checked. Each Bot&#x27;s own browser sessions and connectors are separate.</p><p><b>On this computer&#x27;s shared files</b></p><ul><li>Browser: ISR Bot found no browser cookie files on this computer to check.</li><li>Command-line sign-ins: none found.</li><li>Allowed without asking: ISR Bot couldn&#x27;t find Grok Bot&#x27;s approval settings, so it can&#x27;t say what Bots may do without asking.</li><li>Tool connections (MCP): none found.</li><li>Plugins: none.</li><li>Scheduled jobs on this computer: 1.</li></ul><p><b>Each Bot (what each Bot said in the roll-call; ISR Bot can&#x27;t check it)</b></p><ul><li>No Bot has answered a roll-call in the last 35 days, so ISR Bot doesn&#x27;t know which connectors each Bot uses. Ask ISR Bot to run a roll-call.</li></ul><p><b>What ISR Bot can&#x27;t see</b></p><ul><li>Grok Bot&#x27;s approval settings: ISR Bot couldn&#x27;t find them on this computer.</li><li>Which connectors a Bot uses, except what it said in the roll-call. The Grok Bot app keeps that list, not this computer.</li><li>Routines and when they run: the Grok Bot app keeps them, not this computer.</li><li>What each sign-in or connector is allowed to do at its service (its permissions there).</li><li>Which Bots can actually read each file: their OS users, ACLs and folder permissions aren&#x27;t checked. Each Bot&#x27;s browser sessions are its own (platform context, not observed).</li><li>What&#x27;s inside memories, messages or saved passwords. ISR Bot never reads them.</li></ul></div>"
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(box\\-busy_clean_box\\-cli)$",
+   "key_rx": "^(001\\ audit\\ :stdout|015\\ audit\\ :stdout)$",
+   "block": [
+    "- \"access\": \"Shared by every Bot: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; MCP tools not fully checked; 3 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\",",
+    "+ \"access\": \"On this computer's shared files: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; MCP tools not fully checked; 3 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\","
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(box\\-busy_clean_box\\-driver)$",
+   "key_rx": "^(001\\ audit\\ \\[driver\\]\\ :stdout|015\\ audit\\ \\[driver\\]\\ :stdout)$",
+   "block": [
+    "- \"access\": \"Shared by every Bot: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; MCP tools not fully checked; 3 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\",",
+    "+ \"access\": \"On this computer's shared files: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; MCP tools not fully checked; 3 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\","
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(box\\-platform_refresh\\-cli)$",
+   "key_rx": "^(001\\ audit\\ :stdout|002\\ audit\\ :stdout|016\\ audit\\ :stdout)$",
+   "block": [
+    "- \"access\": \"Shared by every Bot: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; MCP tools not fully checked; 3 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\",",
+    "+ \"access\": \"On this computer's shared files: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; MCP tools not fully checked; 3 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\","
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(box\\-platform_refresh\\-driver)$",
+   "key_rx": "^(001\\ audit\\ \\[driver\\]\\ :stdout|002\\ audit\\ \\[driver\\]\\ :stdout|016\\ audit\\ \\[driver\\]\\ :stdout)$",
+   "block": [
+    "- \"access\": \"Shared by every Bot: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; MCP tools not fully checked; 3 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\",",
+    "+ \"access\": \"On this computer's shared files: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; MCP tools not fully checked; 3 plugins. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\","
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(box\\-busy_clean_box\\-cli|box\\-busy_clean_box\\-driver|box\\-platform_refresh\\-cli|box\\-platform_refresh\\-driver)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/reports/2026\\-W45\\.md)$",
+   "block": [
+    "-All your Bots share this computer, so every Bot can use everything in the first list.",
+    "+Your Bots run on one computer and share its files. The first list is what ISR Bot found on those files; which Bot can actually use each item isn't checked. Each Bot's own browser sessions and connectors are separate.",
+    "-Shared by all Bots",
+    "+On this computer's shared files",
+    "+- Which Bots can actually read each file: their OS users, ACLs and folder permissions aren't checked. Each Bot's browser sessions are its own (platform context, not observed)."
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(box\\-busy_clean_box\\-cli|box\\-busy_clean_box\\-driver|box\\-platform_refresh\\-cli|box\\-platform_refresh\\-driver)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/reports/dashboard\\.html)$",
+   "block": [
+    "-<h2 style='font-size:16px'>Who can reach what</h2><div class='card'><p class='mut'>All your Bots share this computer, so every Bot can use everything in the first list.</p><p><b>Shared by all Bots</b></p><ul><li>Browser: not signed in to any site ISR Bot can see.</li><li>Command-line sign-ins: none found.</li><li>Allowed without asking: ISR Bot couldn&#x27;t find Grok Bot&#x27;s approval settings, so it can&#x27;t say what Bots may do without asking.</li><li>Tool connections (MCP): ISR Bot couldn&#x27;t check all of it this time (the scan leaves some folders out: links to folders, caches and package folders, and folders too deep).</li><li>Plugins: 3 (0 from Grok Bot, 3 added).</li><li>Scheduled jobs on this computer: 1.</li></ul><p><b>Each Bot (what each Bot said in the roll-call; ISR Bot can&#x27;t check it)</b></p><ul><li>No Bot has answered a roll-call in the last 35 days, so ISR Bot doesn&#x27;t know which connectors each Bot uses. Ask ISR Bot to run a roll-call.</li></ul><p><b>What ISR Bot can&#x27;t see</b></p><ul><li>Grok Bot&#x27;s approval settings: ISR Bot couldn&#x27;t find them on this computer.</li><li>Which connectors a Bot uses, except what it said in the roll-call. The Grok Bot app keeps that list, not this computer.</li><li>Routines and when they run: the Grok Bot app keeps them, not this computer.</li><li>What each sign-in or connector is allowed to do at its service (its permissions there).</li><li>What&#x27;s inside memories, messages or saved passwords. ISR Bot never reads them.</li></ul></div>",
+    "+<h2 style='font-size:16px'>Who can reach what</h2><div class='card'><p class='mut'>Your Bots run on one computer and share its files. The first list is what ISR Bot found on those files; which Bot can actually use each item isn&#x27;t checked. Each Bot&#x27;s own browser sessions and connectors are separate.</p><p><b>On this computer&#x27;s shared files</b></p><ul><li>Browser: not signed in to any site ISR Bot can see.</li><li>Command-line sign-ins: none found.</li><li>Allowed without asking: ISR Bot couldn&#x27;t find Grok Bot&#x27;s approval settings, so it can&#x27;t say what Bots may do without asking.</li><li>Tool connections (MCP): ISR Bot couldn&#x27;t check all of it this time (the scan leaves some folders out: links to folders, caches and package folders, and folders too deep).</li><li>Plugins: 3 (0 from Grok Bot, 3 added).</li><li>Scheduled jobs on this computer: 1.</li></ul><p><b>Each Bot (what each Bot said in the roll-call; ISR Bot can&#x27;t check it)</b></p><ul><li>No Bot has answered a roll-call in the last 35 days, so ISR Bot doesn&#x27;t know which connectors each Bot uses. Ask ISR Bot to run a roll-call.</li></ul><p><b>What ISR Bot can&#x27;t see</b></p><ul><li>Grok Bot&#x27;s approval settings: ISR Bot couldn&#x27;t find them on this computer.</li><li>Which connectors a Bot uses, except what it said in the roll-call. The Grok Bot app keeps that list, not this computer.</li><li>Routines and when they run: the Grok Bot app keeps them, not this computer.</li><li>What each sign-in or connector is allowed to do at its service (its permissions there).</li><li>Which Bots can actually read each file: their OS users, ACLs and folder permissions aren&#x27;t checked. Each Bot&#x27;s browser sessions are its own (platform context, not observed).</li><li>What&#x27;s inside memories, messages or saved passwords. ISR Bot never reads them.</li></ul></div>"
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(box\\-odd_layout\\-cli)$",
+   "key_rx": "^(001\\ audit\\ :stdout|014\\ audit\\ :stdout)$",
+   "block": [
+    "- \"access\": \"Shared by every Bot: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; MCP tools not fully checked; plugins not fully checked. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\",",
+    "+ \"access\": \"On this computer's shared files: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; MCP tools not fully checked; plugins not fully checked. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\","
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(box\\-odd_layout\\-driver)$",
+   "key_rx": "^(001\\ audit\\ \\[driver\\]\\ :stdout|014\\ audit\\ \\[driver\\]\\ :stdout)$",
+   "block": [
+    "- \"access\": \"Shared by every Bot: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; MCP tools not fully checked; plugins not fully checked. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\",",
+    "+ \"access\": \"On this computer's shared files: no browser sign-ins seen; 0 command-line sign-ins; approval settings not found; MCP tools not fully checked; plugins not fully checked. Each Bot: no roll-call in the last 35 days. `isr.py access` has the details.\","
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  },
+  {
+   "item": "v110words",
+   "scenario_rx": "^(box\\-odd_layout\\-cli|box\\-odd_layout\\-driver)$",
+   "key_rx": "^(tree\\ workspace/isr\\-bot/reports/dashboard\\.html)$",
+   "block": [
+    "-<h2 style='font-size:16px'>Who can reach what</h2><div class='card'><p class='mut'>All your Bots share this computer, so every Bot can use everything in the first list.</p><p><b>Shared by all Bots</b></p><ul><li>Browser: ISR Bot found no shared browser cookies to check.</li><li>Command-line sign-ins: none found.</li><li>Allowed without asking: ISR Bot couldn&#x27;t find Grok Bot&#x27;s approval settings, so it can&#x27;t say what Bots may do without asking.</li><li>Tool connections (MCP): ISR Bot couldn&#x27;t check all of it this time (the scan leaves some folders out: links to folders, caches and package folders, and folders too deep).</li><li>Plugins: ISR Bot couldn&#x27;t check all of it this time (the scan leaves some folders out: links to folders, caches and package folders, and folders too deep).</li><li>Scheduled jobs on this computer: 1.</li></ul><p><b>Each Bot (what each Bot said in the roll-call; ISR Bot can&#x27;t check it)</b></p><ul><li>No Bot has answered a roll-call in the last 35 days, so ISR Bot doesn&#x27;t know which connectors each Bot uses. Ask ISR Bot to run a roll-call.</li></ul><p><b>What ISR Bot can&#x27;t see</b></p><ul><li>Grok Bot&#x27;s approval settings: ISR Bot couldn&#x27;t find them on this computer.</li><li>Which connectors a Bot uses, except what it said in the roll-call. The Grok Bot app keeps that list, not this computer.</li><li>Routines and when they run: the Grok Bot app keeps them, not this computer.</li><li>What each sign-in or connector is allowed to do at its service (its permissions there).</li><li>What&#x27;s inside memories, messages or saved passwords. ISR Bot never reads them.</li></ul></div>",
+    "+<h2 style='font-size:16px'>Who can reach what</h2><div class='card'><p class='mut'>Your Bots run on one computer and share its files. The first list is what ISR Bot found on those files; which Bot can actually use each item isn&#x27;t checked. Each Bot&#x27;s own browser sessions and connectors are separate.</p><p><b>On this computer&#x27;s shared files</b></p><ul><li>Browser: ISR Bot found no browser cookie files on this computer to check.</li><li>Command-line sign-ins: none found.</li><li>Allowed without asking: ISR Bot couldn&#x27;t find Grok Bot&#x27;s approval settings, so it can&#x27;t say what Bots may do without asking.</li><li>Tool connections (MCP): ISR Bot couldn&#x27;t check all of it this time (the scan leaves some folders out: links to folders, caches and package folders, and folders too deep).</li><li>Plugins: ISR Bot couldn&#x27;t check all of it this time (the scan leaves some folders out: links to folders, caches and package folders, and folders too deep).</li><li>Scheduled jobs on this computer: 1.</li></ul><p><b>Each Bot (what each Bot said in the roll-call; ISR Bot can&#x27;t check it)</b></p><ul><li>No Bot has answered a roll-call in the last 35 days, so ISR Bot doesn&#x27;t know which connectors each Bot uses. Ask ISR Bot to run a roll-call.</li></ul><p><b>What ISR Bot can&#x27;t see</b></p><ul><li>Grok Bot&#x27;s approval settings: ISR Bot couldn&#x27;t find them on this computer.</li><li>Which connectors a Bot uses, except what it said in the roll-call. The Grok Bot app keeps that list, not this computer.</li><li>Routines and when they run: the Grok Bot app keeps them, not this computer.</li><li>What each sign-in or connector is allowed to do at its service (its permissions there).</li><li>Which Bots can actually read each file: their OS users, ACLs and folder permissions aren&#x27;t checked. Each Bot&#x27;s browser sessions are its own (platform context, not observed).</li><li>What&#x27;s inside memories, messages or saved passwords. ISR Bot never reads them.</li></ul></div>"
+   ],
+   "must_see": true,
+   "why": "v110 Part B: the shared-file reach sentences (old sentence out, new sentence in); nothing else on these lines."
+  }
+ ]
+}
