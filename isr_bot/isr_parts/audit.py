@@ -209,7 +209,7 @@ def audit(roots, exports, quick=False):
             m, why = hits[i]
             f = finding("ISR-S001", "Secret stored in a file on the shared computer", secret_severity(p, False), ["ASI03", "LLM02"],
                         f"{p}:{line_of(t, m.start())}", f"{mask(m.group(0))} ({len(hits)} in file)",
-                        "Every Bot can read this file. Revoke the key, delete the file, and use the secure secret request instead.", path=p)
+                        "The file sits on this computer's shared files. Revoke the key, delete the file, and use the secure secret request instead.", path=p)
             # v0.8.2 (items 1, 2): each hit's place and fingerprint (this run only), so its copies count once and the box's own gh
             # token is said; the note goes on after the key is made. A key block's match is its header only: no fingerprint
             f["secret_hits"] = [dict({"file": os.path.abspath(p), "line": line_of(t, h.start())},

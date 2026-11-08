@@ -303,7 +303,8 @@ def new_sign_ins(seen=None):
     if signed:
         out.append(finding("ISR-S005", NEW_SIGN_IN, "high", ["ASI03", "AST06"], "shared browser",
                            "; ".join(f"{h} first session {when(h)}" for h in signed)[:200],
-                           "Every Bot can now use this login. If neither you nor a Bot you asked signed in there, sign out of that site from its "
+                           "This login is now in browser cookie files on this computer; which Bot can use it isn't checked. If neither you nor "
+                           "a Bot you asked signed in there, sign out of that site from its "
                            "security settings (all sessions) and change its password.", ident=",".join(signed)))
     if cookies:
         out.append(finding("ISR-S005", "New cookies from a sensitive site (no session cookie seen)", "medium", ["ASI03"], "shared browser",
@@ -339,11 +340,13 @@ def browser_sessions(roots):
                          if SENSITIVE_SITE.search(d) and any(is_session_cookie(n) for n in by_dom[d])]
             if signed_in:
                 title, sev, ident = "Logged-in browser sessions shared by every Bot", "high", "sensitive"
-                fix = ("Every Bot can reuse these logins. In the Grok Bot browser, sign out of sites no Bot needs; "
+                fix = ("These logins are in browser cookie files on this computer; which Bot can use them isn't checked. In the Grok Bot "
+                       "browser, sign out of sites no Bot needs; "
                        "for AI consoles and admin sites, also log out all sessions from that site's security settings.")
             else:
                 title, sev, ident = "Shared browser cookies visible to every Bot", "medium", "plain"
-                fix = ("These are cookies every Bot can see. Visit/analytics cookies on sensitive domains are not treated as a "
+                fix = ("These cookies are in browser cookie files on this computer; which Bot can use them isn't checked. "
+                       "Visit/analytics cookies on sensitive domains are not treated as a "
                        "sign-in. Clear cookies for sites no Bot needs.")
             out.append(finding("ISR-S004", title, sev, ["ASI03", "AST06"], p,
                                f"{len(domains)} domains; sensitive: {', '.join(signed_in[:8]) or 'none'}",

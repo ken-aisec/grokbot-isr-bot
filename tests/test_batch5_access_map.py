@@ -115,8 +115,9 @@ class WhoCanReachWhat(_Access):
         code, out = self.access()
         self.assertEqual(code, 0)
         day = dt.date.fromisoformat(isr.et_date(isr.now()))
-        for line in ("All your Bots share this computer, so every Bot can use everything in the first list.",
-                     "- Browser: signed in to 2 sites, including github.com and mail.google.com.",
+        for line in (isr.ACCESS_LEAD,
+                     "- Browser cookie files on this computer: signed in to 2 sites, including github.com and mail.google.com "
+                     "(whether any Bot's browser uses them isn't checked).",
                      "- Command-line sign-ins: OpenAI Codex CLI login. Grok Bot's own CLI sign-in is there too (ISR Bot never reads it).",
                      "- Allowed without asking: 1 rule lets Bots send things out without asking you (\"HTTP POST to the reply hook at [link] only\"); "
                      "1 rule lets Bots run commands without asking you (\"Run the test suite in ~/projects/app\").",
@@ -159,10 +160,10 @@ class WhoCanReachWhat(_Access):
         self.audit_json()
         md, page = self.report()
         sec = self.section(md)
-        self.assertTrue(sec.startswith("## Who can reach what\n\nAll your Bots share this computer"), md[:600])
+        self.assertTrue(sec.startswith("## Who can reach what\n\nYour Bots run on one computer and share its files."), md[:600])
         self.assertLess(md.index("## Top fixes"), md.index("## Who can reach what"))
         self.assertLess(md.index("## Who can reach what"), md.index("## All open findings"))
-        self.assertIn("\nShared by all Bots\n- Browser: signed in to 2 sites", sec)
+        self.assertIn("\nOn this computer's shared files\n- Browser cookie files on this computer: signed in to 2 sites", sec)
         self.assertIn("\nWhat ISR Bot can't see\n- Which connectors a Bot uses", sec)
         self.assertIn("<h2 style='font-size:16px'>Who can reach what</h2><div class='card'>", page)
         self.assertIn("<li>bot-d: didn&#x27;t answer the roll-call.</li>", page)
@@ -173,7 +174,7 @@ class WhoCanReachWhat(_Access):
         r = self.audit_json()
         self.assertIn("access", r)
         self.assertLessEqual(len(r["access"]), 300)
-        self.assertTrue(r["access"].startswith("Shared by every Bot: browser signed in to 2 sites; 1 command-line sign-in; 2 rules allowed without asking; "
+        self.assertTrue(r["access"].startswith("On this computer's shared files: browser signed in to 2 sites; 1 command-line sign-in; 2 rules allowed without asking; "
                                                "2 MCP tools;"), r["access"])
         self.assertIn("Each Bot (roll-call, not checked): 2 said, 1 didn't answer.", r["access"])
 

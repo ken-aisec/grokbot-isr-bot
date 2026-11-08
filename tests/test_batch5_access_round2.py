@@ -63,10 +63,12 @@ class TheSeedIsLookedAtNow(_Small):
         self.audit_json()
         self.forget_the_seed_finding()
         out = self.access()[1]
-        self.assertIn("- Browser: signed in to 1 site, including mail.google.com.", out)
-        self.assertNotIn("found no shared browser cookies", out)
+        self.assertIn("- Browser cookie files on this computer: signed in to 1 site, including mail.google.com "
+                      "(whether any Bot's browser uses them isn't checked).", out)
+        self.assertNotIn("found no browser cookie files", out)
         self.assertEqual(self.here("Gmail flaw lets attackers steal session tokens"),
-                         "This is about Gmail. Here: the shared browser is signed in to mail.google.com, so every Bot can reach it.")
+                         "This is about Gmail. Here: browser cookie files on this computer are signed in to mail.google.com "
+                         "(on this computer's shared files; which Bot can use it isn't checked).")
 
     def test_a_seed_that_cant_be_read_is_not_no_cookies(self):   # replay (3170952: "found no shared browser cookies")
         self.small()
@@ -76,7 +78,7 @@ class TheSeedIsLookedAtNow(_Small):
         self.forget_the_seed_finding()
         out = self.access()[1]
         self.assertIn("- Browser: ISR Bot couldn't check all of it this time (something there couldn't be read).", out)
-        self.assertNotIn("found no shared browser cookies", out)
+        self.assertNotIn("found no browser cookie files", out)
         self.assertNotIn("not signed in to any site", out)
 
     def test_the_audits_own_map_has_the_whole_seed(self):   # replay (4; 3170952 read the finding's first 8): the audit's own look, whole
@@ -132,7 +134,8 @@ class IncompleteIsNeverNone(_Small):
         w(os.path.join(self.ws, "project", "mcp.json"), {"mcpServers": {"slack": {"command": "npx"}}})
         self.audit_json()
         self.assertEqual(self.here("Slack MCP server flaw lets attackers read every channel"),
-                         "This is about Slack. Here: a tool connection named slack, so every Bot can reach it.")
+                         "This is about Slack. Here: a tool connection named slack "
+                         "(on this computer's shared files; which Bot can use it isn't checked).")
 
     def test_an_audit_that_left_out_the_workspace_says_so(self):   # replay (3170952: "0 MCP tools", checked)
         self.small()
@@ -303,7 +306,7 @@ class LastAuditLinesSaySo(_Small):
 
     def test_key_files_from_the_last_audit_say_so(self):   # replay
         m = isr.access_record({"shared": {"key_files": 2, "cached": ["key_files"], "cached_at": "2026-10-18", "from": "now"}})
-        self.assertIn("Files with live-looking keys (from the last audit, Oct 18): 2. Every Bot can read them (see the findings).", isr.access_shared_lines(m))
+        self.assertIn("Files with live-looking keys (from the last audit, Oct 18): 2. Which Bots can read them isn't checked (see the findings).", isr.access_shared_lines(m))
 
     def test_the_audits_own_lines_need_no_mark(self):   # guard: the audit found them itself
         m = isr.access_record(self.mapped())

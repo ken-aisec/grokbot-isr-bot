@@ -190,7 +190,7 @@ DO_THIS = {
     "hijack": "Make sure every Bot that reads outside content has an approval line before it sends, posts or buys.",
     "supply": "Ask ISR Bot to vet any template before you add it, and let the daily watch flag new skills.",
     "creds": "Ask ISR Bot for an audit and clear the secret findings; rotate anything that looks live.",
-    "browser": "Sign the shared browser out of sites no Bot needs; keep AI consoles and admin sites signed out.",
+    "browser": "Sign the Bot browser out of sites no Bot needs; keep AI consoles and admin sites signed out.",
     "platform": "Skim the change; ask ISR Bot for a fresh audit if it touches approvals, routines or connectors.",
 }
 

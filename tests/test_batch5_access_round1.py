@@ -87,8 +87,8 @@ PLANTED = {"v": 1, "at": None, "shared": {"browser": {"sites": 0, "sensitive": [
                                          "plugins": {"grok": 0, "added": 0, "names": []}, "webhooks": [], "scheduled": {"crontab": 0, "systemd": 0},
                                          "hooks": {"platform": 0, "other": 0}, "key_files": 0},
            "bots": [], "bots_more": 0, "bots_no_detail": [], "bots_silent": [], "rollcall": {"at": None, "fresh": False}, "unknown": []}
-NEGATIVE = re.compile(r"none found|Never allow|not allowed|no Allow-automatically|not signed in to any site|Plugins: none|found no shared browser")
-PLANTED_SAYS = re.compile(r"none found|Never allow|not allowed|no Allow-automatically|not signed in to any site|found no shared browser")
+NEGATIVE = re.compile(r"none found|Never allow|not allowed|no Allow-automatically|not signed in to any site|Plugins: none|found no browser cookie files")
+PLANTED_SAYS = re.compile(r"none found|Never allow|not allowed|no Allow-automatically|not signed in to any site|found no browser cookie files")
 
 
 class APlantedMapUnderstatesNothing(_Outputs):
@@ -110,12 +110,13 @@ class APlantedMapUnderstatesNothing(_Outputs):
             self.assertIn("Running programs: Bots can run programs without asking you (Execution on Local Computer: Always allow).", text)
             self.assertIn("Tool connections (MCP): 2 tools in 2 files: github and notion (mcp.notion.com).", text)
             self.assertIn("Command-line sign-ins: OpenAI Codex CLI login.", text)
-            self.assertIn("Browser: signed in to 2 sites, including github.com and mail.google.com.", text)
+            self.assertIn("Browser cookie files on this computer: signed in to 2 sites, including github.com and mail.google.com "
+                          "(whether any Bot's browser uses them isn't checked).", text)
             self.assertNotRegex(text, PLANTED_SAYS)   # (no plugins here really: "Plugins: none." is this computer's own answer)
         d = json.loads(self.access("--json")[1])
         self.assertEqual((d["shared"]["runs_programs"], d["shared"]["mcp_files"]), ("without asking", 2))
         r = self.brief([("Gmail flaw lets attackers steal session tokens", "")])[0]
-        self.assertIn("the shared browser is signed in to mail.google.com", r["top_stories"][0]["here"])
+        self.assertIn("browser cookie files on this computer are signed in to mail.google.com", r["top_stories"][0]["here"])
 
     def test_when_the_look_fails_the_saved_map_says_nothing_is_none(self):   # replay (0a72c20: "none found", "Never allow", "not found")
         self.build()
@@ -164,7 +165,8 @@ class PaddingHidesNothing(_Brief):
         w(os.path.join(self.home, "agent-data", "settings.json"), SETTINGS)
         self.audit_json()
         r = self.brief([("Slack MCP server flaw lets attackers read every channel", "")])[0]
-        self.assertEqual(r["top_stories"][0]["here"], "This is about Slack. Here: a Slack tool connection, so every Bot can reach it.")
+        self.assertEqual(r["top_stories"][0]["here"], "This is about Slack. Here: a Slack tool connection "
+                                                     "(on this computer's shared files; which Bot can use it isn't checked).")
         mcp = json.loads(self.map_file())["shared"]["mcp"]
         self.assertEqual((mcp.get("count"), len(mcp["tools"])), (41, 40))
         self.assertIn("slack", mcp.get("products", []))
