@@ -9,6 +9,15 @@ Since 0.8.0 the product, its engine and its files are all called ISR Bot. The en
 **None are open.** Batch 7d fixed the last ones. Each item that was in this list, or that the owner logged as must-fix, is recorded
 under "Fixed in batch 7d (the last must-fix items)" right below, with its test file.
 
+## 1.1.0: the weekly artifacts and the shared-file wording
+
+- Reach is status only. `isr.py artifacts` looks at each known CLI sign-in file name with lstat (present, a link with its target never followed, mode bits, owned by ISR Bot's uid). Which Bot can actually read a file (other Bots' uids, ACLs, parent-folder permissions, link targets) is not determined, and the artifacts say so.
+- History is not tamper-proof. `state/observations/` (0700, files 0600, the newest 12) is writable by any process running as this user. A record is sanitized again when read: that bounds its shape and can only lower comparability; it does not authenticate the record or prove it complete.
+- "Each Bot's browser sessions are its own" is platform context supplied to ISR Bot's developer (`rules/platform_facts.json`), not observed. If that file fails its manifest check the artifacts say "platform context unavailable".
+- A Bot's pseudonym comes from its agent folder when exactly one profile has its name; otherwise from its name, and a rename then looks like a new Bot.
+- Real scheduled delivery (the routine attaching both files with `SendToUser`) is a live acceptance check, not tested offline.
+- The brief's generic "what it means here" sentences (`means_here`) still say the Bots share one browser profile; they were outside this batch's named lines.
+
 ## v0.8.4: TruffleHog in batches, the score trend, the own gh token per key
 
 - A live/dead answer can be older than the run. Files TruffleHog didn't reach (out of time, or past the first 200) keep their

@@ -62,7 +62,7 @@ installer itself and everything it installs are pinned:
 COMMIT=<full commit ID from the release page>
 mkdir -p /workspace/isr-bot && cd /workspace/isr-bot
 curl -fsSLO "https://raw.githubusercontent.com/ken-aisec/grokbot-isr-bot/$COMMIT/scripts/install.sh"
-head -40 install.sh && bash install.sh v1.0.1 "$COMMIT"
+head -40 install.sh && bash install.sh v1.1.0 "$COMMIT"
 bash /workspace/isr-bot/app/scripts/install.sh --scanners
 python3 /workspace/isr-bot/app/isr_bot/isr.py audit
 ```
@@ -125,6 +125,8 @@ isr.py auto-allow [keep IDS --owner-said-yes --reason "..."]   list Allow-automa
                                          keep exact ones after the owner's yes
 isr.py access [--json]         who can reach what: what every Bot shares on this computer, and what each Bot said in
                                          the roll-call (not checked); --json for the Bot (at most 4 KB)
+isr.py artifacts [--json]      this week's threat report and access map as two attachable Markdown files from one
+                                         status-only observation, with a manifest (reports/artifacts-<week>.json)
 isr.py incident --note "..."   evidence pack + containment checklist
 isr.py codescan PATH           OWASP Top 10 code review
 isr.py status                  what a running audit is doing and how long each stage took
