@@ -46,6 +46,23 @@ def obs_items(r, area):
     return []
 
 
+def obs_names_cut(r, area):
+    """Whether this record kept only the first names of an area's list (access_record caps them; the count stays whole)."""
+    sh = r["map"]["shared"]
+    if area == "browser":
+        b = sh["browser"] or {"sensitive": [], "sensitive_count": 0}
+        return b["sensitive_count"] > len(b["sensitive"])
+    if area == "cli_logins":
+        return sh["cli_count"] > len(sh["cli_logins"]) or len(sh["platform_logins"]) >= 4
+    if area == "mcp":
+        return sh["mcp"]["count"] > len(sh["mcp"]["tools"])
+    if area == "plugins":
+        return sh["plugins"]["added"] > len(sh["plugins"]["names"])
+    if area == "webhooks":
+        return sh["webhook_count"] > len(sh["webhooks"])
+    return False
+
+
 def _record_line(r):
     return f"prior record `{r['observation_id']}`, written {r['written_at']} by ISR Bot {r['written_by_version']}"
 
@@ -72,7 +89,10 @@ def diff_observations(prev, cur):
             continue
         was, now_ = obs_items(prev, a), obs_items(cur, a)
         pc, cc = prev["coverage"][a], cur["coverage"][a]
-        if pc == "complete" and cc == "complete":
+        if pc == "complete" and cc == "complete" and (obs_names_cut(prev, a) or obs_names_cut(cur, a)):
+            areas.append({"area": a, "state": "not comparable", "not_seen": [],
+                          "why": "only the first names of a long list are kept, so names aren't compared"})
+        elif pc == "complete" and cc == "complete":
             new, gone = [x for x in now_ if x not in was], [x for x in was if x not in now_]
             if new or gone:
                 areas.append({"area": a, "state": "changed", "new": new, "gone": gone})

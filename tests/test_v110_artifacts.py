@@ -98,6 +98,13 @@ class ThePages(_Pages):
             self.assertIn(isr.PLATFORM_LABEL + ": Real browser sessions are per\\-agent", page)
             self.assertIsNone(re.search(r"(?i)every bot can|shared browser", page))
 
+    def test_a8_a_story_that_names_nothing_here_claims_no_reach(self):   # review fix (cd67415: the brief's means_here)
+        m = isr.obs_record(fixture("obs_cur.json"))["map"]
+        for cat in ("mcp", "hijack", "supply", "creds", "browser", "platform", "other"):
+            here = isr.artifact_story_here({"title": "A flaw in something new", "category": cat, "cves": []}, m, {})
+            self.assertIsNone(re.search(r"(?i)any bot can read any file|share one browser|every login|every bot|all your bots share", here), here)
+            self.assertIn("isn't checked", here)
+
 
 class TheRecipe(unittest.TestCase):
     def test_a7_the_report_recipe_attaches_both_files_or_says_why_not(self):   # replay (fa0525f: the old step 3)

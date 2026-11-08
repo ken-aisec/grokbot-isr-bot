@@ -132,6 +132,15 @@ class Comparable(Box):
         self.assertEqual(isr.diff_observations(prev, part)["bots"][0]["change"],
                          "not seen this time (the Bot list wasn't read whole in both records)")
 
+    def test_d1_a_capped_name_list_never_reads_as_gone(self):   # review fix (cd67415: a 41st tool pushed one out of the 40 kept)
+        tools = lambda names: [{"name": n, "kind": "command"} for n in names]
+        was = [f"tool{i:02d}" for i in range(40)]
+        prev = record(PREV_AT, shared(mcp={"files": 1, "count": 41, "tools": tools(was)}))
+        cur = record(CUR_AT, shared(mcp={"files": 1, "count": 42, "tools": tools(["tool-new"] + was[:39])}))
+        out = self.lines(prev, cur)
+        self.assertIn("Tool connections (MCP): not comparable (only the first names of a long list are kept, so names aren't compared)", out)
+        self.assertFalse([x for x in out if "gone" in x], out)
+
 
 if __name__ == "__main__":
     unittest.main()
