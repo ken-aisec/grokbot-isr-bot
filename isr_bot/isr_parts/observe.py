@@ -176,13 +176,24 @@ def _obs_coverage(m, creds, listing):
 OBS_AREAS = ACCESS_SHARED + ("cli_files", "bots", "bot_list")
 
 
+def _obs_at_ok(v):
+    """A stored time in the one form ISR Bot writes that is also a real date and time (a shape alone can say 2026-99-99)."""
+    if not (isinstance(v, str) and _OBS_AT.fullmatch(v)):
+        return False
+    try:
+        dt.datetime.fromisoformat(v.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
+
+
 def obs_record(doc, stored=True):
     """The one shape an observation is kept, loaded or shown in. A stored one is sanitized again: its coverage may only fall
     (an area is complete only when its own data and its stored coverage both say so). None when it isn't an observation."""
     if not isinstance(doc, dict) or doc.get("v") != 1:
         return None
     oid, at = doc.get("observation_id"), doc.get("observed_at")
-    if not (isinstance(oid, str) and _OBS_ID.fullmatch(oid) and isinstance(at, str) and _OBS_AT.fullmatch(at)):
+    if not (isinstance(oid, str) and _OBS_ID.fullmatch(oid) and _obs_at_ok(at)):
         return None
     txt = lambda v, rx: v if isinstance(v, str) and re.fullmatch(rx, v) else None
     m = access_record(doc.get("map"))
@@ -225,7 +236,7 @@ def obs_record(doc, stored=True):
                 cov[k] = "incomplete: the stored record didn't say it was complete"
     return {"v": 1, "observation_id": oid, "observed_at": at,
             "written_by_version": txt(doc.get("written_by_version"), r"\d{1,3}\.\d{1,3}\.\d{1,3}") or "unknown",
-            "written_at": txt(doc.get("written_at"), _OBS_AT.pattern) or "unknown",
+            "written_at": doc["written_at"] if _obs_at_ok(doc.get("written_at")) else "unknown",
             "command": doc.get("command") if doc.get("command") in OBS_COMMANDS else "unknown",
             "uid": doc.get("uid") if type(doc.get("uid")) is int and doc["uid"] >= 0 else None,
             "map": m, "creds": creds, "bots": bots, "listing": listing, "coverage": cov}

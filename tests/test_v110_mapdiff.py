@@ -10,6 +10,7 @@ import copy, json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box
 import isr  # noqa: E402
+from test_v110_observe import _V110
 
 UUID_1 = "1b2c3d4e-0000-4000-8000-000000000001"
 
@@ -140,6 +141,24 @@ class Comparable(Box):
         out = self.lines(prev, cur)
         self.assertIn("Tool connections (MCP): not comparable (only the first names of a long list are kept, so names aren't compared)", out)
         self.assertFalse([x for x in out if "gone" in x], out)
+
+
+class StoredTimes(_V110):
+    def test_d9_an_impossible_stored_time_drops_the_record(self):   # replay (f58fb63: the shape check let it through, then the baseline crashed)
+        raw = json.loads(json.dumps(record(PREV_AT)))
+        self.assertIsNone(isr.obs_record(dict(raw, observed_at="2026-99-99T99:99:99+00:00")))
+        self.assertEqual(isr.obs_record(dict(raw, written_at="2026-02-30T10:00:00+00:00"))["written_at"], "unknown")
+        self.world()
+        code, man = self.artifacts()
+        d = self.obs_dir()
+        kept = json.load(open(os.path.join(d, man["observation_id"] + ".json")))
+        for oid, at in (("obs-20260105T100000Z", "2026-01-05T10:00:00+00:00"), ("obs-20260106T100000Z", "2026-99-99T99:99:99+00:00")):
+            with open(os.path.join(d, oid + ".json"), "w") as f:
+                json.dump(dict(kept, observation_id=oid, observed_at=at, written_at=at), f)
+        code, man = self.artifacts()
+        self.assertEqual(code, 0)
+        self.assertIn("- Compared with the prior record `obs-20260105T100000Z`, written 2026-01-05T10:00:00+00:00", self.files(man)["access-map"])
+        self.assertNotIn("20260106", self.files(man)["access-map"])
 
 
 if __name__ == "__main__":
