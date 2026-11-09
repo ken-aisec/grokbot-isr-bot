@@ -473,11 +473,15 @@
     "+              {vet,audit,daily,baseline,status,report,breakdown,dismiss,show,canary,auto-allow,fix,quarantine,uninstall,diff,doctor,exception,accept,events,rollcall,prepublish,incident,codescan,brief,access,artifacts}",
     "-  {vet,audit,daily,baseline,status,report,breakdown,dismiss,show,canary,auto-allow,fix,quarantine,uninstall,diff,doctor,exception,accept,events,rollcall,prepublish,incident,codescan,brief,access}",
     "+  {vet,audit,daily,baseline,status,report,breakdown,dismiss,show,canary,auto-allow,fix,quarantine,uninstall,diff,doctor,exception,accept,events,rollcall,prepublish,incident,codescan,brief,access,artifacts}",
+    "-    access              what every Bot on this computer can reach, and what",
+    "-                        each Bot said in the roll-call",
+    "+    access              what this computer's shared files hold, and what each",
+    "+                        Bot said in the roll-call",
     "+    artifacts           this week's threat report and access map as two",
     "+                        Markdown files from one status-only observation"
    ],
    "must_see": true,
-   "why": "v110: the new `artifacts` subcommand in argparse's command list (help and usage text)."
+   "why": "v110: the new `artifacts` subcommand in argparse's command list (help and usage text) and the `access` help sentence."
   },
   {
    "item": "v110cmd",
