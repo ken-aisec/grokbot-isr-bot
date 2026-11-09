@@ -11,12 +11,16 @@ under "Fixed in batch 7d (the last must-fix items)" right below, with its test f
 
 ## 1.1.0: the weekly artifacts and the shared-file wording
 
-- Reach is status only. `isr.py artifacts` looks at each known CLI sign-in file name with lstat (present, a link with its target never followed, mode bits, owned by ISR Bot's uid). Which Bot can actually read a file (other Bots' uids, ACLs, parent-folder permissions, link targets) is not determined, and the artifacts say so.
+- Reach is status only. `isr.py artifacts` looks at each known CLI sign-in file name with lstat (present, a link, or a linked parent folder, never followed, mode bits, owned by ISR Bot's uid). Which Bot can actually read a file (other Bots' uids, ACLs, parent-folder permissions, link targets) is not determined, and the artifacts say so.
 - History is not tamper-proof. `state/observations/` (0700, files 0600, the newest 12) is writable by any process running as this user. A record is sanitized again when read: that bounds its shape and can only lower comparability; it does not authenticate the record or prove it complete.
 - "Each Bot's browser sessions are its own" is platform context supplied to ISR Bot's developer (`rules/platform_facts.json`), not observed. If that file fails its manifest check the artifacts say "platform context unavailable".
 - A Bot's pseudonym comes from its agent folder when exactly one profile has its name; otherwise from its name, and a rename then looks like a new Bot.
 - Real scheduled delivery (the routine attaching both files with `SendToUser`) is a live acceptance check, not tested offline.
-- The brief's generic "what it means here" sentences (`means_here`) still say the Bots share one browser profile; they were outside this batch's named lines.
+- Logged, not fixed (owner-approved deferrals):
+  - `isr.py artifacts` writes into `reports/` the way `report` always has: a `reports` folder that is a link is followed (`os.makedirs`, `mkstemp`). A file link at an artifact's own name is replaced, never written through. Redirecting the folder needs a process running as this user, which could write the files itself.
+  - A `last_brief.json` story without a `title` stops `isr.py artifacts`. Only ISR Bot's brief command writes that file, and it always sets one.
+  - A credential file with mode 0000 or write-only is described as "mode bits permit owner read only".
+  - Some per-finding why and fix texts still say every Bot (or any Bot) can read or use something: ISR-S003, ISR-S006, the tool-overflow cache, the platform's own key files and folders every Bot can write to. They sit next to finding titles that stay as they are.
 
 ## v0.8.4: TruffleHog in batches, the score trend, the own gh token per key
 
