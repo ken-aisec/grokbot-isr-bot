@@ -98,12 +98,20 @@ class ThePages(_Pages):
             self.assertIn(isr.PLATFORM_LABEL + ": Real browser sessions are per\\-agent", page)
             self.assertIsNone(re.search(r"(?i)every bot can|shared browser", page))
 
-    def test_a8_a_story_that_names_nothing_here_claims_no_reach(self):   # review fix (cd67415: the brief's means_here)
-        m = isr.obs_record(fixture("obs_cur.json"))["map"]
-        for cat in ("mcp", "hijack", "supply", "creds", "browser", "platform", "other"):
-            here = isr.artifact_story_here({"title": "A flaw in something new", "category": cat, "cves": []}, m, {})
-            self.assertIsNone(re.search(r"(?i)any bot can read any file|share one browser|every login|every bot|all your bots share", here), here)
-            self.assertIn("isn't checked", here)
+    def test_a8_a_story_that_names_nothing_here_claims_no_reach(self):   # replay (cd67415: the brief's means_here in the report)
+        prev, cur = isr.obs_record(fixture("obs_prev.json")), isr.obs_record(fixture("obs_cur.json"))
+        diff = isr.diff_observations(isr.pick_baseline([prev], cur), cur)
+        facts, why = isr.platform_facts()
+        cats = ("mcp", "hijack", "supply", "creds", "browser", "platform")
+        for half in (cats[:3], cats[3:]):
+            brief = dict(fixture("last_brief.json"), kev=[], research=[
+                {"id": f"g-{c}", "title": "A flaw in something new", "category": c, "category_label": c, "cves": [], "score": 9,
+                 "tier": "act", "source": "FAKE Feed", "link": "https://news.example.invalid/x"} for c in half])
+            page = isr.render_threat_report_md(cur, brief, fixture("snapshot.json"), TAG, facts, why, diff)
+            here = [x for x in page.split("\n") if x.startswith("- Here (observed here ")]
+            self.assertEqual(len(here), len(half))
+            for line in here:
+                self.assertIsNone(re.search(r"(?i)any bot can read any file|share one browser|every login|every bot|all your bots share", line), line)
 
 
 class TheRecipe(unittest.TestCase):

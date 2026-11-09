@@ -1216,7 +1216,7 @@ def build_parser():
     ic = sub.add_parser("incident"); ic.add_argument("--note")
     cs = sub.add_parser("codescan"); cs.add_argument("path")
     br = sub.add_parser("brief"); br.add_argument("--summary"); br.add_argument("--notes"); br.add_argument("--offline")
-    ax = sub.add_parser("access", help="what every Bot on this computer can reach, and what each Bot said in the roll-call")
+    ax = sub.add_parser("access", help="what this computer's shared files hold, and what each Bot said in the roll-call")
     ax.add_argument("--json", action="store_true", help="the same, as JSON for the Bot (at most 4 KB)")
     ar = sub.add_parser("artifacts", help="this week's threat report and access map as two Markdown files from one status-only observation")
     ar.add_argument("--json", action="store_true", help="print the artifacts manifest as JSON")

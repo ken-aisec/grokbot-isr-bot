@@ -3,7 +3,8 @@ changes. The S004 titles stay the keys of PLAIN_BY_TITLE, S005's where stays "sh
 
 Tests marked "replay" fail on fa0525f on their assertion (the old sentences); "guard" ones keep what must not change. Every
 planted value is FAKE…; the box is a temp folder, never this computer's own."""
-import json, os, re, sys, unittest
+import io, json, os, re, sys, unittest
+from contextlib import redirect_stdout
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_batch5_brief_access import _Brief
@@ -82,6 +83,43 @@ class HereFits(_Brief):
         self.assertEqual(s, "This is about Gmail. Here: 1 Bot said it uses a Gmail connector (bot-001) and browser cookie files on this computer "
                             "are signed in to mail.google.com (on this computer's shared files; which Bot can use it isn't checked).")
         self.assertLessEqual(len(s), isr.HERE_MAX)
+
+
+REACH_CLAIMS = ("every Bot can", "Every Bot that loads", "all your Bots share", "share one browser profile", "Any Bot can read any file",
+                "every login", "every account at once", "every Bot's access", "every Bot on this computer can reach")
+GENERIC = (("mcp", "Tool description poisoning lets attackers run remote code, critical CVE-2026-20001"),
+           ("hijack", "Prompt injection in AI agents enables remote code execution, critical CVE-2026-20002"),
+           ("supply", "Malicious npm package typosquat runs code on install, critical CVE-2026-20003"),
+           ("creds", "Exposed API key leak hits thousands of accounts, critical CVE-2026-20004"),
+           ("browser", "Browser cookie theft flaw actively exploited in the wild, critical CVE-2026-20005"),
+           ("platform", "Large language model gateway flaw actively exploited, critical CVE-2026-20006"))
+
+
+class GenericHere(_Brief):
+    def test_w5_generic_here_lines_claim_no_reach(self):   # replay (f58fb63: means_here's shared-computer sentences)
+        self.mapped()
+        seen = {}
+        for half in (GENERIC[:3], GENERIC[3:]):
+            r, out, page, saved = self.brief([(title, "Synthetic story body.") for _, title in half])
+            m, ctx = isr.load_access_map(), isr.account_context()
+            for s in r["top_stories"]:
+                cat = next(c for c, t in GENERIC if t == s["title"])
+                self.assertEqual(s["here"], isr.clip(isr.means_here(cat, ctx, m), isr.HERE_MAX))   # the generic sentence, not a product's
+                self.assertLessEqual(len(s["here"]), isr.HERE_MAX)
+                seen[cat] = s["here"]
+            for text in (out, page):
+                for claim in REACH_CLAIMS:
+                    self.assertNotIn(claim, text)
+        self.assertEqual(set(seen), {c for c, _ in GENERIC})
+        about = json.loads(self.access("--json")[1])["about"]
+        out = io.StringIO()
+        with redirect_stdout(out), self.assertRaises(SystemExit):
+            isr.main(["--help"])
+        help_ = re.sub(r"\s+", " ", out.getvalue())
+        self.assertIn("what this computer's shared files hold", help_)
+        for claim in REACH_CLAIMS:
+            self.assertNotIn(claim, about)
+            self.assertNotIn(claim, help_)
 
 
 if __name__ == "__main__":

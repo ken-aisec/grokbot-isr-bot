@@ -98,31 +98,6 @@ def render_access_map_md(obs, diff, facts, facts_why, tag):
     return "\n".join(lines) + "\n"
 
 
-ARTIFACT_HERE = {
-    "mcp": "Tool connections are listed in the access map. A Bot that loads a poisoned tool description can follow it; which Bot "
-           "loads which tool isn't checked.",
-    "hijack": "Your Bots read pages, email and posts that strangers write, and injected text there can steer a Bot. What that Bot "
-              "can reach is its own connectors and browser, and the shared files it can read; which those are isn't checked.",
-    "supply": "Templates add skills, and Bots install packages on request. Anything installed runs as the Bot that installed it; "
-              "which shared files that Bot can read isn't checked.",
-    "creds": "Credential files on this computer's shared files are listed in the access map; which Bot can actually read each "
-             "one isn't checked.",
-    "browser": "Each Bot's browser sessions are its own (platform context, not observed). Browser cookie files on this computer "
-               "are in the access map; which Bot's browser uses them isn't checked.",
-    "platform": "A flaw here shows what an attacker can do once an agent holds access. What each Bot said it holds is in the "
-                "access map; which shared files each Bot can read isn't checked.",
-}
-
-
-def artifact_story_here(s, m, ctx):
-    """story_here, but its category fallback (means_here, written for the brief) is replaced by a sentence that claims no
-    reach beyond what the access map shows."""
-    e_, hit = story_touch(f"{s['title']} {' '.join(s.get('cves', []))}", m)
-    if e_ is not None and (hit or e_.get("connector_rx") or e_.get("domains")):
-        return story_here(s, m, ctx)
-    return ARTIFACT_HERE.get(s.get("category"), ARTIFACT_HERE["platform"])
-
-
 def render_threat_report_md(obs, brief, snap, tag, facts, facts_why, diff):
     lines = header_block(obs, "ISR Bot threat report", tag, diff, facts, facts_why)
     lines += ["## Score", ""]
@@ -148,7 +123,7 @@ def render_threat_report_md(obs, brief, snap, tag, facts, facts_why, diff):
             lines += [f"### {i}. {md_text(s.get('title'), 200, rollcall=False)}", "",
                       f"- {md_text(s.get('tier'), 20, rollcall=False)} · {md_text(s.get('category_label'), 40, rollcall=False)} · {md_text(s.get('source'), 60, rollcall=False)}"
                       + (f" · {link}" if link else "") + (f" · {cves}" if cves else ""),
-                      f"- Here (observed here {et_time(obs['observed_at'])}, status only): {md_text(artifact_story_here(s, obs['map'], ctx), 400)}", ""]
+                      f"- Here (observed here {et_time(obs['observed_at'])}, status only): {md_text(story_here(s, obs['map'], ctx), 400)}", ""]
         if ok:
             kev = [f"{k.get('cve')} {k.get('vendor')} {k.get('product')}" for k in brief.get("kev", []) if isinstance(k, dict) and k.get("relevant")][:6]
             lines += ["## Known exploited (CISA KEV)", ""] + ([f"- {md_text(k, 120, rollcall=False)}" for k in kev] or ["- None relevant this week."]) + [""]
