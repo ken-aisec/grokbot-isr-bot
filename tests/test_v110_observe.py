@@ -142,6 +142,30 @@ class StatusOnly(_V110):
         self.assertNotIn("can read", page.replace("any Bot that can read", ""))
         self.assertIn(isr.REACH_UNDETERMINED, page)
 
+    def test_o8_a_linked_parent_folder_is_named_and_not_followed(self):   # replay (f58fb63: the file under the link was stat'ed)
+        self.world()
+        real = os.path.join(self.tmp, "dotfiles", "config")
+        os.chmod(w(os.path.join(real, "gh", "hosts.yml"), "github.com:\n  oauth_token: FAKEauthFILE\n"), 0o600)
+        link = os.path.join(self.home, ".config")
+        os.symlink(real, link)
+        through, real_lstat = [], os.lstat
+
+        def lstat_(p, *a, **k):   # the path as asked for, not where it resolves: a lookup beneath the link walks through it
+            q = os.path.normpath(os.fsdecode(p)) if isinstance(p, (str, bytes)) else ""
+            if q.startswith(link + os.sep):
+                through.append(q)
+            return real_lstat(p, *a, **k)
+
+        with mock.patch("os.lstat", lstat_):
+            c = {c["file"]: c for c in isr.cred_status()}["~/.config/gh/hosts.yml"]
+        self.assertEqual(through, [])
+        self.assertEqual((c["state"], c["mode"], c["owned"]), ("under-link", None, None))
+        self.assertEqual(isr.cred_words(c), "a parent folder is a link (not followed; this file not looked at)")
+        code, man = self.artifacts()
+        page = self.files(man)["access-map"]
+        self.assertIn("(GitHub CLI login): a parent folder is a link (not followed; this file not looked at)", page)
+        self.assertNotIn("mode 0600", page.split("hosts\\.yml")[1].split("\n")[0])
+
     def test_o5_a_pseudonym_survives_a_rename_and_a_name_based_one_says_so(self):   # replay (fa0525f: no bot_pid)
         self.world()
         first = {b["name"]: b for b in isr.access_observation()["bots"]}

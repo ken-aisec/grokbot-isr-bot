@@ -8,7 +8,7 @@ _OBS_FILE = re.compile(r"obs-\d{8}T\d{6}Z(?:-\d)?\.json")
 _OBS_AT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\+00:00|Z)")
 _OBS_PID = re.compile(r"b-[0-9a-f]{10}")
 OBS_COMMANDS = ("artifacts",)
-OBS_CRED_STATES = ("present", "link", "missing", "other", "unknown")
+OBS_CRED_STATES = ("present", "link", "under-link", "missing", "other", "unknown")
 OBS_BOT_STATUS = ("answered", "no-detail", "silent", "listed")
 OBS_TAMPER = ("Stored in a folder any process running as this user can write; not tamper-proof and not authenticated. "
               "Sanitizing bounds its shape, not its truth or completeness.")
@@ -34,7 +34,15 @@ def cred_status():
     out = []
     for rel in sorted(KNOWN_CRED_FILES):
         c = {"file": "~/" + rel, "tool": KNOWN_CRED_FILES[rel], "state": "unknown", "mode": None, "owned": None}
+        parts = rel.split("/")
         try:
+            for i in range(1, len(parts)):   # a linked parent folder is never walked through: the file under it isn't looked at
+                if stat.S_ISLNK(os.lstat(os.path.join(h, *parts[:i])).st_mode):
+                    c["state"] = "under-link"
+                    break
+            if c["state"] == "under-link":
+                out.append(c)
+                continue
             st = os.lstat(os.path.join(h, rel))
         except (FileNotFoundError, NotADirectoryError):
             c["state"] = "missing"
@@ -55,6 +63,8 @@ def cred_words(c):
         return "not found"
     if c["state"] == "unknown":
         return "couldn't be looked at"
+    if c["state"] == "under-link":
+        return "a parent folder is a link (not followed; this file not looked at)"
     if c["state"] == "link":
         return "a link (target not checked)" + ("; the link is owned by ISR Bot's uid" if c["owned"] else "")
     bits = []
@@ -186,7 +196,7 @@ def obs_record(doc, stored=True):
         st_ = c.get("state") if c.get("state") in OBS_CRED_STATES else "unknown"
         creds.append({"file": "~/" + rel, "tool": KNOWN_CRED_FILES[rel], "state": st_,
                       "mode": txt(c.get("mode"), r"0[0-7]{3}") if st_ in ("present", "other") else None,
-                      "owned": c.get("owned") if isinstance(c.get("owned"), bool) and st_ not in ("missing", "unknown") else None})
+                      "owned": c.get("owned") if isinstance(c.get("owned"), bool) and st_ not in ("missing", "unknown", "under-link") else None})
     labels = {e_["label"] for e_ in access_vocab() if "connector_rx" in e_["_rx"]}
     bots, pids = [], set()
     for b in doc.get("bots") if isinstance(doc.get("bots"), list) else []:
