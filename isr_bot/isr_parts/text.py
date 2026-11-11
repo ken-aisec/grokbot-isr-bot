@@ -1918,6 +1918,8 @@ def scan_text(text, where, rules, kind="skill", limit=None, cut=None, stop=None)
                     if stop is not None:
                         stop.append(where)
                     break
+            if rule["id"] == SECRET_RULE and not keep_secret_hit(m.group(0)):
+                continue   # 1.1.1: an ISR Bot test fixture, by its whole value's construction (fixture_keys.py); never a word near it
             if rule["id"] == "ISR-T018" and not chat_webhook(text, m):
                 continue   # a lookalike or nested host: not a chat service's webhook (a Slack or Discord one stays T005)
             if rule["id"] == "ISR-T005" and CHAT_IN_T005.fullmatch(m.group(0)) and chat_webhook(text, m):

@@ -143,10 +143,14 @@ class PartlyChecked(_Partial):
         self.audit_with([stuck], TRUFFLEHOG_ANSWERS.replace("ANSWERS", repr(said)).replace("DONE", repr(TH_DONE)),
                         gitleaks=v82.GITLEAKS.replace("REPORT", repr(report)))
         fs = self.snap()["findings"]
-        g = [f for f in fs if f["rule"] == "ISR-S002" and f["where"] == top]
-        self.assertEqual(len(g), 1, [(f["rule"], f["where"]) for f in fs if f["rule"].startswith("ISR-S")])
-        self.assertIn("1 token, 2 copies", g[0]["evidence"])          # 52351db: "2 tokens, 2 copies" (read back without fingerprints)
-        self.assertEqual(g[0]["title"], isr.KEY_LIVE)
+        # 1.1.1 (one secret at one file:line counts once): ISR Bot's own key rule finds the token at both places gitleaks does,
+        # so there is no folder ISR-S002; each file is one ISR-S001 naming gitleaks in also_rules, live by this run's answers
+        self.assertEqual([f["where"] for f in fs if f["rule"] == "ISR-S002" and f["where"] == top], [])
+        for p, ln in ((a, 2), (b, 1)):
+            s1 = [f for f in fs if f["rule"] == "ISR-S001" and f["where"] == f"{p}:{ln}"]
+            self.assertEqual(len(s1), 1, [(f["rule"], f["where"]) for f in fs if f["rule"].startswith("ISR-S")])
+            self.assertEqual((s1[0]["title"], s1[0].get("also_rules")), (isr.KEY_LIVE, ["ISR-S002"]))
+            self.assertEqual(s1[0]["evidence"], f"Github: 1 token, 1 copy, live, at {os.path.basename(p)}:{ln}")
         self.assertIn(False, self.batches_finished())                  # it was a partial run
         self.assertIn(True, self.batches_finished())
 

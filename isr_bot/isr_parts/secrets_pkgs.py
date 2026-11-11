@@ -489,6 +489,7 @@ def spill_findings(spills):
     return out
 
 
+GITLEAKS_FILE_FIX = "Check whether these are live credentials. Revoke live ones, then delete or scrub the file."
 GROUPED_DIRS = ("/agent-transcripts", "/agent-tools", "/.cursor/projects")
 TOOL_CACHE_DIRS = ("/agent-tools",)
 
@@ -607,10 +608,13 @@ def gitleaks_findings(roots, notes):
             if in_toolchain_tree(str(leak.get("File") or "")):
                 skipped_tool += 1
                 continue                                  # item 8 dry run: test vectors in a language toolchain or package store                                  # ISR Bot's own decoys (their names are this install's, not in this config)
+            got_ = _gitleaks_found(leak, datas, since)
+            # 1.1.1: an ISR Bot test fixture (by construction) is no hit; a secret that can't be read back is kept (fail closed)
+            if got_ and not keep_secret_hit(got_[0][0], os.path.abspath(str(leak.get("File") or ""))):
+                continue
             per_file.setdefault(leak.get("File"), []).append(leak)
             # batch 6 (B5); fix round 3 (Codex 1, 2): an example-looking hit is grouped, counted and scored as any other; its why
             # only adds a note to a finding all of whose hits look like that (_note_examples)
-            got_ = _gitleaks_found(leak, datas, since)
             why = _example_why(got_)
             if why:
                 examples[id(leak)] = why
@@ -653,7 +657,7 @@ def gitleaks_findings(roots, notes):
             generic = all(k.startswith("generic") for k in kinds)
             out.append(_note_examples(finding("ISR-S002", "gitleaks: secrets in file", secret_severity(fpath or "", generic), ["ASI03", "LLM02"],
                                               f"{fpath}:{leaks[0].get('StartLine')}", f"{len(leaks)} hit(s): {', '.join(kinds)[:100]}",
-                                              "Check whether these are live credentials. Revoke live ones, then delete or scrub the file.", source="gitleaks",
+                                              GITLEAKS_FILE_FIX, source="gitleaks",
                                               path=fpath if isinstance(fpath, str) and fpath.startswith("/") else None), leaks, examples))
             # v0.8.2 (item 1): its hits too, so its copies are counted (one file: the gate gives the same answer as for its path)
             if isinstance(fpath, str) and fpath.startswith("/"):
@@ -694,7 +698,107 @@ def regroup_s002(f, kept, status, ran):
     return key_status_severity([g], {p: ks for p, ks in status.items() if p in files}, ran)[0]
 
 
-_LEAK_FIELDS = ("RuleID", "StartLine", "EndLine", "StartColumn", "EndColumn", "Match", "Secret", "Entropy")
+# 1.1.1: one secret at one file:line counts once. ISR Bot's own key rule (ISR-S001) and gitleaks (ISR-S002) each made a critical
+# of the same key, and the two backed each other up, so one echoed test key was two Confirmed criticals. The run's hits are matched
+# by (file, line, fingerprint) after TruffleHog's answers and before the gate drops the fingerprints (owner_gate); a hit gitleaks
+# shares with an ISR-S001 joins that finding, which names gitleaks in also_rules and stays Confirmed (is_evidence).
+def _secret_hit_key(h):
+    """(file, line, fingerprint) of one hit; a hit with no fingerprint matches only another with none at the same place."""
+    return (h.get("file"), h.get("line"), h.get("fp")) if isinstance(h, dict) and h.get("file") else None
+
+
+def merged_key(f):
+    """The key of a finding two key rules agreed on: from its rule, its file:line and the fingerprint of the key it shows there
+    (or that line), so a later full audit, and a daily that keeps gitleaks' vote, give it the same one."""
+    ln = f["where"].rpartition(":")[2]
+    fp = next((h.get("fp") for h in f.get("secret_hits") or () if isinstance(h, dict) and str(h.get("line")) == ln and h.get("fp")), None)
+    return hashlib.sha1(f"{f['rule']}|{f['where']}|merged:{fp or ln}".encode()).hexdigest()[:16]
+
+
+def _secret_strength(f):
+    return (f.get("title") == KEY_LIVE, -SEV_ORDER.index(f["severity"]) if f.get("severity") in SEV_ORDER else -len(SEV_ORDER))
+
+
+def _s002_kept(f, kept, status, ran):
+    """ISR-S002 f made again from the member hits it keeps once others joined an ISR-S001: a folder's group by regroup_s002, one
+    file's as gitleaks_findings makes it (title, place, evidence, severity, example note, own token, TruffleHog's answers)."""
+    if f.get("affected_files"):
+        return regroup_s002(f, kept, status, ran)
+    kept = sorted(kept, key=lambda m: m.get("line") if isinstance(m.get("line"), int) else 0)
+    p = f.get("path") or kept[0]["file"]
+    kinds = sorted({m.get("rule_id") or "secret" for m in kept})
+    g = finding("ISR-S002", "gitleaks: secrets in file", secret_severity(p, all(k.startswith("generic") for k in kinds)),
+                f.get("owasp") or ["ASI03", "LLM02"], f"{p}:{kept[0].get('line')}", f"{len(kept)} hit(s): {', '.join(kinds)[:100]}",
+                GITLEAKS_FILE_FIX, source="gitleaks", path=p)
+    g["member_hits"] = kept
+    whys = [m.get("example") for m in kept]
+    g = mark_own(annotate_example(g, whys[0]) if all(whys) else g, kept)
+    files = {p} | {m["file"] for m in kept}
+    return key_status_severity([g], {x: ks for x, ks in status.items() if x in files}, ran)[0]
+
+
+def merge_secret_findings(fs, key_status=None, voted=()):
+    """1.1.1: the findings with each secret at one (file, line, fingerprint) counted once. ISR-S001 keeps its one finding per file;
+    a gitleaks member hit at one of its hits leaves its ISR-S002 (made again from the rest, or dropped when none is left) and the
+    ISR-S001 gets also_rules (["ISR-S002"]), an also_flagged_by entry and a new key (merged_key); TruffleHog's strongest answer of
+    a whole ISR-S002 it took in is kept, and its example note only while every hit looks like one. `key_status`: {"files", "ran"}.
+    `voted`: last run's merged findings, when gitleaks gave no answer this run (a daily, a failed stage): an ISR-S001 at the same
+    file:line keeps their also_rules, so gitleaks' vote isn't lost while it isn't asked."""
+    status, ran = (key_status or {}).get("files") or {}, bool((key_status or {}).get("ran"))
+    held = {}
+    for f in fs:
+        if isinstance(f, dict) and f.get("rule") == "ISR-S001":
+            for h in f.get("secret_hits") or ():
+                if _secret_hit_key(h):
+                    held.setdefault(_secret_hit_key(h), f)
+    out, joined = [], {}
+    for f in fs:
+        if not (isinstance(f, dict) and f.get("rule") == "ISR-S002" and isinstance(f.get("member_hits"), list)):
+            out.append(f)
+            continue
+        kept, gone = [], {}
+        for m in f["member_hits"]:
+            k = _secret_hit_key(m)
+            o = held.get(k) if k else None
+            if o is not None and o is not f:
+                gone.setdefault(id(o), (o, []))[1].append(m)
+            else:
+                kept.append(m)
+                if k:
+                    held.setdefault(k, f)
+        for o, ms in gone.values():
+            joined.setdefault(id(o), (o, []))[1].append((f, ms, not kept))
+        if not gone:
+            out.append(f)
+        elif kept:
+            out.append(_s002_kept(f, kept, status, ran))
+    for o, parts in joined.values():
+        if o["rule"] != "ISR-S001":
+            continue   # one gitleaks finding's hit in another's: it just leaves the second
+        for g, ms, whole in parts:
+            o["also_rules"] = sorted(set(o.get("also_rules") or ()) | {g["rule"]})
+            by = o.setdefault("also_flagged_by", [])
+            if not any(a.get("rule") == g["rule"] and a.get("where") == g["where"] for a in by):
+                by.append({"rule": g["rule"], "where": g["where"], "source": g.get("source", "isr-bot")})
+            if whole and _secret_strength(g) > _secret_strength(o):
+                o.update(severity=g["severity"], title=g["title"], fix=g["fix"])
+            if o.get("example") and not all(m.get("example") for m in ms):
+                o["fix"] = o["fix"].replace(EXAMPLE_NOTE.format(why=o.pop("example")), "").strip()
+            if not o.get("own_token") and any(m.get("own_token") for m in ms):
+                mark_own(o, list(o.get("secret_hits") or ()) + ms)
+        o["key"] = merged_key(o)
+        o.pop("key0", None)
+    votes = {v.get("where"): v for v in voted or () if isinstance(v, dict) and v.get("rule") == "ISR-S001" and v.get("also_rules")}
+    for f in out if votes else ():
+        v = votes.get(f.get("where")) if isinstance(f, dict) and f.get("rule") == "ISR-S001" and not f.get("also_rules") else None
+        if v:
+            f["also_rules"] = sorted(set(v["also_rules"]) - {f["rule"]})
+            f["also_flagged_by"] = [dict(a) for a in v.get("also_flagged_by") or () if isinstance(a, dict)]
+            f["key"] = merged_key(f)
+    return out
+
+
+_LEAK_FIELDS =("RuleID", "StartLine", "EndLine", "StartColumn", "EndColumn", "Match", "Secret", "Entropy")
 
 
 def _leak_marks(leaks):

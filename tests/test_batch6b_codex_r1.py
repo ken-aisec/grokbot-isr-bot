@@ -108,9 +108,14 @@ class ExampleBoundToPlace(_Keys):
             self.leak(p, secret if rule == "github-pat" else line, secret, rule)
         fs, notes = self.scan()
         s2 = [f for f in self.keys(fs, self.skill) if f["rule"] == "ISR-S002"]
-        # five files in one folder are one folder finding, as five real hits are; a GitHub token makes it critical
+        # five files in one folder are one folder finding, as five real hits are; a GitHub token makes it critical.
+        # 1.1.1 (one secret at one file:line counts once): ISR Bot's own key rule finds the GitHub fake at the same file:line, so
+        # that hit joined its finding (critical, also_rules) and the folder finding holds the four generic ones (their own severity)
         self.assertEqual([(f["where"], f["title"], f.get("severity_was") or f["severity"]) for f in s2],
-                         [(os.path.join(self.skill, "examples"), "gitleaks: secrets in 5 files under examples", "critical")])
+                         [(os.path.join(self.skill, "examples"), "gitleaks: secrets in 4 files under examples", "medium")])
+        s1 = [f for f in self.keys(fs, self.skill) if f["rule"] == "ISR-S001"]
+        self.assertEqual([(os.path.basename(f["where"].split(":")[0]), f.get("also_rules"), f.get("severity_was") or f["severity"], isr.counts(f))
+                          for f in s1], [("a.md", ["ISR-S002"], "critical", True)])
         self.assertTrue(all("This looks like an example or checksum value" in f["fix"] for f in self.keys(fs, self.skill)))
         self.assertNotIn(EXAMPLE, {f["title"] for f in self.keys(fs, self.skill)})
         self.assertIn("gitleaks: 5 hit(s) look like example or checksum values; each is scored as any other hit and noted, to check "

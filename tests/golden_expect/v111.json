@@ -1,0 +1,468 @@
+{
+ "about": "v1.1.1 against v1.1.0 (d5b5b47309b2cd3768169c006d76771b3a8ad99b): v111ver the version lines and the SCORE_ERA tag (s5 -> s6). Nothing for score, grade, status, keys, titles, severity, counts, where or open_by_severity. Each block is the exact diff of its outputs.",
+ "entries": [
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(tierA)$",
+   "key_rx": "^(001\\ --version\\ :stdout|088\\ --version\\ \\(cwd\\ /\\)\\ :stdout|175\\ --version\\ \\(cwd\\ /tmp/code\\)\\ :stdout)$",
+   "block": [
+    "-1.1.0",
+    "+1.1.1"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(tierC)$",
+   "key_rx": "^(001\\ installed\\ --version\\ :stdout)$",
+   "block": [
+    "-1.1.0",
+    "+1.1.1"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(tierA)$",
+   "key_rx": "^(035\\ doctor\\ :stdout|122\\ doctor\\ \\(cwd\\ /\\)\\ :stdout|209\\ doctor\\ \\(cwd\\ /tmp/code\\)\\ :stdout|tree\\ workspace/isr-bot/reports/support-\\d{4}-\\d{2}-\\d{2}\\.json)$",
+   "block": [
+    "- \"isr_bot\": \"1.1.0\",",
+    "+ \"isr_bot\": \"1.1.1\","
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(tierA)$",
+   "key_rx": "^(047\\ vet\\ /tmp/code/tests/fixtures/bad/exfil-helper\\ --json\\ :stdout|052\\ vet\\ /tmp/code/tests/fixtures/bad/hidden-unicode\\ --json\\ :stdout|057\\ vet\\ /tmp/code/tests/fixtures/bad/silent-sender\\ --json\\ :stdout|062\\ vet\\ /tmp/code/tests/fixtures/clean/meeting-notes\\ --json\\ :stdout|067\\ vet\\ /tmp/code/tests/fixtures/clean/weekly-digest-safe\\ --json\\ :stdout|072\\ vet\\ /tmp/code/tests/fixtures/evasive/notes-sync\\ --json\\ :stdout|077\\ vet\\ /tmp/code/tests/fixtures/exports/routine-bad\\.md\\ --json\\ :stdout|082\\ vet\\ /tmp/code/tests/fixtures/exports/routine-good\\.md\\ --json\\ :stdout|134\\ vet\\ /tmp/code/tests/fixtures/bad/exfil-helper\\ --json\\ \\(cwd\\ /\\)\\ :stdout|139\\ vet\\ /tmp/code/tests/fixtures/bad/hidden-unicode\\ --json\\ \\(cwd\\ /\\)\\ :stdout|144\\ vet\\ /tmp/code/tests/fixtures/bad/silent-sender\\ --json\\ \\(cwd\\ /\\)\\ :stdout|149\\ vet\\ /tmp/code/tests/fixtures/clean/meeting-notes\\ --json\\ \\(cwd\\ /\\)\\ :stdout|154\\ vet\\ /tmp/code/tests/fixtures/clean/weekly-digest-safe\\ --json\\ \\(cwd\\ /\\)\\ :stdout|159\\ vet\\ /tmp/code/tests/fixtures/evasive/notes-sync\\ --json\\ \\(cwd\\ /\\)\\ :stdout|164\\ vet\\ /tmp/code/tests/fixtures/exports/routine-bad\\.md\\ --json\\ \\(cwd\\ /\\)\\ :stdout|169\\ vet\\ /tmp/code/tests/fixtures/exports/routine-good\\.md\\ --json\\ \\(cwd\\ /\\)\\ :stdout|221\\ vet\\ /tmp/code/tests/fixtures/bad/exfil-helper\\ --json\\ \\(cwd\\ /tmp/code\\)\\ :stdout|226\\ vet\\ /tmp/code/tests/fixtures/bad/hidden-unicode\\ --json\\ \\(cwd\\ /tmp/code\\)\\ :stdout|231\\ vet\\ /tmp/code/tests/fixtures/bad/silent-sender\\ --json\\ \\(cwd\\ /tmp/code\\)\\ :stdout|236\\ vet\\ /tmp/code/tests/fixtures/clean/meeting-notes\\ --json\\ \\(cwd\\ /tmp/code\\)\\ :stdout|241\\ vet\\ /tmp/code/tests/fixtures/clean/weekly-digest-safe\\ --json\\ \\(cwd\\ /tmp/code\\)\\ :stdout|246\\ vet\\ /tmp/code/tests/fixtures/evasive/notes-sync\\ --json\\ \\(cwd\\ /tmp/code\\)\\ :stdout|251\\ vet\\ /tmp/code/tests/fixtures/exports/routine-bad\\.md\\ --json\\ \\(cwd\\ /tmp/code\\)\\ :stdout|256\\ vet\\ /tmp/code/tests/fixtures/exports/routine-good\\.md\\ --json\\ \\(cwd\\ /tmp/code\\)\\ :stdout)$",
+   "block": [
+    "-  \"version\": \"1.1.0\",",
+    "+  \"version\": \"1.1.1\","
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(tierA)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/reports/threat-brief-\\d{4}-W\\d{2}\\.html)$",
+   "block": [
+    "-<p class='foot'>Read-only: ISR Bot changes nothing unless you run the fix. 0 of 11 news sources responded. Full details: /isr-bot-report. ISR Bot 1.1.0.</p>",
+    "+<p class='foot'>Read-only: ISR Bot changes nothing unless you run the fix. 0 of 11 news sources responded. Full details: /isr-bot-report. ISR Bot 1.1.1.</p>"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-emoji_names-cli|box-empty_account-cli|box-odd_layout-cli|box-strict_auto_review-cli)$",
+   "key_rx": "^(013\\ doctor\\ :stdout)$",
+   "block": [
+    "- \"isr_bot\": \"1.1.0\",",
+    "+ \"isr_bot\": \"1.1.1\",",
+    "-  \"version\": \"1.1.0\",",
+    "+  \"version\": \"1.1.1\","
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-emoji_names-driver|box-empty_account-driver|box-odd_layout-driver|box-strict_auto_review-driver)$",
+   "key_rx": "^(013\\ doctor\\ \\[driver\\]\\ :stdout)$",
+   "block": [
+    "- \"isr_bot\": \"1.1.0\",",
+    "+ \"isr_bot\": \"1.1.1\",",
+    "-  \"version\": \"1.1.0\",",
+    "+  \"version\": \"1.1.1\","
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-busy_clean_box-cli|box-power_user-cli)$",
+   "key_rx": "^(014\\ doctor\\ :stdout)$",
+   "block": [
+    "- \"isr_bot\": \"1.1.0\",",
+    "+ \"isr_bot\": \"1.1.1\",",
+    "-  \"version\": \"1.1.0\",",
+    "+  \"version\": \"1.1.1\","
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-busy_clean_box-driver|box-power_user-driver)$",
+   "key_rx": "^(014\\ doctor\\ \\[driver\\]\\ :stdout)$",
+   "block": [
+    "- \"isr_bot\": \"1.1.0\",",
+    "+ \"isr_bot\": \"1.1.1\",",
+    "-  \"version\": \"1.1.0\",",
+    "+  \"version\": \"1.1.1\","
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-fixtures_vendor-cli)$",
+   "key_rx": "^(027\\ doctor\\ :stdout)$",
+   "block": [
+    "- \"isr_bot\": \"1.1.0\",",
+    "+ \"isr_bot\": \"1.1.1\",",
+    "-  \"version\": \"1.1.0\",",
+    "+  \"version\": \"1.1.1\","
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-fixtures_vendor-driver)$",
+   "key_rx": "^(027\\ doctor\\ \\[driver\\]\\ :stdout)$",
+   "block": [
+    "- \"isr_bot\": \"1.1.0\",",
+    "+ \"isr_bot\": \"1.1.1\",",
+    "-  \"version\": \"1.1.0\",",
+    "+  \"version\": \"1.1.1\","
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-platform_refresh-cli)$",
+   "key_rx": "^(015\\ doctor\\ :stdout)$",
+   "block": [
+    "- \"isr_bot\": \"1.1.0\",",
+    "+ \"isr_bot\": \"1.1.1\",",
+    "-  \"version\": \"1.1.0\",",
+    "+  \"version\": \"1.1.1\","
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-platform_refresh-driver)$",
+   "key_rx": "^(015\\ doctor\\ \\[driver\\]\\ :stdout)$",
+   "block": [
+    "- \"isr_bot\": \"1.1.0\",",
+    "+ \"isr_bot\": \"1.1.1\",",
+    "-  \"version\": \"1.1.0\",",
+    "+  \"version\": \"1.1.1\","
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-busy_clean_box-cli|box-busy_clean_box-driver|box-emoji_names-cli|box-emoji_names-driver|box-empty_account-cli|box-empty_account-driver|box-fixtures_vendor-cli|box-fixtures_vendor-driver|box-odd_layout-cli|box-odd_layout-driver|box-platform_refresh-cli|box-platform_refresh-driver|box-power_user-cli|box-power_user-driver|box-strict_auto_review-cli|box-strict_auto_review-driver|extended)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/reports/\\d{4}-W\\d{2}\\.md)$",
+   "block": [
+    "-_ISR Bot 1.1.0, read-only. Scanners can be bypassed; this report is evidence, not proof._",
+    "+_ISR Bot 1.1.1, read-only. Scanners can be bypassed; this report is evidence, not proof._"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-busy_clean_box-cli|box-busy_clean_box-driver|box-emoji_names-cli|box-emoji_names-driver|box-empty_account-cli|box-empty_account-driver|box-fixtures_vendor-cli|box-fixtures_vendor-driver|box-odd_layout-cli|box-odd_layout-driver|box-platform_refresh-cli|box-platform_refresh-driver|box-power_user-cli|box-power_user-driver|box-strict_auto_review-cli|box-strict_auto_review-driver|extended)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/reports/dashboard\\.html)$",
+   "block": [
+    "-<p class='mut' style='margin-top:20px'>ISR Bot 1.1.0. Scanners can be bypassed; this is evidence, not proof.</p></body></html>",
+    "+<p class='mut' style='margin-top:20px'>ISR Bot 1.1.1. Scanners can be bypassed; this is evidence, not proof.</p></body></html>"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-busy_clean_box-cli|box-busy_clean_box-driver|box-emoji_names-cli|box-emoji_names-driver|box-empty_account-cli|box-empty_account-driver|box-fixtures_vendor-cli|box-fixtures_vendor-driver|box-odd_layout-cli|box-odd_layout-driver|box-platform_refresh-cli|box-platform_refresh-driver|box-power_user-cli|box-power_user-driver|box-strict_auto_review-cli|box-strict_auto_review-driver|crash|extended|tierC)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/state/last_findings\\.json)$",
+   "block": [
+    "-  \"version\": \"1.1.0\"",
+    "+  \"version\": \"1.1.1\""
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-emoji_names-cli|box-empty_account-cli|box-odd_layout-cli)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,92,7,full,s5:1.1.0|ISR Bot rules",
+    "-<TS>,92,7,daily,s5:1.1.0|ISR Bot rules",
+    "-<TS>,92,7,full,s5:1.1.0|ISR Bot rules",
+    "-<TS>,92,7,daily,s5:1.1.0|ISR Bot rules",
+    "+<TS>,92,7,full,s6:1.1.1|ISR Bot rules",
+    "+<TS>,92,7,daily,s6:1.1.1|ISR Bot rules",
+    "+<TS>,92,7,full,s6:1.1.1|ISR Bot rules",
+    "+<TS>,92,7,daily,s6:1.1.1|ISR Bot rules"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-emoji_names-driver|box-empty_account-driver|box-odd_layout-driver)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,98,2,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,98,2,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,98,2,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,98,2,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,98,2,full,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,98,2,daily,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,98,2,full,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,98,2,daily,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-busy_clean_box-cli)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,81,8,full,s5:1.1.0|ISR Bot rules",
+    "-<TS>,81,8,daily,s5:1.1.0|ISR Bot rules",
+    "-<TS>,81,8,full,s5:1.1.0|ISR Bot rules",
+    "-<TS>,81,8,daily,s5:1.1.0|ISR Bot rules",
+    "+<TS>,81,8,full,s6:1.1.1|ISR Bot rules",
+    "+<TS>,81,8,daily,s6:1.1.1|ISR Bot rules",
+    "+<TS>,81,8,full,s6:1.1.1|ISR Bot rules",
+    "+<TS>,81,8,daily,s6:1.1.1|ISR Bot rules"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-busy_clean_box-driver)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,88,3,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,88,3,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,88,3,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,88,3,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,88,3,full,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,88,3,daily,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,88,3,full,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,88,3,daily,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-power_user-cli)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,92,8,full,s5:1.1.0|ISR Bot rules",
+    "-<TS>,92,8,daily,s5:1.1.0|ISR Bot rules",
+    "-<TS>,92,8,full,s5:1.1.0|ISR Bot rules",
+    "-<TS>,92,8,daily,s5:1.1.0|ISR Bot rules",
+    "+<TS>,92,8,full,s6:1.1.1|ISR Bot rules",
+    "+<TS>,92,8,daily,s6:1.1.1|ISR Bot rules",
+    "+<TS>,92,8,full,s6:1.1.1|ISR Bot rules",
+    "+<TS>,92,8,daily,s6:1.1.1|ISR Bot rules"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-power_user-driver)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,98,3,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,98,3,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,98,3,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,98,3,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,98,3,full,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,98,3,daily,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,98,3,full,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,98,3,daily,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-strict_auto_review-cli)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,93,7,full,s5:1.1.0|ISR Bot rules",
+    "-<TS>,93,7,daily,s5:1.1.0|ISR Bot rules",
+    "-<TS>,93,7,full,s5:1.1.0|ISR Bot rules",
+    "-<TS>,93,7,daily,s5:1.1.0|ISR Bot rules",
+    "+<TS>,93,7,full,s6:1.1.1|ISR Bot rules",
+    "+<TS>,93,7,daily,s6:1.1.1|ISR Bot rules",
+    "+<TS>,93,7,full,s6:1.1.1|ISR Bot rules",
+    "+<TS>,93,7,daily,s6:1.1.1|ISR Bot rules"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-strict_auto_review-driver)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,100,2,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,100,2,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,100,2,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,100,2,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,100,2,full,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,100,2,daily,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,100,2,full,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,100,2,daily,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-fixtures_vendor-cli)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,22,24,full,s5:1.1.0|ISR Bot rules",
+    "-<TS>,22,24,daily,s5:1.1.0|ISR Bot rules",
+    "-<TS>,22,24,full,s5:1.1.0|ISR Bot rules",
+    "-<TS>,22,24,daily,s5:1.1.0|ISR Bot rules",
+    "+<TS>,22,24,full,s6:1.1.1|ISR Bot rules",
+    "+<TS>,22,24,daily,s6:1.1.1|ISR Bot rules",
+    "+<TS>,22,24,full,s6:1.1.1|ISR Bot rules",
+    "+<TS>,22,24,daily,s6:1.1.1|ISR Bot rules"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-fixtures_vendor-driver)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,26,19,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,26,19,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,26,19,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,26,19,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,26,19,full,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,26,19,daily,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,26,19,full,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,26,19,daily,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-platform_refresh-cli)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,81,8,full,s5:1.1.0|ISR Bot rules",
+    "-<TS>,81,8,full,s5:1.1.0|ISR Bot rules",
+    "-<TS>,81,8,daily,s5:1.1.0|ISR Bot rules",
+    "-<TS>,81,8,full,s5:1.1.0|ISR Bot rules",
+    "-<TS>,81,8,daily,s5:1.1.0|ISR Bot rules",
+    "+<TS>,81,8,full,s6:1.1.1|ISR Bot rules",
+    "+<TS>,81,8,full,s6:1.1.1|ISR Bot rules",
+    "+<TS>,81,8,daily,s6:1.1.1|ISR Bot rules",
+    "+<TS>,81,8,full,s6:1.1.1|ISR Bot rules",
+    "+<TS>,81,8,daily,s6:1.1.1|ISR Bot rules"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(box-platform_refresh-driver)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,88,3,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,88,3,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,88,3,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,88,3,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,88,3,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,88,3,full,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,88,3,full,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,88,3,daily,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,88,3,full,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,88,3,daily,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(crash)$",
+   "key_rx": "^(003\\ doctor\\ \\[driver\\]\\ :stdout)$",
+   "block": [
+    "- \"isr_bot\": \"1.1.0\",",
+    "+ \"isr_bot\": \"1.1.1\",",
+    "-  \"version\": \"1.1.0\",",
+    "+  \"version\": \"1.1.1\",",
+    "-  \"at_and_command\": \"<TS> isr.py report (v1.1.0)\",",
+    "+  \"at_and_command\": \"<TS> isr.py report (v1.1.1)\","
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(crash)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/state/last_error\\.txt)$",
+   "block": [
+    "-<TS> isr.py report (v1.1.0)",
+    "+<TS> isr.py report (v1.1.1)"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(crash)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,98,2,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,98,2,full,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(extended)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,26,19,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,26,19,full,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "-<TS>,26,19,daily,s5:1.1.0|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,26,19,full,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,26,19,full,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit",
+    "+<TS>,26,19,daily,s6:1.1.1|ISR Bot rules+OSV-Scanner+SkillSpector+TruffleHog+gitleaks+husk+pip-audit"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  },
+  {
+   "item": "v111ver",
+   "scenario_rx": "^(tierC)$",
+   "key_rx": "^(tree\\ workspace/isr-bot/state/score_history\\.csv)$",
+   "block": [
+    "-<TS>,98,1,full,s5:1.1.0|ISR Bot rules",
+    "+<TS>,98,1,full,s6:1.1.1|ISR Bot rules"
+   ],
+   "must_see": true,
+   "why": "v111: VERSION 1.1.0 -> 1.1.1 and SCORE_ERA s5 -> s6 in this output (score and counts unchanged)."
+  }
+ ]
+}

@@ -26,7 +26,7 @@ if sys.version_info < (3, 8):   # degrade with one plain line, not a traceback (
     sys.exit(3)
 import argparse, bisect, builtins, concurrent.futures, datetime as dt, difflib, errno, functools, gzip, hashlib, heapq, html, json, math, os, platform, re, shutil, signal, stat, subprocess, sys, tempfile, threading, time, traceback
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 HERE = os.path.dirname(os.path.realpath(__file__))   # PR A, Codex round 2 (5): the file that runs, through any link to it
 RULES_PATH = os.path.join(HERE, "..", "rules", "text_rules.json")
 SELF_ROOT = os.path.dirname(HERE)
@@ -81,6 +81,9 @@ _isr_part("mask")
 
 
 _isr_part("text")
+
+
+_isr_part("fixture_keys")
 
 
 _isr_part("scoring")

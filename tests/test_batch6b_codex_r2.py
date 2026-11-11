@@ -117,9 +117,16 @@ class ExamplesAreListed(_Keys):
                 self.leak(p, f"ghp_FAKE{i}{j}" + "y8" * 15, rule="github-pat")
         fs, notes = self.scan()
         got = [f for f in self.keys(fs, self.skill) if f["rule"] == "ISR-S002"]
-        self.assertEqual([(f["where"], raw_sev(f)) for f in got], [(os.path.join(self.home, d), "critical")])
-        self.assertEqual(got[0]["evidence"], "6 hit(s): github-pat at fake0.md:1, fake0.md:2, fake1.md:1 and 3 more")
-        self.assertIn(NOTE, got[0]["fix"])
+        # 1.1.1 (one secret at one file:line counts once): ISR Bot's own key rule finds all six at the same file:line as gitleaks,
+        # so each file is its one finding (ISR-S001's, both of fake0.md's hits in it) naming gitleaks in also_rules; none is left
+        # out, each counted, critical and noted
+        self.assertEqual(got, [])
+        s1 = {os.path.basename(f["where"].split(":")[0]): f for f in self.keys(fs, os.path.join(self.home, d)) if f["rule"] == "ISR-S001"}
+        self.assertEqual(sorted(s1), [f"fake{i}.md" for i in range(5)])
+        for n, f in s1.items():
+            self.assertEqual((f["where"].rsplit(":", 1)[1], f.get("also_rules"), raw_sev(f), isr.counts(f)), ("1", ["ISR-S002"], "critical", True), n)
+            self.assertIn(NOTE, f["fix"], n)
+            self.assertIn(f"({2 if n == 'fake0.md' else 1} in file)", f["evidence"], n)
 
     def test_an_example_is_never_confirmed_or_offered_for_clearing(self):   # guard (new)
         # round 3 (Codex 1): Confirmed or not by the same rules as any key; never offered for clearing or revoking

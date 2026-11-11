@@ -858,13 +858,15 @@ def chat_log_place(p):
 
 def scrub_targets_from_findings():
     """Files ISR Bot flagged for keys that are agent chat or terminal logs in their known folders (chat_log_place), never code,
-    config or a project's own log."""
+    config or a project's own log. 1.1.1: and the files the audit found an ISR Bot test fixture in (the snapshot's fixture_paths,
+    paths only): a fixture is no finding, but one that leaked into a chat log is still cleaned, by the same rules."""
     snap = load_snapshot({"findings": []})
     files = set()
-    for f in snap.get("findings", []):
-        if f["rule"] not in ("ISR-S001", "ISR-S002") or f.get("example"):   # batch 6 fix round 3: an example-looking one is checked, never cleared
-            continue
-        p = f["where"].split(":")[0]
+    places = [f["where"].split(":")[0] for f in snap.get("findings", [])
+              if f["rule"] in ("ISR-S001", "ISR-S002") and not f.get("example")]   # batch 6 fix round 3: an example-looking one is checked, never cleared
+    fixtures = snap.get("fixture_paths")
+    places += [p for p in fixtures if isinstance(p, str) and p.startswith("/")] if isinstance(fixtures, list) else []
+    for p in places:
         cands = [p] if os.path.isfile(p) else ([os.path.join(dp, fn) for dp, _, fns in os.walk(p) for fn in fns] if os.path.isdir(p) else [])
         for c in cands:
             if chat_log_place(c) and os.path.splitext(c)[1].lower() in CHAT_EXT and not any(x in c for x in VENDOR_CODE):

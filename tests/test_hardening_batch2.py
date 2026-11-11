@@ -46,7 +46,7 @@ class StatusAndGrade(unittest.TestCase):
         self.assertEqual(isr.status_of(base), "All good")
 
     def test_the_score_era_moves_on(self):   # replay
-        self.assertEqual(isr.SCORE_ERA, "s5")
+        self.assertEqual(isr.SCORE_ERA, "s6")   # 1.1.1: one secret at one file:line counts once
 
 
 class StatusOnABox(Box):

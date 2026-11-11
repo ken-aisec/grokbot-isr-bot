@@ -9,6 +9,13 @@ Since 0.8.0 the product, its engine and its files are all called ISR Bot. The en
 **None are open.** Batch 7d fixed the last ones. Each item that was in this list, or that the owner logged as must-fix, is recorded
 under "Fixed in batch 7d (the last must-fix items)" right below, with its test file.
 
+## 1.1.1: test fixtures and one secret per file:line
+
+- One-time finding-key churn. A key found by both ISR Bot's own rule and gitleaks at one file:line is now one finding with a new key; the two old keys aren't aliased to it, so the first audit after the upgrade may list the old ISR-S001 and ISR-S002 as fixed and the merged finding as new. A dismissal or accepted risk tied to an old key, or an accepted risk entered for ISR-S002 at that place, doesn't carry over (the merged finding is ISR-S001's).
+- The score trend restarts. `SCORE_ERA` is s6: earlier audits are hidden from the trend until a new comparable full audit, because a box that had both rules on one key scores higher now.
+- Only a value built by `make_isr_fixture` is a fixture. A test body in a custom alphabet (hex, an AWS-style secret with `/` and `+`) is a random value, not a fixture, and counts as a key wherever it lands; such tests use the redacted assert helpers and keep their files in temp folders.
+- A daily keeps gitleaks' vote on a merged finding only while ISR-S001 still names the same file:line; if the file's first real key moves, that finding is Worth a look until the next full audit.
+
 ## 1.1.0: the weekly artifacts and the shared-file wording
 
 - Reach is status only. `isr.py artifacts` looks at each known CLI sign-in file name with lstat (present, a link, or a linked parent folder, never followed, mode bits, owned by ISR Bot's uid). Which Bot can actually read a file (other Bots' uids, ACLs, parent-folder permissions, link targets) is not determined, and the artifacts say so.

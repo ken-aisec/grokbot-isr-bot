@@ -1,5 +1,5 @@
 # Part of isr.py: runs inside isr.py's namespace (loaded by _isr_part); not a module on its own.
-SCORE_ERA = "s5"   # bump when the formula changes; older history is then hidden instead of compared
+SCORE_ERA = "s6"   # bump when the formula changes; older history is then hidden instead of compared (s6, 1.1.1: one key, one count)
 SCORE_BASE = {"critical": 12, "high": 5, "medium": 1.5, "low": 0.3}   # per kind of risk
 SCORE_CAP = {"critical": 50, "high": 25, "medium": 12, "low": 3}      # per severity tier
 
@@ -37,6 +37,12 @@ def is_evidence(f):
     if f["rule"] == "ISR-S005":
         return f.get("title") == NEW_SIGN_IN   # proven by a session cookie; new cookies alone are worth a look
     return f["rule"] in EVIDENCE_RULES or (f["rule"] in ("ISR-S001", "ISR-S002") and f.get("title") == KEY_LIVE)
+
+
+def secret_agreed(f):
+    """1.1.1: a key two key rules found at the same file:line, made one finding (also_rules, merge_secret_findings). The two
+    backed each other up before, so it is Confirmed as they were (corroborated, accepted only with the owner's yes, as before)."""
+    return f["rule"] in ("ISR-S001", "ISR-S002") and bool(f.get("also_rules"))
 
 
 def _place(f):
@@ -421,7 +427,7 @@ def label_findings(findings, covered=None):
             _no_severity(f, "tip", TIP)
         elif is_evidence(f):
             f["class"], f["label"] = "evidence", CONFIRMED
-        elif backed(f):
+        elif secret_agreed(f) or backed(f):
             f["class"], f["label"] = "corroborated", CONFIRMED
             if f["rule"] == "ISR-T018" and f["severity"] != "critical":   # batch 4: a credential read sent to a chat webhook is how token stealers work
                 f["severity_raised_from"], f["severity"] = f["severity"], "critical"
@@ -558,7 +564,7 @@ def score_line(snap):
 
 
 def label_of(f):
-    return f.get("label") or (CONFIRMED if is_evidence(f) else MAYBE_FINE)
+    return f.get("label") or (CONFIRMED if is_evidence(f) or secret_agreed(f) else MAYBE_FINE)
 
 
 # v0.8.2 (item 9): the owner asked which way is better ("76 · grade F": 76 is a C by number, capped to F by one Confirmed critical)

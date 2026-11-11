@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, ROOT, SCANNERS, CRASH  # noqa: E402
 import isr  # noqa: E402
 import rename_v080 as rn  # noqa: E402  (the dev checkout's folder name holds the old product word)
-from test_isr_bot import fake_key  # noqa: E402
+from test_isr_bot import not_a_fixture  # noqa: E402
 from test_batch5_platform_notes import LINE12, SIGNIN, REL as SIGNIN_REL  # noqa: E402
 from test_v071_owner_calls import HOOK_ALLOW_A  # noqa: E402
 
@@ -31,8 +31,10 @@ OSV_PKG = [{"package": {"name": "leftpad", "version": "1.0.0", "ecosystem": "npm
 
 
 def key(n=0):
-    """A real-looking token, built at test time (no key-shaped string is committed)."""
-    return "ghp_" + fake_key(36, seed=40 + n)
+    """A real-format token, built at test time (no key-shaped string is committed). 1.1.1: from the shared fixture generator but
+    not a fixture (a wrong MAC, not_a_fixture): these tests prove where a real key counts and where it stays silent, which an ISR
+    Bot fixture (never counted anywhere) can't show. Never echoed."""
+    return not_a_fixture("ghp_", 36, seed=40 + n)
 
 
 def gitleaks_hits(hits):

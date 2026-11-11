@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box  # noqa: E402
 import isr  # noqa: E402
 from test_item8_provenance import CLEAN, DRIFT, LEAKS, add, put  # noqa: E402
-from test_isr_bot import fake_key  # noqa: E402
+from test_isr_bot import not_a_fixture  # noqa: E402
 import profiles  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -340,14 +340,15 @@ class SyncIsQuiet(_Churn):
         """Contrast: passes on 7e853c4 too; the content checks on these files are unchanged.
         v0.8.1 (decision, Oct 24): vendor folders are never scored; the key is still found, as a vendor record; the owner's is counted."""
         cache = self.churn[0]
-        put(cache, '{"token": "ghp_' + fake_key(36) + '"}\n')
+        # 1.1.1: a real-format key, not an ISR Bot fixture (an audit never counts a fixture); never echoed
+        put(cache, '{"token": "' + not_a_fixture("ghp_", 36, seed=343) + '"}\n')
         self.scanners(gitleaks=LEAKS % [cache])
         self.audit()
         s = [f for f in self.vs() if f["rule"] == "ISR-S002" and f["where"] == cache + ":1"]
         self.assertEqual(len(s), 1)
         self.assertNotIn(cache + ":1", [f["where"] for f in self.fs()])
         uk = os.path.join(os.path.dirname(self.own), "notes.json")
-        put(uk, '{"token": "ghp_' + fake_key(36) + '"}\n')
+        put(uk, '{"token": "' + not_a_fixture("ghp_", 36, seed=343) + '"}\n')
         self.scanners(gitleaks=LEAKS % [cache, uk])
         self.audit()
         u = [f for f in self.fs() if f["rule"] == "ISR-S002" and f["where"] == uk + ":1"]

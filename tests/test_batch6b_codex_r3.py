@@ -149,8 +149,10 @@ class ExamplesLowerNothing(_Keys):
         p = self.put("projects/app/logs/session.log", '{"text": "token: ghp_FAKE' + "z7" * 16 + '"}\n')   # a log: on the scrub list if real
         self.leak(p, "ghp_FAKE" + "z7" * 16, rule="github-pat")
         fs, _ = self.scan()
-        mine = self.s002(fs, p)
-        self.assertEqual([raw_sev(f) for f in mine], ["critical"])
+        # 1.1.1 (one secret at one file:line counts once): ISR Bot's own key rule finds the fake at the same file:line as gitleaks,
+        # so the finding is its ISR-S001, naming gitleaks in also_rules (was gitleaks' ISR-S002 for the file)
+        mine = [f for f in fs if f["rule"] == "ISR-S001" and f["where"].split(":")[0] == p]
+        self.assertEqual([(f["rule"], f.get("also_rules"), raw_sev(f)) for f in mine], [("ISR-S001", ["ISR-S002"], "critical")])
         self.assertNotIn(p, isr.scrub_targets_from_findings())
         self.assertEqual(isr.revoke_targets([dict(mine[0], severity="critical")]), [])
         self.assertEqual(isr.plain(mine[0])["title"], "Keys that look like examples or checksums")

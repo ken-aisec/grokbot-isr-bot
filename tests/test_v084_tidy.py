@@ -4,17 +4,22 @@ Before: a scrub of 20 chat logs was trimmed to about 6 rows to fit the preview, 
 6 and said nothing about the other 14. Now the preview says how many steps it hides, the saved list has all of them, and apply
 says one line per saved step (done, could not, or not touched and why) and ends with "done N of M".
 
-Tests marked "replay" fail on abea324 at their assertion; the "control" passes there too."""
+Tests marked "replay" fail on abea324 at their assertion; the "control" passes there too.
+
+1.1.1: each planted key is an ISR Bot test fixture (isr.make_isr_fixture), and no assertion echoes one (assert_has_key /
+assert_lacks_key)."""
 import json, os, sys, time, unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box  # noqa: E402
 import isr  # noqa: E402
+from test_isr_bot import assert_has_key, assert_lacks_key  # noqa: E402
 
 
-def fake_key(i):
-    return "gh" + "p_" + ("q7W" + f"{i:03d}") * 6          # GitHub-shaped, built here, never a real key
+def planted(i):
+    """A GitHub-shaped ISR Bot test fixture, built here at test time (never a real key)."""
+    return isr.make_isr_fixture("ghp_", 36, seed=840 + i)
 
 
 def read(p):
@@ -29,7 +34,7 @@ class TrimmedTidyPlan(Box):
         for i in range(n):
             p = os.path.join(d, f"rollout-2026-10-20T08-{i:02d}-00-" + "0123abcd" * 12 + ".jsonl")
             with open(p, "w") as f:
-                f.write('{"role": "user", "text": "use ' + fake_key(i) + ' for the repo"}\n')
+                f.write('{"role": "user", "text": "use ' + planted(i) + ' for the repo"}\n')
             paths.append(p)
         return paths
 
@@ -71,7 +76,8 @@ class TrimmedTidyPlan(Box):
         self.preview(paths)
         done = self.apply(paths)
         texts = [read(p) for p in paths]
-        self.assertEqual([fake_key(i) in t for i, t in enumerate(texts)], [False] * 20)
+        for i, t in enumerate(texts):
+            assert_lacks_key(self, t, planted(i), paths[i])
         self.assertTrue(all(isr.REDACTED in t for t in texts))
         self.assertEqual(len(done), 21, done)
         for p in paths:
@@ -88,9 +94,12 @@ class TrimmedTidyPlan(Box):
             f.write('{"role": "user", "text": "nothing here now"}\n')
         os.makedirs(failing + ".isr-bot-tmp")                           # the scrub can't write its new copy
         done = self.apply(paths, "--skip", ids[skipped])
-        self.assertEqual([fake_key(i) in read(p) for i, p in enumerate(paths) if p not in (skipped, changed, failing)], [False] * 17)
-        self.assertIn(fake_key(2), read(skipped))
-        self.assertIn(fake_key(15), read(failing))
+        cleaned = [(i, p) for i, p in enumerate(paths) if p not in (skipped, changed, failing)]
+        self.assertEqual(len(cleaned), 17)
+        for i, p in cleaned:
+            assert_lacks_key(self, read(p), planted(i), p)
+        assert_has_key(self, read(skipped), planted(2))
+        assert_has_key(self, read(failing), planted(15))
         self.assertEqual(len(done), 21, done)
         line = lambda p: [d for d in done if os.path.basename(p) in d]
         for p in paths:

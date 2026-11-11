@@ -62,12 +62,25 @@ class ListingOrder(_Keys):
         with mock.patch.object(isr, "gitleaks_private", given):
             return self.scan_with(), seen
 
+    def assert_one_finding_per_file(self, got):
+        """1.1.1 (one secret at one file:line counts once): ISR Bot's own key rule finds all six fakes at the same file:line as
+        gitleaks, so there is no folder ISR-S002 (`got`) and each file is one ISR-S001, both of fake0.md's hits in it, naming
+        gitleaks in also_rules: the same set whatever order the folder was listed or the report given in."""
+        self.assertEqual(got, [])
+        d = os.path.join(self.home, self.d)
+        s1 = {os.path.basename(f["where"].split(":")[0]): f for f in self.keys(self.snap()["findings"], d) if f["rule"] == "ISR-S001"}
+        self.assertEqual(sorted(s1), [f"fake{i}.md" for i in range(5)])
+        for n, f in s1.items():
+            self.assertEqual((f["where"].rsplit(":", 1)[1], f.get("also_rules"), f.get("severity_was") or f["severity"], isr.counts(f)),
+                             ("1", ["ISR-S002"], "critical", True), n)
+            self.assertIn(f"({2 if n == 'fake0.md' else 1} in file)", f["evidence"], n)
+
     def test_scanner_report_order(self):   # replay: ab8c7e7 names the files in the report's order
         self.build()
         for name, order in ORDERS.items():
             with self.subTest(order=name):
                 got, _ = self.reported(order)
-                self.assertEqual([f["evidence"] for f in got], [EXPECT])
+                self.assert_one_finding_per_file(got)   # 1.1.1: was [f["evidence"] for f in got] == [EXPECT]
 
     def test_directory_listing_order(self):   # replay: ab8c7e7 names the files in the folder listing's order
         self.assertIn(WALK, FAKE_GITLEAKS)   # the stand-in still lists its folder this way, so the reorders below take effect
@@ -77,7 +90,7 @@ class ListingOrder(_Keys):
         for name, extra in walks.items():
             with self.subTest(listing=name):
                 got = self.scan_with(FAKE_GITLEAKS.replace(WALK, WALK + extra))
-                self.assertEqual([f["evidence"] for f in got], [EXPECT])
+                self.assert_one_finding_per_file(got)   # 1.1.1: was [f["evidence"] for f in got] == [EXPECT]
 
     def test_hits_and_places_are_unchanged(self):   # guard: the order changes nothing found or counted
         self.build()
@@ -89,9 +102,7 @@ class ListingOrder(_Keys):
                 mine = [l for l in seen[0] if str(l.get("File") or "").startswith(d + "/")]
                 self.assertEqual(len(mine), 6)
                 self.assertEqual({(os.path.relpath(l["File"], d), l["StartLine"]) for l in mine}, want)
-                self.assertEqual([(f["where"], f["title"], f.get("severity_was") or f["severity"]) for f in got],
-                                 [(d, "gitleaks: secrets in 5 files under examples", "critical")])
-                self.assertTrue(got[0]["evidence"].startswith("6 hit(s): github-pat at "), got[0]["evidence"])
+                self.assert_one_finding_per_file(got)   # 1.1.1: was one folder ISR-S002, "6 hit(s): github-pat at ..."
 
 
 class LeakOrder(unittest.TestCase):

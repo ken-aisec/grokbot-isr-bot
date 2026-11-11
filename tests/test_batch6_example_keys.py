@@ -205,8 +205,12 @@ class ExampleKeysAreNotSecrets(_Keys):
         fs, notes = self.scan()
         got = self.keys(fs, self.skill)
         self.assertTrue(self.noted_only(got, "critical"), got)
+        # 1.1.1 (one secret at one file:line counts once): ISR Bot's own key rule finds the GitHub and AWS fakes at the same
+        # file:line, so those two hits joined its findings (also_rules) and the folder finding holds the other two
         self.assertEqual([(f["where"], f["title"]) for f in got if f["rule"] == "ISR-S002"],
-                         [(os.path.join(self.skill, "examples"), "gitleaks: secrets in 4 files under examples")])
+                         [(os.path.join(self.skill, "examples"), "gitleaks: secrets in 2 files under examples")])
+        self.assertEqual(sorted((os.path.basename(f["where"].split(":")[0]), f.get("also_rules")) for f in got if f["rule"] == "ISR-S001"),
+                         [("aws.md", ["ISR-S002"]), ("gh.md", ["ISR-S002"])])
         self.assertIn("gitleaks: 4 hit(s) look like example or checksum values; each is scored as any other hit and noted, to check "
                       "(anyone can write a real key that way).", self.snap()["notes"])
 
@@ -269,9 +273,15 @@ class ExampleKeysAreNotSecrets(_Keys):
         self.leak(rp, real, rule="github-pat")
         fs, _ = self.scan()
         s2 = [f for f in self.keys(fs, self.skill) if f["rule"] == "ISR-S002"]
-        self.assertEqual([(f["where"], f["title"], f.get("severity_was") or f["severity"]) for f in s2],
-                         [(os.path.join(self.home, d), "gitleaks: secrets in 6 files under examples", "critical")])   # as 5dcd0a2
-        self.assertNotIn(NOTE, s2[0]["fix"])   # a real one among them: no note
+        # 1.1.1 (one secret at one file:line counts once): ISR Bot's own key rule finds all six at the same file:line as gitleaks,
+        # so each is one finding per file (ISR-S001's) naming gitleaks in also_rules, no folder finding. The fakes still count as
+        # any hit (critical, counted) and are noted; the real one is not
+        self.assertEqual(s2, [])
+        s1 = {os.path.basename(f["where"].split(":")[0]): f for f in self.keys(fs, os.path.join(self.home, d)) if f["rule"] == "ISR-S001"}
+        self.assertEqual(sorted(s1), sorted([f"fake{i}.md" for i in range(5)] + ["real.md"]))
+        for n, f in s1.items():
+            self.assertEqual((f.get("also_rules"), f.get("severity_was") or f["severity"], isr.counts(f)), (["ISR-S002"], "critical", True), n)
+            self.assertEqual(NOTE in f["fix"], n != "real.md", n)
 
     def test_fake_akia_is_noted_and_a_real_one_critical(self):   # replay of fix round 2 (de3b328 left the fake out)
         rules = isr.load_rules()   # fix round 3 (Codex 1): ISR-T011's own title and severity, noted

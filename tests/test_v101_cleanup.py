@@ -7,18 +7,22 @@ project's logs/server.log) was put on the tidy list, and the yes cut the key out
 tidy offers to delete undo folders older than 14 days (prune_undo).
 
 Each box runs a real audit with ISR Bot's own key rule and no scanners. Tests marked "replay" fail on bacd581 at their
-assertion; the "guard" passes there too."""
-import datetime as dt, json, os, random, stat, sys, unittest
+assertion; the "guard" passes there too.
+
+1.1.1: each planted key is an ISR Bot test fixture (isr.make_isr_fixture). An audit scores none of them; it names their files on
+the snapshot's fixture_paths, which the cleanup reads beside the key findings, so a fixture in a chat log is still cleaned. No
+assertion here echoes a planted key (assert_has_key / assert_lacks_key say a masked form only)."""
+import datetime as dt, json, os, stat, sys, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, ROOT  # noqa: E402
 import isr  # noqa: E402
+from test_isr_bot import assert_has_key, assert_lacks_key  # noqa: E402
 
 
-def fake_key(i):
-    """A GitHub-shaped token built here at test time, never a real key."""
-    r = random.Random(1010 + i)
-    return "gh" + "p_" + "".join(r.choice("ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789") for _ in range(36))
+def planted(i):
+    """A GitHub-shaped ISR Bot test fixture, built here at test time (never a real key)."""
+    return isr.make_isr_fixture("ghp_", 36, seed=1010 + i)
 
 
 def read(p):
@@ -30,12 +34,16 @@ class Cleanup(Box):
     def put(self, p, i):
         os.makedirs(os.path.dirname(p), exist_ok=True)
         with open(p, "w") as f:
-            f.write('{"role": "user", "text": "use ' + fake_key(i) + ' for the repo"}\n')
+            f.write('{"role": "user", "text": "use ' + planted(i) + ' for the repo"}\n')
         return p
 
     def keyed(self, p):
-        """The audit flagged this file for a key (so the cleanup has a finding to act on)."""
-        return [f for f in self.snap().get("findings", []) if f["rule"] in ("ISR-S001", "ISR-S002") and f["where"].split(":")[0] == p]
+        """The audit recognized the planted key in this file (so the cleanup has something to act on). 1.1.1: a fixture is no
+        scored finding (none may name this file); the audit names the file on the snapshot's fixture_paths instead."""
+        snap = self.snap()
+        self.assertEqual([f["rule"] for f in snap.get("findings", []) if f["rule"] in ("ISR-S001", "ISR-S002")
+                          and f["where"].split(":")[0] == p], [], "a planted fixture is never a scored key finding")
+        return p in (snap.get("fixture_paths") or [])
 
     def preview(self):
         code, o, _ = self.run_cmd("fix", "--roots", *self.roots)
@@ -84,7 +92,7 @@ class Cleanup(Box):
         self.assertIn(p, self.preview())
         done = self.apply()
         text = read(p).decode()
-        self.assertNotIn(fake_key(5), text)
+        assert_lacks_key(self, text, planted(5))
         self.assertIn(isr.REDACTED, text)
         line = [d for d in done if d.startswith("Removed ") and p in d]
         self.assertEqual(len(line), 1, done)
@@ -112,7 +120,7 @@ class Cleanup(Box):
             done = self.apply()
         finally:
             os.chmod(b, 0o700)
-        self.assertIn(fake_key(6), read(p).decode())
+        assert_has_key(self, read(p), planted(6))   # 1.1.1: the Nov 5 incident line; never echoes the key
         self.assertTrue([d for d in done if d.startswith("Could not scrub_keys") and p in d], done)
 
     def test_the_fix_skill_says_where_the_undo_copy_is(self):
