@@ -244,13 +244,29 @@ class OwnTokenPerHit(v82._Keys):
     def own(self, value):
         p = mock.patch.object(isr, "own_gh_token", return_value=value, create=True); p.start(); self.addCleanup(p.stop)
 
-    def keyfile(self, *values):
-        return self.put(os.path.join(self.ws, "projects", "app", "notes.txt"), "".join(f"KEY_{i}={v}\n" for i, v in enumerate(values)))
+    def keyfile(self, *values, pad=""):
+        return self.put(os.path.join(self.ws, "projects", "app", "notes.txt"), "".join(f"KEY_{i}={v}\n" for i, v in enumerate(values)) + pad)
 
     def one(self, rule, p):
         got = [f for f in self.snap()["findings"] if f["rule"] == rule and f["where"].startswith(p + ":")]
         self.assertEqual(len(got), 1, [(f["rule"], f["where"]) for f in self.snap()["findings"]])
         return got[0]
+
+    def each_gitleaks_finding(self, keys, answers):
+        """1.1.1 (one secret at one file:line counts once): [(rule, finding)] for each way gitleaks' hits on `keys` ((value, its
+        gitleaks rule), one line each) are reported: joined to ISR-S001's finding for the same file:line (a short file both
+        read; also_rules, no ISR-S002 of its own), then gitleaks' own ISR-S002 (a long log past what ISR-S001 reads,
+        v82.PAST_S001). `answers(p)`: TruffleHog's answers for the file."""
+        out = []
+        for pad, rule in (("", "ISR-S001"), (v82.PAST_S001, "ISR-S002")):
+            p = self.keyfile(*[v for v, _ in keys], pad=pad)
+            self.run_scan([h for v, r in keys for h in v82.leaks(p, v, r)], answers(p))
+            f = self.one(rule, p)
+            other = "ISR-S002" if rule == "ISR-S001" else "ISR-S001"
+            self.assertEqual([g["where"] for g in self.snap()["findings"] if g["rule"] == other and g["where"].startswith(p + ":")], [])
+            self.assertEqual(f.get("also_rules"), ["ISR-S002"] if rule == "ISR-S001" else None)
+            out.append((rule, f))
+        return out
 
     def assert_said_beside_the_github_hit(self, f):
         first, _, rest = f["evidence"].partition(";")
@@ -275,19 +291,16 @@ class OwnTokenPerHit(v82._Keys):
     def test_gitleaks_finding_says_it_beside_the_github_hit(self):   # replay (ISR-S002, TruffleHog finds nothing)
         gh, a = v82.pat(11), ant(1)
         self.own(gh)
-        p = self.keyfile(a, gh)
-        self.run_scan(v82.leaks(p, a, "anthropic-api-key") + v82.leaks(p, gh, "github-fine-grained-pat"), [])
-        self.assert_said_beside_the_github_hit(self.one("ISR-S002", p))
+        for rule, f in self.each_gitleaks_finding([(a, "anthropic-api-key"), (gh, "github-fine-grained-pat")], lambda p: []):
+            with self.subTest(rule):
+                self.assert_said_beside_the_github_hit(f)
 
     def test_key_status_answers_say_it_beside_the_github_hit(self):   # replay (key_status_severity)
         gh, a = v82.pat(11), ant(1)
         self.own(gh)
-        p = self.keyfile(a, gh)
-        self.run_scan(v82.leaks(p, a, "anthropic-api-key") + v82.leaks(p, gh, "github-fine-grained-pat"),
-                      [v82.answer(p, 1, "Anthropic", True, a), v82.answer(p, 2, "Github", True, gh)])
-        for rule in ("ISR-S001", "ISR-S002"):
+        for rule, f in self.each_gitleaks_finding([(a, "anthropic-api-key"), (gh, "github-fine-grained-pat")],
+                                                  lambda p: [v82.answer(p, 1, "Anthropic", True, a), v82.answer(p, 2, "Github", True, gh)]):
             with self.subTest(rule):
-                f = self.one(rule, p)
                 self.assertEqual(f["title"], isr.KEY_LIVE)
                 self.assertTrue(f["evidence"].startswith("Anthropic: 1 token"), f["evidence"])
                 self.assert_said_beside_the_github_hit(f)
@@ -295,23 +308,17 @@ class OwnTokenPerHit(v82._Keys):
     def test_an_anthropic_key_is_never_marked_own(self):   # replay (the prefix check beside the fingerprint check)
         a = ant(1)
         self.own(a)                                                     # even when gh's token has the same fingerprint
-        p = self.keyfile(a)
-        self.run_scan(v82.leaks(p, a, "anthropic-api-key"), [v82.answer(p, 1, "Anthropic", True, a)])
-        for rule in ("ISR-S001", "ISR-S002"):
+        for rule, f in self.each_gitleaks_finding([(a, "anthropic-api-key")], lambda p: [v82.answer(p, 1, "Anthropic", True, a)]):
             with self.subTest(rule):
-                f = self.one(rule, p)
                 self.assertNotIn("gh sign-in", f["evidence"])
                 self.assertNotIn("own_token", f)
-        self.assertFalse([k for ks in isr.load_json(isr.state_path("key_status.json"), {})["files"].values() for k in ks if k.get("own_token")])
+                self.assertFalse([k for ks in isr.load_json(isr.state_path("key_status.json"), {})["files"].values() for k in ks if k.get("own_token")])
 
     def test_another_gh_token_marks_nothing(self):   # control
         a = ant(1)
         self.own(v82.pat(99))
-        p = self.keyfile(a)
-        self.run_scan(v82.leaks(p, a, "anthropic-api-key"), [v82.answer(p, 1, "Anthropic", True, a)])
-        for rule in ("ISR-S001", "ISR-S002"):
+        for rule, f in self.each_gitleaks_finding([(a, "anthropic-api-key")], lambda p: [v82.answer(p, 1, "Anthropic", True, a)]):
             with self.subTest(rule):
-                f = self.one(rule, p)
                 self.assertNotIn("gh sign-in", f["evidence"])
                 self.assertNotIn(isr.OWN_FIX, f["fix"])
                 self.assertNotIn("own_token", f)

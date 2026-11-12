@@ -162,27 +162,28 @@ def means_here(cat, ctx, amap=None):
         tools, total = [t["name"] for t in sh["mcp"]["tools"]], sh["mcp"]["count"]   # PR B, Codex round 1 (3): the whole count
         if cat == "mcp" and tools:
             names = ", ".join(tools[:3]) + (f" and {total - len(tools[:3])} more" if total > 3 else "")
-            return (f"This computer has {n(total, 'tool connection', 'tool connections')} ({names}). Every Bot that loads a poisoned "
-                    "tool description follows it, with the logins all your Bots share.")
+            return (f"This computer has {n(total, 'tool connection', 'tool connections')} ({names}). A Bot that loads a poisoned "
+                    "tool description can follow it; which Bot loads which tool isn't checked.")
         ctx = dict(ctx, sites=(sh["browser"] or {}).get("sites") or ctx.get("sites"), secrets=sh["key_files"] or ctx.get("secrets"))
     if cat == "mcp":
         bits = [n(ctx["mcp"], "MCP config", "MCP configs"), n(ctx["plugins"], "plugin file", "plugin files")]
         have = " and ".join(b for b in bits if b) or "MCP connectors"
-        return f"This computer has {have}. Every Bot that loads a poisoned tool description follows it, with the logins all your Bots share."
+        return f"This computer has {have}. A Bot that loads a poisoned tool description can follow it; which Bot loads which tool isn't checked."
     if cat == "hijack":
-        return ("Your Bots read web pages, email and posts that strangers write. Injected text there can steer a Bot, and on a shared "
-                "computer that Bot can reach every login" + (f" (the browser is signed in to {ctx['sites']} sites)." if ctx["sites"] else "."))
+        return ("Your Bots read web pages, email and posts that strangers write. Injected text there can steer a Bot, and that Bot can "
+                "use its own connectors and browser and the shared files it can read (which ones isn't checked).")
     if cat == "supply":
         return (f"Templates add skills ({ctx['skills']} are on this computer now), and Bots install packages on request. "
-                "Anything installed runs with every Bot's access.")
+                "Anything installed runs as the Bot that installed it, with that Bot's access.")
     if cat == "creds":
         extra = f" ISR Bot found {ctx['secrets']} files with live-looking secrets on this computer." if ctx["secrets"] else ""
-        return "Any Bot can read any file on the shared computer, including tokens other tools leave behind." + extra
+        return "Tokens other tools leave behind sit on this computer's shared files; which Bot can actually read each one isn't checked." + extra
     if cat == "browser":
-        return (f"All your Bots share one browser profile" + (f", signed in to {ctx['sites']} sites" if ctx["sites"] else "") +
-                ". A browser-level attack reaches every account at once.")
+        return ("Each Bot's browser sessions are its own (platform context, not observed)" +
+                (f"; browser cookie files on this computer are signed in to {ctx['sites']} sites" if ctx["sites"] else "") +
+                ". Which Bot's browser uses them isn't checked.")
     return ("Your Bots work through AI tools and gateways like this one. A flaw here shows what an attacker can do once an agent "
-            "holds access, which on a shared computer means every login.")
+            "holds access: that Bot's own connectors and whichever shared files it can read.")
 
 
 DO_THIS = {
@@ -190,7 +191,7 @@ DO_THIS = {
     "hijack": "Make sure every Bot that reads outside content has an approval line before it sends, posts or buys.",
     "supply": "Ask ISR Bot to vet any template before you add it, and let the daily watch flag new skills.",
     "creds": "Ask ISR Bot for an audit and clear the secret findings; rotate anything that looks live.",
-    "browser": "Sign the shared browser out of sites no Bot needs; keep AI consoles and admin sites signed out.",
+    "browser": "Sign the Bot browser out of sites no Bot needs; keep AI consoles and admin sites signed out.",
     "platform": "Skim the change; ask ISR Bot for a fresh audit if it touches approvals, routines or connectors.",
 }
 

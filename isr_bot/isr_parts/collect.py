@@ -253,7 +253,7 @@ def cli_credentials(unknown=None):
             unknown.append(p)
         if st and stat.S_ISREG(st.st_mode):
             out.append(finding("ISR-S003", f"CLI credential on the shared computer: {what}", "high", ["ASI03", "AST06"], p, what,
-                               "Expected if a Bot uses this CLI, but every Bot (and anything injected into one) can use it. "
+                               "Expected if a Bot uses this CLI, but any Bot that can read it (and anything injected into one) can use it. "
                                "Keep only the CLIs your Bots need, scope tokens to least privilege, and rotate them; sign out of unused ones."))
     return out
 

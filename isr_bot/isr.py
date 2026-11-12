@@ -11,6 +11,7 @@ Commands
   audit                 full posture audit; writes findings.json and updates state
   daily                 quick audit; prints NO_CHANGES or a compact delta
   report                weekly Markdown report + self-contained HTML dashboard
+  artifacts [--json]    this week's threat report and access map as two attachable Markdown files, from one observation
   baseline              (re)take the integrity baseline without reporting
   fix                   preview, then one-yes cleanup, upgrades, re-vet of changed skills
   diff SKILL            what changed in a skill since it was approved
@@ -25,7 +26,7 @@ if sys.version_info < (3, 8):   # degrade with one plain line, not a traceback (
     sys.exit(3)
 import argparse, bisect, builtins, concurrent.futures, datetime as dt, difflib, errno, functools, gzip, hashlib, heapq, html, json, math, os, platform, re, shutil, signal, stat, subprocess, sys, tempfile, threading, time, traceback
 
-VERSION = "1.0.1"
+VERSION = "1.1.1"
 HERE = os.path.dirname(os.path.realpath(__file__))   # PR A, Codex round 2 (5): the file that runs, through any link to it
 RULES_PATH = os.path.join(HERE, "..", "rules", "text_rules.json")
 SELF_ROOT = os.path.dirname(HERE)
@@ -80,6 +81,9 @@ _isr_part("mask")
 
 
 _isr_part("text")
+
+
+_isr_part("fixture_keys")
 
 
 _isr_part("scoring")
@@ -503,6 +507,15 @@ _isr_part("prepublish")
 
 
 _isr_part("access")
+
+
+_isr_part("observe")
+
+
+_isr_part("mapdiff")
+
+
+_isr_part("artifacts")
 
 
 # ---------------------------------------------------------------- OWASP Top 10 (2021) code review for code your Bots write
@@ -1206,8 +1219,10 @@ def build_parser():
     ic = sub.add_parser("incident"); ic.add_argument("--note")
     cs = sub.add_parser("codescan"); cs.add_argument("path")
     br = sub.add_parser("brief"); br.add_argument("--summary"); br.add_argument("--notes"); br.add_argument("--offline")
-    ax = sub.add_parser("access", help="what every Bot on this computer can reach, and what each Bot said in the roll-call")
+    ax = sub.add_parser("access", help="what this computer's shared files hold, and what each Bot said in the roll-call")
     ax.add_argument("--json", action="store_true", help="the same, as JSON for the Bot (at most 4 KB)")
+    ar = sub.add_parser("artifacts", help="this week's threat report and access map as two Markdown files from one status-only observation")
+    ar.add_argument("--json", action="store_true", help="print the artifacts manifest as JSON")
     return ap
 
 
@@ -1224,7 +1239,7 @@ def main_inner(argv=None):
             "canary": cmd_canary, "rollcall": cmd_rollcall, "prepublish": cmd_prepublish, "incident": cmd_incident,
             "codescan": cmd_codescan, "brief": cmd_brief, "events": cmd_events, "fix": cmd_fix, "accept": cmd_accept, "status": cmd_status,
             "diff": cmd_diff, "exception": cmd_exception, "doctor": cmd_doctor, "quarantine": cmd_quarantine, "uninstall": cmd_uninstall,
-            "auto-allow": cmd_auto_allow, "access": cmd_access}[a.cmd](a)
+            "auto-allow": cmd_auto_allow, "access": cmd_access, "artifacts": cmd_artifacts}[a.cmd](a)
 
 
 if __name__ == "__main__":

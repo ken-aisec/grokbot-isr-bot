@@ -13,7 +13,7 @@ import json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, OSV_DATA  # noqa: E402
 import isr  # noqa: E402
-from test_isr_bot import fake_key  # noqa: E402
+from test_isr_bot import not_a_fixture  # noqa: E402  (1.1.1: a real-format key, not an ISR Bot fixture; never echoed)
 import profiles  # noqa: E402
 
 MAX_WORTH_A_LOOK = 5
@@ -100,7 +100,7 @@ class GateStillCatches(Box):
 
     def key_in(self, rel, silent=False):
         p = os.path.join(self.ws, rel); os.makedirs(os.path.dirname(p), exist_ok=True)
-        open(p, "w").write("token ghp_" + fake_key(36) + "\n")
+        open(p, "w").write("token " + not_a_fixture("ghp_", 36, seed=103) + "\n")
         self.audit()
         if silent:   # v0.8.1: ISR Bot's own trees are never scored or shown
             self.assertFalse([f for f in self.snap()["findings"] + self.snap().get("vendor", []) if rel in f["where"]], rel)

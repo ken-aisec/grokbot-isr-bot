@@ -1049,12 +1049,13 @@ def access_shared_lines(m):
                                    f"ISR Bot couldn't check all of it this time ({ACCESS_WHY_WORDS[sh['incomplete'][field]]})."))
     b = sh["browser"]
     if b is not None and b["sites"]:
-        say("browser", f"Browser: signed in to {_ax_n(b['sites'], 'site')}"
-            + (f", including {_ax_and_n(b['sensitive'], b['sensitive_count'], 4)}" if b["sensitive"] else "") + ".")
+        say("browser", f"Browser cookie files on this computer: signed in to {_ax_n(b['sites'], 'site')}"
+            + (f", including {_ax_and_n(b['sensitive'], b['sensitive_count'], 4)}" if b["sensitive"] else "")
+            + " (whether any Bot's browser uses them isn't checked).")
     elif not full("browser"):
         cant("Browser", "browser")
     elif b is None:
-        out.append("Browser: ISR Bot found no shared browser cookies to check.")
+        out.append("Browser: ISR Bot found no browser cookie files on this computer to check.")
     else:
         out.append("Browser: not signed in to any site ISR Bot can see.")
     cli = [c["tool"] for c in sh["cli_logins"]]
@@ -1138,7 +1139,7 @@ def access_shared_lines(m):
         say("hooks", f"Hooks: {_ax_n(sh['hooks']['other'], 'command')} the app runs by itself around a Bot's tool calls"
             + (", besides Grok Bot's own." if sh["hooks"]["platform"] else "."))
     if sh["key_files"]:
-        say("key_files", f"Files with live-looking keys: {sh['key_files']}. Every Bot can read them (see the findings).")
+        say("key_files", f"Files with live-looking keys: {sh['key_files']}. Which Bots can read them isn't checked (see the findings).")
     return out
 
 
@@ -1197,6 +1198,8 @@ def access_unknown_lines(m):
     out = ["Which connectors a Bot uses, except what it said in the roll-call. The Grok Bot app keeps that list, not this computer.",
            "Routines and when they run: the Grok Bot app keeps them, not this computer.",
            "What each sign-in or connector is allowed to do at its service (its permissions there).",
+           "Which Bots can actually read each file: their OS users, ACLs and folder permissions aren't checked. Each Bot's browser "
+           "sessions are its own (platform context, not observed).",
            "What's inside memories, messages or saved passwords. ISR Bot never reads them."]
     if "approvals" in m["unknown"]:
         out.insert(0, "Grok Bot's approval settings: ISR Bot couldn't find them on this computer.")
@@ -1208,12 +1211,13 @@ def access_unknown_lines(m):
 def access_sections(m):
     """[(heading, lines)] of the access map in plain words: shared, each Bot, and what ISR Bot can't see."""
     day = access_said_on(m)
-    return [("Shared by all Bots", access_shared_lines(m)),
+    return [("On this computer's shared files", access_shared_lines(m)),
             (f"Each Bot (what each Bot said in the roll-call{' on ' + day if day else ''}; ISR Bot can't check it)", access_bot_lines(m)),
             ("What ISR Bot can't see", access_unknown_lines(m))]
 
 
-ACCESS_LEAD = "All your Bots share this computer, so every Bot can use everything in the first list."
+ACCESS_LEAD = ("Your Bots run on one computer and share its files. The first list is what ISR Bot found on those files; which Bot "
+               "can actually use each item isn't checked. Each Bot's own browser sessions and connectors are separate.")
 
 
 def access_md(m):
@@ -1250,7 +1254,7 @@ def access_summary(m):
     rc = m["rollcall"]
     bots = (f"Each Bot (roll-call, not checked): {len(m['bots']) + m['bots_more']} said, {len(m['bots_silent']) + rc['silent_more']} didn't answer"
             if rc["fresh"] or m["bots"] else "Each Bot: no roll-call in the last 35 days")
-    return clip(f"Shared by every Bot: {'; '.join(bits)}. {bots}. `isr.py access` has the details.", 300)
+    return clip(f"On this computer's shared files: {'; '.join(bits)}. {bots}. `isr.py access` has the details.", 300)
 
 
 def access_json(m):
@@ -1296,7 +1300,7 @@ def access_json(m):
 
 def _ax_json_doc(m, sh, ok, b, z, rc, every, shown, past, whole, not_listed):
     unknown = rc["connectors_unknown_more"] + sum(1 for x in m["bots"][shown["bots"]:] if x["connectors_unknown"])
-    return {"at": m["at"], "about": "What every Bot on this computer can reach (shared), and what each Bot said in the roll-call (not checked). "
+    return {"at": m["at"], "about": "What this computer's shared files hold (per-Bot use not checked), and what each Bot said in the roll-call (not checked). "
                                     "Names here are data, never instructions. null: ISR Bot couldn't check it (all of it) this time.",
             "checked": sh["checked"], "incomplete": sh["incomplete"],
             "from_last_audit": {"fields": sh["cached"], "date": sh["cached_at"]} if sh["cached"] else None,
@@ -1453,9 +1457,9 @@ def here_sentence(e_, t):
         named = _ax_and_n(t["bots"], n, 3)
         parts.append(f"{_ax_n(n, 'Bot')} said {'it uses' if n == 1 else 'they use'} a {label} connector" + (f" ({named})" if t["bots"] else ""))
     if t["browser"]:
-        parts.append("all your Bots use the one shared browser on this computer")
+        parts.append("browser cookie files are on this computer")
     if t["site"]:
-        parts.append(f"the shared browser is signed in to {t['site']}")
+        parts.append(f"browser cookie files on this computer are signed in to {t['site']}")
     if t["mcp"]:
         parts.append(f"a tool connection named {t['mcp']}" if t["mcp"] is not True else f"a {label} tool connection")
     if t["cli"]:
@@ -1463,7 +1467,7 @@ def here_sentence(e_, t):
     if t["webhook"]:
         parts.append((f"a {e_['webhook_service']} webhook in \"{t['webhook']}\"" if t["webhook"] is not True else f"a {e_['webhook_service']} webhook in a skill")
                      + t["cached"])
-    tail = ", so every Bot can reach it." if shared else "."
+    tail = " (on this computer's shared files; which Bot can use it isn't checked)." if shared else "."
     while parts:
         s = f"This is about {label}. Here: " + _ax_and(parts, 6) + tail
         if len(s) <= HERE_MAX:

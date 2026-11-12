@@ -1,0 +1,6 @@
+{
+ "about": "Platform context supplied to ISR Bot's developer, not observed by ISR Bot. Shown labelled as such; held to MANIFEST.sha256.",
+ "facts": [
+  {"id": "browser-per-agent", "text": "Real browser sessions are per-agent; the OS filesystem is shared.", "source": "platform context supplied to ISR Bot's developer via the ISR Bot relay", "date": "2026-11-08"}
+ ]
+}

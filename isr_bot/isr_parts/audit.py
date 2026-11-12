@@ -9,6 +9,7 @@ def audit(roots, exports, quick=False):
     SLOW_SCANNERS.clear()
     OWN_TOKEN.clear()
     OWN_TOKEN["on"] = True   # v0.8.2 (item 2): this computer's own gh token is looked up once, when the first secret is found
+    FIXTURE_PATHS.clear()   # 1.1.1: the files this run finds an ISR Bot test fixture in (keep_secret_hit), for the cleanup
     walk_errors = []   # batch 5 PR B, Codex round 2 (3): a folder the scan couldn't list leaves the access map incomplete
     walk_skipped = []   # round 3 (1): so does one it left out (a link, too deep, a folder it never scans)
     inv = collect_inventory(roots, errors=walk_errors, skipped=walk_skipped)
@@ -203,13 +204,14 @@ def audit(roots, exports, quick=False):
         rule = next(r for r in rules["rules"] if r["id"] == SECRET_RULE)
         # batch 6 (B5): the shared content check (secret_at). Fix round 3 (Codex 1, 2): every hit counts, an example-looking one
         # as any other; the finding names a real-looking one first, and gets the example note only when every hit looks like one
-        hits = [(m, secret_at(t, m)[1]) for m in rule["rx"].finditer(t)]
+        # 1.1.1: an ISR Bot test fixture (by construction, keep_secret_hit) is no hit; only its file is noted, for the cleanup
+        hits = [(m, secret_at(t, m)[1]) for m in rule["rx"].finditer(t) if keep_secret_hit(m.group(0), p)]
         if hits:
             i = next((i for i, h in enumerate(hits) if not h[1]), 0)
             m, why = hits[i]
             f = finding("ISR-S001", "Secret stored in a file on the shared computer", secret_severity(p, False), ["ASI03", "LLM02"],
                         f"{p}:{line_of(t, m.start())}", f"{mask(m.group(0))} ({len(hits)} in file)",
-                        "Every Bot can read this file. Revoke the key, delete the file, and use the secure secret request instead.", path=p)
+                        "The file sits on this computer's shared files. Revoke the key, delete the file, and use the secure secret request instead.", path=p)
             # v0.8.2 (items 1, 2): each hit's place and fingerprint (this run only), so its copies count once and the box's own gh
             # token is said; the note goes on after the key is made. A key block's match is its header only: no fingerprint
             f["secret_hits"] = [dict({"file": os.path.abspath(p), "line": line_of(t, h.start())},
@@ -376,6 +378,7 @@ def audit(roots, exports, quick=False):
                                "walk_errors": len(walk_errors), "walk_skipped": len(walk_skipped),   # round 3 (1): and those it left out
                                # batch 6 (KL5): the sign-in files and scheduled-job folders it couldn't look at
                                "cli_unknown": len(cli_unknown), "persist_unknown": sorted(PERSIST_UNKNOWN)}}
+    meta["fixture_paths"] = sorted(FIXTURE_PATHS)   # 1.1.1: paths only (no value, no fingerprint), read by the cleanup
     OWN_TOKEN.clear()
     return fs, meta
 

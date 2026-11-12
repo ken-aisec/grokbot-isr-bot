@@ -5,9 +5,9 @@ import base64, json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, SCANNERS, TH_DONE  # noqa: E402
 import isr  # noqa: E402
-from test_isr_bot import fake_key  # noqa: E402
+from test_isr_bot import fake_key, not_a_fixture, assert_lacks_key  # noqa: E402
 
-KEY = "sk-ant-api03-" + fake_key(80)
+KEY = not_a_fixture("sk-ant-api03-", 80, seed=14)   # 1.1.1: a real-format key (an ISR Bot fixture is never a finding); never echoed
 
 
 def b64(d):
@@ -62,7 +62,8 @@ class GrokCliSignIn(Box):
         self.assertIn("Grok CLI", fs[0]["title"])
         self.assertFalse(isr.counts(fs[0]))
         dump = json.dumps(self.snap())
-        self.assertNotIn(KEY[:20], dump)
+        for part in (KEY[:20], KEY[-20:]):
+            assert_lacks_key(self, dump, part)
         self.assertNotIn(JWT[:30], dump)
 
     def test_other_files_under_grok_still_count(self):

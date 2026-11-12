@@ -9,7 +9,7 @@ import os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box  # noqa: E402
 import isr  # noqa: E402
-from test_isr_bot import fake_key  # noqa: E402
+from test_isr_bot import not_a_fixture  # noqa: E402  (1.1.1: a real-format key, not an ISR Bot fixture; never echoed)
 import profiles  # noqa: E402
 
 FICTION = profiles.PPTX_FICTION
@@ -46,7 +46,8 @@ class OneLinePerRootCause(Box):
 
     def test_keys_are_never_folded(self):
         d = self.skill("keys", {"SKILL.md": "---\nname: keys\ndescription: k.\n---\nNotes.\n",
-                                "a.txt": "token ghp_" + fake_key(36) + "\n", "b.txt": "token ghp_" + fake_key(36) + "\n"})
+                                "a.txt": "token " + not_a_fixture("ghp_", 36, seed=49) + "\n",
+                                "b.txt": "token " + not_a_fixture("ghp_", 36, seed=49) + "\n"})
         self.scanners(); self.audit()
         self.assertEqual(len([f for f in self.at(d) if f["rule"] == "ISR-S001"]), 2)
 

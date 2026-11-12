@@ -7,14 +7,21 @@ fakes here are column-accurate stand-ins for gitleaks (Match redacted, gitleaks'
 the file's bytes) and TruffleHog (Raw, as it reports). Every token is built when the test runs; gh is never run (Box patches
 own_gh_token; these tests patch it with create=True, so on the base the patch is inert).
 
-Tests marked "replay" fail on e9184df (v0.8.1) at their assertion; "control" and "guard" pass there too."""
+Tests marked "replay" fail on e9184df (v0.8.1) at their assertion; "control" and "guard" pass there too.
+
+1.1.1: one secret at one file:line counts once (merge_secret_findings), so a gitleaks hit ISR Bot's own key rule (ISR-S001) also
+finds joins that ISR-S001. These boxes are about gitleaks' own findings, so their files are long logs, past what ISR-S001 reads
+(300,000 bytes, PAST_S001): gitleaks alone finds their keys, as on a box with a long log. The tokens are real-format and not ISR Bot
+fixtures (an ISR Bot fixture is never a finding), and no assertion echoes one (assert_lacks_key)."""
 import hashlib, json, os, sys, unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, TH_DONE  # noqa: E402
-from test_isr_bot import fake_key  # noqa: E402
+from test_isr_bot import fake_key, not_a_fixture, assert_lacks_key  # noqa: E402
 import isr  # noqa: E402
+
+PAST_S001 = "".join(f"output line {i:05d}: an ordinary long tool result, nothing in it\n" for i in range(5000))   # > 300,000 bytes
 
 GITLEAKS = r"""#!/usr/bin/env python3
 import json, sys
@@ -87,7 +94,7 @@ class _Keys(Box):
         d = os.path.join(self.ws, "projects", "app", "logs")
         files = []
         for name, n in (("a.txt", 6), ("b.txt", 5), ("c.txt", 3), ("d.txt", 2)):
-            files.append(self.put(os.path.join(d, name), "".join(f"step {i}: ok\nGH_TOKEN={tok}\n" for i in range(n))))
+            files.append(self.put(os.path.join(d, name), "".join(f"step {i}: ok\nGH_TOKEN={tok}\n" for i in range(n)) + PAST_S001))
         hits = [h for p in files for h in leaks(p, tok, "github-fine-grained-pat")]
         self.assertEqual(len(hits), 16)
         return d, hits, [answer(h["File"], h["StartLine"], "Github", True, tok) for h in hits[:8]]
@@ -96,8 +103,8 @@ class _Keys(Box):
 class SameFindingEvidence(_Keys):
     def tree(self):
         p = os.path.join(self.home, ".cursor", "projects", "p")
-        tok, hexkey = "ghp_" + fake_key(36, seed=3), fake_key(64, alphabet="0123456789abcdef", seed=4)
-        a = self.put(os.path.join(p, "agent-tools", "a.txt"), f"GH_TOKEN={tok}\n")               # tool output (silent, v0.8.1)
+        tok, hexkey = not_a_fixture("ghp_", 36, seed=3), fake_key(64, alphabet="0123456789abcdef", seed=4)
+        a = self.put(os.path.join(p, "agent-tools", "a.txt"), f"GH_TOKEN={tok}\n" + PAST_S001)   # tool output (silent, v0.8.1)
         t = self.put(os.path.join(p, "terminals", "7.txt"), f"API_TOKEN_value={hexkey}\n")       # the owner's
         hits = leaks(a, tok, "github-pat") + leaks(t, hexkey, "generic-api-key")
         return os.path.join(self.home, ".cursor", "projects"), a, t, tok, hexkey, hits
@@ -147,8 +154,8 @@ class DistinctSecrets(_Keys):
     def test_two_tokens_one_copy_each(self):   # replay (item 1)
         p = os.path.join(self.home, ".cursor", "projects", "q", "terminals")
         t1, t2 = pat(21), pat(22)
-        a = self.put(os.path.join(p, "a.txt"), f"x\nGH_TOKEN={t1}\n")
-        b = self.put(os.path.join(p, "b.txt"), f"GH_TOKEN={t2}\n")
+        a = self.put(os.path.join(p, "a.txt"), f"x\nGH_TOKEN={t1}\n" + PAST_S001)
+        b = self.put(os.path.join(p, "b.txt"), f"GH_TOKEN={t2}\n" + PAST_S001)
         hits = leaks(a, t1, "github-fine-grained-pat") + leaks(b, t2, "github-fine-grained-pat")
         g = self.s002(self.run_scan(hits, [answer(a, 2, "Github", True, t1), answer(b, 1, "Github", True, t2)]),
                       os.path.join(self.home, ".cursor", "projects"))
@@ -163,7 +170,7 @@ class DistinctSecrets(_Keys):
             with open(isr.state_path(name)) as f:
                 text = f.read()
             self.assertNotIn(fp, text, name)
-            self.assertNotIn(tok, text, name)
+            assert_lacks_key(self, text, tok, name)
         g = self.s002(self.snap()["findings"], d)
         self.assertFalse([m for m in g["member_hits"] if "fp" in m])
         self.assertEqual(len(g["member_hits"]), 16)
@@ -215,7 +222,7 @@ class U1Fix1(_Keys):
         tok, slack = pat(11), "xoxb-" + fake_key(12, alphabet="0123456789", seed=51) + "-" + fake_key(24, seed=52)
         self.own(tok)
         d, hits, live = self.logs(tok)
-        e = self.put(os.path.join(d, "e.txt"), f"SLACK_BOT_TOKEN={slack}\n")
+        e = self.put(os.path.join(d, "e.txt"), f"SLACK_BOT_TOKEN={slack}\n" + PAST_S001)
         g = self.s002(self.run_scan(hits + leaks(e, slack, "slack-bot-token"), live + [answer(e, 1, "Slack", True, slack)]), d)
         self.assertEqual((g["title"], g.get("own_token")), (isr.KEY_LIVE, "gh"))
         self.assertIn("Turn the key off at its provider", g["fix"])          # edaca62: the own-token fix alone

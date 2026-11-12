@@ -5,9 +5,9 @@ import json, os, stat, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box  # noqa: E402
 import isr  # noqa: E402
-from test_isr_bot import fake_key  # noqa: E402
+from test_isr_bot import not_a_fixture, assert_lacks_key  # noqa: E402
 
-KEY = "sk-ant-api03-" + fake_key(80)
+KEY = not_a_fixture("sk-ant-api03-", 80, seed=13)   # 1.1.1: a real-format key (an ISR Bot fixture is never a finding); never echoed
 
 
 def write(p, text, mode=None):
@@ -31,7 +31,8 @@ class PlatformSecretStore(Box):
         self.assertEqual(fs[0]["label"], isr.PLATFORM)
         self.assertIn("mode 0600", fs[0]["evidence"])
         self.assertFalse(isr.counts(fs[0]))
-        self.assertNotIn(KEY[:20], json.dumps(self.snap()))
+        for part in (KEY[:20], KEY[-20:]):
+            assert_lacks_key(self, json.dumps(self.snap()), part)
 
     def test_a_key_in_another_file_beside_it_still_counts(self):
         write(self.store, "{}", 0o600)

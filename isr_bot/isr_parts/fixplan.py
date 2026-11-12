@@ -26,10 +26,10 @@ REVOKE = [  # gitleaks rule prefix → where the owner turns that key off
 
 # rule → (plain title, why it matters, how to fix, who fixes it: "auto" = the fix handles it)
 PLAIN = {
-    "ISR-S001": ("Keys left in files", "Every Bot can read them and use them.", "Revoke the key at its provider, then delete the file.", "you"),
-    "ISR-S002": ("Keys left in files", "Every Bot can read them and use them.", "Revoke the key at its provider; ISR Bot clears the copies.", "you"),
+    "ISR-S001": ("Keys left in files", "They sit on this computer's shared files; any Bot that can read them can use them.", "Revoke the key at its provider, then delete the file.", "you"),
+    "ISR-S002": ("Keys left in files", "They sit on this computer's shared files; any Bot that can read them can use them.", "Revoke the key at its provider; ISR Bot clears the copies.", "you"),
     "ISR-S003": ("A command-line login is stored on the Bot computer", "Any Bot can act as you with it.", "Tell ISR Bot \"fix it\": one yes keeps it, or sign out of that tool.", "you"),
-    "ISR-S004": ("The shared browser is logged in to sensitive sites", "Every Bot uses the same logins.", "In the Bot browser, sign out of sites no Bot needs.", "you"),
+    "ISR-S004": ("Browser cookie files here are signed in to sensitive sites", "Login cookies sit on this computer's shared files; which Bot can use them isn't checked.", "In the Bot browser, sign out of sites no Bot needs.", "you"),
     "ISR-A001": ("An auto-approve rule is too broad", "Bots can act without asking.", "Settings → General → Auto-review: change it to Ask first.", "you"),
     "ISR-A002": ("Sending or buying is auto-approved", "A tricked Bot could act on it.", "Settings → General → Auto-review: change it to Ask first.", "you"),
     "ISR-A003": ("Bots don't ask before sending or buying", "One bad web page could make a Bot act.", "Settings → General → Auto-review: add Ask-first rules.", "you"),
@@ -73,17 +73,17 @@ KEY_LIVE, KEY_DEAD, KEY_UNSURE, KEY_MAYBE = ("Live key in a file every Bot can r
 
 
 PLAIN_BY_TITLE = {
-    KEY_LIVE: ("Keys that still work are sitting in files", "Every Bot can read them and use them.", "Turn them off at the provider, then tell ISR Bot \"fix it\".", "you"),
+    KEY_LIVE: ("Keys that still work are sitting in files", "They sit on this computer's shared files; any Bot that can read them can use them.", "Turn them off at the provider, then tell ISR Bot \"fix it\".", "you"),
     KEY_DEAD: ("Old key copies (they no longer work)", "Nothing to revoke; they're just clutter.", "Tell ISR Bot \"fix it\" to clear them.", "auto"),
     KEY_UNSURE: ("Keys we couldn't check", "The provider didn't answer, so we can't say if they work.", "If you recognize one, turn it off; otherwise ignore.", "you"),
     KEY_MAYBE: ("Strings that look like keys", "A pattern matched, but no provider confirmed a working key. Usually test data or docs.", "Skim the list; only act if one is a real key.", "you"),
     # DQ-026: visit-only sensitive domains use the cookies title; signed-in sensitive keep the login headline
     "Logged-in browser sessions shared by every Bot": (
-        "The shared browser is logged in to sensitive sites", "Every Bot uses the same logins.",
+        "Browser cookie files here are signed in to sensitive sites", "Login cookies sit on this computer's shared files; which Bot can use them isn't checked.",
         "In the Bot browser, sign out of sites no Bot needs.", "you"),
     "Shared browser cookies visible to every Bot": (
-        "Shared browser cookies (no sensitive sign-in seen)",
-        "Every Bot can see these cookies; visit/analytics cookies are not a login.",
+        "Browser cookie files here (no sensitive sign-in seen)",
+        "Login cookies sit on this computer's shared files; which Bot can use them isn't checked.",
         "Clear cookies for sites no Bot needs.", "you"),
 }
 
@@ -858,13 +858,15 @@ def chat_log_place(p):
 
 def scrub_targets_from_findings():
     """Files ISR Bot flagged for keys that are agent chat or terminal logs in their known folders (chat_log_place), never code,
-    config or a project's own log."""
+    config or a project's own log. 1.1.1: and the files the audit found an ISR Bot test fixture in (the snapshot's fixture_paths,
+    paths only): a fixture is no finding, but one that leaked into a chat log is still cleaned, by the same rules."""
     snap = load_snapshot({"findings": []})
     files = set()
-    for f in snap.get("findings", []):
-        if f["rule"] not in ("ISR-S001", "ISR-S002") or f.get("example"):   # batch 6 fix round 3: an example-looking one is checked, never cleared
-            continue
-        p = f["where"].split(":")[0]
+    places = [f["where"].split(":")[0] for f in snap.get("findings", [])
+              if f["rule"] in ("ISR-S001", "ISR-S002") and not f.get("example")]   # batch 6 fix round 3: an example-looking one is checked, never cleared
+    fixtures = snap.get("fixture_paths")
+    places += [p for p in fixtures if isinstance(p, str) and p.startswith("/")] if isinstance(fixtures, list) else []
+    for p in places:
         cands = [p] if os.path.isfile(p) else ([os.path.join(dp, fn) for dp, _, fns in os.walk(p) for fn in fns] if os.path.isdir(p) else [])
         for c in cands:
             if chat_log_place(c) and os.path.splitext(c)[1].lower() in CHAT_EXT and not any(x in c for x in VENDOR_CODE):

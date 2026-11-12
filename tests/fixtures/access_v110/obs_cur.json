@@ -1,0 +1,199 @@
+{
+ "bots": [
+  {
+   "id_basis": "uuid",
+   "listed": true,
+   "name": "bot-001",
+   "pid": "b-0dbd957052",
+   "said": {
+    "connectors": [
+     "Gmail"
+    ],
+    "connectors_other": 0,
+    "connectors_unknown": null,
+    "routines": 1,
+    "routines_sending": 0,
+    "said_at": "2026-11-07"
+   },
+   "status": "answered"
+  },
+  {
+   "id_basis": "name",
+   "listed": true,
+   "name": "bot-002",
+   "pid": "b-61e3eef9c2",
+   "said": {
+    "connectors": [
+     "Gmail",
+     "Slack"
+    ],
+    "connectors_other": 0,
+    "connectors_unknown": null,
+    "routines": 1,
+    "routines_sending": 0,
+    "said_at": "2026-11-07"
+   },
+   "status": "answered"
+  },
+  {
+   "id_basis": "name",
+   "listed": true,
+   "name": "bot-003 *bold* [x](https://evil.example.invalid/x)",
+   "pid": "b-6ee9098578",
+   "said": null,
+   "status": "silent"
+  }
+ ],
+ "command": "artifacts",
+ "coverage": {
+  "bot_list": "complete",
+  "bots": "complete",
+  "browser": "complete",
+  "cli_files": "complete",
+  "cli_logins": "complete",
+  "hooks": "complete",
+  "key_files": "from the last audit (Nov 7), not observed here",
+  "mcp": "incomplete: something there couldn't be read",
+  "plugins": "complete",
+  "scheduled": "complete",
+  "settings": "complete",
+  "webhooks": "from the last audit (Nov 7), not observed here"
+ },
+ "creds": [
+  {
+   "file": "~/.aws/credentials",
+   "state": "missing"
+  },
+  {
+   "file": "~/.claude/.credentials.json",
+   "state": "missing"
+  },
+  {
+   "file": "~/.codex/auth.json",
+   "mode": "0600",
+   "owned": true,
+   "state": "present"
+  },
+  {
+   "file": "~/.config/gcloud/credentials.db",
+   "state": "missing"
+  },
+  {
+   "file": "~/.config/gh/hosts.yml",
+   "state": "missing"
+  },
+  {
+   "file": "~/.docker/config.json",
+   "state": "missing"
+  },
+  {
+   "file": "~/.git-credentials",
+   "state": "missing"
+  },
+  {
+   "file": "~/.netrc",
+   "owned": true,
+   "state": "link"
+  },
+  {
+   "file": "~/.npmrc",
+   "mode": "0640",
+   "owned": true,
+   "state": "present"
+  }
+ ],
+ "listing": {
+  "profiles": true,
+  "roster": true
+ },
+ "map": {
+  "at": "2026-11-08T10:00:00+00:00",
+  "bots": [],
+  "rollcall": {
+   "at": "2026-11-07",
+   "fresh": true
+  },
+  "shared": {
+   "auto_allow": [],
+   "auto_allow_areas": {},
+   "browser": {
+    "products": [
+     {
+      "id": "gmail",
+      "site": "mail.google.com"
+     }
+    ],
+    "sensitive": [
+     "mail.google.com"
+    ],
+    "sensitive_count": 1,
+    "sites": 3
+   },
+   "cached": [
+    "webhooks",
+    "key_files"
+   ],
+   "cached_at": "2026-11-07",
+   "checked": [
+    "browser",
+    "cli_logins",
+    "settings",
+    "mcp",
+    "plugins",
+    "scheduled",
+    "hooks"
+   ],
+   "cli_count": 1,
+   "cli_logins": [
+    {
+     "file": "~/.codex/auth.json",
+     "tool": "OpenAI Codex CLI login"
+    }
+   ],
+   "from": "now",
+   "hooks": {
+    "other": 0,
+    "platform": 0
+   },
+   "incomplete": {
+    "mcp": "unreadable"
+   },
+   "key_files": 0,
+   "mcp": {
+    "count": 1,
+    "files": 1,
+    "tools": [
+     {
+      "kind": "command",
+      "name": "github"
+     }
+    ]
+   },
+   "platform_logins": [],
+   "plugins": {
+    "added": 0,
+    "grok": 0,
+    "names": []
+   },
+   "runs_programs": "asks first",
+   "scheduled": {
+    "crontab": 0,
+    "system": 0,
+    "systemd": 0
+   },
+   "scope": [
+    "~"
+   ],
+   "settings": "found",
+   "webhook_count": 0,
+   "webhooks": []
+  },
+  "v": 1
+ },
+ "observation_id": "obs-20261108T100000Z",
+ "observed_at": "2026-11-08T10:00:00+00:00",
+ "uid": 1000,
+ "v": 1,
+ "written_at": "2026-11-08T10:00:00+00:00",
+ "written_by_version": "1.1.0"
+}

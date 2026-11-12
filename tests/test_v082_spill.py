@@ -16,7 +16,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box  # noqa: E402
-from test_isr_bot import REAL_GITLEAKS, fake_key  # noqa: E402
+from test_isr_bot import REAL_GITLEAKS, fake_key, assert_lacks_key  # noqa: E402
 import isr  # noqa: E402
 
 SHELL = [("PATH", "/usr/local/bin:/usr/bin:/bin"), ("HOME", "/home/box"), ("SHELL", "/bin/bash"), ("USER", "box"), ("LOGNAME", "box"),
@@ -27,12 +27,13 @@ OTHER = [("EDITOR", "vi"), ("PAGER", "less"), ("TZ", "UTC"), ("COLUMNS", "120"),
 
 
 def pat(seed):
-    """A fine-grained GitHub token's shape, made now (never committed)."""
+    """A fine-grained GitHub token's shape, made now (never committed). 1.1.1: fake_key's body after this prefix is a marked
+    look-alike, not an ISR Bot fixture, so it still counts as a real key here; it is never echoed (assert_lacks_key)."""
     return "github_pat_" + fake_key(82, seed=seed)
 
 
 def oat(seed):
-    """A Claude sign-in token's shape (CLAUDE_CODE_OAUTH_TOKEN), made now."""
+    """A Claude sign-in token's shape (CLAUDE_CODE_OAUTH_TOKEN), made now; a look-alike as pat() is, never echoed."""
     return "sk-ant-oat01-" + fake_key(95, seed=seed)
 
 
@@ -108,7 +109,9 @@ class SpillDump(_Spill):
         self.assertEqual(len(self.s006(self.run_audit())), 1)                    # v0.8.1: no S006
         with open(isr.state_path("last_findings.json")) as f:
             text = f.read()
-        for v in (gh, ot, fp(gh), fp(ot)):
+        for v in (gh, ot):
+            assert_lacks_key(self, text, v)
+        for v in (fp(gh), fp(ot)):
             self.assertNotIn(v, text)
 
     def test_a_terminals_spill_file_is_reached(self):   # replay (item 5: Cursor's terminals folder)
@@ -197,7 +200,9 @@ class U1Fix1(_Spill):
         text = json.dumps(got[0])
         for part in files + ["GH_TOKEN - this computer's own gh token", "CLAUDE_CODE_OAUTH_TOKEN", "30 copies"]:
             self.assertIn(part, text)                                         # edaca62: title, instructions and links only
-        for v in (gh, ot, fp(gh), fp(ot)):
+        for v in (gh, ot):
+            assert_lacks_key(self, o, v)
+        for v in (fp(gh), fp(ot)):
             self.assertNotIn(v, o)
 
 

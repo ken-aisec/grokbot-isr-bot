@@ -3,7 +3,7 @@ import os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box
 import isr  # noqa: E402
-from test_isr_bot import fake_key
+from test_isr_bot import not_a_fixture   # 1.1.1: a real-format key, not an ISR Bot fixture; never echoed
 import profiles
 
 
@@ -15,7 +15,7 @@ def put(path, text):
 
 class NoBlindSpots(Box):
     def keys_found(self, rel):
-        put(os.path.join(self.ws, rel), "token ghp_" + fake_key(36) + "\n")
+        put(os.path.join(self.ws, rel), "token " + not_a_fixture("ghp_", 36, seed=18) + "\n")
         self.scanners(); self.audit()
         return [f for f in self.snap().get("findings", []) if f["rule"] == "ISR-S001" and rel in f["where"]]
 

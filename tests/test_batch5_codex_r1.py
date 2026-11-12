@@ -11,6 +11,7 @@ from test_boxes import Box, ROOT
 import isr  # noqa: E402
 from test_batch4_codex_review3 import Folder, History, HEAD, HOOK, ev, vet_json
 from test_batch5_platform_notes import _SignIn, SIGNIN, LINE12, REL
+from test_isr_bot import not_a_fixture
 import golden_split as gs
 import rename_v080 as rn
 
@@ -170,7 +171,7 @@ class EscapedSchemeSeparators(History):
 
 # ---------------------------------------------------------------- 5: a counted platform finding is the owner's, everywhere
 class CountedPlatformSecret(_SignIn):
-    KEY = "ghp_" + "Fq7Kx2Lm9Pn4Rs8Tv1Wy3Za6Bc5De0Gh2Jk4"
+    KEY = not_a_fixture("ghp_", 36, seed=173)   # 1.1.1: a real-format key built at test time (not an ISR Bot fixture); never echoed
 
     def setUp(self):
         super().setUp()

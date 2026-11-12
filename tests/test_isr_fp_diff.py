@@ -7,7 +7,7 @@ import builtins, json, os, shutil, stat, sys, tempfile, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import Box, temp_home  # noqa: E402
-from test_isr_bot import fake_key  # noqa: E402
+from test_isr_bot import fake_key, assert_lacks_key  # noqa: E402
 import isr  # noqa: E402
 
 OWNER_RULE = "Read-only public X reads through the built-in X connector are always fine"   # the owner's own words, character for character
@@ -238,10 +238,10 @@ class RuleChanges(_Daily):
         out = self.daily()
         chg = self.changes(out)
         self.assertEqual(len(chg["rules"]["allow_added"]), 1)
-        self.assertNotIn(token, out)
+        assert_lacks_key(self, out, token)
         for fn in ("rules_snapshot.json", "access_map.json"):
             with open(os.path.join(os.environ["ISR_BOT_HOME"], "state", fn)) as f:
-                self.assertNotIn(token, f.read(), fn)
+                assert_lacks_key(self, f.read(), token, fn)
 
     def test_an_unreadable_settings_file_is_not_all_rules_removed(self):   # replay (767b34e: no rules_not_compared)
         self.start()

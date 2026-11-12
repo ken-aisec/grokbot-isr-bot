@@ -374,6 +374,10 @@ def run_audit_locked(args, quick):
         fs = sort_findings(fs)
     if not quick and "SkillSpector and husk" not in STAGE_FAILED:
         fs = roll_builtin(fs, meta, meta["notes"])
+    # 1.1.1: one secret at one file:line counts once, while the hits still have their fingerprints (owner_gate drops them). When
+    # gitleaks gave no answer this run, last run's merged findings keep its vote
+    voted = ((load_snapshot({}) or {}).get("findings") or []) if quick or "gitleaks (keys in files)" in STAGE_FAILED else []
+    fs = merge_secret_findings(fs, meta.get("key_status"), voted)
     fs, vendor = owner_gate(fs, meta)   # v0.8.1 (§3.3 item 1): the one gate; only the owner's findings go on to be scored
     fs = split_facts(platform_owned(fs))
     for f in fs:
@@ -418,6 +422,8 @@ def run_audit_locked(args, quick):
         snapshot["stages_partial"] = list(STAGE_PARTIAL)
     if meta.get("checks_not_run"):   # 1.0.1 (U2): scanners this run couldn't use; only when there are any
         snapshot["checks_not_run"] = list(meta["checks_not_run"])
+    if meta.get("fixture_paths"):   # 1.1.1: files holding an ISR Bot test fixture (paths only), so the cleanup still finds them
+        snapshot["fixture_paths"] = list(meta["fixture_paths"])
     snapshot["vendor"] = mask_stored(vendor)   # v0.8.1 (§3.5): never scored; the platform-notes count and `isr.py breakdown` read them
     # PR A, Codex round 2 (6): critical or high findings a daily run had no room to name stay owed while they are open, whatever
     # run comes next (cmd_daily names them and clears them)
