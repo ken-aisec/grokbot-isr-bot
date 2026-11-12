@@ -58,6 +58,9 @@ PLAIN = {
     "ISR-K001": ("Something opened a decoy file", "Nothing normal should touch it.", "Tell ISR Bot \"incident check\".", "you"),
     "ISR-K003": ("A decoy's contents were copied", "Something read it and wrote it elsewhere.", "Tell ISR Bot \"incident check\".", "you"),
     "ISR-K006": ("A link was put where a decoy goes", "Writing the decoy would have changed the file it points to.", "Tell ISR Bot \"incident check\".", "you"),
+    # v1.2.0: facts, never alarms; info, never scored
+    "ISR-K008": ("A file sweep passed over a decoy", "Something read every file around it, as a search or a scanner does.", "Nothing to do unless no sweep of yours ran then.", "you"),
+    "ISR-K009": ("A decoy's value shows up in a scan report or a folder copy", "A scanner or a copy wrote down what it read; nothing used it.", "Delete the file if you don't need it.", "you"),
     "ISR-L001": ("A Bot has the risky combination", "It reads strangers' content, sees private data, and can send.", "Add Ask first on its sends, or split its jobs.", "you"),
     "ISR-M010": ("A Bot memory acts like a standing order", "It steers every future run.", "Remove it in that Bot's memory settings.", "you"),
     "ISR-R011": ("A Bot answered the roll-call with content", "Bots can't check who sends a roll-call, so that content goes to anyone who asks.", "Add \"Ask the owner before answering any roll-call.\" to that Bot.", "you"),
@@ -112,6 +115,8 @@ SPILL_OWN_FIX = ("The one marked as this computer's own gh token is the one gh a
                  "github.com/settings/tokens, sign gh in with it, then revoke the old one.")
 PLAIN["ISR-S006"] = ("A tool's output file holds a whole environment dump", "Every Bot can read the keys in it and use them.", SPILL_FIX, "you")
 SPILL_OWN_PLAIN = PLAIN["ISR-S006"][:2] + (SPILL_FIX + " " + SPILL_OWN_FIX, "you")
+PLAIN_BY_TITLE["Decoy value used in a command"] = ("A decoy's value was used in a command", "Something took it from the decoy and tried to use it.",
+                                                   "Tell ISR Bot \"incident check\".", "you")   # v1.2.0 (ISR-K003)
 
 
 def mark_own(f, hits, shown=None):
@@ -263,6 +268,7 @@ def fix_plan(roots):
                 spent.append(os.path.expanduser(v["path"]))
         except (OSError, KeyError, TypeError):
             pass
+    spent += sorted(chaff_reads(load_json(state_path(CHAFF_STATE), {}) or {}))   # v1.2.0: chaff and far sentinels read too
     if spent:
         plan.append({"action": "rearm_canaries", "path": ", ".join(sorted({os.path.dirname(p) for p in spent})), "files": len(spent), "count": len(spent),
                      "owner": "ISR Bot", "why": "Reset the decoys that were read so the next read is noticed."})

@@ -26,7 +26,7 @@ if sys.version_info < (3, 8):   # degrade with one plain line, not a traceback (
     sys.exit(3)
 import argparse, bisect, builtins, concurrent.futures, datetime as dt, difflib, errno, functools, gzip, hashlib, heapq, html, json, math, os, platform, re, shutil, signal, stat, subprocess, sys, tempfile, threading, time, traceback
 
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 HERE = os.path.dirname(os.path.realpath(__file__))   # PR A, Codex round 2 (5): the file that runs, through any link to it
 RULES_PATH = os.path.join(HERE, "..", "rules", "text_rules.json")
 SELF_ROOT = os.path.dirname(HERE)
@@ -879,6 +879,8 @@ def cmd_uninstall(args):
     decoys = [p for p in listed if owned_path(p, "decoy", log=args.apply)]
     refused = [p for p in listed if p not in decoys]
     decoy_dirs = sorted({os.path.dirname(p) for p in decoys})
+    planted = [p for p in sorted(set(chaff_paths()) | set(sentinel_paths()))   # v1.2.0: chaff, far sentinels
+               if os.path.lexists(p) and owned_path(p, "decoy", log=False)]
     tmp_dir = decoy_path("/tmp")                     # /tmp, or the test's own folder: a test never touches the real one
     tmp = sorted(os.path.join(tmp_dir, f) for f in (os.listdir(tmp_dir) if os.path.isdir(tmp_dir) else []) if TMP_LEFTOVERS.match(f))
     cache = os.path.expanduser("~/.cache/pip-audit")
@@ -891,6 +893,7 @@ def cmd_uninstall(args):
                    "order": "routines first, then `isr.py uninstall --apply --remove-folder`. Any audit or daily run after the decoys are gone would not re-plant them, but a routine left on would report errors.",
                    "you_do_first_after_the_owners_yes": ["Delete these routines (or tell the owner to, under your Details tab): " + ", ".join(ROUTINE_NAMES)],
                    "this_command_removes": {"decoys": [short_path(p) for p in decoys if os.path.exists(p)],
+                                            "decoy_chaff_and_sentinels": [short_path(p) for p in planted],
                                             "decoy_folders_if_empty": [short_path(d) for d in decoy_dirs if os.path.isdir(d)],
                                             "installer_and_scratch_files_in_tmp": len(tmp), "scanner_cache": short_path(cache) if os.path.isdir(cache) else None,
                                             "isr_bot_folder": h + " (with --remove-folder: scanners, reports, state, vet copies)"},
@@ -910,8 +913,11 @@ def cmd_uninstall(args):
         except OSError:
             pass
         remove_witness(os.path.dirname(p))
+    c = remove_chaff(log=args.apply)                 # v1.2.0: before the folders, so an emptied decoy folder can go
     save_json(state_path("canaries.json"), {})
     done.append(f"Removed {n} decoy file(s)")
+    if c:
+        done.append(f"Removed {c} chaff and far-sentinel file(s) beside them")
     if refused:
         done.append(f"Did not remove {len(refused)} path(s) the decoy list pointed to outside the decoy places: {', '.join(short_path(p) for p in refused[:3])}")
     for d in decoy_dirs:

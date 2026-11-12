@@ -7,7 +7,7 @@ description: Remove ISR Bot and everything it put on this computer, after one ye
 
 1. Run `python3 /workspace/isr-bot/app/isr_bot/isr.py uninstall`. It is a preview and removes nothing. Its JSON lists what will go and what only the owner can do.
 2. Post ONE message, at most 10 lines:
-   - **I'll remove:** my routines (three, plus the roll-call reminder if it was switched on), the three decoy files (and their folders if empty), my installer and scratch files in /tmp, my scanner cache, and /workspace/isr-bot with the scanners, reports and state.
+   - **I'll remove:** my routines (three, plus the roll-call reminder if it was switched on), the three decoy files with the chaff files beside them and the two far-sentinel folders (and their folders if empty), my installer and scratch files in /tmp, my scanner cache, and /workspace/isr-bot with the scanners, reports and state.
    - **In quarantine:** if `quarantined_skills` has names, list them and ask whether to put any back first. Whatever stays in quarantine is deleted with the folder.
    - **Only you:** the `only_the_owner_can` lines, in plain words. Say the Ask-first rules are worth keeping.
    - **Not touched:** your other Bots, your own skills, and anything I didn't create.
@@ -16,7 +16,7 @@ description: Remove ISR Bot and everything it put on this computer, after one ye
    - Restore any quarantined skill the owner asked for: `isr.py quarantine --restore <name>`.
    - Delete the four ISR Bot routines. If you can't, tell the owner to delete them under your Details tab, and wait until they say it's done.
    - Run `isr.py uninstall --apply --remove-folder`.
-   - Check: `ls /workspace/isr-bot` should fail, and none of the three decoy paths should exist. Check with `test -e <path>`, not by opening anything.
+   - Check: `ls /workspace/isr-bot` should fail, and none of the decoy, chaff or sentinel paths the preview listed should exist. Check with `test -e <path>`, not by opening anything. Any ISR-K008 or ISR-K009 line (a sweep over a decoy, a decoy value only in a scan report or folder copy) is info and goes with the state; a scan report the owner saved stays theirs.
 4. Reply in at most 4 lines: what was removed, anything that was left and why, and the last step that is the owner's: "To remove me completely, right-click ISR Bot in the sidebar and choose Delete."
 
 ## Never

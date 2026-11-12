@@ -178,10 +178,16 @@ def owned_path(p, kind, log=True):
             ok = _under(rp, {os.path.realpath(r) for r in user_skill_roots()}, strict=True) and _under(n, user_skill_roots(), strict=True)
         elif kind == "decoy":
             allowed = decoy_places() | {os.path.normpath(os.path.expanduser(x)) for x in OLD_CANARY_PATHS}
+            far = set(sentinel_paths())   # v1.2.0: the chaff beside a decoy and the far sentinels are decoy files too
             if os.path.basename(n) == WITNESS:   # the witness beside a decoy (batch 2)
                 allowed = {os.path.join(os.path.dirname(x), WITNESS) for x in allowed}
+            else:
+                allowed |= set(chaff_paths()) | far
             d = os.path.dirname(n)
             ok = n in allowed and not os.path.islink(d) and os.path.realpath(d) == os.path.join(os.path.realpath(os.path.dirname(d)), os.path.basename(d))
+            if ok and n in far:   # a sentinel sits two folders down: the one above it can't be a link either
+                up = os.path.dirname(d)
+                ok = not os.path.islink(up) and os.path.realpath(up) == os.path.join(os.path.realpath(os.path.dirname(up)), os.path.basename(up))
         elif kind == "workspace-skill":   # DQ-021: a skill copy in the workspace that two engines flag; never platform or ISR Bot folders
             ws, h = os.path.realpath(os.path.dirname(home())), os.path.realpath(home())
             ok = rp == n and _under(rp, {ws}, strict=True) and not _under(rp, {h}) and not _under(rp, {os.path.realpath(x) for x in PLATFORM_SKILL_DIRS()}) \

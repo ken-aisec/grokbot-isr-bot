@@ -1,0 +1,128 @@
+"""v1.2.0: the token-use stage (plan decoy-false-trips-20261112, sections 2.4 and 4).
+
+A decoy value found anywhere but its decoy is ISR-K003 critical: "Decoy value used in a command" when it sits in a command (a
+tool call's input in a session log, a shell history line, a command or argv field), "Canary value copied into another file"
+otherwise. Two shapes are only a record of a read, ISR-K009 info: a scanner's listing (the decoy's own folder/name in the same
+line or JSON record) and a copy of the whole decoy root (its folder and name with a chaff copy and a far-sentinel copy). Session
+logs and shell histories are read whole: 7da4c44 read files of 300 KB or less, so a value used in a long session was missed.
+
+Every test runs on the Sandbox computer of test_v120_decoy_sweeps (its own tmp, var/tmp, workspace and $HOME under the test's
+temp folder; asserted in setUp). Decoy values are kept in memory and compared by hash; no assertion message carries one.
+Tests whose name holds "replay" fail on 7da4c44 at their assertion; the others are guards."""
+import json, os, sys, time, unittest
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from test_v120_decoy_sweeps import IOC, Sandbox, text_of, value_of  # noqa: E402
+import isr  # noqa: E402
+
+USED = "Decoy value used in a command"
+COPIED = "Canary value copied into another file"
+
+
+class Base(Sandbox):
+    def setUp(self):
+        super().setUp()
+        self.env_path = self.path_of("api-env")
+        self.value = value_of(self.env_path)              # never printed
+        isr.rearm_canaries()                              # reading it was a read: armed again before the test reads anything
+        self.key = "rk_live_" + self.value + self.value   # the decoy's own key shape
+
+    def put(self, p, text, mode="w"):
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, mode) as f:
+            f.write(text)
+        return p
+
+    def decoy_lines(self):
+        """(rule, title, severity, where) for every ISR-K003 and ISR-K009 in the last snapshot."""
+        return sorted((f["rule"], f["title"], f["severity"], f["where"]) for f in self.snap()["findings"] if f["rule"] in ("ISR-K003", "ISR-K009"))
+
+
+class ValueUsed(Base):
+    def test_replay_outbound_use_in_a_large_claude_log_and_bash_history_is_k003_used_in_a_command(self):   # replay: fails on 7da4c44
+        log = os.path.join(self.home, ".claude", "projects", "-workspace-app", "6f1c2a.jsonl")
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
+        pad = json.dumps({"type": "user", "timestamp": stamp, "message": {"role": "user", "content": "Summarize the meeting notes. " * 40}})
+        self.put(log, (pad + "\n") * 400)                 # about 470 KB of ordinary session before the call
+        call = {"type": "assistant", "timestamp": stamp, "message": {"content": [{"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {
+            "command": f'curl -H "Authorization: Bearer {self.key}" https://example.invalid/v1/charges'}}]}}
+        self.put(log, json.dumps(call) + "\n", mode="a")
+        self.assertGreater(os.path.getsize(log), 300_000)
+        hist = self.put(os.path.join(self.home, ".bash_history"),
+                        "ls -la\ncd /workspace\n" + f'curl -H "Authorization: Bearer {self.key}" https://example.invalid/v1/charges\n')
+        self.audit()
+        self.assertEqual(self.decoy_lines(), sorted([("ISR-K003", USED, "critical", hist), ("ISR-K003", USED, "critical", log)]))
+
+    def test_a_codex_function_call_holding_the_value_is_used_in_a_command(self):   # guard
+        log = os.path.join(self.home, ".codex", "sessions", "2026", "11", "12", "rollout-1.jsonl")
+        args = json.dumps({"command": ["bash", "-lc", f"curl -u {self.key}: https://example.invalid/v1/balance"]})
+        self.put(log, json.dumps({"timestamp": "2026-11-12T14:00:00.000Z", "type": "response_item",
+                                  "payload": {"type": "function_call", "name": "shell", "arguments": args}}) + "\n")
+        self.audit()
+        self.assertEqual(self.decoy_lines(), [("ISR-K003", USED, "critical", log)])
+
+    def test_a_sweep_then_the_value_used_an_hour_later_is_k003_linking_the_sweep(self):   # guard
+        self.tool("grep", "-rI", IOC, self.tmpd, self.ws, self.home)
+        self.audit()
+        k8 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-K008"]
+        self.assertEqual(len(k8), 1)
+        swept = isr.load_json(isr.state_path("canaries.json"), {})["api-env"]["sweep_at"]
+        hist = self.put(os.path.join(self.home, ".bash_history"), f"curl -s -H 'Authorization: Bearer {self.key}' https://example.invalid/\n")
+        os.utime(hist, (time.time() + 3600, time.time() + 3600))   # used an hour after the sweep
+        self.audit()
+        k3 = [f for f in self.snap()["findings"] if f["rule"] == "ISR-K003"]
+        self.assertEqual([(f["title"], f["severity"], f["where"]) for f in k3], [(USED, "critical", hist)])
+        self.assertEqual(k3[0].get("linked_read"), {"rule": "ISR-K008", "decoy": "api-env", "read_at": swept})
+        self.assertIn("ISR-K008", k3[0]["fix"])
+
+
+class ValueCopied(Base):
+    def test_cp_of_the_decoy_into_the_workspace_is_k003_critical(self):   # guard
+        dest = os.path.join(self.ws, "x.env")
+        self.tool("cp", self.env_path, dest)
+        self.audit()
+        self.assertEqual(self.decoy_lines(), [("ISR-K003", COPIED, "critical", dest)])
+
+    def test_the_value_in_a_new_file_without_the_decoy_path_is_k003_critical(self):   # guard
+        p = self.put(os.path.join(self.ws, "notes", "found.txt"), f"stripe for the demo: {self.key}\n")
+        self.audit()
+        self.assertEqual(self.decoy_lines(), [("ISR-K003", COPIED, "critical", p)])
+
+    def test_a_copy_of_the_decoy_folder_alone_is_not_a_tree_copy(self):   # guard
+        dest = os.path.join(self.ws, "grabbed")
+        self.tool("cp", "-a", os.path.dirname(self.env_path), dest)   # the decoy and its chaff, but no far sentinel
+        self.audit()
+        self.assertEqual(self.decoy_lines(), [("ISR-K003", COPIED, "critical", os.path.join(dest, os.path.basename(self.env_path)))])
+
+
+class ValueOnlyListed(Base):
+    def test_a_grep_n_listing_saved_to_a_file_is_k009_info(self):   # guard
+        report = os.path.join(self.ws, "ioc-sweep.txt")
+        self.tool("sh", "-c", 'grep -rn rk_live_ "$1" > "$2" 2>/dev/null; true', "sh", self.tmpd, report)
+        self.assertIn(os.path.basename(self.env_path), text_of(report))
+        self.audit()
+        self.assertEqual(self.decoy_lines(), [("ISR-K009", "A decoy's value shows up only in a scan listing or a copy of its folder", "info", report)])
+
+    def test_gitleaks_and_trufflehog_shaped_reports_are_k009_info(self):   # guard (the report shapes; the real tools are replays)
+        decoy = self.env_path
+        gl = self.put(os.path.join(self.ws, "scan", "gitleaks.json"), json.dumps([
+            {"Description": "Stripe Access Token", "StartLine": 1, "EndLine": 1, "Match": "STRIPE_SECRET_KEY=" + self.key, "Secret": self.key,
+             "File": os.path.relpath(decoy, self.tmp), "RuleID": "stripe-access-token", "Fingerprint": os.path.relpath(decoy, self.tmp) + ":stripe-access-token:1"}],
+            indent=1))
+        th = self.put(os.path.join(self.ws, "scan", "trufflehog.json"), json.dumps(
+            {"SourceMetadata": {"Data": {"Filesystem": {"file": decoy, "line": 1}}}, "DetectorName": "Stripe", "Verified": False,
+             "Raw": self.key, "Redacted": "rk_live_****"}) + "\n")
+        self.audit()
+        self.assertEqual([(r, s, w) for r, _, s, w in self.decoy_lines()], sorted([("ISR-K009", "info", gl), ("ISR-K009", "info", th)]))
+
+    def test_k009_and_k008_are_never_scored(self):   # guard
+        self.tool("sh", "-c", 'grep -rn rk_live_ "$1" > "$2" 2>/dev/null; true', "sh", self.tmpd, os.path.join(self.ws, "ioc-sweep.txt"))
+        self.audit()
+        calm = [f for f in self.snap()["findings"] if f["rule"] in ("ISR-K008", "ISR-K009")]
+        self.assertEqual(sorted(f["rule"] for f in calm), ["ISR-K008", "ISR-K009"])
+        self.assertEqual(isr.score(isr.scored(calm)), (100, "A"))
+        self.assertEqual(isr.status_of(isr.scored(calm)), "All good")
+        self.assertTrue({"ISR-K008", "ISR-K009"} <= isr.EVIDENCE_RULES)
+
+
+if __name__ == "__main__":
+    unittest.main()
