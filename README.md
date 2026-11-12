@@ -73,7 +73,7 @@ installer itself and everything it installs are pinned:
 COMMIT=<full commit ID from the release page>
 mkdir -p /workspace/isr-bot && cd /workspace/isr-bot
 curl -fsSLO "https://raw.githubusercontent.com/ken-aisec/grokbot-isr-bot/$COMMIT/scripts/install.sh"
-head -40 install.sh && bash install.sh v1.1.1 "$COMMIT"
+head -40 install.sh && bash install.sh v1.2.0 "$COMMIT"
 bash /workspace/isr-bot/app/scripts/install.sh --scanners
 python3 /workspace/isr-bot/app/isr_bot/isr.py audit
 ```
@@ -165,7 +165,7 @@ Release drill, dev dry-run (precision plan item 8): before each release the dev 
 
 ## Tests
 
-`make test` runs more than 2200 tests: seeded malicious skills must be caught, clean and defensive text must not be flagged, hostile feed content must not execute in the brief, and every feature has its own test.
+`make test` runs more than 2400 tests: seeded malicious skills must be caught, clean and defensive text must not be flagged, hostile feed content must not execute in the brief, and every feature has its own test.
 
 ## License
 

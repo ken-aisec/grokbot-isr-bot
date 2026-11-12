@@ -94,7 +94,7 @@ class Sandbox(Box):
         for a in argv[1:]:
             if a.startswith("/"):
                 self.assertTrue(os.path.realpath(a) == top or os.path.realpath(a).startswith(top + os.sep), "a tool was pointed outside the sandbox")
-        return subprocess.run(list(argv), capture_output=True, timeout=300, cwd=self.tmp, **kw)
+        return subprocess.run(list(argv), capture_output=not ("stdout" in kw or "stderr" in kw), timeout=300, cwd=self.tmp, **kw)
 
     def judged(self):
         """The decoy findings of one recording check, as (rule, severity, where)."""

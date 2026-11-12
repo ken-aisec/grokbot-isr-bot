@@ -20,6 +20,9 @@ under "Fixed in batch 7d (the last must-fix items)" right below, with its test f
 - The session-log evidence names a log when any of its tool calls is stamped within 2 minutes; it reads `"timestamp"` from Claude and Codex records. A Grok session log that stamps its tool calls another way is not named.
 - The bounded walk of a decoy root counts files read since they were last written (atime past mtime) within ±180 s; it stops at 2 s or 20,000 entries and says so (`walk_complete` in the ledger). A sweep of a very large /tmp may still be judged by its far sentinel alone.
 - Copies of the old registry made before the upgrade (raw values with each decoy's path in the same record) are judged by the 1.2.0 rules from the first run: a listing shape, so ISR-K009 info, not ISR-K003.
+- A decoy read still pending at the upgrade stays ISR-K001, because there was no chaff beside the decoy before that read. The update path audits right after install, so the window is minutes.
+- A decoy value written into a non-log file over 300 KB isn't seen. Use of the value is still seen in session logs and shell histories.
+- A hand-edited registry value that isn't 16 hex characters is matched raw and judged "copy".
 
 ## 1.1.1: test fixtures and one secret per file:line
 

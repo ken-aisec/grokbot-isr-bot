@@ -1097,15 +1097,12 @@ def _in_command(node, w, inside=False):
 
 
 def _record_of(node, w):
-    """The smallest JSON object holding w: one finding of a scanner's report, or one log record."""
-    if isinstance(node, (dict, list)):
-        for v in (node.values() if isinstance(node, dict) else node):
-            r = _record_of(v, w)
-            if r is not None:
-                return r
-        if isinstance(node, dict) and w in json.dumps(node).lower():
-            return node
-    return None
+    """The top-level JSON record holding w: a JSON line's own value, or, for a whole-document report (gitleaks' array), the
+    element that holds it. Never a smaller object inside it: TruffleHog keeps the value again in a nested SecretParts, away from
+    the path in SourceMetadata, and the record is still one finding of a scanner's report (F1)."""
+    if isinstance(node, list):
+        return next((x for x in node if w in json.dumps(x).lower()), None)
+    return node if isinstance(node, dict) and w in json.dumps(node).lower() else None
 
 
 def value_use(text, a, b, then, whole=None):
@@ -1213,29 +1210,68 @@ def decoy_value_findings(text, path, index=None):
     return value_findings(path, value_kinds(text, path, index)) if index else []
 
 
+# v1.2.0 (rev1 R8, Codex C4): what the stream found in each log, so an unchanged log is not read again on every run. It holds
+# {"index": stream_index_key, "files": {path: [dev, ino, size, mtime_ns, [[decoy name, kind, line], ...]]}}: paths, names and
+# line numbers only, never a value. Named canaries* so backup.sh leaves it out; it can always be rebuilt.
+STREAM_CACHE = "canaries-stream.json"
+
+
+def stream_index_key(index):
+    """sha256 of the sorted (prefix, hash) list the check looks for, or None. A new or past value changes it."""
+    pairs = sorted({(pre, c[2]) for pre, cands in index["hashed"].items() for c in cands})
+    return hashlib.sha256(json.dumps(pairs).encode()).hexdigest() if pairs else None
+
+
 def decoy_stream_findings(index):
     """K003 or K009 for decoy values in the agent session logs and shell histories, each read whole, line by line: no size cap,
-    so a value used in a long session is still found. A shell history line is always a command."""
+    so a value used in a long session is still found. A shell history line is always a command. A log whose stat matches the
+    cache (STREAM_CACHE) is not opened again: what it held is reused, so its finding stays open. A changed or new log is read
+    whole; a new index drops the cache."""
     if not index:
         return []
     pres = [x.encode() for x in index["hashed"]]
     raws = [t.encode("utf-8", "replace") for _, t, _ in index["raw"]]
-    found = {}
+    key, cache_path = stream_index_key(index), state_path(STREAM_CACHE)
+    cache = (load_json_regular(cache_path, {}) or {}) if key else {}
+    seen = cache.get("files") if cache.get("index") == key and isinstance(cache.get("files"), dict) else {}
+    found, files, fresh = {}, {}, {}
+    hist_paths = {os.path.expanduser(h) for h in HISTORY_FILES}
+    for p, hist in [(p, False) for p in session_logs()] + [(p, True) for p in sorted(hist_paths) if os.path.isfile(p)]:
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        mark, old = [st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns], seen.get(p)
+        if isinstance(old, list) and len(old) == 5 and old[:4] == mark and isinstance(old[4], list):
+            files[p] = old                                # unchanged since the last run: not opened
+            found[p] = [tuple(x) for x in old[4] if isinstance(x, list) and len(x) == 3]
+        else:
+            files[p], fresh[p] = mark + [[]], hist
 
     def lines():
-        for p in session_logs():
+        for p in [p for p, hist in fresh.items() if not hist]:
             try:
                 with open(p, "rb") as f:
                     for n, line in enumerate(f, 1):
                         yield p, n, line, False
             except OSError:
+                files.pop(p, None)                        # read again next run
                 continue
-        for p, n, line in history_lines():
+        for p, n, line in history_lines(only={p for p, hist in fresh.items() if hist}):
             yield p, n, line, True
     for p, n, line, hist in lines():
         low = line.lower()
         if any(x in low for x in pres) or any(x in line for x in raws):
-            found.setdefault(p, []).extend(value_kinds(line.decode("utf-8", "replace"), p, index, history=hist, line_no=n))
+            kinds = value_kinds(line.decode("utf-8", "replace"), p, index, history=hist, line_no=n)
+            found.setdefault(p, []).extend(kinds)
+            if p in files:
+                files[p][4] += [list(k) for k in kinds]
+    if key and (cache.get("index"), cache.get("files")) != (key, files):
+        try:
+            os.close(os.open(cache_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600))   # 0600 from the start
+        except FileExistsError:
+            pass
+        save_json_keep_mode(cache_path, {"index": key, "files": files})
     out = []
     for p in sorted(found):
         out += value_findings(p, found[p])

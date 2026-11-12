@@ -42,12 +42,13 @@ HISTORY_RULES = [
 ]
 
 
-def history_lines():
+def history_lines(only=None):
     """(file, line number, raw line as bytes) for every line of every shell history file, read whole and streamed. v1.2.0: the
-    decoy-value check reads all of it, not only what history_findings hasn't seen yet."""
+    decoy-value check reads all of it, not only what history_findings hasn't seen yet; with `only`, just those files (the
+    ones that changed since its last run)."""
     for hf in HISTORY_FILES:
         p = os.path.expanduser(hf)
-        if not os.path.isfile(p):
+        if not os.path.isfile(p) or (only is not None and p not in only):
             continue
         try:
             with open(p, "rb") as f:

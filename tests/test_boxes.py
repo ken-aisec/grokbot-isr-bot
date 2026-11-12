@@ -1165,7 +1165,8 @@ class MainBoxLessons(Box):
         self.assertFalse(os.path.exists(os.path.join(self.ws, ".archive")))        # an emptied decoy folder goes
         self.assertTrue(os.path.exists(keep))                                      # a folder with someone else's file stays
         self.assertTrue(all(os.path.exists(v["path"]) and v["path"].startswith(os.environ["ISR_BOT_DECOY_ROOT"]) for v in after.values()))
-        self.assertEqual({n: v["token"] for n, v in after.items()}, {n: v["token"] for n, v in before.items()})
+        for n in before:   # 1.2.0: no raw value is kept; the old value is still recognised, by its hash
+            self.assertIn(before[n]["token_sha256"], [x["token_sha256"] for x in after[n]["past_tokens"]])
         self.assertEqual([f for f in self.snap()["findings"] if f["rule"].startswith("ISR-K")], [])
         self.assertFalse(any("Moved" in n for n in self.audit()["notes"]))         # once
 
@@ -1182,7 +1183,8 @@ class MainBoxLessons(Box):
         r = self.audit()
         self.assertTrue(os.path.exists(reg["api-env"]["path"]))
         self.assertTrue(any("put back" in n for n in r["notes"]), r["notes"])
-        self.assertEqual(isr.load_json(isr.state_path("canaries.json"), {})["api-env"]["token"], reg["api-env"]["token"])
+        reg_after = isr.load_json(isr.state_path("canaries.json"), {})   # 1.2.0: no raw value is kept; the old one, by its hash
+        self.assertIn(reg["api-env"]["token_sha256"], [x["token_sha256"] for x in reg_after["api-env"]["past_tokens"]])
 
     def test_a_link_where_a_decoy_goes_is_never_written_through(self):
         """The decoys live in /tmp and /var/tmp, where every Bot can write. v0.6.6 opened the decoy path and wrote to it, so a link

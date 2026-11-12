@@ -7,19 +7,19 @@ description: First-run setup for ISR Bot. After the owner's one yes it installs 
 
 The owner's first yes covers everything in sections 1 to 4: the install, the six scanners, the three decoys and the three routines. Your first message listed all of it. Do not ask again for any of those; work through them and post a short progress line every minute or two. If the owner left something out ("no decoys", "no routines"), skip that part and say so at the end.
 
-Say once, up front: "Setup only writes inside /workspace/isr-bot, plus three decoy files in /tmp and /var/tmp."
+Say once, up front: "Setup only writes inside /workspace/isr-bot, plus three decoy files, with harmless chaff and sentinel files beside them, in /tmp and /var/tmp."
 
 ## 1. Install the pinned release
-Skip this section only if `/workspace/isr-bot/app/isr_bot/isr.py` already exists and `python3 -I /workspace/isr-bot/app/isr_bot/isr.py --version` exits 0 and its whole output is exactly 1.1.1 (run it with `-I`, exactly as written). Any other exit code or any other output (SELF-CHECK FAILED, an error, extra words) means install it again.
+Skip this section only if `/workspace/isr-bot/app/isr_bot/isr.py` already exists and `python3 -I /workspace/isr-bot/app/isr_bot/isr.py --version` exits 0 and its whole output is exactly 1.2.0 (run it with `-I`, exactly as written). Any other exit code or any other output (SELF-CHECK FAILED, an error, extra words) means install it again.
 ```bash
 mkdir -p /workspace/isr-bot && cd /workspace/isr-bot
 # With the commit ID from your Setup check memory (preferred: the script itself is then pinned):
 curl -fsSLO https://raw.githubusercontent.com/ken-aisec/grokbot-isr-bot/<COMMIT>/scripts/install.sh
 # Only if no memory gives a commit ID, by tag (not pinned; tell the owner so):
-# curl -fsSLO https://raw.githubusercontent.com/ken-aisec/grokbot-isr-bot/v1.1.1/scripts/install.sh
+# curl -fsSLO https://raw.githubusercontent.com/ken-aisec/grokbot-isr-bot/v1.2.0/scripts/install.sh
 head -40 install.sh
 ```
-Download by commit whenever you have the commit ID. Show the user those 40 lines (they are everything that runs), then run `bash install.sh v1.1.1`, adding the commit ID if your Setup check memory gives one. ISR Bot never pipes a script into a shell, and neither should anything it vets. If it prints MANIFEST CHECK FAILED or COMMIT CHECK FAILED, stop and report it.
+Download by commit whenever you have the commit ID. Show the user those 40 lines (they are everything that runs), then run `bash install.sh v1.2.0`, adding the commit ID if your Setup check memory gives one. ISR Bot never pipes a script into a shell, and neither should anything it vets. If it prints MANIFEST CHECK FAILED or COMMIT CHECK FAILED, stop and report it.
 
 Your skills are the SKILL.md files under `/workspace/isr-bot/app/skills/`. Don't copy them anywhere; read them from there, so they always match the installed release. They are not slash commands: the owner asks in plain words.
 
