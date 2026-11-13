@@ -9,11 +9,12 @@ def remember_events(new):
     store = mask_stored(load_json(state_path("events.json"), []))   # batch 4 (R11): evidence an older version stored unmasked
     known = {e["key"] for e in store}
     for f in new:
-        if f["key"] in BULK_KEYS:
+        day = str(f["key"]).startswith(SWEEP_KEY)   # v1.2.0: ISR-K008 is one line per day, updated by each sweep that day
+        if f["key"] in BULK_KEYS or day:
             old = [e for e in store if e["key"] == f["key"]]
             n = sum(e.get("times", 1) for e in old) + 1
             store = [e for e in store if e["key"] != f["key"]]
-            ev = f["evidence"] + (f"; {n} times in the last {EVENT_DAYS} days" if n > 1 else "")
+            ev = f["evidence"] + ((f"; {n} sweeps that day" if day else f"; {n} times in the last {EVENT_DAYS} days") if n > 1 else "")
             store.append(dict(f, evidence=ev[:220], times=n, first_seen=now()))
         elif f["key"] not in known:
             store.append(dict(f, first_seen=now()))
@@ -39,6 +40,22 @@ HISTORY_RULES = [
     ("ISR-H008", "New persistence added", "medium", ["ASI10"], r"(crontab\s+(-\s*$|-r|[^\s-])|>>\s*~?/?\.(bashrc|profile|zshrc)|systemctl\s+(--user\s+)?enable)"),
     ("ISR-H009", "Environment dumped to a file or the network", "high", ["ASI03"], r"\b(env|printenv|set)\s*(>|\|\s*(curl|nc|tee))"),
 ]
+
+
+def history_lines(only=None):
+    """(file, line number, raw line as bytes) for every line of every shell history file, read whole and streamed. v1.2.0: the
+    decoy-value check reads all of it, not only what history_findings hasn't seen yet; with `only`, just those files (the
+    ones that changed since its last run)."""
+    for hf in HISTORY_FILES:
+        p = os.path.expanduser(hf)
+        if not os.path.isfile(p) or (only is not None and p not in only):
+            continue
+        try:
+            with open(p, "rb") as f:
+                for n, line in enumerate(f, 1):
+                    yield p, n, line
+        except OSError:
+            continue
 
 
 def history_findings(rules):

@@ -6,7 +6,7 @@ changed: a decoy value written into a backup folder still alarms.
 Every test runs on a stand-in home under a temp folder with a FAKE decoy value; the real home and backups are never read.
 The test marked "replay" fails on 660fa29 at its assertion (no scripts/backup.sh: the run exits non-zero); the "guard" tests
 cover what must not change."""
-import json, os, re, shutil, stat, subprocess, sys, tempfile, unittest
+import hashlib, json, os, re, shutil, stat, subprocess, sys, tempfile, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_boxes import ROOT  # noqa: E402  (test_boxes puts isr_bot on sys.path)
@@ -159,6 +159,54 @@ class K003StillAlarms(StandIn):
         f = isr.canary_copies(isr.read_text(leak, limit=300_000), leak)
         self.assertEqual((f or {}).get("rule"), "ISR-K003")
         self.assertEqual(f["severity"], "critical")
+
+
+class V120RegistryHoldsNoValue(unittest.TestCase):
+    """v1.2.0: the registry keeps each decoy value's salted hash, never the value, so no copy of ISR Bot's home (by scripts/backup.sh
+    or by hand, state/canaries* included) holds a decoy value or trips ISR-K003. Real decoys are planted under this test's own
+    decoy root; the values are compared by hash only."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="k003-v120-")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.home = os.path.join(self.tmp, "isr-bot")
+        p = mock.patch.dict(os.environ, {"ISR_BOT_HOME": self.home, "ISR_BOT_DECOY_ROOT": os.path.join(self.tmp, "decoys"),
+                                         "HOME": os.path.join(self.tmp, "home")})
+        p.start(); self.addCleanup(p.stop)
+        for rel, text in (("app/isr_bot/isr.py", "print('stand-in app')\n"), ("reports/2026-W46.md", "# Weekly report\n")):
+            os.makedirs(os.path.dirname(os.path.join(self.home, rel)), exist_ok=True)
+            with open(os.path.join(self.home, rel), "w") as f:
+                f.write(text)
+        isr.plant_canaries()
+        reg = isr.load_json(isr.state_path("canaries.json"), {})
+        self.assertTrue(reg and all(v["path"].startswith(os.path.join(self.tmp, "decoys") + os.sep) for v in reg.values()))   # sandboxed
+        self.digests = set()
+        for v in reg.values():
+            with open(v["path"]) as f:
+                m = re.search(r"rk_live_([0-9a-f]{16})|AKIA([0-9A-F]{16})|,([0-9a-f]{16})@", f.read())
+            self.digests.add(hashlib.sha256(next(g for g in m.groups() if g).lower().encode()).hexdigest())
+
+    def holds_a_value(self, root):
+        """The relative paths under root with a 16-hex window (any case) whose hash is a decoy value's."""
+        out = []
+        for rel, b in tree(root).items():
+            low = b.decode("utf-8", "replace").lower() if isinstance(b, bytes) else ""
+            if any(hashlib.sha256(w.encode()).hexdigest() in self.digests for w in re.findall(r"(?=([0-9a-f]{16}))", low)):
+                out.append(rel)
+        return out
+
+    def test_a_manual_copy_and_the_backup_script_of_a_v120_home_trip_no_k003(self):   # guard
+        manual = os.path.join(self.tmp, "backups", "isr-bot-manual-copy")
+        shutil.copytree(self.home, manual, symlinks=True)
+        self.assertTrue(os.path.isfile(os.path.join(manual, "state", "canaries.json")))
+        self.assertEqual(self.holds_a_value(manual), [])
+        self.assertEqual(k003_hits(manual), {})
+        dest = os.path.join(self.tmp, "backups", "isr-bot-pre-upgrade-20261112-1200")
+        r = subprocess.run(["bash", SCRIPT, dest], env=dict(os.environ), capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("state/decoy_layout.json", tree(dest))
+        self.assertEqual(self.holds_a_value(dest), [])
+        self.assertEqual(k003_hits(dest), {})
 
 
 class ScriptText(unittest.TestCase):

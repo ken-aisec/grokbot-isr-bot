@@ -1,6 +1,6 @@
 # ISR Bot access map 2026-W45
 
-Observation `obs-20261108T100000Z` · observed 2026-11-08T10:00:00+00:00 UTC (Nov 8 5:00 AM ET) · ISR Bot 1.1.1 · scope: ~
+Observation `obs-20261108T100000Z` · observed 2026-11-08T10:00:00+00:00 UTC (Nov 8 5:00 AM ET) · ISR Bot 1.2.0 · scope: ~
 
 Both ISR Bot artifacts this week come from this one observation. Read-only: ISR Bot changed nothing.
 

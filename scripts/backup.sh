@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ISR Bot backup before an upgrade. Copies ISR Bot's own folders and leaves the decoy registry out.
 # Usage: bash backup.sh [dest]   default dest /workspace/backups/isr-bot-pre-upgrade-<UTC YYYYmmdd-HHMM>
-# state/canaries* holds the decoy values: a copy of it anywhere else is a decoy value copied into another file, and the
-# decoy-copy check (ISR-K003) rightly calls that critical. So the backup never keeps it; after a restore, plant fresh decoys.
+# state/canaries* holds salted hashes since 1.2.0 (raw values before). It is still left out, so an older install's copy never
+# carries a raw value. So the backup never keeps it; after a restore, plant fresh decoys.
 set -euo pipefail
 ISR_HOME="${ISR_BOT_HOME:-/workspace/isr-bot}"
 DEST="${1:-/workspace/backups/isr-bot-pre-upgrade-$(date -u +%Y%m%d-%H%M)}"
@@ -30,5 +30,5 @@ fi
 chmod 0700 -- "$DEST"
 DONE=1
 echo "Backup made at $DEST (only you can open it): ${COPIED[*]:-nothing was there to copy}."
-echo "Left out: state/canaries* (the decoy registry). It holds the decoy values, so a copy of it in a backup trips ISR-K003, a critical alarm."
+echo "Left out: state/canaries* (the decoy registry). It holds salted hashes since 1.2.0 (raw values before). It is still left out, so an older install's copy never carries a raw value (a copy of one trips ISR-K003, a critical alarm)."
 echo "After a restore, make fresh decoys: python3 -I $ISR_HOME/app/isr_bot/isr.py canary plant"

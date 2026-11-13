@@ -152,11 +152,11 @@ def cmd_incident(args):
     _, net, _ = run(["ss", "-tunp"], 20)
     _, cron, _ = run(["crontab", "-l"], 10)
     _, timers, _ = run(["systemctl", "--user", "list-timers", "--all", "--no-pager"], 10)
-    recent = []
+    recent, planted = [], decoy_files()   # v1.2.0: the decoys, their chaff and the far sentinels
     for r in [os.path.expanduser("~"), "/workspace"]:
         for p in walk([r], max_depth=6):
             try:
-                if os.path.getmtime(p) > dt.datetime.now().timestamp() - 86400 and p not in canary_paths():
+                if os.path.getmtime(p) > dt.datetime.now().timestamp() - 86400 and p not in planted:
                     recent.append(p)
             except OSError:
                 pass

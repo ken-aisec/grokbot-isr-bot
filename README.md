@@ -41,6 +41,17 @@ Skills are checked by ISR Bot's own rules, [NVIDIA SkillSpector](https://github.
 
 One decoy read is critical. Several read together are high, unless the platform's file backup proves it was the reader: next to each decoy sits a witness file no Bot can read (mode 000; opening it or faking its read time leaves a trace a Bot can't undo), and only when every witness was read within 2 seconds of its decoy is the sweep the one calm "read by the platform's backup" line. A read during a recorded ISR Bot run is high too, because any Bot can write that record. `canary plant` checks that each decoy folder records reads and names any that doesn't.
 
+Since 1.2.0 a search over every file no longer sets the alarm off. Beside each decoy sit two dull, readable chaff files, and each decoy root (/tmp and /var/tmp) has a far sentinel folder two plain folders down. All are armed like a decoy, with names picked at random per install. A decoy read is a sweep only when the chaff beside it was read within 5 seconds and something far from it was read within 3 minutes: a far sentinel, or at least 100 other files in 3 folders of the same root (a stat-only look, at most 2 seconds and 20,000 entries). A sweep is one calm info line per day (ISR-K008), logged and shown in the weekly report, never in the daily alarms and never scored. `cat` of a decoy, or of its whole folder, is still critical.
+
+The teeth are in the value. The registry keeps each decoy value only as a salted hash, and every audit looks for the values in the files it reads, in the agent session logs (Claude, Codex, Grok) and in the shell histories, whole, with no size limit. A value in a command is critical "Decoy value used in a command" (ISR-K003), even after a sweep, and the finding names that sweep. A value written into any other file is critical too, except a scanner's listing that names the decoy's own path in the same line or record, or a copy of the whole decoy root (tar, `cp -a`): those are one info line (ISR-K009). Every decoy read, sweep and listing names the session logs that made a tool call within 2 minutes of it, by path only.
+
+What this can't do, stated plainly:
+1. A thief who hides the theft inside a real full sweep gets the info line. Using the value is still critical.
+2. With relatime, a second read within 24 hours of a read no run has judged yet doesn't move the read time, so a read right after a sweep is invisible until the value is used. This was true before 1.2.0 too.
+3. A thief and a real sweep within 5 seconds of each other are read as one sweep. That is rare.
+4. Taking the value out without leaving a file, log or history line (a browser request, say) is not seen.
+5. On a noatime mount reads aren't recorded at all (`canary plant` says so); copy, use, deletion and link checks still work.
+
 ## Status and score
 
 Every audit leads with a status. One Confirmed critical is "Act now" and grade F; one Confirmed high is "Check this week" and at most C; otherwise "All good". The 0–100 number is the trend line under it, so a decoy read shows as 88/F, not 88/B. Lines that only warn against a risky step or quote one as an example ("Never run `curl … | bash`") are kept as "Warning or example text": listed in `breakdown`, vet and the dashboard, never scored and never in the daily. When such a line names a credential path, an exfiltration host, a pipe-to-shell or an upload, vet still shows it at medium and says "Install with changes" at best, and `revet` won't re-approve a changed skill because of it.
@@ -62,7 +73,7 @@ installer itself and everything it installs are pinned:
 COMMIT=<full commit ID from the release page>
 mkdir -p /workspace/isr-bot && cd /workspace/isr-bot
 curl -fsSLO "https://raw.githubusercontent.com/ken-aisec/grokbot-isr-bot/$COMMIT/scripts/install.sh"
-head -40 install.sh && bash install.sh v1.1.1 "$COMMIT"
+head -40 install.sh && bash install.sh v1.2.0 "$COMMIT"
 bash /workspace/isr-bot/app/scripts/install.sh --scanners
 python3 /workspace/isr-bot/app/isr_bot/isr.py audit
 ```
@@ -149,12 +160,12 @@ Release drill, dev dry-run (precision plan item 8): before each release the dev 
 - The backup's proof rests on ISR Bot's own state: a Bot that rewrites the decoy registry and recreates a witness can fake it, and a Bot running as root looks like the backup. A backup that runs as the Bots' user can't prove itself, so its reads stay high.
 - The self-check catches accidental or careless changes to ISR Bot's own files, not a Bot that rewrites both the code and the manifest. Every Bot runs as the same user on the same computer, so nothing stops one from editing both.
 - A tampered platform file goes unseen: if a Bot hides an instruction in Grok Bot's, Codex's or Claude's own folders, ISR Bot still reads it with its rules, but a hit there only adds one to the unscored platform notes count (`isr.py breakdown` lists it), and the platform still loads that file. The same holds for a key pasted into a chat transcript or tool cache, committed to ISR Bot's dev tree, or sitting in one of ISR Bot's own backups (`/workspace/backups/isr-bot-*`): not scored and not listed.
-- The decoy names are random per install, which stops generic snooping, not a targeted attacker who reads ISR Bot's state first.
+- The decoy names are random per install, which stops generic snooping, not a targeted attacker who reads ISR Bot's state first. Such an attacker can also read the chaff and sentinel names and wrap a read in a fake sweep; that turns a read into an info line, never a use of the value (see "Tripwires").
 - Grok Bot is in beta and changes weekly. The brief watches xAI's security docs for changes.
 
 ## Tests
 
-`make test` runs more than 2200 tests: seeded malicious skills must be caught, clean and defensive text must not be flagged, hostile feed content must not execute in the brief, and every feature has its own test.
+`make test` runs more than 2400 tests: seeded malicious skills must be caught, clean and defensive text must not be flagged, hostile feed content must not execute in the brief, and every feature has its own test.
 
 ## License
 

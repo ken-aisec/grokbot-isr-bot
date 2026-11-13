@@ -47,17 +47,200 @@ def random_decoy_path(name, spec):
 
 
 def decoy_layout(renew=()):
-    """This install's decoy places, one per spec, picked at random the first time and kept. `renew` names get new places."""
+    """This install's decoy places, one per spec, picked at random the first time and kept. `renew` names get new places.
+    v1.2.0: the chaff names, far-sentinel folders and value salt kept in the same file (LAYOUT_EXTRAS) are carried over as they are."""
     path = state_path("decoy_layout.json")
-    lay = load_json(path, {}) or {}
-    lay = {n: v for n, v in lay.items() if valid_layout_path(n, v)} if isinstance(lay, dict) else {}
+    raw = load_json(path, {}) or {}
+    raw = raw if isinstance(raw, dict) else {}
+    lay = {n: v for n, v in raw.items() if valid_layout_path(n, v)}
     changed = False
     for name, spec, _ in CANARY_SPECS:
         if name not in lay or name in renew:
             lay[name] = random_decoy_path(name, spec); changed = True
     if changed:
-        save_json(path, lay)
+        save_json(path, dict(lay, **{k: raw[k] for k in LAYOUT_EXTRAS if k in raw}))
     return lay
+
+
+# v1.2.0: chaff and far sentinels. A same-user sweep (grep -r, a key scanner, tar, an indexer) reads every file in a decoy's folder
+# and far beyond it; a Bot that goes for the decoy opens the decoy. Two dull, readable files beside each decoy (chaff) and one
+# plain folder two levels down in each decoy root (the far sentinel) are armed like a decoy, so a sweep moves their read times
+# too. Their names are picked at random per install and kept in decoy_layout.json; nothing in them matches a key rule.
+LAYOUT_EXTRAS = ("chaff", "sentinels", "salt")
+CHAFF_STEMS = ("defaults", "index", "readme", "settings", "sample", "manifest", "notes")
+CHAFF_TEXT = {".csv": "id,label,updated\n1,sample row,2025-01-01\n", ".bak": "# settings backup\noutput = json\n",
+              ".env": "LOG_LEVEL=info\nTZ=UTC\n", ".txt": "Index of exported files.\n"}
+SENTINEL_DIRS = ("build", "jobs", "runs", "work", "logs", "data", "session", "spool")
+SENTINEL_FILES = (("notes.txt", "Scratch notes.\n"), ("settings.env", "LOG_LEVEL=info\n"))
+CHAFF_STATE = "canaries-chaff.json"   # each chaff and sentinel file as armed: {path: {kind, atime, ino, ctime_ns, planted_ts}}
+_CHAFF_NAME = re.compile(r"^[a-z]+-[0-9a-f]{4}\.[a-z0-9]+$")
+_SENTINEL_REL = re.compile(r"^[a-z]+-[0-9a-f]{4}/[a-z]+-[0-9a-f]{4}$")
+
+
+def layout_extras(create=False):
+    """(chaff names per decoy, far-sentinel folder per decoy root, value salt) for this install. An entry a Bot edited into
+    something else is dropped, so the layout can never name a file outside the decoy folders. create: pick what is missing."""
+    import secrets as _s
+    path = state_path("decoy_layout.json")
+    raw = load_json(path, {}) or {}
+    raw = raw if isinstance(raw, dict) else {}
+    specs = {n: s for n, s, _ in CANARY_SPECS}
+    got = raw.get("chaff") if isinstance(raw.get("chaff"), dict) else {}
+    chaff = {n: [x for x in v if isinstance(x, str) and _CHAFF_NAME.match(x)][:2] for n, v in got.items()
+             if n in specs and isinstance(v, list)}
+    got = raw.get("sentinels") if isinstance(raw.get("sentinels"), dict) else {}
+    bases = {_spec_base(s) for s in specs.values()}
+    sent = {b: r for b, r in got.items() if b in bases and isinstance(r, str) and _SENTINEL_REL.match(r)}
+    salt = raw.get("salt") if isinstance(raw.get("salt"), str) and re.fullmatch(r"[0-9a-f]{32}", raw["salt"]) else None
+    if not create:
+        return chaff, sent, salt
+    changed = False
+    for n, spec in specs.items():
+        if len(chaff.get(n, [])) < 2:
+            a, b = _s.SystemRandom().sample(CHAFF_STEMS, 2)
+            chaff[n] = [f"{a}-{_s.token_hex(2)}{os.path.splitext(spec)[1]}", f"{b}-{_s.token_hex(2)}.txt"]; changed = True
+    for b in sorted(bases):
+        if b not in sent:
+            x, y = _s.SystemRandom().sample(SENTINEL_DIRS, 2)
+            sent[b] = f"{x}-{_s.token_hex(2)}/{y}-{_s.token_hex(2)}"; changed = True
+    if not salt:
+        salt = _s.token_hex(16); changed = True
+    if changed:
+        lay = {n: v for n, v in raw.items() if valid_layout_path(n, v)}
+        save_json(path, dict(lay, chaff=chaff, sentinels=sent, salt=salt))
+    return chaff, sent, salt
+
+
+def chaff_paths():
+    """{chaff file: decoy name}: the chaff beside each decoy's own random place."""
+    lay = load_json(state_path("decoy_layout.json"), {}) or {}
+    lay = {n: v for n, v in lay.items() if valid_layout_path(n, v)} if isinstance(lay, dict) else {}
+    chaff, _, _ = layout_extras()
+    return {os.path.normpath(os.path.join(os.path.dirname(decoy_path(lay[n])), x)): n for n, xs in chaff.items() if n in lay for x in xs}
+
+
+def sentinel_paths():
+    """{far sentinel file: its decoy root (the spec's /tmp or /var/tmp)}."""
+    _, sent, _ = layout_extras()
+    return {os.path.normpath(os.path.join(decoy_path(b), rel, fn)): b for b, rel in sent.items() for fn, _ in SENTINEL_FILES}
+
+
+def decoy_files():
+    """Every file ISR Bot plants as a tripwire: the decoys, the chaff beside them and the far sentinels. Never read as a key file."""
+    return canary_paths() | set(chaff_paths()) | set(sentinel_paths())
+
+
+def plant_chaff(refused=None):
+    """Write the chaff beside each decoy that is there, and the far sentinel in each decoy root that holds one, where it is missing
+    or isn't the file ISR Bot armed (a read leaves it alone). A link where one goes is refused, as for a decoy (ISR-K006).
+    Returns (chaff written, sentinel files written)."""
+    reg = load_json(state_path("canaries.json"), {}) or {}
+    if not reg:
+        return 0, 0
+    lay = decoy_layout()
+    chaff, sent, _ = layout_extras(create=True)
+    want = {}                                             # path -> (kind, owner name, content, folders ISR Bot makes)
+    for name, v in reg.items():
+        fixed = PUBLISHED_CANARY_PATHS + OLD_CANARY_PATHS + tuple(s for _, s, _ in CANARY_SPECS)
+        if not isinstance(v, dict) or name not in lay or lay[name] in fixed:
+            continue                                      # a decoy at a fixed name is moved first (tend_canaries), then gets chaff
+        p = os.path.expanduser(str(v.get("path", "")))
+        if os.path.normpath(p) != os.path.normpath(decoy_path(lay[name])) or os.path.islink(p) or not os.path.isfile(p):
+            continue                                      # only beside a decoy that is where its layout says
+        for x in chaff.get(name, []):
+            want[os.path.join(os.path.dirname(p), x)] = ("chaff", name, CHAFF_TEXT.get(os.path.splitext(x)[1], CHAFF_TEXT[".txt"]), 1)
+        b = _spec_base(lay[name])
+        if b in sent:
+            for fn, text in SENTINEL_FILES:
+                want[os.path.join(decoy_path(b), sent[b], fn)] = ("sentinel", "far sentinel", text, 2)
+    arm = load_json(state_path(CHAFF_STATE), {}) or {}
+    bad, n_chaff, n_far, refused_at = [], 0, 0, set()
+    for p, (kind, name, text, levels) in sorted(want.items()):
+        if chaff_armed(p, arm.get(p)):
+            continue
+        if os.path.dirname(p) in refused_at:
+            arm.pop(p, None)                              # the sentinel's other file: its folder was already refused
+            continue
+        try:
+            atime, mtime, ident = write_decoy(p, text, levels=levels)
+        except (DecoyLink, OSError) as e:
+            if isinstance(e, DecoyLink):
+                bad.append(decoy_link_finding(f"{name} {kind}" if kind == "chaff" else name, p, f"{link_target(p)}. {e}"))
+                ledger({"event": "canary-refused", "decoy": name, "kind": kind, "path": p, "why": str(e)[:200]})
+                if kind == "sentinel":
+                    refused_at.add(os.path.dirname(p))
+            arm.pop(p, None)
+            continue
+        arm[p] = dict({"kind": kind, "decoy": name, "atime": atime, "mtime": mtime, "planted_ts": time.time()}, **ident)
+        n_chaff, n_far = n_chaff + (kind == "chaff"), n_far + (kind == "sentinel")
+    save_json(state_path(CHAFF_STATE), {p: r for p, r in arm.items() if p in want})
+    if bad:
+        remember_events(bad)
+        if refused is not None:
+            refused += bad
+    return n_chaff, n_far
+
+
+def chaff_armed(p, rec):
+    """The chaff or sentinel at p is the one ISR Bot armed: a plain file, never a link, with the inode and ctime it recorded."""
+    try:
+        st = os.lstat(p)
+    except OSError:
+        return False
+    return isinstance(rec, dict) and stat.S_ISREG(st.st_mode) and decoy_ident(st) == {"ino": rec.get("ino"), "ctime_ns": rec.get("ctime_ns")}
+
+
+def chaff_reads(arm):
+    """{path: read time} for each chaff or sentinel file read since it was armed. One whose times were set by hand (a new ctime)
+    or that was replaced proves nothing and is left out."""
+    out = {}
+    for p, rec in arm.items():
+        if chaff_armed(p, rec):
+            t = os.lstat(p).st_atime
+            if t > rec.get("atime", 0) + 1:
+                out[p] = t
+    return out
+
+
+def rearm_chaff(within=None):
+    """Reset the chaff and far sentinels that were read (only those under `within`), never through a link. Returns the paths reset."""
+    arm = load_json(state_path(CHAFF_STATE), {}) or {}
+    done = []
+    for p in chaff_reads(arm):
+        if not in_roots(p, within) or not owned_path(p, "decoy", log=False):
+            continue
+        try:
+            st = os.lstat(p)
+            os.utime(p, (st.st_mtime - 86400, st.st_mtime), follow_symlinks=False)
+            st = os.lstat(p)
+            arm[p].update(atime=st.st_atime, **decoy_ident(st))
+            done.append(p)
+        except OSError:
+            pass
+    if done:
+        save_json(state_path(CHAFF_STATE), arm)
+    return done
+
+
+def remove_chaff(log=True):
+    """Remove every chaff and far-sentinel file this install planted (owned-path checked), then their folders if empty. Returns
+    how many files went."""
+    n = 0
+    far = sentinel_paths()
+    for p in sorted(set(chaff_paths()) | set(far)):
+        if os.path.lexists(p) and owned_path(p, "decoy", log=log):
+            try:
+                os.remove(p); n += 1
+            except OSError:
+                pass
+    for d in sorted({os.path.dirname(p) for p in far}):
+        for x in (d, os.path.dirname(d)):                # the sentinel's two folders, only when nothing else is in them
+            try:
+                os.rmdir(x)
+            except OSError:
+                break
+    save_json(state_path(CHAFF_STATE), {})
+    return n
 
 
 def decoy_places():
@@ -89,26 +272,34 @@ class DecoyLink(Exception):
     """Something other than a plain folder or file sits where a decoy goes."""
 
 
-def write_decoy(p, content):
+def write_decoy(p, content, levels=1):
     """Write a decoy without ever following a link. The decoys live in /tmp and /var/tmp, where every Bot can write, so a link
     planted at the decoy's folder or file would make ISR Bot overwrite whatever it points to. The decoy's own folder and file
     are opened with O_NOFOLLOW from an open handle on the folder above, and every check is made on the opened handle, never on
     the name, so nothing can be swapped in between the check and the write. Returns (atime, mtime, {ino, ctime_ns}) after
-    re-arming: the last two say later whether the file's times were set by hand (fix round 1)."""
+    re-arming: the last two say later whether the file's times were set by hand (fix round 1). levels: how many folders above
+    the file are made and opened that way (v1.2.0: a far sentinel sits two folders down)."""
     folder, fn = os.path.split(p)
-    base, sub = os.path.split(folder)
-    os.makedirs(base, exist_ok=True)                  # /tmp, /var/tmp (or the test root): the system's own folders
-    bfd = os.open(base, os.O_RDONLY | os.O_DIRECTORY)
-    dfd = fd = None
+    subs = []
+    for _ in range(levels):
+        folder, sub = os.path.split(folder)
+        subs.insert(0, sub)
+    os.makedirs(folder, exist_ok=True)                # /tmp, /var/tmp (or the test root): the system's own folders
+    dfd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY)
+    fd = None
     try:
-        try:
-            os.mkdir(sub, 0o755, dir_fd=bfd)
-        except FileExistsError:
-            pass
-        try:
-            dfd = os.open(sub, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=bfd)
-        except OSError as e:
-            raise DecoyLink(f"{folder} is a link or not a folder") from e
+        for sub in subs:
+            folder = os.path.join(folder, sub)
+            try:
+                os.mkdir(sub, 0o755, dir_fd=dfd)
+            except FileExistsError:
+                pass
+            try:
+                nfd = os.open(sub, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=dfd)
+            except OSError as e:
+                raise DecoyLink(f"{folder} is a link or not a folder") from e
+            os.close(dfd)
+            dfd = nfd
         try:
             # R09: O_NONBLOCK so a FIFO planted at the decoy can't hang the run before its type is checked
             fd = os.open(fn, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o644, dir_fd=dfd)
@@ -124,7 +315,7 @@ def write_decoy(p, content):
         st = os.fstat(fd)
         return st.st_atime, st.st_mtime, decoy_ident(st)
     finally:
-        for x in (fd, dfd, bfd):
+        for x in (fd, dfd):
             if x is not None:
                 os.close(x)
 
@@ -267,13 +458,17 @@ def plant_canaries(only=None, token_file=None, refused=None):
     reg = load_json(state_path("canaries.json"), {}) or {}
     planted, bad = [], []
     layout = decoy_layout()
+    _, _, salt = layout_extras(create=True)
     for name, path, body in CANARY_SPECS:
         p = decoy_path(layout[name])
         if (only is not None and name not in only) or (name in reg and os.path.lexists(os.path.expanduser(reg[name]["path"]))
                                                          and not os.path.islink(os.path.expanduser(reg[name]["path"]))):
             continue
-        tok = reg.get(name, {}).get("token") if only is not None and name in reg else None
-        tok = tok or _s.token_hex(8)                      # a re-planted decoy keeps its value, so a copy made earlier is still recognised
+        old = reg.get(name) if isinstance(reg.get(name), dict) else {}
+        tok = old.get("token") if only is not None and name in reg else None
+        # an older registry's re-planted decoy keeps its value; v1.2.0 keeps no value, so a new one is made and the old one's hash
+        # stays in past_tokens: a copy made earlier is still recognised either way
+        tok = tok or _s.token_hex(8)
         content = body.format(tok=tok, tokU=tok.upper()[:16])
         if token_file and name == "cloud-keys":
             content = open(token_file).read()
@@ -283,7 +478,10 @@ def plant_canaries(only=None, token_file=None, refused=None):
             bad.append(decoy_link_finding(name, p, f"{link_target(p)}. {e}"))
             ledger({"event": "canary-refused", "decoy": name, "path": p, "why": str(e)[:200]})
             continue
-        reg[name] = dict({"path": p, "token": tok, "atime": atime, "mtime": mtime, "planted": now(), "planted_ts": time.time()}, **ident)
+        now_value = value_record(tok, salt, p)
+        past = [x for x in past_values(old) if x["token_sha256"] != value_hash(x["salt"], tok)]
+        reg[name] = dict({"path": p, "atime": atime, "mtime": mtime, "planted": now(), "planted_ts": time.time()}, **ident, **now_value,
+                         **({"past_tokens": past} if past else {}))
         arm_witness(reg, os.path.dirname(p))
         planted.append(name)
     save_json(state_path("canaries.json"), reg)
@@ -291,7 +489,51 @@ def plant_canaries(only=None, token_file=None, refused=None):
         remember_events(bad)
         if refused is not None:
             refused += bad
+    plant_chaff(refused)
     return planted
+
+
+# v1.2.0: the registry keeps no decoy value. Each value is kept as sha256(install salt + value) with its first four hex
+# characters, which only pick the places worth hashing; a copy of ISR Bot's state then spreads no real value.
+VALUE_LEN = 16   # every value is token_hex(8)
+_HEX_WINDOW = re.compile(r"[0-9a-f]{16}")
+
+
+def value_hash(salt, tok):
+    return hashlib.sha256((str(salt) + str(tok).lower()).encode()).hexdigest()
+
+
+def value_record(tok, salt, path):
+    return {"token_sha256": value_hash(salt, tok), "token_prefix": str(tok).lower()[:4], "salt": salt, "token_path": path}
+
+
+def past_values(v):
+    """Every value a registry entry holds or held, as value records (an unmigrated raw value is hashed here, never kept)."""
+    if not isinstance(v, dict):
+        return []
+    past = [x for x in v.get("past_tokens") or [] if isinstance(x, dict) and x.get("token_sha256") and x.get("salt")]
+    if isinstance(v.get("token"), str) and v["token"]:
+        past.append(value_record(v["token"], layout_extras(create=True)[2], v.get("path")))
+    elif v.get("token_sha256") and v.get("salt"):
+        past.append({k: v.get(k) for k in ("token_sha256", "token_prefix", "salt", "token_path")})
+    return past
+
+
+def migrate_registry():
+    """v1.2.0, once: each decoy value an older registry kept is replaced by its salted hash; the decoys, their paths and the
+    values in them are not touched. Returns how many entries were rewritten."""
+    reg = load_json(state_path("canaries.json"), {}) or {}
+    raw = [n for n, v in reg.items() if isinstance(v, dict) and "token" in v]
+    if not raw:
+        return 0
+    _, _, salt = layout_extras(create=True)
+    for n in raw:
+        v = reg[n]
+        tok = v.pop("token")
+        if isinstance(tok, str) and tok:
+            v.update(value_record(tok, salt, v.get("path")))
+    save_json(state_path("canaries.json"), reg)
+    return len(raw)
 
 
 def tend_canaries(notes):
@@ -358,6 +600,15 @@ def tend_canaries(notes):
         plant_canaries(only=set(wiped))
         notes.append(f"{len(wiped)} decoy(s) were cleared when the computer restarted and have been put back.")
         ledger({"event": "canary-replant", "decoys": sorted(wiped)})
+    # v1.2.0: chaff and far sentinels beside the decoys that are there (the first run after the upgrade plants them all), then the
+    # registry keeps hashes only. A read made before the chaff was there is judged as before (sweep_signal).
+    n_chaff, n_far = plant_chaff()
+    if migrate_registry():
+        arm = load_json(state_path(CHAFF_STATE), {}) or {}
+        ledger({"event": "canary-migrate", "chaff": sum(1 for r in arm.values() if r.get("kind") == "chaff"),
+                "sentinels": len({os.path.dirname(p) for p, r in arm.items() if r.get("kind") == "sentinel"})})
+    elif n_chaff or n_far:
+        ledger({"event": "canary-chaff", "chaff": n_chaff, "sentinels": n_far})
 
 
 def cleared_by_restart(v, boot):
@@ -409,8 +660,9 @@ def cmd_canary(args):
             except OSError:
                 pass
             remove_witness(os.path.dirname(p))
+        chaff = remove_chaff()                            # v1.2.0: the chaff and far sentinels go with them
         save_json(state_path("canaries.json"), {})
-        ledger({"event": "canary-remove", "count": len(reg)})
+        ledger({"event": "canary-remove", "count": len(reg), "chaff": chaff})
         print("Canaries removed.")
         return 0
     fs = canary_findings(record=False)   # status only looks: it never resets a decoy or drops evidence
@@ -477,14 +729,25 @@ def canary_findings(record=True):
             if not decoy_untouched(v, st):
                 forged.add(name)                          # its times were set by hand, or the registry predates the check
     # Fix round 1 (R2): every read is judged before anything is re-armed or saved, so a failure never erases the evidence
+    signals, reads_all, backup = {}, reads, False
     if reads:
         when = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc).isoformat(timespec="minutes")
+        backup = len(reads) >= 2 and not forged and all(witness_proves(reg[n], t) for n, _, t in reads)
+        arm = load_json(state_path(CHAFF_STATE), {}) or {}
+        cread, walks, probed = chaff_reads(arm), {}, {}
+        for name, p, t in ([] if backup else reads):
+            if name not in forged:                        # a decoy whose times were set by hand is never part of a sweep
+                signals[name] = sweep_signal(p, t, arm, cread, walks, probed)
+        swept = [r for r in reads if (signals.get(r[0]) or {}).get("sweep")]
+        if swept:                                         # v1.2.0: one calm line per day; using the value is still critical (K003)
+            out.append(sweep_finding(swept, signals, len(reg)))
+        reads = [r for r in reads if r not in swept]
+    if reads:
         times = [t for _, _, t in reads]
         each = ", ".join(f"{n} {dt.datetime.fromtimestamp(t, dt.timezone.utc).strftime('%H:%M:%S')}" for n, _, t in sorted(reads, key=lambda r: r[2]))
         places = ", ".join(sorted({os.path.dirname(p) for _, p, _ in reads}))
         runs = run_windows()
         own = lambda t: any(a - 2 <= t <= b + 5 for a, b in runs)
-        backup = len(reads) >= 2 and not forged and all(witness_proves(reg[n], t) for n, _, t in reads)
         if backup:
             f = finding("ISR-K004", "Several decoys were read by the platform's backup", "low", ["ASI03"], places,
                         f"{len(reads)} of {len(reg)} decoys within {int(max(times) - min(times))}s at {when(min(times))} ({each})",
@@ -504,20 +767,24 @@ def canary_findings(record=True):
                                "file does this. Tell ISR Bot \"incident check\"."))
         else:
             for name, p, t in reads:
-                out.append(finding("ISR-K001", "Something opened a decoy file", "critical", ["ASI03", "ASI10"], p, f"{name} read at {when(t)}",
-                                   "Nothing legitimate needs this file, and nothing else was searched with it. "
-                                   "Find which Bot or routine ran then (Agent Computer view, run history) and tell ISR Bot \"incident check\"."))
+                f = finding("ISR-K001", "Something opened a decoy file", "critical", ["ASI03", "ASI10"], p, f"{name} read at {when(t)}",
+                            "Nothing legitimate needs this file, and nothing else was searched with it. "
+                            "Find which Bot or routine ran then (Agent Computer view, run history) and tell ISR Bot \"incident check\".")
+                out.append(with_suspects(f, t))
     if not record:
         return out
-    if reads:
+    if reads_all:
         stamp = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc).isoformat(timespec="seconds")
-        for name, _, t in reads:                          # remembered, so a decoy read and then removed is never put back quietly
+        for name, _, t in reads_all:                      # remembered, so a decoy read and then removed is never put back quietly
             if not backup:                                # a run window any Bot can write never hides a read
                 reg[name]["read_at"] = stamp(t)
+            if (signals.get(name) or {}).get("sweep"):
+                reg[name]["sweep_at"] = stamp(t)          # a value used later links this read (decoy_value_findings)
         save_json(state_path("canaries.json"), reg)
-        ledger(dict({"event": "canary-read", "decoys": [{"name": n, "path": p, "read_at": stamp(t)} for n, p, t in reads]},
-                    **({"backup": True} if backup else {})))
-        for name, p, _ in reads:                          # only now: the reads are judged and logged
+        judged = {n: s for n, s in signals.items() if s}
+        ledger(dict({"event": "canary-read", "decoys": [{"name": n, "path": p, "read_at": stamp(t)} for n, p, t in reads_all]},
+                    **({"backup": True} if backup else {}), **({"sweep": judged} if judged else {})))
+        for name, p, _ in reads_all:                      # only now: the reads are judged and logged
             v = reg[name]
             try:
                 st = os.lstat(p)
@@ -528,9 +795,151 @@ def canary_findings(record=True):
                     v.update(decoy_ident(st))
             except OSError:
                 pass
-    if tend_witnesses(reg) or reads:
+    rearm_chaff()                                         # v1.2.0: every chaff or sentinel read, so the next sweep moves it again
+    if tend_witnesses(reg) or reads_all:
         save_json(state_path("canaries.json"), reg)
     return out
+
+
+# v1.2.0: the sweep rule. A decoy read is a sweep only when the chaff in its own folder was read within SWEEP_LOCAL seconds of it
+# AND something far from it was read within SWEEP_BROAD seconds: a far sentinel in another folder, or at least SWEEP_FILES other
+# files in SWEEP_FOLDERS folders of the decoy's root (a stat-only walk with a time and entry budget; its counts are reported).
+# No learned times or counts and no list of scanners or routines: any Bot can read this state and copy a learned pattern.
+SWEEP_LOCAL, SWEEP_BROAD = 5, 180
+SWEEP_FILES, SWEEP_FOLDERS = 100, 3
+SWEEP_WALK_SECONDS, SWEEP_WALK_ENTRIES = 2.0, 20000
+SWEEP_KEY = "decoy-sweep:"   # one K008 line per day (remember_events updates it)
+
+
+def sweep_signal(p, t, arm, cread, walks, probed):
+    """What the files around the decoy at p say about its read at t: {chaff, sentinels, files, folders, walk_complete, sweep}, or
+    None when the sweep rule can't judge it (no chaff there before the read, or a folder that doesn't record reads): then the
+    read is judged as before. walks and probed are caches for one check."""
+    folder = os.path.dirname(p)
+    mine = [c for c, r in arm.items() if r.get("kind") == "chaff" and os.path.dirname(c) == folder]
+    if not mine or min(arm[c].get("planted_ts", float("inf")) for c in mine) >= t:
+        return None                                       # migration: a read from before the chaff existed has no evidence
+    if folder not in probed:
+        probed[folder] = reads_recorded(folder)
+    if probed[folder] is False:
+        return None                                       # noatime: a read time there was set by hand, never a sweep
+    local = [c for c in mine if c in cread and abs(cread[c] - t) <= SWEEP_LOCAL]
+    far = {os.path.dirname(c) for c, r in arm.items() if r.get("kind") == "sentinel" and os.path.dirname(c) != folder
+           and c in cread and abs(cread[c] - t) <= SWEEP_BROAD}
+    root = os.path.dirname(folder)
+    if local and root not in walks:
+        walks[root] = sweep_walk(root, decoy_files() | {os.path.join(os.path.dirname(x), WITNESS) for x in canary_paths()})
+    seen, complete = walks.get(root, ([], False))
+    near = [d for a, d in seen if abs(a - t) <= SWEEP_BROAD]
+    out = {"chaff": len(local), "sentinels": len(far), "files": len(near), "folders": len(set(near)), "walk_complete": complete}
+    out["sweep"] = bool(local) and (bool(far) or (out["files"] >= SWEEP_FILES and out["folders"] >= SWEEP_FOLDERS))
+    return out
+
+
+def sweep_walk(root, skip):
+    """([(read time, folder)], finished) for each plain file under root read since it was last written (atime past mtime), by
+    stat only: nothing is opened and no link is followed. Stops after SWEEP_WALK_ENTRIES entries or SWEEP_WALK_SECONDS."""
+    out, n, stack, t0 = [], 0, [root], time.monotonic()
+    while stack:
+        d = stack.pop()
+        try:
+            it = os.scandir(d)
+        except OSError:
+            continue
+        with it:
+            for e in it:
+                n += 1
+                if n > SWEEP_WALK_ENTRIES or time.monotonic() - t0 > SWEEP_WALK_SECONDS:
+                    return out, False
+                try:
+                    if e.is_dir(follow_symlinks=False):
+                        stack.append(e.path)
+                    elif e.is_file(follow_symlinks=False) and os.path.normpath(e.path) not in skip:
+                        st = e.stat(follow_symlinks=False)
+                        if st.st_atime > st.st_mtime:
+                            out.append((st.st_atime, d))
+                except OSError:
+                    pass
+    return out, True
+
+
+def sweep_finding(swept, signals, total):
+    """ISR-K008: the decoys a sweep read, one calm line per day that each later sweep that day updates. Never scored."""
+    times = [t for _, _, t in swept]
+    hm = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc).strftime("%H:%M:%S")
+    each = ", ".join(n for n, _, _ in sorted(swept, key=lambda r: r[2]))
+    s = [signals[n] for n, _, _ in swept]
+    far = max(x["sentinels"] for x in s)
+    files = max(x["files"] for x in s)
+    f = finding("ISR-K008", "A file sweep passed over a decoy", "info", ["ASI03"], ", ".join(sorted({os.path.dirname(p) for _, p, _ in swept})),
+                f"{len(swept)} of {total} decoys at {hm(min(times))} UTC ({each}) with their chaff; "
+                f"{far} far sentinel(s), {files} other files read within 3 min",
+                "Something read every file around the decoy and far beyond it, as grep -r, a key scanner, a backup or an indexer does; "
+                "a Bot going for the decoy opens the decoy. Nothing to do unless no sweep of yours ran then. If a decoy's value is "
+                "ever used or written out, that is still critical (ISR-K003) and names this read.")
+    f["key"] = SWEEP_KEY + (et_date(dt.datetime.fromtimestamp(min(times), dt.timezone.utc).isoformat()) or "")
+    f["sweep"] = {n: signals[n] for n, _, _ in swept}
+    return with_suspects(f, min(times))
+
+
+# v1.2.0: evidence, never severity. A decoy line names the agent session logs that made a tool call near the time, by path only.
+SESSION_LOG_HOME = (".claude/projects", ".codex/sessions", ".grok/sessions")
+SESSION_WINDOW = 120
+_TOOL_MARKS = (b'"tool_use"', b'"function_call"', b'"local_shell_call"', b'"custom_tool_call"', b'"tool_call"')
+_STAMP = re.compile(rb'"timestamp"\s*:\s*"([0-9][0-9T:.+\-Z ]{9,40})"')
+
+
+def session_logs():
+    """Every agent session log under this home's Claude, Codex and Grok session folders, never reached through a link."""
+    h = os.path.expanduser("~")
+    for rel in SESSION_LOG_HOME:
+        base = os.path.join(h, rel)
+        if os.path.islink(base) or not os.path.isdir(base):
+            continue
+        for dp, _, fns in os.walk(base):
+            for fn in sorted(fns):
+                p = os.path.join(dp, fn)
+                if os.path.splitext(fn)[1].lower() in (".jsonl", ".json", ".ndjson", ".log", ".txt") and not os.path.islink(p) and os.path.isfile(p):
+                    yield p
+
+
+def stamp_seconds(raw):
+    """A log's ISO time (2026-11-11T14:01:07.123Z) as seconds since 1970, or None."""
+    try:
+        s = raw.decode() if isinstance(raw, bytes) else str(raw)
+        s = re.sub(r"(\.\d{6})\d+", r"\1", s.strip().replace("Z", "+00:00").replace(" ", "T"))
+        t = dt.datetime.fromisoformat(s)
+        return (t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc)).timestamp()
+    except ValueError:
+        return None
+
+
+def session_suspects(t, limit=5):
+    """Session logs with a tool call stamped within SESSION_WINDOW seconds of t: who to ask first. Paths only."""
+    out = []
+    for p in session_logs():
+        try:
+            if os.stat(p).st_mtime < t - SESSION_WINDOW:
+                continue                                  # written to last before the window opened
+            with open(p, "rb") as f:
+                for line in f:
+                    if any(m in line for m in _TOOL_MARKS):
+                        got = [stamp_seconds(x) for x in _STAMP.findall(line)]
+                        if any(x is not None and abs(x - t) <= SESSION_WINDOW for x in got):
+                            out.append(p)
+                            break
+        except OSError:
+            continue
+    return out[:limit]
+
+
+def with_suspects(f, t):
+    """The finding with the session logs active at t named in its fix text and kept in `sessions` (paths only)."""
+    near = session_suspects(t)
+    if near:
+        f["sessions"] = near
+        f["fix"] += " Session logs with a tool call within 2 minutes of it: " + ", ".join(short_path(p) for p in near) + "."
+    return f
 
 
 def run_windows():
@@ -615,12 +1024,305 @@ def rearm_canaries(within=None):
             pass
     if tend_witnesses(reg, within, only_read=True) or changed:
         save_json(state_path("canaries.json"), reg)
+    rearm_chaff(within)                                   # v1.2.0: the chaff and far sentinels under the same folders
 
 
 def canary_copies(text, path):
-    reg = load_json(state_path("canaries.json"), {})
-    for name, v in reg.items():
-        if v.get("token") and v["token"] in text and os.path.expanduser(v["path"]) != path:
-            return finding("ISR-K003", "Canary value copied into another file", "critical", ["ASI03", "ASI04"], path, name,
-                           "A decoy's contents turned up somewhere else: something read it and wrote it out. Tell ISR Bot \"incident check\".")
-    return None
+    """The ISR-K003 finding for a decoy value in this text, or None (v1.2.0: decoy_value_findings, critical findings only)."""
+    return next((f for f in decoy_value_findings(text, path) if f["rule"] == "ISR-K003"), None)
+
+
+# v1.2.0: the token-use stage. Each value, current or past, is found by its salted hash in 16-hex windows that start with a known
+# prefix, in any case (the cloud-keys decoy holds it upper-cased). Where it sits decides the finding: in a command, critical
+# "used"; anywhere else critical "copied", unless it is only a scanner's listing (the decoy's own folder/name in the same line or
+# JSON record) or a copy of the whole decoy root (its folder and name with a chaff copy and a far-sentinel copy): then info.
+CMD_TYPES = frozenset(("tool_use", "server_tool_use", "function_call", "local_shell_call", "custom_tool_call", "tool_call"))
+CMD_KEYS = frozenset(("command", "cmd", "cmdline", "argv", "args", "arguments"))
+_CMD_LINE = re.compile(r"""(?i)["']?\b(cmdline|argv|args|arguments|command|cmd)\b["']?\s*[=:]""")
+
+
+def decoy_value_index(reg=None):
+    """What the check looks for: {"hashed": {prefix: [(name, salt, sha256, decoy path then)]}, "raw": [(name, value, path)]}.
+    "raw" holds only a not-yet-migrated value that isn't 16 hex characters, matched as before. None when there is nothing."""
+    reg = load_json(state_path("canaries.json"), {}) if reg is None else reg
+    hashed, raw = {}, []
+    for name, v in (reg or {}).items():
+        if not isinstance(v, dict):
+            continue
+        tok = v.get("token") if isinstance(v.get("token"), str) else ""
+        if _HEX_WINDOW.fullmatch(tok.lower()):            # not migrated yet: judged by the same rules, hashed in memory only
+            hashed.setdefault(tok.lower()[:4], []).append((name, "", value_hash("", tok), v.get("path")))
+        elif tok:
+            raw.append((name, tok, v.get("path")))
+        for x in [v] + [x for x in v.get("past_tokens") or [] if isinstance(x, dict)]:
+            sha, pre, salt = x.get("token_sha256"), x.get("token_prefix"), x.get("salt")
+            if isinstance(sha, str) and isinstance(salt, str) and isinstance(pre, str) and re.fullmatch(r"[0-9a-f]{4}", pre):
+                hashed.setdefault(pre, []).append((name, salt, sha, x.get("token_path") or v.get("path")))
+    return {"hashed": hashed, "raw": raw} if hashed or raw else None
+
+
+def value_hits(text, index):
+    """(decoy name, start, end, the decoy's path when it held the value, found by hash) for each decoy value in text."""
+    out, low = [], text.lower()
+    for pre, cands in index["hashed"].items():
+        i = low.find(pre)
+        while i >= 0:
+            w = low[i:i + VALUE_LEN]
+            if _HEX_WINDOW.fullmatch(w):
+                hit = next((c for c in cands if value_hash(c[1], w) == c[2]), None)
+                if hit:
+                    out.append((hit[0], i, i + VALUE_LEN, hit[3], True))
+            i = low.find(pre, i + 1)
+    for name, tok, path in index["raw"]:
+        i = text.find(tok)
+        if i >= 0:
+            out.append((name, i, i + len(tok), path, False))
+    return out
+
+
+def path_tail(p):
+    """A decoy's folder/name: what a listing or a tree copy reproduces wherever it is rooted."""
+    p = os.path.normpath(os.path.expanduser(str(p or "")))
+    return os.path.join(os.path.basename(os.path.dirname(p)), os.path.basename(p)) if p not in (".", "/") else ""
+
+
+def _in_command(node, w, inside=False):
+    """True when w sits in a command inside this JSON value: a tool call's input, or a command, argv or arguments field."""
+    if isinstance(node, dict):
+        inside = inside or (isinstance(node.get("type"), str) and node["type"] in CMD_TYPES)
+        return any(_in_command(v, w, inside or k in CMD_KEYS) for k, v in node.items())
+    if isinstance(node, list):
+        return any(_in_command(x, w, inside) for x in node)
+    return inside and isinstance(node, str) and w in node.lower()
+
+
+def _record_of(node, w):
+    """The top-level JSON record holding w: a JSON line's own value, or, for a whole-document report (gitleaks' array), the
+    element that holds it. Never a smaller object inside it: TruffleHog keeps the value again in a nested SecretParts, away from
+    the path in SourceMetadata, and the record is still one finding of a scanner's report (F1)."""
+    if isinstance(node, list):
+        return next((x for x in node if w in json.dumps(x).lower()), None)
+    return node if isinstance(node, dict) and w in json.dumps(node).lower() else None
+
+
+def _record_files(node):
+    """The file paths a scanner's JSON record names: each string under a "file" key, any case (TruffleHog's
+    SourceMetadata.Data.Filesystem.file, gitleaks' File)."""
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if isinstance(k, str) and k.lower() == "file" and isinstance(v, str):
+                yield v
+            else:
+                yield from _record_files(v)
+    elif isinstance(node, list):
+        for x in node:
+            yield from _record_files(x)
+
+
+def _listed_elsewhere(p, name, index, seen, memo):
+    """True when p (a record's file, absolute) is a file of 300 KB or less that ISR Bot itself judges only a listing or a tree
+    copy of decoy `name` (ISR-K009): an earlier scanner report. A file already on this chain (a cycle) or gone is not (V2-1).
+    No depth limit (rev3 V3-1): memo {(path, decoy): bool}, one per check, judges each named file at most once. A no that
+    leaned on a cycle is not kept (memo["cycles"] counts them): from another chain the same file may be a listing."""
+    if not os.path.isabs(p):
+        return False
+    if p in seen:
+        memo["cycles"] = memo.get("cycles", 0) + 1
+        return False
+    if (p, name) in memo:
+        return memo[(p, name)]
+    text = read_text(p, limit=300_000)
+    if text is None:
+        memo[(p, name)] = False
+        return False
+    cycles = memo.get("cycles", 0)
+    kinds = [k for n, k, _ in value_kinds(text, p, index, seen=seen, memo=memo) if n == name]
+    ok = bool(kinds) and all(k in ("listing", "mirror") for k in kinds)
+    if ok or memo.get("cycles", 0) == cycles:
+        memo[(p, name)] = ok
+    return ok
+
+
+def value_use(text, a, b, then, whole=None, here=None, listed=None):
+    """'command', 'listing' or 'copy' for the value at text[a:b]: in a command (JSON tool call or command field, or a line that
+    names its command or argv); in a listing (the decoy's own folder/name in the same line or JSON record, or, rev2 V2-1, a JSON
+    record naming as its file `here`, the file judged, or a file listed(path) judges a listing of the same decoy); else a copy.
+    TruffleHog streams its report as it walks, so a report inside the walked tree names itself, and a later run an earlier one."""
+    w, tail = text[a:b].lower(), path_tail(then)
+    s, e = text.rfind("\n", 0, a) + 1, text.find("\n", b)
+    line = text[s:] if e < 0 else text[s:e]
+    obj = whole
+    if obj is None and line.lstrip().startswith(("{", "[")):
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            obj = None
+    try:
+        if obj is not None:
+            if _in_command(obj, w):
+                return "command"
+            rec = _record_of(obj, w)
+            if rec is None:
+                return "copy"
+            if tail and tail in json.dumps(rec):
+                return "listing"
+            named = [os.path.normpath(os.path.expanduser(f)) for f in _record_files(rec)]
+            mine = os.path.normpath(here) if here else None
+            return "listing" if any(f == mine or (listed and listed(f)) for f in named) else "copy"
+    except RecursionError:
+        return "copy"
+    if _CMD_LINE.search(line):
+        return "command"
+    return "listing" if tail and tail in line else "copy"
+
+
+def mirrored_copy(path, name):
+    """True when path is decoy `name`'s file inside a copy of its whole root (tar or cp -a of /tmp): its folder and name, a chaff
+    file beside it and its root's far sentinel are all reproduced under one folder."""
+    lay = load_json(state_path("decoy_layout.json"), {}) or {}
+    if not isinstance(lay, dict) or not valid_layout_path(name, lay.get(name)):
+        return False
+    here, tail = os.path.normpath(path), path_tail(decoy_path(lay[name]))
+    if here == os.path.normpath(decoy_path(lay[name])) or not here.endswith(os.sep + tail):
+        return False
+    top = here[:-len(tail) - 1]
+    chaff, sent, _ = layout_extras()
+    b = _spec_base(lay[name])
+    return (any(os.path.isfile(os.path.join(os.path.dirname(here), c)) for c in chaff.get(name, []))
+            and b in sent and any(os.path.isfile(os.path.join(top, sent[b], fn)) for fn, _ in SENTINEL_FILES))
+
+
+def value_kinds(text, path, index, history=False, line_no=None, seen=(), memo=None):
+    """[(decoy name, how it sits, line)] for each decoy value in text: a whole file, or one line of a streamed log (line_no).
+    seen: the files on the chain from the one judged to this one (V2-1). memo: the check's verdicts on named files, shared by
+    every nested look-up; a new one for each top-level call (rev3 V3-1)."""
+    memo = {} if memo is None else memo
+    hits = value_hits(text, index)
+    if not hits:
+        return []
+    whole = None
+    if line_no is None and not history and os.path.splitext(path)[1].lower() == ".json":
+        try:
+            whole = json.loads(text)                      # a report written as one JSON document (gitleaks)
+        except ValueError:
+            whole = None
+    out, chain = [], tuple(seen) + (os.path.normpath(path),)
+    for name, a, b, then, hashed in hits:
+        if then and os.path.normpath(os.path.expanduser(then)) == os.path.normpath(path):
+            continue                                      # the decoy itself
+        if history:
+            kind = "command"
+        elif not hashed:
+            kind = "copy"                                 # a registry not migrated yet: as before
+        elif mirrored_copy(path, name):
+            kind = "mirror"
+        else:
+            listed = lambda f, n=name: _listed_elsewhere(f, n, index, chain, memo)
+            kind = value_use(text, a, b, then, whole, path, listed)
+        out.append((name, kind, line_no or line_of(text, a)))
+    return out
+
+
+def value_findings(path, kinds):
+    """One finding for the decoy values in one file: ISR-K003 critical when any is in a command or copied, else ISR-K009 info."""
+    if not kinds:
+        return []
+    bad = [x for x in kinds if x[1] == "command"] or [x for x in kinds if x[1] == "copy"]
+    if bad:
+        name, kind, line = bad[0]
+        if kind == "command":
+            f = finding("ISR-K003", "Decoy value used in a command", "critical", ["ASI03", "ASI04"], path, f"{name} in a command on line {line}",
+                        "A decoy's value was put in a command: something read the decoy and tried to use what it found. Nothing "
+                        "legitimate does that. Tell ISR Bot \"incident check\".")
+        else:
+            f = finding("ISR-K003", "Canary value copied into another file", "critical", ["ASI03", "ASI04"], path, name,
+                        "A decoy's contents turned up somewhere else: something read it and wrote it out. Tell ISR Bot \"incident check\".")
+        v = (load_json(state_path("canaries.json"), {}) or {}).get(name)
+        if isinstance(v, dict) and isinstance(v.get("sweep_at"), str):   # the read this value most likely came from
+            f["linked_read"] = {"rule": "ISR-K008", "decoy": name, "read_at": v["sweep_at"]}
+            f["fix"] += (f" The decoy was last read on {v['sweep_at'][:10]} at {v['sweep_at'][11:19]} UTC in what looked like a file "
+                         "sweep (ISR-K008): that read is how the value was taken.")
+        return [f]
+    name, kind, _ = kinds[0]
+    f = finding("ISR-K009", "A decoy's value shows up only in a scan listing or a copy of its folder", "info", ["ASI03"], path,
+                f"{name}: " + ("a copy of the decoy's whole folder tree" if kind == "mirror" else "listed beside the decoy's own path, as a scanner's report does"),
+                "A scanner or a backup that read the decoy wrote down what it saw; nothing used the value. Delete the file if you "
+                "don't need it. If the value is ever used, that is critical (ISR-K003).", ident=f"{name}|{path}")
+    try:
+        return [with_suspects(f, os.stat(path).st_mtime)]
+    except OSError:
+        return [f]
+
+
+def decoy_value_findings(text, path, index=None):
+    """K003 or K009 for the decoy values in one file's text."""
+    index = index or decoy_value_index()
+    return value_findings(path, value_kinds(text, path, index)) if index else []
+
+
+# v1.2.0 (rev1 R8, Codex C4): what the stream found in each log, so an unchanged log is not read again on every run. It holds
+# {"index": stream_index_key, "files": {path: [dev, ino, size, mtime_ns, [[decoy name, kind, line], ...]]}}: paths, names and
+# line numbers only, never a value. Named canaries* so backup.sh leaves it out; it can always be rebuilt.
+STREAM_CACHE = "canaries-stream.json"
+
+
+def stream_index_key(index):
+    """sha256 of the sorted (prefix, hash) list the check looks for, or None. A new or past value changes it."""
+    pairs = sorted({(pre, c[2]) for pre, cands in index["hashed"].items() for c in cands})
+    return hashlib.sha256(json.dumps(pairs).encode()).hexdigest() if pairs else None
+
+
+def decoy_stream_findings(index):
+    """K003 or K009 for decoy values in the agent session logs and shell histories, each read whole, line by line: no size cap,
+    so a value used in a long session is still found. A shell history line is always a command. A log whose stat matches the
+    cache (STREAM_CACHE) is not opened again: what it held is reused, so its finding stays open. A changed or new log is read
+    whole; a new index drops the cache."""
+    if not index:
+        return []
+    pres = [x.encode() for x in index["hashed"]]
+    raws = [t.encode("utf-8", "replace") for _, t, _ in index["raw"]]
+    key, cache_path = stream_index_key(index), state_path(STREAM_CACHE)
+    cache = (load_json_regular(cache_path, {}) or {}) if key else {}
+    seen = cache.get("files") if cache.get("index") == key and isinstance(cache.get("files"), dict) else {}
+    found, files, fresh = {}, {}, {}
+    hist_paths = {os.path.expanduser(h) for h in HISTORY_FILES}
+    for p, hist in [(p, False) for p in session_logs()] + [(p, True) for p in sorted(hist_paths) if os.path.isfile(p)]:
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        mark, old = [st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns], seen.get(p)
+        if isinstance(old, list) and len(old) == 5 and old[:4] == mark and isinstance(old[4], list):
+            files[p] = old                                # unchanged since the last run: not opened
+            found[p] = [tuple(x) for x in old[4] if isinstance(x, list) and len(x) == 3]
+        else:
+            files[p], fresh[p] = mark + [[]], hist
+
+    def lines():
+        for p in [p for p, hist in fresh.items() if not hist]:
+            try:
+                with open(p, "rb") as f:
+                    for n, line in enumerate(f, 1):
+                        yield p, n, line, False
+            except OSError:
+                files.pop(p, None)                        # read again next run
+                continue
+        for p, n, line in history_lines(only={p for p, hist in fresh.items() if hist}):
+            yield p, n, line, True
+    for p, n, line, hist in lines():
+        low = line.lower()
+        if any(x in low for x in pres) or any(x in line for x in raws):
+            kinds = value_kinds(line.decode("utf-8", "replace"), p, index, history=hist, line_no=n)
+            found.setdefault(p, []).extend(kinds)
+            if p in files:
+                files[p][4] += [list(k) for k in kinds]
+    if key and (cache.get("index"), cache.get("files")) != (key, files):
+        try:
+            os.close(os.open(cache_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600))   # 0600 from the start
+        except FileExistsError:
+            pass
+        save_json_keep_mode(cache_path, {"index": key, "files": files})
+    out = []
+    for p in sorted(found):
+        out += value_findings(p, found[p])
+    return out

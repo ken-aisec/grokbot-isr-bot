@@ -210,7 +210,8 @@ def threat_level(b, snap, stories):
     fs = (snap or {}).get("findings", [])
     pts = min(2, sum(1 for k in b["kev"] if k["relevant"])) + min(2, sum(1 for s in stories if s["tier"] == "act"))
     pts += 2 if any(f["severity"] == "critical" and not f["rule"].startswith("ISR-K") for f in fs) else 0
-    pts += 3 if any(f["rule"].startswith("ISR-K") for f in fs) else 0  # a tripwire firing is the strongest signal there is
+    # a tripwire firing is the strongest signal there is; v1.2.0: a sweep over a decoy or a listing of it (K008, K009: info) is not one
+    pts += 3 if any(f["rule"].startswith("ISR-K") and f["severity"] != "info" for f in fs) else 0
     pts += 1 if (snap or {}).get("score", 100) < 50 else 0
     for i, (lvl, cut) in enumerate((("Low", 1), ("Guarded", 3), ("Elevated", 5), ("High", 7))):
         if pts <= cut:

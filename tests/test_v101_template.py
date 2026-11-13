@@ -30,13 +30,13 @@ LAUNCHERS = {   # the listing-draft text, at 1.0.1
         "builds the first report. Use once after adding the template, when the scripts are missing, or to update ISR Bot.\n"
         "---\n"
         "\n"
-        "Launcher for ISR Bot 1.1.1. The full setup skill is a checked file on disk; this one only points to it.\n"
+        "Launcher for ISR Bot 1.2.0. The full setup skill is a checked file on disk; this one only points to it.\n"
         "\n"
         "1. If /workspace/isr-bot/app/skills/isr-bot-setup/SKILL.md exists, read it and follow it exactly. It came with the release "
         "and was checked against its manifest. Never edit it.\n"
         "2. If it doesn't exist, ISR Bot is not set up yet: follow your Setup check memory (it shows the owner the installer's first "
         "40 lines and needs their yes), then read that file and follow it.\n"
-        "3. If the file on disk names a newer release than 1.1.1, follow the file on disk.\n"
+        "3. If the file on disk names a newer release than 1.2.0, follow the file on disk.\n"
         "\n"
         "Never write your own scan scripts.\n"),
     "vet-template": (
@@ -46,7 +46,7 @@ LAUNCHERS = {   # the listing-draft text, at 1.0.1
         "or pasted text; it returns a verdict, a risk score, evidence, and the boundary line to add. Read-only.\n"
         "---\n"
         "\n"
-        "Launcher for ISR Bot 1.1.1. The full vetting skill is a checked file on disk; this one only points to it.\n"
+        "Launcher for ISR Bot 1.2.0. The full vetting skill is a checked file on disk; this one only points to it.\n"
         "\n"
         "1. If /workspace/isr-bot/app/skills/vet-template/SKILL.md exists, read it and follow it exactly. Never edit it.\n"
         "2. If it doesn't exist, ISR Bot is not set up yet: say so and offer to set it up (your Setup check memory). Never vet with "
@@ -167,7 +167,7 @@ class SavedLaunchers(_Release):
         self.assertTrue(isr.own_release_file(p, sha(raw("skills", "isr-bot-setup", "SKILL.md"))))   # a saved full copy, as before
 
     def test_an_older_saved_launcher_is_said(self):   # replay (bacd581: no note)
-        self.saved(LAUNCHERS["isr-bot-setup"].replace("1.1.1", "1.0.1"))
+        self.saved(LAUNCHERS["isr-bot-setup"].replace("1.2.0", "1.0.1"))
         notes = []
         isr.saved_skill_notes(notes)
         self.assertIn("Re-save it from /workspace/isr-bot/app/bot/skills/isr-bot-setup/SKILL.md.", "\n".join(notes))
@@ -179,7 +179,7 @@ class SavedLaunchers(_Release):
         notes = []
         isr.saved_skill_notes(notes)
         self.assertEqual([n for n in notes if "launcher" in n], [])
-        self.saved(read("skills", "isr-bot-setup", "SKILL.md").replace("1.1.1", "1.0.1"))   # guard: a full copy has no launcher line
+        self.saved(read("skills", "isr-bot-setup", "SKILL.md").replace("1.2.0", "1.0.1"))   # guard: a full copy has no launcher line
         notes = []
         isr.saved_skill_notes(notes)
         self.assertEqual([n for n in notes if "launcher" in n], [])

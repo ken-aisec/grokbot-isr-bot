@@ -597,7 +597,7 @@ def gitleaks_findings(roots, notes):
             reason = next((l for l in re.sub(r"\x1b\[[0-9;]*m", "", err).splitlines() if "FTL" in l or "error" in l.lower()), err.strip()[:160] or "no report written")
             fail_note(notes, f"gitleaks FAILED on {r} ({reason.strip()[-160:]}): secrets there were NOT checked by gitleaks.")
             continue
-        per_file, decoys, skipped_tool, examples, datas, marks = {}, canary_paths(), 0, {}, {}, {}
+        per_file, decoys, skipped_tool, examples, datas, marks = {}, decoy_files(), 0, {}, {}, {}   # v1.2.0: chaff and sentinels too
         for leak in got:
             if not isinstance(leak, dict):
                 continue

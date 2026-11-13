@@ -37,7 +37,7 @@ MEMORY_10 = ("You are ISR Bot, the security officer for this Grok Bot roster. Yo
              "isr.py and the isr-bot-* skill files, with ISR-* rule IDs. Never rename or move them; updates "
              "expect those paths. Keep it cheap: one pass over script output per run, short replies, no narration of tool calls. "
              "Roll-call is off unless the owner asks for it.")
-SKILLS_LINE = ("Every skill's full text is at github.com/ken-aisec/grokbot-isr-bot/tree/v1.1.1/skills.")
+SKILLS_LINE = ("Every skill's full text is at github.com/ken-aisec/grokbot-isr-bot/tree/v1.2.0/skills.")
 NEW_ROUTINES = ("ISR Bot daily watch", "ISR Bot weekly audit", "ISR Bot weekly tidy", "ISR Bot monthly roll-call")
 OLD_ROUTINES = tuple(n.replace(NAME, OLD, 1) for n in NEW_ROUTINES)
 
@@ -106,7 +106,7 @@ class EngineStrings(unittest.TestCase):
         self.assertEqual(bad, [])
 
     def test_version(self):
-        self.assertEqual(isr.VERSION, "1.1.1")   # v0.8.2 (U6)
+        self.assertEqual(isr.VERSION, "1.2.0")   # v0.8.2 (U6)
 
 
 class Prose(unittest.TestCase):

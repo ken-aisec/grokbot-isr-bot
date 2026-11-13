@@ -212,7 +212,8 @@ class RandomDecoys(Base):
         self.assertTrue(any("picked at random" in n for n in notes), notes)
         self.assertFalse(any(os.path.exists(v["path"]) for v in before.values()))
         self.assertTrue(all(os.path.isfile(v["path"]) for v in after.values()))
-        self.assertEqual({n: v["token"] for n, v in after.items()}, {n: v["token"] for n, v in before.items()})
+        for n in before:   # 1.2.0: no raw value is kept; the old value is still recognised, by its hash
+            self.assertIn(before[n]["token_sha256"], [x["token_sha256"] for x in after[n]["past_tokens"]])
         notes = []; isr.tend_canaries(notes)
         self.assertFalse(any("picked at random" in n for n in notes))           # once
 

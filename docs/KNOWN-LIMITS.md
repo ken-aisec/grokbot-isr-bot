@@ -9,6 +9,26 @@ Since 0.8.0 the product, its engine and its files are all called ISR Bot. The en
 **None are open.** Batch 7d fixed the last ones. Each item that was in this list, or that the owner logged as must-fix, is recorded
 under "Fixed in batch 7d (the last must-fix items)" right below, with its test file.
 
+## 1.2.0: benign sweeps over the decoys
+
+- Failure modes, stated plainly. (1) A thief who wraps the theft in a real full sweep gets ISR-K008 info; the use of the value is still ISR-K003 critical. (2) relatime: a second read within 24 h of an unjudged first read doesn't move the read time, so a thief's read shortly after a sweep is invisible until the value is used (true before 1.2.0 too). (3) A thief and a real sweep within ±5 s of each other are downgraded to K008; rare. (4) The value check can't see exfiltration that leaves no file, log or history line, such as a browser request. (5) On noatime mounts reads aren't recorded (`reads_recorded()` says so, and the sweep rule is skipped); copy, use, deletion and link checks still work.
+- The chaff and far-sentinel names are in `state/decoy_layout.json`, readable by every Bot. A Bot that reads the decoy, then reads (not touches: a `touch -a` changes ctime and proves nothing) the chaff and a sentinel, or 100 files in 3 folders of the same root, makes its read a K008. That is failure mode (1); the value stays critical when used.
+- The K009 shapes can be forged: a Bot that writes the decoy's own path into the same line as a stolen value, or lays out a fake tree copy (decoy folder/name, a chaff copy and a far-sentinel copy), turns that file's K003 into K009. A use of the value in a command or a shell is still critical.
+- The registry's salt sits beside its hashes, and each value's first 4 hex characters are kept as a pre-filter; a Bot that reads ISR Bot's state can test guesses for the other 48 bits. The hashes stop a copied registry from spreading real values; they don't make the values unguessable to a determined local attacker.
+- A decoy re-planted after 1.2.0 (after a restart wipe, or a move) gets a new value; the old one's hash stays in `past_tokens`, so an earlier copy is still recognised. An older registry's value was kept when it was re-planted.
+- The value check reads a session log or shell history whole only when it is new or changed since the last run (`state/canaries-stream.json`, by dev, inode, size and mtime). A log rewritten with the same size and mtime is not read again until it changes.
+- A shell history that gives a read error is cached as empty until the file changes.
+- A `state/canaries-stream.json` that already exists with a looser mode than 0600 keeps that mode.
+- A hand-edited `state/canaries-stream.json` can hide hits from the value check; only someone who can already write ISR Bot's state can do that.
+- The session-log evidence names a log when any of its tool calls is stamped within 2 minutes; it reads `"timestamp"` from Claude and Codex records. A Grok session log that stamps its tool calls another way is not named.
+- The bounded walk of a decoy root counts files read since they were last written (atime past mtime) within ±180 s; it stops at 2 s or 20,000 entries and says so (`walk_complete` in the ledger). A sweep of a very large /tmp may still be judged by its far sentinel alone.
+- Copies of the old registry made before the upgrade (raw values with each decoy's path in the same record) are judged by the 1.2.0 rules from the first run: a listing shape, so ISR-K009 info, not ISR-K003.
+- A decoy read still pending at the upgrade stays ISR-K001, because there was no chaff beside the decoy before that read. The update path audits right after install, so the window is minutes.
+- A decoy value written into a non-log file over 300 KB isn't seen. Use of the value is still seen in session logs and shell histories.
+- A hand-edited registry value that isn't 16 hex characters is matched raw and judged "copy".
+- A JSON record that names as its file the report itself, or an earlier report ISR Bot judges a listing, is a listing (ISR-K009). A record naming a deleted report is judged a copy (ISR-K003), because nothing is left to show that report was only a listing.
+- A whole JSON document that is not an array counts as one record, so the decoy's own path anywhere in it makes a copied value in it ISR-K009 (that takes a deliberate forgery, a Later item). In an array, the first element holding the value decides.
+
 ## 1.1.1: test fixtures and one secret per file:line
 
 - One-time finding-key churn. A key found by both ISR Bot's own rule and gitleaks at one file:line is now one finding with a new key; the two old keys aren't aliased to it, so the first audit after the upgrade may list the old ISR-S001 and ISR-S002 as fixed and the merged finding as new. A dismissal or accepted risk tied to an old key, or an accepted risk entered for ISR-S002 at that place, doesn't carry over (the merged finding is ISR-S001's).

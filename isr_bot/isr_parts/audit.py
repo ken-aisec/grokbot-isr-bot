@@ -173,7 +173,10 @@ def audit(roots, exports, quick=False):
     fs += browser_sessions(roots)
     jar = {}
     sign_ins = new_sign_ins(jar)   # kept open EVENT_DAYS with the other one-time events below
-    decoys = canary_paths()
+    decoys = decoy_files()   # v1.2.0: and the chaff and far sentinels beside them
+    values = decoy_value_index()   # v1.2.0: every decoy value, current and past, by its salted hash
+    # session logs and shell histories are read whole for decoy values below (decoy_stream_findings), never twice
+    streamed = {os.path.abspath(p) for p in session_logs()} | {os.path.abspath(os.path.expanduser(h)) for h in HISTORY_FILES}
     spills = {}   # v0.8.2 (item 5): {folder: {spill file: its secrets}}, one ISR-S006 per folder
     for p in walk(roots, max_depth=6):
         if p in known or p in decoys or os.path.basename(p) in SESSION_FILES:
@@ -197,10 +200,8 @@ def audit(roots, exports, quick=False):
             t = t if st and st.st_size <= 300_000 else None
         if not t:
             continue
-        if decoys:
-            cp = canary_copies(t, p)
-            if cp:
-                fs.append(cp)
+        if values and os.path.abspath(p) not in streamed:
+            fs += decoy_value_findings(t, p, values)
         rule = next(r for r in rules["rules"] if r["id"] == SECRET_RULE)
         # batch 6 (B5): the shared content check (secret_at). Fix round 3 (Codex 1, 2): every hit counts, an example-looking one
         # as any other; the finding names a real-looking one first, and gets the example note only when every hit looks like one
@@ -221,6 +222,7 @@ def audit(roots, exports, quick=False):
             f["evidence"] = key_label(m.group(0)) + f["evidence"]
             fs.append(mark_own(annotate_example(f, why) if why else f, f["secret_hits"], shown=f["secret_hits"][i]))
     fs += spill_findings(spills)
+    fs += decoy_stream_findings(values)   # v1.2.0: a decoy value used in a session or a shell, however long the log
 
     export_rules = ""
     # 5. exports the user pastes in (routines, descriptions, Auto Review rules, settings)
@@ -334,7 +336,7 @@ def audit(roots, exports, quick=False):
         fs += soft("SkillSpector and husk", ("ISR-X001", "ISR-X002", "ISR-X003", "ISR-X004"), notes, [], engine_findings,
                    user_dirs + sorted(changed) + other_dirs, fs, notes, user_roots, budget=max(0, min(ENGINE_BUDGET, time_left() - 20)))
         set_progress("finishing", 0, 0)
-        rearm_canaries(within=roots)  # ISR Bot's own scanners just read the files under roots; reset only those (batch 2, R2)
+        rearm_canaries(within=roots)  # ISR Bot's own scanners just read the files under roots; reset only those (batch 2, R2), chaff too
     else:
         # The daily check re-scans what changed and then works through anything still waiting, two minutes at most.
         rest = [d for d in user_dirs + sorted(os.path.dirname(x) for x in inv["skills"] if skill_tier(x) != "user") if d not in changed]
