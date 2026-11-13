@@ -17,6 +17,7 @@ import isr  # noqa: E402
 
 USED = "Decoy value used in a command"
 COPIED = "Canary value copied into another file"
+LISTED = "A decoy's value shows up only in a scan listing or a copy of its folder"
 
 
 class Base(Sandbox):
@@ -122,6 +123,31 @@ class ValueOnlyListed(Base):
              "Raw": self.key, "Redacted": "rk_live_****", "SecretParts": {"key": self.key}}) + "\n")
         self.audit()
         self.assertEqual(self.decoy_lines(), [("ISR-K003", COPIED, "critical", th)])
+
+    def th_record(self, file):
+        """One TruffleHog 3.97.9-shaped JSONL record: the value in Raw and again in SecretParts, the file it was found in in
+        SourceMetadata.Data.Filesystem.file."""
+        return json.dumps({"SourceMetadata": {"Data": {"Filesystem": {"file": file, "line": 1}}}, "DetectorName": "Stripe", "Verified": False,
+                           "Raw": self.key, "Redacted": "rk_live_****", "SecretParts": {"key": self.key}}) + "\n"
+
+    def test_a_trufflehog_report_whose_second_record_names_the_report_itself_is_k009_only(self):   # guard (rev2 V2-1)
+        # TruffleHog streams its report while it walks: a report inside the walked tree finds the value in its own first line
+        th = self.put(os.path.join(self.ws, "scan", "trufflehog.json"), self.th_record(self.env_path))
+        self.put(th, self.th_record(th), mode="a")
+        self.audit()
+        self.assertEqual(self.decoy_lines(), [("ISR-K009", LISTED, "info", th)])
+
+    def test_a_record_naming_an_earlier_report_that_is_a_listing_is_k009(self):   # guard (rev2 V2-1)
+        older = self.put(os.path.join(self.ws, "reports", "day1.json"), self.th_record(self.env_path))
+        newer = self.put(os.path.join(self.ws, "reports", "day2.json"), self.th_record(self.env_path) + self.th_record(older))
+        self.audit()
+        self.assertEqual(self.decoy_lines(), sorted([("ISR-K009", LISTED, "info", older), ("ISR-K009", LISTED, "info", newer)]))
+
+    def test_a_record_naming_an_ordinary_file_holding_a_copied_value_is_k003(self):   # guard (rev2 V2-1: no listing, still a copy)
+        plain = self.put(os.path.join(self.ws, "notes", "found.env"), f"STRIPE_SECRET_KEY={self.key}\n")
+        th = self.put(os.path.join(self.ws, "scan", "trufflehog.json"), self.th_record(self.env_path) + self.th_record(plain))
+        self.audit()
+        self.assertEqual(self.decoy_lines(), sorted([("ISR-K003", COPIED, "critical", plain), ("ISR-K003", COPIED, "critical", th)]))
 
     def test_k009_and_k008_are_never_scored(self):   # guard
         self.tool("sh", "-c", 'grep -rn rk_live_ "$1" > "$2" 2>/dev/null; true', "sh", self.tmpd, os.path.join(self.ws, "ioc-sweep.txt"))

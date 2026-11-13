@@ -1105,9 +1105,40 @@ def _record_of(node, w):
     return node if isinstance(node, dict) and w in json.dumps(node).lower() else None
 
 
-def value_use(text, a, b, then, whole=None):
+def _record_files(node):
+    """The file paths a scanner's JSON record names: each string under a "file" key, any case (TruffleHog's
+    SourceMetadata.Data.Filesystem.file, gitleaks' File)."""
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if isinstance(k, str) and k.lower() == "file" and isinstance(v, str):
+                yield v
+            else:
+                yield from _record_files(v)
+    elif isinstance(node, list):
+        for x in node:
+            yield from _record_files(x)
+
+
+LISTING_DEPTH = 2           # rev2 V2-1: how many reports deep a record naming an earlier report is followed
+
+
+def _listed_elsewhere(p, name, index, depth, seen):
+    """True when p (a record's file, absolute) is a file of 300 KB or less that ISR Bot itself judges only a listing or a tree
+    copy of decoy `name` (ISR-K009): an earlier scanner report. A file already on this chain (a cycle) or gone is not (V2-1)."""
+    if not os.path.isabs(p) or p in seen:
+        return False
+    text = read_text(p, limit=300_000)
+    if text is None:
+        return False
+    kinds = [k for n, k, _ in value_kinds(text, p, index, depth=depth, seen=seen) if n == name]
+    return bool(kinds) and all(k in ("listing", "mirror") for k in kinds)
+
+
+def value_use(text, a, b, then, whole=None, here=None, listed=None):
     """'command', 'listing' or 'copy' for the value at text[a:b]: in a command (JSON tool call or command field, or a line that
-    names its command or argv); in a listing (the decoy's own folder/name in the same line or JSON record); else a copy."""
+    names its command or argv); in a listing (the decoy's own folder/name in the same line or JSON record, or, rev2 V2-1, a JSON
+    record naming as its file `here`, the file judged, or a file listed(path) judges a listing of the same decoy); else a copy.
+    TruffleHog streams its report as it walks, so a report inside the walked tree names itself, and a later run an earlier one."""
     w, tail = text[a:b].lower(), path_tail(then)
     s, e = text.rfind("\n", 0, a) + 1, text.find("\n", b)
     line = text[s:] if e < 0 else text[s:e]
@@ -1122,7 +1153,13 @@ def value_use(text, a, b, then, whole=None):
             if _in_command(obj, w):
                 return "command"
             rec = _record_of(obj, w)
-            return "listing" if tail and rec is not None and tail in json.dumps(rec) else "copy"
+            if rec is None:
+                return "copy"
+            if tail and tail in json.dumps(rec):
+                return "listing"
+            named = [os.path.normpath(os.path.expanduser(f)) for f in _record_files(rec)]
+            mine = os.path.normpath(here) if here else None
+            return "listing" if any(f == mine or (listed and listed(f)) for f in named) else "copy"
     except RecursionError:
         return "copy"
     if _CMD_LINE.search(line):
@@ -1146,8 +1183,9 @@ def mirrored_copy(path, name):
             and b in sent and any(os.path.isfile(os.path.join(top, sent[b], fn)) for fn, _ in SENTINEL_FILES))
 
 
-def value_kinds(text, path, index, history=False, line_no=None):
-    """[(decoy name, how it sits, line)] for each decoy value in text: a whole file, or one line of a streamed log (line_no)."""
+def value_kinds(text, path, index, history=False, line_no=None, depth=0, seen=()):
+    """[(decoy name, how it sits, line)] for each decoy value in text: a whole file, or one line of a streamed log (line_no).
+    depth and seen: how many reports deep this file was reached from the one judged, and the files on that chain (V2-1)."""
     hits = value_hits(text, index)
     if not hits:
         return []
@@ -1157,7 +1195,7 @@ def value_kinds(text, path, index, history=False, line_no=None):
             whole = json.loads(text)                      # a report written as one JSON document (gitleaks)
         except ValueError:
             whole = None
-    out = []
+    out, chain = [], tuple(seen) + (os.path.normpath(path),)
     for name, a, b, then, hashed in hits:
         if then and os.path.normpath(os.path.expanduser(then)) == os.path.normpath(path):
             continue                                      # the decoy itself
@@ -1168,7 +1206,8 @@ def value_kinds(text, path, index, history=False, line_no=None):
         elif mirrored_copy(path, name):
             kind = "mirror"
         else:
-            kind = value_use(text, a, b, then, whole)
+            listed = (lambda f, n=name: _listed_elsewhere(f, n, index, depth + 1, chain)) if depth < LISTING_DEPTH else None
+            kind = value_use(text, a, b, then, whole, path, listed)
         out.append((name, kind, line_no or line_of(text, a)))
     return out
 
