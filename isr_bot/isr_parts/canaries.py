@@ -1119,19 +1119,28 @@ def _record_files(node):
             yield from _record_files(x)
 
 
-LISTING_DEPTH = 2           # rev2 V2-1: how many reports deep a record naming an earlier report is followed
-
-
-def _listed_elsewhere(p, name, index, depth, seen):
+def _listed_elsewhere(p, name, index, seen, memo):
     """True when p (a record's file, absolute) is a file of 300 KB or less that ISR Bot itself judges only a listing or a tree
-    copy of decoy `name` (ISR-K009): an earlier scanner report. A file already on this chain (a cycle) or gone is not (V2-1)."""
-    if not os.path.isabs(p) or p in seen:
+    copy of decoy `name` (ISR-K009): an earlier scanner report. A file already on this chain (a cycle) or gone is not (V2-1).
+    No depth limit (rev3 V3-1): memo {(path, decoy): bool}, one per check, judges each named file at most once. A no that
+    leaned on a cycle is not kept (memo["cycles"] counts them): from another chain the same file may be a listing."""
+    if not os.path.isabs(p):
         return False
+    if p in seen:
+        memo["cycles"] = memo.get("cycles", 0) + 1
+        return False
+    if (p, name) in memo:
+        return memo[(p, name)]
     text = read_text(p, limit=300_000)
     if text is None:
+        memo[(p, name)] = False
         return False
-    kinds = [k for n, k, _ in value_kinds(text, p, index, depth=depth, seen=seen) if n == name]
-    return bool(kinds) and all(k in ("listing", "mirror") for k in kinds)
+    cycles = memo.get("cycles", 0)
+    kinds = [k for n, k, _ in value_kinds(text, p, index, seen=seen, memo=memo) if n == name]
+    ok = bool(kinds) and all(k in ("listing", "mirror") for k in kinds)
+    if ok or memo.get("cycles", 0) == cycles:
+        memo[(p, name)] = ok
+    return ok
 
 
 def value_use(text, a, b, then, whole=None, here=None, listed=None):
@@ -1183,9 +1192,11 @@ def mirrored_copy(path, name):
             and b in sent and any(os.path.isfile(os.path.join(top, sent[b], fn)) for fn, _ in SENTINEL_FILES))
 
 
-def value_kinds(text, path, index, history=False, line_no=None, depth=0, seen=()):
+def value_kinds(text, path, index, history=False, line_no=None, seen=(), memo=None):
     """[(decoy name, how it sits, line)] for each decoy value in text: a whole file, or one line of a streamed log (line_no).
-    depth and seen: how many reports deep this file was reached from the one judged, and the files on that chain (V2-1)."""
+    seen: the files on the chain from the one judged to this one (V2-1). memo: the check's verdicts on named files, shared by
+    every nested look-up; a new one for each top-level call (rev3 V3-1)."""
+    memo = {} if memo is None else memo
     hits = value_hits(text, index)
     if not hits:
         return []
@@ -1206,7 +1217,7 @@ def value_kinds(text, path, index, history=False, line_no=None, depth=0, seen=()
         elif mirrored_copy(path, name):
             kind = "mirror"
         else:
-            listed = (lambda f, n=name: _listed_elsewhere(f, n, index, depth + 1, chain)) if depth < LISTING_DEPTH else None
+            listed = lambda f, n=name: _listed_elsewhere(f, n, index, chain, memo)
             kind = value_use(text, a, b, then, whole, path, listed)
         out.append((name, kind, line_no or line_of(text, a)))
     return out

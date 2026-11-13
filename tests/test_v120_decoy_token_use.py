@@ -143,6 +143,15 @@ class ValueOnlyListed(Base):
         self.audit()
         self.assertEqual(self.decoy_lines(), sorted([("ISR-K009", LISTED, "info", older), ("ISR-K009", LISTED, "info", newer)]))
 
+    def test_five_kept_dated_reports_each_naming_every_earlier_one_are_all_k009(self):   # guard (rev3 V3-1: no depth limit)
+        # a daily TruffleHog run over a tree that keeps its earlier reports: report n names the decoy, each earlier report and itself
+        days = []
+        for n in range(1, 6):
+            p = os.path.join(self.ws, "reports", f"day{n}.json")
+            days.append(self.put(p, self.th_record(self.env_path) + "".join(self.th_record(d) for d in days) + self.th_record(p)))
+        self.audit()
+        self.assertEqual(self.decoy_lines(), sorted(("ISR-K009", LISTED, "info", d) for d in days))
+
     def test_a_record_naming_an_ordinary_file_holding_a_copied_value_is_k003(self):   # guard (rev2 V2-1: no listing, still a copy)
         plain = self.put(os.path.join(self.ws, "notes", "found.env"), f"STRIPE_SECRET_KEY={self.key}\n")
         th = self.put(os.path.join(self.ws, "scan", "trufflehog.json"), self.th_record(self.env_path) + self.th_record(plain))
