@@ -168,6 +168,152 @@ class ValueOnlyListed(Base):
         self.assertTrue({"ISR-K008", "ISR-K009"} <= isr.EVIDENCE_RULES)
 
 
+class JsonRecordsMustBeScannerShaped(Base):
+    """rev4 V4-2: in a walked or named file, a decoy value in JSON is a listing only at a real gitleaks, TruffleHog or SARIF
+    finding's value spots whose path is the decoy's (or the report itself, or a report ISR Bot judges a listing), or in a string
+    whose lines are a listing by the text rules. The evasion tests are K009 on 6820632 (plan-rev4 E1-E4) and K003 here; the
+    shapes after them are the measured real ones (gitleaks 8.30.1, TruffleHog 3.97.9), built without the binaries."""
+    DUMMY = "rk_live_" + "0" * 32
+
+    def gl(self, file, secret=None):
+        """One gitleaks 8.30.1 JSON finding."""
+        s = self.key if secret is None else secret
+        return {"RuleID": "stripe-access-token", "Description": "Stripe Access Token", "StartLine": 1, "EndLine": 1, "StartColumn": 19,
+                "EndColumn": 58, "Match": s, "Secret": s, "File": file, "SymlinkFile": "", "Commit": "", "Entropy": 4.1, "Author": "",
+                "Email": "", "Date": "", "Message": "", "Tags": [], "Fingerprint": file + ":stripe-access-token:1"}
+
+    def th(self, file, raw=None):
+        """One TruffleHog 3.97.9 JSONL finding (the value in Raw and again in SecretParts.key; RawV2 and Redacted empty)."""
+        r = self.key if raw is None else raw
+        return {"SourceMetadata": {"Data": {"Filesystem": {"file": file, "line": 1}}}, "SourceID": 1, "SourceType": 15,
+                "SourceName": "trufflehog - filesystem", "DetectorType": 16, "DetectorName": "Stripe", "DecoderName": "PLAIN",
+                "Verified": False, "VerificationFromCache": False, "Raw": r, "RawV2": "", "Redacted": "",
+                "ExtraData": {"rotation_guide": "https://howtorotate.com/docs/tutorials/stripe/"}, "StructuredData": None,
+                "SecretParts": {"key": r}}
+
+    def copied(self, *paths):
+        return sorted(("ISR-K003", COPIED, "critical", p) for p in paths)
+
+    def listed(self, *paths):
+        return sorted(("ISR-K009", LISTED, "info", p) for p in paths)
+
+    def tool_result_log(self, rel, content):
+        """A `claude -p` stream-json job log in the workspace (walked, not streamed) whose tool_result holds content."""
+        return self.put(os.path.join(self.ws, "jobs", rel), json.dumps({"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_1", "content": content}]}}) + "\n")
+
+    # evasion: K009 on 6820632, K003 here
+    def test_a_loot_json_object_with_the_value_and_the_decoy_path_is_k003(self):   # guard (E1)
+        loot = {"source": self.env_path, "key": self.key}
+        a = self.put(os.path.join(self.ws, "loot.json"), json.dumps(loot, indent=2))
+        b = self.put(os.path.join(self.ws, "loot.jsonl"), json.dumps(loot) + "\n")
+        self.audit()
+        self.assertEqual(self.decoy_lines(), self.copied(a, b))
+
+    def test_the_value_in_a_non_scanner_field_of_a_scanner_shaped_record_is_k003(self):   # guard (E2)
+        r = self.th(self.env_path, raw=self.DUMMY); r["Notes"] = self.key
+        a = self.put(os.path.join(self.ws, "th.jsonl"), json.dumps(r) + "\n")
+        g = self.gl(self.env_path, secret=self.DUMMY); g["Description"] = self.key
+        b = self.put(os.path.join(self.ws, "gl.json"), json.dumps([g], indent=1))
+        self.audit()
+        self.assertEqual(self.decoy_lines(), self.copied(a, b))
+
+    def test_a_real_shaped_finding_with_the_value_also_in_an_extra_field_is_k003(self):   # guard
+        r = self.th(self.env_path); r["Notes"] = "kept: " + self.key
+        a = self.put(os.path.join(self.ws, "th.jsonl"), json.dumps(r) + "\n")
+        g = self.gl(self.env_path); g["Message"] = self.key
+        b = self.put(os.path.join(self.ws, "gl.json"), json.dumps([g], indent=1))
+        self.audit()
+        self.assertEqual(self.decoy_lines(), self.copied(a, b))
+
+    def test_a_fake_findings_array_with_the_wrong_structure_is_k003(self):   # guard (E3)
+        f = [{"path": self.env_path, "secret": self.key}]
+        a = self.put(os.path.join(self.ws, "f.json"), json.dumps({"findings": f}, indent=1))
+        b = self.put(os.path.join(self.ws, "f2.json"), json.dumps(f, indent=1))
+        self.audit()
+        self.assertEqual(self.decoy_lines(), self.copied(a, b))
+
+    def test_the_value_in_one_object_and_the_decoy_path_in_a_sibling_is_k003(self):   # guard (E4)
+        other = os.path.join(self.ws, "notes", "x.txt")
+        a = self.put(os.path.join(self.ws, "s.json"), json.dumps({"a": {"Secret": self.key, "File": other}, "b": {"File": self.env_path}}, indent=1))
+        b = self.put(os.path.join(self.ws, "s2.json"), json.dumps([self.gl(other), self.gl(self.env_path, secret=self.DUMMY)], indent=1))
+        self.audit()
+        self.assertEqual(self.decoy_lines(), self.copied(a, b))
+
+    def test_a_real_report_with_an_extra_element_holding_the_value_is_k003(self):   # guard (the first element decided on 6820632)
+        p = self.put(os.path.join(self.ws, "gitleaks.json"), json.dumps([self.gl(self.env_path), {"note": "for later", "value": self.key}], indent=1))
+        self.audit()
+        self.assertEqual(self.decoy_lines(), self.copied(p))
+
+    def test_findings_wrapped_in_another_object_are_not_findings(self):   # guard
+        p = self.put(os.path.join(self.ws, "ci-artifact.json"), json.dumps(
+            {"scan": {"tool": "gitleaks", "version": "8.30.1"}, "results": [self.gl(self.env_path)]}, indent=1))
+        self.audit()
+        self.assertEqual(self.decoy_lines(), self.copied(p))
+
+    def test_the_decoy_folder_name_inside_a_longer_path_is_not_the_decoy(self):   # guard
+        longer = self.env_path + ".bak"
+        self.assertFalse(os.path.exists(longer))
+        p = self.put(os.path.join(self.ws, "gitleaks.json"), json.dumps([self.gl(longer)], indent=1))
+        self.audit()
+        self.assertEqual(self.decoy_lines(), self.copied(p))
+
+    # real report shapes: K009 on 6820632 and here (but the last one, R4-3)
+    def test_gitleaks_reports_with_relative_paths_naming_kept_reports_are_k009(self):   # guard (gitleaks --source . from the root)
+        rel = lambda p: os.path.relpath(p, self.tmp)
+        days = []
+        for n in range(1, 4):
+            p = os.path.join(self.ws, "reports", f"day{n}.json")
+            days.append(self.put(p, json.dumps([self.gl(rel(self.env_path))] + [self.gl(rel(d)) for d in days], indent=1)))
+        self.audit()
+        self.assertEqual(self.decoy_lines(), self.listed(*days))
+
+    def test_a_sarif_report_saved_as_json_is_k009(self):   # guard (gitleaks --report-format sarif)
+        uri = os.path.relpath(self.env_path, self.tmp)
+        sarif = {"$schema": "https://json.schemastore.org/sarif-2.1.0.json", "version": "2.1.0", "runs": [{
+            "tool": {"driver": {"name": "gitleaks", "semanticVersion": "v8.30.1", "rules": [{"id": "stripe-access-token"}]}},
+            "results": [{"ruleId": "stripe-access-token", "message": {"text": "stripe-access-token has detected secret for file " + uri + "."},
+                         "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri},
+                                                             "region": {"startLine": 1, "startColumn": 19, "endLine": 1, "endColumn": 58,
+                                                                        "snippet": {"text": self.key}}}}],
+                         "partialFingerprints": {"commitSha": "", "email": "", "author": "", "date": "", "commitMessage": ""}}]}]}
+        p = self.put(os.path.join(self.ws, "gitleaks-sarif.json"), json.dumps(sarif, indent=1))
+        self.audit()
+        self.assertEqual(self.decoy_lines(), self.listed(p))
+
+    def test_grep_and_trufflehog_output_inside_a_walked_json_log_is_k009(self):   # guard (tool_result strings)
+        out = self.tool("sh", "-c", 'grep -rn rk_live_ "$1"; true', "sh", self.tmpd).stdout.decode()   # never printed
+        self.assertTrue(holds_value(out, self.value))
+        g = self.tool_result_log("g.jsonl", out)
+        t = self.tool_result_log("t.jsonl", "".join(json.dumps(self.th(self.env_path)) + "\n" for _ in range(2)))
+        self.audit()
+        self.assertEqual(self.decoy_lines(), self.listed(g, t))
+
+    def test_a_gitleaks_json_report_printed_inside_a_walked_json_log_is_k009(self):   # guard (`cat gitleaks.json` in a job log)
+        p = self.tool_result_log("cat.jsonl", json.dumps([self.gl(self.env_path)], indent=1))
+        self.audit()
+        self.assertEqual(self.decoy_lines(), self.listed(p))
+
+    def test_a_session_log_line_is_judged_as_before(self):   # guard (the stream keeps 6820632's rule)
+        # `gitleaks detect -v` text in a tool_result of a Claude session log: the decoy's path is in the same JSON line
+        text = (f"Finding:     STRIPE_SECRET_KEY={self.key}\nSecret:      {self.key}\nRuleID:      stripe-access-token\n"
+                f"Entropy:     4.1\nFile:        {self.env_path}\nLine:        1\nFingerprint: {self.env_path}:stripe-access-token:1\n")
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
+        log = self.put(os.path.join(self.home, ".claude", "projects", "-workspace-app", "7d2e4b.jsonl"), json.dumps(
+            {"type": "user", "timestamp": stamp, "message": {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "toolu_1", "content": text}]}}) + "\n")
+        self.audit()
+        self.assertEqual(self.decoy_lines(), self.listed(log))
+
+    def test_two_reports_naming_each_other_are_k009(self):   # guard (rev4 R4-3: K003 on 6820632)
+        # alternating TruffleHog runs into A.json and B.json: each names the decoy, the other report and itself
+        a, b = os.path.join(self.ws, "reports", "A.json"), os.path.join(self.ws, "reports", "B.json")
+        for p, other in ((a, b), (b, a)):
+            self.put(p, "".join(json.dumps(self.th(f)) + "\n" for f in (self.env_path, other, p)))
+        self.audit()
+        self.assertEqual(self.decoy_lines(), self.listed(a, b))
+
+
 class StreamSkipsUnchangedLogs(Base):
     """rev1 R8 (Codex C4): session logs and shell histories that haven't changed since the last run are not read again."""
 

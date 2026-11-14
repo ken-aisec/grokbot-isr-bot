@@ -187,6 +187,66 @@ class SweepsAreK008(Sandbox):
         self.assertEqual([f["rule"] for f in fs if f["where"] == report and f["rule"].startswith("ISR-K")], ["ISR-K009"])
 
 
+class RealReportsStayK009(Sandbox):
+    """rev4 V4-4: with the real scanners, the report shapes the stricter JSON rule (V4-2) must keep as listings."""
+
+    def exe(self, name):
+        exe = shutil.which(name)
+        if not exe:
+            self.skipTest(f"{name} is not on PATH; the only other copy is the live install's scanners folder, which tests may not touch")
+        return exe
+
+    def named(self, report):
+        """The files a real report names (gitleaks' File, TruffleHog's SourceMetadata.Data.Filesystem.file); paths only."""
+        text = text_of(report)
+        if text.lstrip().startswith("["):
+            return {r["File"] for r in json.loads(text)}
+        return {json.loads(x)["SourceMetadata"]["Data"]["Filesystem"]["file"] for x in text.splitlines() if x.strip()}
+
+    def report_rules(self, reports):
+        """{report: [ISR-K rules on it]} after one audit; ISR-K001 must not fire."""
+        self.audit()
+        fs = self.snap()["findings"]
+        self.assertNotIn("ISR-K001", [f["rule"] for f in fs])
+        return {p: [f["rule"] for f in fs if f["where"] == p and f["rule"].startswith("ISR-K")] for p in reports}
+
+    def test_real_gitleaks_kept_reports_with_relative_paths_are_k009(self):   # guard
+        exe = self.exe("gitleaks")
+        rel = os.path.relpath(os.path.join(self.ws, "reports"), self.tmp)
+        os.makedirs(os.path.join(self.ws, "reports"))
+        for d in ("day1", "day2", "day3"):                # run from the sandbox root: File is relative, and day2 on names day1
+            self.tool(exe, "detect", "--no-git", "--source", ".", "--report-format", "json", "--report-path", f"{rel}/{d}.json", "--exit-code", "0")
+        days = [os.path.join(self.ws, "reports", f"day{n}.json") for n in (1, 2, 3)]
+        self.assertTrue(all(os.path.isfile(p) for p in days))
+        self.assertIn(f"{rel}/day1.json", self.named(days[2]))   # the measured shape: a relative path to a kept report
+        self.assertEqual(self.report_rules(days), {p: ["ISR-K009"] for p in days})
+
+    def test_real_gitleaks_sarif_written_as_json_is_k009(self):   # guard
+        exe = self.exe("gitleaks")
+        report = os.path.join(self.ws, "gitleaks-sarif.json")
+        self.tool(exe, "detect", "--no-git", "--source", self.tmp, "--report-format", "sarif", "--report-path", report, "--exit-code", "0")
+        self.assertEqual(self.report_rules([report]), {report: ["ISR-K009"]})
+
+    def test_real_trufflehog_over_a_tree_keeping_5_dated_reports_is_k009(self):   # guard
+        exe = self.exe("trufflehog")
+        days = [os.path.join(self.ws, "reports", f"day{n}.json") for n in range(1, 6)]
+        os.makedirs(os.path.dirname(days[0]))
+        for p in days:                                    # each run walks the tree that keeps the earlier reports
+            with open(p, "w") as f:
+                self.tool(exe, "filesystem", self.tmp, "--json", "--no-verification", "--no-update", stdout=f, stderr=subprocess.DEVNULL)
+        self.assertTrue(set(days[:4]) & self.named(days[4]))   # the last report names earlier ones
+        self.assertEqual(self.report_rules(days), {p: ["ISR-K009"] for p in days})
+
+    def test_real_trufflehog_over_a_tree_holding_a_gitleaks_report_is_k009(self):   # guard
+        gl, th = self.exe("gitleaks"), self.exe("trufflehog")
+        glr, thr = os.path.join(self.ws, "gitleaks-report.json"), os.path.join(self.ws, "trufflehog.json")
+        self.tool(gl, "detect", "--no-git", "--source", self.tmp, "--report-format", "json", "--report-path", glr, "--exit-code", "0")
+        with open(thr, "w") as f:
+            self.tool(th, "filesystem", self.tmp, "--json", "--no-verification", "--no-update", stdout=f, stderr=subprocess.DEVNULL)
+        self.assertIn(glr, self.named(thr))
+        self.assertEqual(self.report_rules([glr, thr]), {glr: ["ISR-K009"], thr: ["ISR-K009"]})
+
+
 class TargetedReadsStayCritical(Sandbox):
     def test_cat_of_one_decoy_alone_is_k001_critical(self):   # guard
         self.tool("cat", self.path_of("api-env"))

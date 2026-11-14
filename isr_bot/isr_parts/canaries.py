@@ -1034,8 +1034,9 @@ def canary_copies(text, path):
 
 # v1.2.0: the token-use stage. Each value, current or past, is found by its salted hash in 16-hex windows that start with a known
 # prefix, in any case (the cloud-keys decoy holds it upper-cased). Where it sits decides the finding: in a command, critical
-# "used"; anywhere else critical "copied", unless it is only a scanner's listing (the decoy's own folder/name in the same line or
-# JSON record) or a copy of the whole decoy root (its folder and name with a chaff copy and a far-sentinel copy): then info.
+# "used"; anywhere else critical "copied", unless it is only a scanner's listing (the decoy's own folder/name in the same line,
+# or, rev4, in a file's JSON only at a gitleaks, TruffleHog or SARIF finding's value spots with an accepted path) or a copy of
+# the whole decoy root (its folder and name with a chaff copy and a far-sentinel copy): then info.
 CMD_TYPES = frozenset(("tool_use", "server_tool_use", "function_call", "local_shell_call", "custom_tool_call", "tool_call"))
 CMD_KEYS = frozenset(("command", "cmd", "cmdline", "argv", "args", "arguments"))
 _CMD_LINE = re.compile(r"""(?i)["']?\b(cmdline|argv|args|arguments|command|cmd)\b["']?\s*[=:]""")
@@ -1099,7 +1100,8 @@ def _in_command(node, w, inside=False):
 def _record_of(node, w):
     """The top-level JSON record holding w: a JSON line's own value, or, for a whole-document report (gitleaks' array), the
     element that holds it. Never a smaller object inside it: TruffleHog keeps the value again in a nested SecretParts, away from
-    the path in SourceMetadata, and the record is still one finding of a scanner's report (F1)."""
+    the path in SourceMetadata, and the record is still one finding of a scanner's report (F1). Since rev4 only the session-log
+    stream uses it (with _record_files); a whole file's JSON is judged by _json_listing."""
     if isinstance(node, list):
         return next((x for x in node if w in json.dumps(x).lower()), None)
     return node if isinstance(node, dict) and w in json.dumps(node).lower() else None
@@ -1119,35 +1121,136 @@ def _record_files(node):
             yield from _record_files(x)
 
 
+_TH_SOURCES = ("Filesystem", "Git", "Github", "Docker")
+
+
+def _string_spots(node, parent, key):
+    """(id(container), key) for each string at or under node, which sits at parent[key]."""
+    if isinstance(node, str):
+        yield (id(parent), key)
+    elif isinstance(node, dict):
+        for k, v in node.items():
+            yield from _string_spots(v, node, k)
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            yield from _string_spots(v, node, i)
+
+
+def _scanner_findings(doc):
+    """[(value spots, path field)] for the findings at a scanner's real places in this JSON line or document (rev4 V4-2), each
+    value spot an (id(container), key). gitleaks and TruffleHog: the object itself or a top-level array element (gitleaks'
+    report, `jq -s`); SARIF: runs[].results[].locations[].physicalLocation. A finding nested any deeper is not a finding."""
+    out = []
+    for f in [doc] if isinstance(doc, dict) else [x for x in doc if isinstance(x, dict)] if isinstance(doc, list) else []:
+        if (isinstance(f.get("RuleID"), str) and isinstance(f.get("File"), str) and isinstance(f.get("StartLine"), int)
+                and "Secret" in f and "Match" in f):                      # gitleaks
+            out.append(({(id(f), "Secret"), (id(f), "Match")}, f["File"]))
+        meta = f.get("SourceMetadata")
+        data = meta.get("Data") if isinstance(meta, dict) else None
+        if isinstance(f.get("DetectorName"), str) and "Raw" in f and isinstance(data, dict) and len(data) == 1:   # TruffleHog
+            (src, d), = data.items()
+            if src in _TH_SOURCES and isinstance(d, dict) and isinstance(d.get("file"), str):
+                spots = {(id(f), k) for k in ("Raw", "RawV2", "Redacted")} | set(_string_spots(f.get("SecretParts"), f, "SecretParts"))
+                out.append((spots, d["file"]))
+    if isinstance(doc, dict) and isinstance(doc.get("runs"), list):          # SARIF (gitleaks --report-format sarif)
+        for run in doc["runs"]:
+            for res in (run.get("results") if isinstance(run, dict) else None) or []:
+                for loc in (res.get("locations") if isinstance(res, dict) else None) or []:
+                    pl = loc.get("physicalLocation") if isinstance(loc, dict) else None
+                    art = pl.get("artifactLocation") if isinstance(pl, dict) else None
+                    reg = pl.get("region") if isinstance(pl, dict) else None
+                    snip = reg.get("snippet") if isinstance(reg, dict) else None
+                    if (isinstance(art, dict) and isinstance(art.get("uri"), str) and isinstance(snip, dict)
+                            and isinstance(snip.get("text"), str)):
+                        uri = art["uri"]
+                        out.append(({(id(snip), "text")}, uri[len("file://"):] if uri.startswith("file://") else uri))
+    return out
+
+
+def _path_ok(p, tail, here, listed):
+    """True when a finding's path field p shows a listing (rev4 V4-2): the decoy's folder/name as the whole path or its end; the
+    file judged (`here`); an absolute file listed(path) judges a listing; or a relative path (gitleaks --source .) that, joined
+    to a folder from here's folder up to /, is here or an existing file listed() accepts (one try per level)."""
+    q = os.path.normpath(os.path.expanduser(p))
+    if tail and (q == tail or q.endswith(os.sep + tail)):
+        return True
+    mine = os.path.normpath(here) if here else None
+    if os.path.isabs(q):
+        return q == mine or bool(listed and listed(q))
+    if not mine:
+        return False
+    folder = os.path.dirname(mine)
+    while True:
+        c = os.path.normpath(os.path.join(folder, q))
+        if c == mine or (listed and os.path.isfile(c) and listed(c)):
+            return True
+        if folder == os.path.dirname(folder):
+            return False
+        folder = os.path.dirname(folder)
+
+
+def _json_listing(doc, w, tail, here, listed):
+    """True when every place in this JSON value that holds w (any string, any key, any other scalar as JSON text), and at least
+    one, is (a) a value spot of a scanner's finding (_scanner_findings) whose path _path_ok accepts, or (b) a string each of
+    whose lines holding w holds the decoy's folder/name or is itself JSON that is a listing, or whose whole text is such JSON
+    (tool output inside a log). Anything else is a copy: a value in a key, a non-scanner field, a wrapper or an extra element,
+    or a decoy path only in a sibling (rev4 V4-2)."""
+    spots = {}
+    for places, path in _scanner_findings(doc):
+        for x in places:
+            spots.setdefault(x, []).append(path)
+
+    def as_json(s):
+        if not s.lstrip().startswith(("{", "[")):
+            return False
+        try:
+            return _json_listing(json.loads(s), w, tail, here, listed)
+        except ValueError:
+            return False
+
+    def ok(node, parent, key):
+        if isinstance(node, dict):
+            return all(w not in str(k).lower() and ok(v, node, k) for k, v in node.items())
+        if isinstance(node, list):
+            return all(ok(v, node, i) for i, v in enumerate(node))
+        if not isinstance(node, str):
+            return w not in json.dumps(node).lower()
+        if w not in node.lower():
+            return True
+        found.append(1)
+        if any(_path_ok(p, tail, here, listed) for p in spots.get((id(parent), key), [])):
+            return True
+        return (all((tail and tail in ln) or as_json(ln) for ln in node.split("\n") if w in ln.lower())
+                or ("\n" in node and as_json(node)))
+    found = []
+    return ok(doc, None, None) and bool(found)
+
+
 def _listed_elsewhere(p, name, index, seen, memo):
     """True when p (a record's file, absolute) is a file of 300 KB or less that ISR Bot itself judges only a listing or a tree
-    copy of decoy `name` (ISR-K009): an earlier scanner report. A file already on this chain (a cycle) or gone is not (V2-1).
-    No depth limit (rev3 V3-1): memo {(path, decoy): bool}, one per check, judges each named file at most once. A no that
-    leaned on a cycle is not kept (memo["cycles"] counts them): from another chain the same file may be a listing."""
+    copy of decoy `name` (ISR-K009): an earlier scanner report. A file gone is not (V2-1). No depth limit (rev3 V3-1): memo
+    {(path, decoy): bool}, one per top-level check, judges each named file at most once. A file already on this chain counts
+    as a listing for that chain (rev4 R4-3): that yes stands only if every file on the chain holds up, and a copy anywhere on
+    it fails each file above it, the one judged too; the memo never outlives the check, so it never reaches another one."""
     if not os.path.isabs(p):
         return False
     if p in seen:
-        memo["cycles"] = memo.get("cycles", 0) + 1
-        return False
+        return True
     if (p, name) in memo:
         return memo[(p, name)]
     text = read_text(p, limit=300_000)
-    if text is None:
-        memo[(p, name)] = False
-        return False
-    cycles = memo.get("cycles", 0)
-    kinds = [k for n, k, _ in value_kinds(text, p, index, seen=seen, memo=memo) if n == name]
-    ok = bool(kinds) and all(k in ("listing", "mirror") for k in kinds)
-    if ok or memo.get("cycles", 0) == cycles:
-        memo[(p, name)] = ok
+    kinds = [] if text is None else [k for n, k, _ in value_kinds(text, p, index, seen=seen, memo=memo) if n == name]
+    memo[(p, name)] = ok = bool(kinds) and all(k in ("listing", "mirror") for k in kinds)
     return ok
 
 
-def value_use(text, a, b, then, whole=None, here=None, listed=None):
+def value_use(text, a, b, then, whole=None, here=None, listed=None, strict=False):
     """'command', 'listing' or 'copy' for the value at text[a:b]: in a command (JSON tool call or command field, or a line that
-    names its command or argv); in a listing (the decoy's own folder/name in the same line or JSON record, or, rev2 V2-1, a JSON
-    record naming as its file `here`, the file judged, or a file listed(path) judges a listing of the same decoy); else a copy.
-    TruffleHog streams its report as it walks, so a report inside the walked tree names itself, and a later run an earlier one."""
+    names its command or argv); in a listing (the decoy's own folder/name in the same text line); else a copy. JSON: strict (a
+    whole file or a named file, rev4 V4-2) takes _json_listing; else (the session-log stream) the rule before rev4: the decoy's
+    folder/name in the top-level record holding w, or, rev2 V2-1, a record naming as its file `here`, the file judged, or a
+    file listed(path) judges a listing of the same decoy. TruffleHog streams its report as it walks, so a report inside the
+    walked tree names itself, and a later run an earlier one."""
     w, tail = text[a:b].lower(), path_tail(then)
     s, e = text.rfind("\n", 0, a) + 1, text.find("\n", b)
     line = text[s:] if e < 0 else text[s:e]
@@ -1161,6 +1264,8 @@ def value_use(text, a, b, then, whole=None, here=None, listed=None):
         if obj is not None:
             if _in_command(obj, w):
                 return "command"
+            if strict:
+                return "listing" if _json_listing(obj, w, tail, here, listed) else "copy"
             rec = _record_of(obj, w)
             if rec is None:
                 return "copy"
@@ -1195,7 +1300,8 @@ def mirrored_copy(path, name):
 def value_kinds(text, path, index, history=False, line_no=None, seen=(), memo=None):
     """[(decoy name, how it sits, line)] for each decoy value in text: a whole file, or one line of a streamed log (line_no).
     seen: the files on the chain from the one judged to this one (V2-1). memo: the check's verdicts on named files, shared by
-    every nested look-up; a new one for each top-level call (rev3 V3-1)."""
+    every nested look-up; a new one for each top-level call (rev3 V3-1). A whole file (and so a named one) is judged strictly
+    (rev4 V4-2: JSON by _json_listing); a streamed session-log or history line keeps the rule before rev4."""
     memo = {} if memo is None else memo
     hits = value_hits(text, index)
     if not hits:
@@ -1218,7 +1324,7 @@ def value_kinds(text, path, index, history=False, line_no=None, seen=(), memo=No
             kind = "mirror"
         else:
             listed = lambda f, n=name: _listed_elsewhere(f, n, index, chain, memo)
-            kind = value_use(text, a, b, then, whole, path, listed)
+            kind = value_use(text, a, b, then, whole, path, listed, strict=line_no is None and not history)
         out.append((name, kind, line_no or line_of(text, a)))
     return out
 

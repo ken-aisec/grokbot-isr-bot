@@ -26,8 +26,16 @@ under "Fixed in batch 7d (the last must-fix items)" right below, with its test f
 - A decoy read still pending at the upgrade stays ISR-K001, because there was no chaff beside the decoy before that read. The update path audits right after install, so the window is minutes.
 - A decoy value written into a non-log file over 300 KB isn't seen. Use of the value is still seen in session logs and shell histories.
 - A hand-edited registry value that isn't 16 hex characters is matched raw and judged "copy".
-- A JSON record that names as its file the report itself, or an earlier report ISR Bot judges a listing, is a listing (ISR-K009). A record naming a deleted report is judged a copy (ISR-K003), because nothing is left to show that report was only a listing.
-- A whole JSON document that is not an array counts as one record, so the decoy's own path anywhere in it makes a copied value in it ISR-K009 (that takes a deliberate forgery, a Later item). In an array, the first element holding the value decides.
+- A JSON record that names as its file the report itself, or an earlier report ISR Bot judges a listing, is a listing (ISR-K009). Reports that name each other count as listings of each other (rev4 R4-3). A record naming a deleted report is judged a copy (ISR-K003), because nothing is left to show that report was only a listing.
+- A report or log that wraps scanner output in its own structure and holds raw values (a CI artifact, a dashboard export) is ISR-K003 critical, not K009. Real gitleaks JSON and SARIF, TruffleHog JSONL, `jq -s` arrays and tool output inside logs stay K009.
+- A future scanner version that puts the value in a new field gives ISR-K003 until ISR Bot knows that field. The scanner versions are pinned in `scripts/scanner-bins.lock`.
+- An exact forgery of a real finding (every required key, the value in `Raw` or `Secret`, the decoy's path in the file field) is still ISR-K009, and so is the value on the same text line as the decoy's folder/name. A use of the value in a command stays critical.
+- The session-log and shell-history stream keeps the rule from before rev4, so a forged line appended to an agent session log can still be K009.
+- gitleaks `-v` text, or pretty JSON with extra lines, inside a walked JSON log is ISR-K003. Pretty JSON alone there is K009.
+- TruffleHog `ExtraData` and other detectors' extra fields don't count as places for the value.
+- A relative path in a report is tried under each folder above the report, so a name clash can pick another file. That file must still be a listing itself.
+- Scanner-shaped files that name only each other are ISR-K009 (rev4 R4-3), the same reach as an exact forgery.
+- A named file over 300 KB, or a deleted one, still makes the record naming it ISR-K003.
 
 ## 1.1.1: test fixtures and one secret per file:line
 
