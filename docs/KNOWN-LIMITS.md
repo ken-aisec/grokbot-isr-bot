@@ -37,6 +37,15 @@ under "Fixed in batch 7d (the last must-fix items)" right below, with its test f
 - Scanner-shaped files that name only each other are ISR-K009 (rev4 R4-3), the same reach as an exact forgery.
 - A named file over 300 KB, or a deleted one, still makes the record naming it ISR-K003.
 
+## 1.2.0: ISR Bot's own test and doc files, recognized by content
+
+- A file is recognized only when its whole bytes are a file ISR Bot shipped under `tests/` or `docs/` (`rules/fixture_files.json`, built from the engine's own history). A dev copy at a commit newer than the installed engine still alerts until that version is installed.
+- Only `tests/` and `docs/` are listed. Other tracked folders (`bot/`, `skills/`, `CHANGELOG.md`), generated build logs (`*.jsonl`, `codex-review.log`) and `__pycache__/*.pyc` still give their info ISR-S002s.
+- A real key once committed to this repo's tests or docs would be in the registry, and a byte-identical copy of that file would not alert. The generator doesn't yet refuse a blob that TruffleHog verifies live.
+- Files over 1 MB are never recognized, and a link is never recognized (the file it points to is, where it sits).
+- The file is hashed by name after its text was scanned. If someone swaps a shipped file's bytes in between those two reads, the scanned text is not the hashed text.
+- The weekly report line needs the snapshot to carry `fixture_files`. Until `baseline.py` copies it from the audit's meta, the line is not shown (the audit's meta has it).
+
 ## 1.1.1: test fixtures and one secret per file:line
 
 - One-time finding-key churn. A key found by both ISR Bot's own rule and gitleaks at one file:line is now one finding with a new key; the two old keys aren't aliased to it, so the first audit after the upgrade may list the old ISR-S001 and ISR-S002 as fixed and the merged finding as new. A dismissal or accepted risk tied to an old key, or an accepted risk entered for ISR-S002 at that place, doesn't carry over (the merged finding is ISR-S001's).

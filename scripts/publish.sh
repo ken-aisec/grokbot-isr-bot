@@ -89,6 +89,12 @@ if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || \
   stop "tag $TAG already exists. Choose a new version number and set it as VERSION in isr_bot/isr.py and in the release files"
 fi
 PYTHONDONTWRITEBYTECODE=1 python3 -W ignore::ResourceWarning -m unittest discover -s tests -q || stop "the tests failed"
+# 1.2.0: the registry of ISR Bot's own test and doc files (by sha256) is rebuilt from this commit's history; it must be the one
+# committed. A release without the registry recognizes no such file (fail closed), so there is nothing to rebuild.
+if git ls-files --error-unmatch rules/fixture_files.json >/dev/null 2>&1; then
+  bash scripts/make-fixture-registry.sh >/dev/null || stop "scripts/make-fixture-registry.sh failed"
+  git diff --quiet -- rules/fixture_files.json || { git checkout -q -- rules/fixture_files.json 2>/dev/null || true; stop "rules/fixture_files.json in the reviewed commit is out of date; run make manifest, commit, and get that commit reviewed"; }
+fi
 bash scripts/make-manifest.sh
 [[ -z "$(git status --porcelain --untracked-files=all)" ]] || { git checkout -q -- MANIFEST.sha256 2>/dev/null || true; stop "MANIFEST.sha256 in the reviewed commit is out of date; regenerate it, commit, and get that commit reviewed"; }
 gh repo view "$REPO" >/dev/null 2>&1 || stop "$REPO doesn't exist on GitHub; create it first (this script no longer creates repos)"

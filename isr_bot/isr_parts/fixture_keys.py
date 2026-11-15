@@ -103,3 +103,78 @@ def keep_secret_hit(value, path=None):
             FIXTURE_PATHS.add(os.path.abspath(path))
         return False
     return True
+
+
+# ---------------------------------------------------------------- 1.2.0: ISR Bot's own shipped test and doc files, by content
+# A file whose exact bytes are a file ISR Bot shipped under tests/ or docs/ (rules/fixture_files.json, made by
+# scripts/make-fixture-registry.sh: sha256 only, no path, no value) is an ISR Bot fixture file wherever it sits: its key hits are
+# not findings. The registry is read from the running engine's own rules/ only (held to MANIFEST.sha256), never from the copy
+# being scanned. One byte added or changed gives another hash, so every hit fires as before. Missing, bad or empty: nothing is
+# recognized (fail closed). The decoy checks run before this, unchanged.
+FIXTURE_REGISTRY = os.path.join(HERE, "..", "rules", "fixture_files.json")
+FIXTURE_FILE_MAX = 1_000_000   # bytes; a larger file is never recognized
+FIXTURE_FILES = set()   # the files recognized by content this run (audit() clears it); paths only, never a value
+_FIXTURE_RUN = {}   # this run's registry ("hashes") and answers ((path, size, mtime_ns) -> bool); reset_fixture_files() clears it
+
+
+def reset_fixture_files():
+    """A new run: no file recognized yet, the registry read again when first needed, no answer remembered."""
+    FIXTURE_FILES.clear()
+    _FIXTURE_RUN.clear()
+
+
+def load_fixture_registry():
+    """The set of sha256 hex digests in the running engine's rules/fixture_files.json: {"version": 1, "sha256": [hex, ...]}.
+    Anything else (missing, unreadable, not that shape, one entry that isn't 64 lowercase hex) is an empty set."""
+    try:
+        with open(FIXTURE_REGISTRY, encoding="utf-8") as f:
+            reg = json.load(f)
+    except (OSError, ValueError):
+        return frozenset()
+    hashes = reg.get("sha256") if isinstance(reg, dict) and reg.get("version") == 1 else None
+    if not isinstance(hashes, list) or not all(isinstance(h, str) and re.fullmatch(r"[0-9a-f]{64}", h) for h in hashes):
+        return frozenset()
+    return frozenset(hashes)
+
+
+def _fixture_digest(path, size):
+    """sha256 of the raw bytes of `path`, opened without following a link, or None when it isn't the plain file of `size`
+    bytes that was looked at."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    except OSError:
+        return None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_size != size:
+            return None
+        h, n = hashlib.sha256(), 0
+        while n <= FIXTURE_FILE_MAX:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            h.update(chunk)
+            n += len(chunk)
+        return h.hexdigest() if n == size else None
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+
+
+def is_fixture_file(p):
+    """True only when `p` is a plain file (not a link) of FIXTURE_FILE_MAX bytes or less whose raw bytes' sha256 is in the
+    engine's registry; the path is then noted on FIXTURE_FILES. Asked only for a file that has a hit; each file is read at most
+    once per run (remembered by path, size and modification time)."""
+    p = os.path.abspath(str(p or ""))
+    st = _look(p)
+    if not st or not stat.S_ISREG(st.st_mode) or st.st_size > FIXTURE_FILE_MAX:
+        return False
+    key = (p, st.st_size, st.st_mtime_ns)
+    if key not in _FIXTURE_RUN:
+        if "hashes" not in _FIXTURE_RUN:
+            _FIXTURE_RUN["hashes"] = load_fixture_registry()
+        _FIXTURE_RUN[key] = bool(_FIXTURE_RUN["hashes"]) and _fixture_digest(p, st.st_size) in _FIXTURE_RUN["hashes"]
+    if _FIXTURE_RUN[key]:
+        FIXTURE_FILES.add(p)
+    return _FIXTURE_RUN[key]

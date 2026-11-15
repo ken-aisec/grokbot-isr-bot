@@ -10,6 +10,7 @@ def audit(roots, exports, quick=False):
     OWN_TOKEN.clear()
     OWN_TOKEN["on"] = True   # v0.8.2 (item 2): this computer's own gh token is looked up once, when the first secret is found
     FIXTURE_PATHS.clear()   # 1.1.1: the files this run finds an ISR Bot test fixture in (keep_secret_hit), for the cleanup
+    reset_fixture_files()   # 1.2.0: FIXTURE_FILES, the files recognized by content (is_fixture_file), and this run's answers
     walk_errors = []   # batch 5 PR B, Codex round 2 (3): a folder the scan couldn't list leaves the access map incomplete
     walk_skipped = []   # round 3 (1): so does one it left out (a link, too deep, a folder it never scans)
     inv = collect_inventory(roots, errors=walk_errors, skipped=walk_skipped)
@@ -207,6 +208,8 @@ def audit(roots, exports, quick=False):
         # as any other; the finding names a real-looking one first, and gets the example note only when every hit looks like one
         # 1.1.1: an ISR Bot test fixture (by construction, keep_secret_hit) is no hit; only its file is noted, for the cleanup
         hits = [(m, secret_at(t, m)[1]) for m in rule["rx"].finditer(t) if keep_secret_hit(m.group(0), p)]
+        if hits and is_fixture_file(p):   # 1.2.0: one of ISR Bot's own shipped test or doc files, byte for byte; noted, not a finding
+            hits = []
         if hits:
             i = next((i for i, h in enumerate(hits) if not h[1]), 0)
             m, why = hits[i]
@@ -381,6 +384,7 @@ def audit(roots, exports, quick=False):
                                # batch 6 (KL5): the sign-in files and scheduled-job folders it couldn't look at
                                "cli_unknown": len(cli_unknown), "persist_unknown": sorted(PERSIST_UNKNOWN)}}
     meta["fixture_paths"] = sorted(FIXTURE_PATHS)   # 1.1.1: paths only (no value, no fingerprint), read by the cleanup
+    meta["fixture_files"] = sorted(FIXTURE_FILES)   # 1.2.0: ISR Bot's test/doc files recognized by content; paths only, not tidied
     OWN_TOKEN.clear()
     return fs, meta
 

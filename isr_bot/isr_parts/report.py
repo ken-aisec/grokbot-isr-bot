@@ -306,7 +306,10 @@ def render_md(snap, hist, tag):
     if warn:
         lines += ["", f"{GUARDED_LABEL}: {len(warn)} line{'' if len(warn) == 1 else 's'} that warn against a risky step or quote it as an "
                   "example. Not findings, not in the score. `isr.py breakdown` lists them."]
-    vnotes = platform_notes(snap["findings"], 40, snap.get("vendor"))
+    n_fixture = len(snap.get("fixture_files") or [])   # 1.2.0: ISR Bot's own test and doc files, recognized by their bytes
+    if n_fixture:
+        lines += ["", f"{n_fixture} ISR Bot test/doc files recognized by content; not scored."]
+    vnotes =platform_notes(snap["findings"], 40, snap.get("vendor"))
     if vnotes and not plat:   # v0.8.1 (§3.5): only vendor records: their count, and where they are listed
         lines += ["", "## Platform notes", "", "Grok Bot's, Codex's and Claude's own files, never scored.",
                   f"- {notes_more(vnotes['count'], 0, 0)}"]

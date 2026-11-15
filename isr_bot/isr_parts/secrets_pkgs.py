@@ -608,6 +608,8 @@ def gitleaks_findings(roots, notes):
             if in_toolchain_tree(str(leak.get("File") or "")):
                 skipped_tool += 1
                 continue                                  # item 8 dry run: test vectors in a language toolchain or package store                                  # ISR Bot's own decoys (their names are this install's, not in this config)
+            if is_fixture_file(os.path.abspath(str(leak.get("File") or ""))):
+                continue                                  # 1.2.0: one of ISR Bot's own shipped test or doc files, byte for byte (noted)
             got_ = _gitleaks_found(leak, datas, since)
             # 1.1.1: an ISR Bot test fixture (by construction) is no hit; a secret that can't be read back is kept (fail closed)
             if got_ and not keep_secret_hit(got_[0][0], os.path.abspath(str(leak.get("File") or ""))):
