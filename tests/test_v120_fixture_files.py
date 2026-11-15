@@ -155,7 +155,7 @@ class _FF(Box):
 
 class FF1FlaggedCopiesGoToZero(_FF):
     def place(self, name):
-        return os.path.join(self.ws, "claude-jobs", "forge", "isr-1.2.0", name)
+        return os.path.join(self.ws, "copies", name)
 
     def assert_zero(self, copies, gitleaks=None, stand_in=True):
         if stand_in:
