@@ -424,6 +424,8 @@ def run_audit_locked(args, quick):
         snapshot["checks_not_run"] = list(meta["checks_not_run"])
     if meta.get("fixture_paths"):   # 1.1.1: files holding an ISR Bot test fixture (paths only), so the cleanup still finds them
         snapshot["fixture_paths"] = list(meta["fixture_paths"])
+    if meta.get("fixture_files"):   # 1.2.0: ISR Bot's own test/doc files recognized by content (paths only); the report counts them
+        snapshot["fixture_files"] = list(meta["fixture_files"])
     snapshot["vendor"] = mask_stored(vendor)   # v0.8.1 (§3.5): never scored; the platform-notes count and `isr.py breakdown` read them
     # PR A, Codex round 2 (6): critical or high findings a daily run had no room to name stay owed while they are open, whatever
     # run comes next (cmd_daily names them and clears them)

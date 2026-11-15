@@ -8,8 +8,9 @@ from the running engine's own rules/) is now noted, not scored. One byte more or
 Planted values are built here at run time and never echoed (assertions name rules, counts and paths only). gitleaks is the
 column-accurate stand-in of test_v082_secrets; FF1 also runs with the real gitleaks when it is on PATH (skipped otherwise).
 TruffleHog is left out (no answers: a key keeps its rule's severity). FF1 (both) and FF8 fail on 5c86099 at their assertion
-(no recognizer, no registry); the others guard what must not change."""
-import ast, base64, hashlib, json, os, re, shlex, shutil, string, subprocess, sys, unittest
+(no recognizer, no registry), FF8 and FF10 on cd85c7e (its registry kept only files with an ISR-T011 or URI hit); the others
+guard what must not change."""
+import base64, hashlib, json, os, re, shlex, shutil, string, subprocess, sys, unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -31,14 +32,8 @@ COPIES = (("rev4-src", "5c86099"), ("rev4-base", "6820632"), ("rev4-main", "7da4
 T011 = next(r for r in isr.load_rules()["rules"] if r["id"] == isr.SECRET_RULE)["rx"]
 
 
-def registry_uri_rx():
-    """The scheme://user:pass@ pattern scripts/make-fixture-registry.sh keeps a file for, read from the script itself."""
-    with open(os.path.join(ROOT, "scripts", "make-fixture-registry.sh"), encoding="utf-8") as f:
-        m = re.search(r'^URI = (r".*")\s+#', f.read(), re.M)
-    return re.compile(ast.literal_eval(m.group(1)))
-
-
-URI_RX = registry_uri_rx()
+# a scheme://user:pass@ credential (the gitleaks stand-in reports these; the registry lists every shipped file, hit or not)
+URI_RX = re.compile(r"\b[A-Za-z][A-Za-z0-9+.-]*://[^\s/:@'\"]+:[^\s/@'\"]+@")
 
 
 def has_hit(data):
@@ -375,12 +370,75 @@ class FF8RegistryIsFresh(unittest.TestCase):
             if os.path.islink(p) or not os.path.isfile(p):
                 continue
             data = read_bytes(p)
-            if has_hit(data):
-                n += 1
-                if sha(data) not in reg:
-                    stale.append(rel)
+            n += has_hit(data)
+            if sha(data) not in reg:   # every shipped file, hit or not: gitleaks has rules ISR-T011 doesn't (FF10)
+                stale.append(rel)
         self.assertGreaterEqual(n, len(FLAGGED))
         self.assertEqual(stale, [], "run `make manifest` (scripts/make-fixture-registry.sh, then make-manifest.sh)")
+
+
+def one_byte_off(text, avoid):
+    """`text` with one letter changed on its first line that holds none of `avoid` (same length)."""
+    a = 0
+    for line in text.split("\n"):
+        if not any(v in line for v in avoid):
+            i = next((a + j for j, c in enumerate(line) if c.isalpha()), None)
+            if i is not None:
+                return text[:i] + ("x" if text[i] != "x" else "y") + text[i + 1:]
+        a += len(line) + 1
+    return None
+
+
+class FF10OtherGitleaksRulesOnAShippedFile(_FF):
+    """Real gitleaks hits shipped tests with rules ISR-T011 doesn't have (curl-auth-user, generic-api-key). The registry once
+    kept only files with an ISR-T011 or URI hit, so a byte copy of such a file still gave a tests-folder ISR-S002."""
+    REL = "tests/test_batch4_codex_review3.py"
+    RELS = ("tests/test_batch4_codex_review3.py", "tests/test_batch4_codex_review4.py")
+    # obviously fake values the file holds: a curl --user pair and an API_TOKEN value (built here so this line trips nothing)
+    VALUES = (("admin:" + "FAKE" + "user1", "curl-auth-user"), ("FAKE" + "scanner" + "ERROR", "generic-api-key"))
+
+    def gitleaks_s002(self, p):
+        return [f["rule"] for f in self.keys(p) if f["rule"] == "ISR-S002" or "ISR-S002" in (f.get("also_rules") or [])]
+
+    def test_ff10_a_copy_with_only_curl_or_generic_hits_is_recognized_and_one_byte_off_fires(self):   # replay: fails on cd85c7e
+        data = read_bytes(os.path.join(ROOT, self.REL))
+        self.assertFalse(has_hit(data))                                  # no ISR-T011 or URI hit: the old filter left it out
+        self.assertIn(sha(data), isr.load_fixture_registry())
+        text = data.decode("utf-8")
+        self.assertTrue(all(v in text for v, _ in self.VALUES))
+        same = self.copy(self.REL, os.path.join(self.ws, "shipped", "tests", os.path.basename(self.REL)))
+        off = self.put(os.path.join(self.ws, "edited", "tests", os.path.basename(self.REL)), one_byte_off(text, [v for v, _ in self.VALUES]))
+        self.assertEqual(len(read_bytes(off)), len(data))
+        self.assertNotEqual(sha(read_bytes(off)), sha(data))
+        for p in (same, off):
+            for v, rule in self.VALUES:
+                self.leak(p, v, rule)
+        self.assertEqual(sorted({h["RuleID"] for h in self.hits if h["File"] == same}), sorted(r for _, r in self.VALUES))
+        with self.no_registry():                                         # contrast: both copies are gitleaks findings
+            self.run_audit()
+        self.assertEqual((self.gitleaks_s002(same), self.gitleaks_s002(off)), (["ISR-S002"], ["ISR-S002"]))
+        self.run_audit()
+        self.assertEqual(self.keys(same), [])
+        self.assertIn(same, self.fixture_files())
+        self.assertEqual(self.gitleaks_s002(off), ["ISR-S002"])          # one byte off: fires as before
+        self.assertNotIn(off, self.fixture_files())
+
+    @unittest.skipUnless(os.access(REAL_GITLEAKS, os.X_OK), "gitleaks is not installed")
+    def test_ff10_with_the_real_gitleaks(self):   # replay, when the real gitleaks is installed (it is run, never changed or copied)
+        gl = "#!/bin/sh\nexec " + shlex.quote(REAL_GITLEAKS) + ' "$@"\n'
+        same = [self.copy(rel, os.path.join(self.ws, "shipped", rel)) for rel in self.RELS]
+        off = [self.put(os.path.join(self.ws, "edited", rel), one_byte_off(read_bytes(os.path.join(ROOT, rel)).decode("utf-8"), ["curl", "TOKEN", "=", ":"]))
+               for rel in self.RELS]
+        for rel in self.RELS:
+            self.assertFalse(has_hit(read_bytes(os.path.join(ROOT, rel))))
+        with self.no_registry():                                         # contrast: real gitleaks reports every copy
+            self.run_audit(gl)
+        self.assertEqual([p for p in same + off if not self.gitleaks_s002(p)], [])
+        self.run_audit(gl)
+        self.assertEqual([(f["rule"], f["where"]) for f in self.keys(os.path.join(self.ws, "shipped"))], [])
+        self.assertEqual(sorted(p for p in self.fixture_files() if p in same), sorted(same))
+        self.assertEqual([p for p in off if not self.gitleaks_s002(p)], [])   # one byte off: fires as before
+        self.assertEqual([p for p in off if p in self.fixture_files()], [])
 
 
 class FF9Cost(_FF):
@@ -401,6 +459,26 @@ class FF9Cost(_FF):
         self.assertEqual(sorted(read), sorted([fx, other]))              # once each, though both scanners asked
         self.assertEqual([p for p in plain if p in read], [])
         self.assertEqual(self.fixture_files(), [fx])
+
+
+class FF11ReportLineFromTheSnapshot(_FF):
+    """misses.md item 1: `isr.py report` reads the saved snapshot, so baseline.py must carry fixture_files into it."""
+
+    def weekly_md(self):
+        code, o, e = self.run_cmd("report")
+        self.assertEqual(code, 0, e)
+        week = isr.dt.date.today().isocalendar()
+        return read_bytes(os.path.join(isr.home(), "reports", f"{week[0]}-W{week[1]:02d}.md")).decode("utf-8")
+
+    def test_ff11_audit_then_report_says_the_recognized_files(self):   # replay: fails on cd85c7e (the snapshot had no fixture_files)
+        fx = [self.copy(rel, os.path.join(self.ws, "repo", rel)) for rel in ("docs/KNOWN-LIMITS.md", "tests/test_v111_fixtures.py")]
+        with self.no_registry():                                         # contrast: nothing recognized, no line
+            self.run_audit()
+        self.assertNotIn("fixture_files", self.snap())
+        self.assertNotIn("recognized by content", self.weekly_md())
+        self.run_audit()
+        self.assertEqual(self.snap().get("fixture_files"), sorted(fx))   # the saved snapshot carries them (paths only)
+        self.assertIn("\n2 ISR Bot test/doc files recognized by content; not scored.\n", self.weekly_md())
 
 
 if __name__ == "__main__":

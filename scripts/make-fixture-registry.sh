@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
-# Regenerate rules/fixture_files.json: the sha256 of every file ever committed under tests/ or docs/ (every commit
-# `git rev-list HEAD -- tests docs` names, plus the index) that holds at least one hit for ISR-T011's pattern
-# (rules/text_rules.json) or a scheme://user:pass@ credential. Hashes only: no path, no value. The same history and index
-# give the same bytes. Run it before scripts/make-manifest.sh.
+# Regenerate rules/fixture_files.json: the sha256 of every plain file ever committed under tests/ or docs/ (every commit
+# `git rev-list HEAD -- tests docs` names, plus the index), whatever it holds: a shipped file can trip any gitleaks rule
+# (generic-api-key, curl-auth-user, ...), not only ISR-T011, so none is left out by a hit filter. Links and submodules are not
+# files and are skipped; the engine itself never recognizes a file over FIXTURE_FILE_MAX (fixture_keys.py). Hashes only: no
+# path, no value. The same history and index give the same bytes. Run it before scripts/make-manifest.sh.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 -I - <<'PYEOF'
-import hashlib, json, re, subprocess
-
-URI = r"\b[A-Za-z][A-Za-z0-9+.-]*://[^\s/:@'\"]+:[^\s/@'\"]+@"   # a scheme://user:pass@ credential
-rules = json.load(open("rules/text_rules.json", encoding="utf-8"))["rules"]
-hit = [re.compile(next(r["pattern"] for r in rules if r["id"] == "ISR-T011")), re.compile(URI)]
+import hashlib, json, subprocess
 
 
 def git(*a):
@@ -38,10 +35,8 @@ while at < len(batch):
     size = int(batch[at:head_end].split()[2])
     data = batch[head_end + 1:head_end + 1 + size]
     at = head_end + 1 + size + 1
-    text = data.decode("utf-8", "replace")
-    if any(rx.search(text) for rx in hit):
-        found.add(hashlib.sha256(data).hexdigest())
+    found.add(hashlib.sha256(data).hexdigest())
 with open("rules/fixture_files.json", "w", encoding="utf-8") as f:
     f.write(json.dumps({"version": 1, "sha256": sorted(found)}, indent=1) + "\n")
-print(f"rules/fixture_files.json: {len(found)} files of {len(ids)} under tests/ and docs/")
+print(f"rules/fixture_files.json: {len(found)} files of {len(ids)} blobs under tests/ and docs/")
 PYEOF

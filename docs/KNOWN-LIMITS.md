@@ -44,7 +44,6 @@ under "Fixed in batch 7d (the last must-fix items)" right below, with its test f
 - A real key once committed to this repo's tests or docs would be in the registry, and a byte-identical copy of that file would not alert. The generator doesn't yet refuse a blob that TruffleHog verifies live.
 - Files over 1 MB are never recognized, and a link is never recognized (the file it points to is, where it sits).
 - The file is hashed by name after its text was scanned. If someone swaps a shipped file's bytes in between those two reads, the scanned text is not the hashed text.
-- The weekly report line needs the snapshot to carry `fixture_files`. Until `baseline.py` copies it from the audit's meta, the line is not shown (the audit's meta has it).
 
 ## 1.1.1: test fixtures and one secret per file:line
 
